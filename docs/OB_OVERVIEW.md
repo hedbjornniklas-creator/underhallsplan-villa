@@ -5,10 +5,97 @@ Implementerad 2026-09-23. Publiceringsunderlag och verifieringsgränser finns i
 
 ## Omfattning
 
-`/ob` har en gemensam lista, **ÖB-uppdrag**. Den lokala uppföljningen
-2026-09-27 ersätter korten med skapa-knappar och utfällbart snabbskick.
-De gamla listorna `/ob/assignments` och `/inspections` samt deras funktioner
-finns kvar som länkar. Visitkortet tas bort från startsidan, inte från profilen.
+`/ob` har en gemensam lista, **ÖB-uppdrag**. Startsidan använder skapa-knappar
+och snabbskick i en dialog. Visitkortet är borttaget från startsidan, inte
+från profilen. Uppföljningen 2026-10-14 avvecklar de gamla generella listorna
+`/ob/assignments` och `/inspections` till förmån för denna lista.
+
+### Granskning av äldre ingångar 2026-10-14
+
+Kodgranskningen före avvecklingen visade följande kvarvarande ingångar.
+Detta är inte en mätning av hur ofta användare öppnade sidorna.
+
+- Startsidan länkar uttryckligen till `/ob/assignments` och `/inspections`.
+- Tillbaka från besiktningen går till `/inspections`. Tillbaka från skapande
+  och redigering av en bekräftelse går till `/ob/assignments`.
+- Den äldre UB-listan har avbokning, arkivering, återföring från arkiv och
+  filter för utgångna kundlänkar. Den gemensamma listan visar arkiverade poster,
+  men har inte dessa mutationskommandon.
+- Den äldre besiktningslistans skapa-, öppna-, PDF- och upplåsningsfunktioner
+  har alternativ på startsidan respektive Skicka utlåtande.
+- `/properties/[id]/ob` är dessutom en separat, fortfarande nåbar
+  fastighetslista med skapa-, öppna- och raderingsfunktion. Den ska bedömas
+  separat, särskilt vad gäller skyddet för historiska dokument.
+- `/ob/assignments/new`, `/ob/assignments/[id]`, besiktningens arbetsvy och
+  kundens godkännandesida är aktuella arbetsflöden, inte överflödiga listvyer.
+
+### Avveckling 2026-10-14 (publicering godkänd 2026-10-15)
+
+Användaren har beslutat att avveckla de två gamla generella listorna.
+
+- Listornas komponenter är borttagna. Adresserna omdirigerar till `/ob` och
+  bevarar `orgId`; befintliga organisations- och modulkrav gäller på målsidan.
+  Dubbla eller ogiltiga organisationsval skickas vidare för samma avvisning,
+  inte en tyst växling till en annan organisation.
+- Startsidan länkar inte längre till de gamla listorna. Tillbaka från
+  besiktning och från skapande/redigering av UB går till `/ob` i vald organisation.
+- **Detaljer och åtgärder** i den gemensamma listan ger arkivering,
+  återföring från arkiv och avbokning av den aktuella uppdragsbekräftelsen,
+  även på mobil. Separata statusar för bekräftelse och besiktning behålls.
+- Varje åtgärd bekräftas i en dialog. Befintligt organisationsavgränsat API
+  används. Skickad, beställd eller bokad UB måste först avbokas före arkivering.
+  Avbokning arkiverar UB och kan pausa besiktningsarbetet; återföring från arkiv
+  häver inte en avbokning. Besiktningen och utlåtanden raderas inte.
+- En öppen dialog kan inte tyst riktas om till en ersättningsbekräftelse.
+  Om listans ID, status, arkivläge eller organisation har ändrats före
+  bekräftelsen stoppas kommandot och användaren får kontrollera underlaget igen.
+- Utgångna kundlänkar visas redan i listan och i **Kräver åtgärd**.
+  Förnyelse, acceptans och start sker fortsatt på den befintliga detaljsidan.
+- Skapa-, PDF- och upplåsningsfunktionerna behålls på startsidan respektive
+  Skicka utlåtande. Detaljsidor, API:er, kundlänkar och historiska dokument
+  är inte avvecklade. Den separata fastighetslistan `/properties/[id]/ob`
+  omfattas inte av detta beslut.
+- Ingen ny SQL krävs för listavvecklingen. Den separata migreringen
+  [för framtida inbjudningsacceptans](db/2026-10-14_01_organization_invitation_profile_identity.sql)
+  hör till medlemsrättningen, inte denna navigation.
+
+Verifierat lokalt: 59 riktade tester för omdirigeringar, organisationsval,
+status, sidindelning och navigering. Syntetiska klickprov för arkivering,
+återföring, avbokning, avbruten dialog och misslyckade anrop på 320/390/1280 px
+är godkända; samtidiga dubbelklick och Escape under sparande gör ingen extra
+ändring. Typkontroll och riktad ESLint är godkända (två befintliga varningar).
+Responsiv verifiering omfattar även 200 % text och dialogernas radbrytning.
+Produktionsbyggningen är godkänd i en isolerad kopia mot staging, utan
+produktionsnycklar eller mejlutskick. De byggda källfilerna har jämförts med
+leveransens filer.
+Inga kunduppgifter ändras av testerna. Produktionspublicering redovisas
+separat efter godkännande.
+
+### Digitala rapportverktyg 2026-10-14 (publicering godkänd 2026-10-15)
+
+Skicka utlåtande skiljer på klarmarkering och faktiskt låsdatum. En tidigare
+klarmarkerad men upplåst besiktning visar **Skicka och lås**, inte **Skicka och
+behåll låst**. Utskick utan ändrad låsning bevarar befintligt låsläge och
+resultattexten beskriver det, inte enbart klarmarkeringsstatus. Ingen ändring
+görs av serverns skickande, låsning eller sparade utlåtanden.
+
+Den interna digitala vyn får delning och PDF-hämtning för exakt det valda
+rapport-ID:t. Den får aldrig falla tillbaka till en annan färdig version eller
+bygga ett nytt utlåtande. ÖB och statusbesiktning använder samma verktyg.
+
+Vid sammanslagningen med produktionsversionen 2026-10-15 behålls kollegors
+läsbehörighet. Den ger hämtning av den sparade PDF-versionen, men inte
+delningsåtgärder, avbokning eller arkivering av kollegans uppdrag. Den privata
+PDF-statusvägen är enbart läsande och bygger aldrig om ett historiskt utlåtande.
+
+Äldre kundtoken finns bara som hash och kan inte återskapas. Delningsdialogen
+tar därför emot den ursprungliga kundlänken och kontrollerar dess ursprung och
+token mot den valda aktiva rapporten innan kopiering eller utskick. Ingen ny
+kundlänk, snapshot eller PDF skapas. Kundens befintliga delningsflöde behålls.
+
+Bildrutorna i den digitala vyn är kvadratiska, två per rad på mobil och tre på
+dator. Hela bilden visas utan beskärning och kan öppnas större. Den frysta
+utskriftslayouten och arkiverade PDF-filer ändras inte.
 
 Listan följer [varumärkesprofil 1.2](OB_BRAND_PROFILE.md): blå handlingar,
 Manrope, neutrala statustexter och vita rader med tunna avdelare. Mobilen
@@ -173,6 +260,8 @@ under läsningen krävs omladdning i stället för att blanda två versioner.
   kontroller; ett klick i listan accepterar eller skapar aldrig något.
 - Listan uppdateras efter snabbskick, när sidan återfår fokus,
   samt med uppdateringsknappen. Äldre svar får inte skriva över nyare svar.
+- Bekräftelsens arkiv-/avbokningsåtgärder finns i den utfällda detaljraden.
+  Vid fel ändras inte radens visade status; ett lyckat anrop hämtar listan på nytt.
 
 ## Drift och verifiering
 

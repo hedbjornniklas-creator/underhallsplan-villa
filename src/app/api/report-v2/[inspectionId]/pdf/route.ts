@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { requireTuContext } from '@/lib/tu/server'
+import { getTuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflowServer'
 import { getObAssignmentWorkflow } from '@/lib/ob/assignmentWorkflowServer'
 import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -187,7 +188,7 @@ export async function GET(
     const inspectionFamily = String(inspectionRow.inspection_family ?? '').trim().toUpperCase()
     const isOb = inspectionFamily === 'OB' || (!inspectionFamily && ['OB', 'STATUS'].includes(inspectionRow.type ?? ''))
     const orgContext = isOb
-      ? await requireObInspectionContext(inspectionId, requestedOrgId)
+      ? await requireObInspectionReadContext(inspectionId, requestedOrgId)
       : inspectionFamily === 'TU' ? await requireTuContext(requestedOrgId) : await requireOrgContext(requestedOrgId)
 
     const hasAccess = isOb ? true : inspectionFamily === 'TU'
@@ -204,6 +205,10 @@ export async function GET(
 
     if (isOb) {
       const workflow = await getObAssignmentWorkflow(inspectionId, orgContext.orgId)
+      if (workflow && !workflow.canDeliver) return new NextResponse(workflow.reason, { status: 409 })
+    }
+    if (inspectionFamily === 'TU') {
+      const workflow = await getTuAssignmentWorkflow(inspectionId, orgContext.orgId)
       if (workflow && !workflow.canDeliver) return new NextResponse(workflow.reason, { status: 409 })
     }
 
@@ -295,6 +300,8 @@ export async function GET(
     return new NextResponse('Ingen lagrad PDF hittades för denna besiktning.', { status: 404 })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
+    if (message === 'TU_WORKFLOW_UNAVAILABLE') return new NextResponse('Uppdragsstatus kunde inte verifieras. Försök igen.', { status: 503 })
+    if (message === 'TU_ASSIGNMENT_FORBIDDEN') return new NextResponse('Du saknar behörighet till uppdraget.', { status: 403 })
     if (message === 'UNAUTHORIZED') {
       return new NextResponse('Du behöver vara inloggad för att ladda ner utlåtandet.', {
         status: 401,

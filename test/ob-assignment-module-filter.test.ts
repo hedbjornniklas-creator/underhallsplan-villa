@@ -27,7 +27,10 @@ function loadRoute(items: Array<{ id: string; assignment_type: string }>) {
   new Function('require', 'module', 'exports', output)(
     (name: string) => {
       if (name === '@/lib/ob/objectType') return objectType
-      if (name === '@/lib/ob/organizationBindings') return { requireObContext: async () => ({ orgId: 'org-1', orgName: 'Organisation' }) }
+      if (name === '@/lib/ob/organizationBindings') return {
+        requireObContext: async () => ({ orgId: 'org-1', orgName: 'Organisation' }),
+        filterObAssignmentList: async (rows: typeof items) => rows.filter(item => ['OB', 'STATUS'].includes(item.assignment_type)),
+      }
       if (name === '@/lib/ob/organizationHttp') return { obRequestOrgId: () => undefined, obOrganizationFailure: () => null }
       if (name === '@/lib/organizations/administrationHttp') return {}
       if (name === 'next/server') {

@@ -18,6 +18,7 @@ function load(path: string, deps: Record<string, unknown>): Record<string, (...a
   return module.exports
 }
 const objectType = load('src/lib/ob/objectType.ts', {})
+const editLock = load('src/lib/ob/assignmentEditLock.ts', {})
 const json = (payload: unknown, options?: { status?: number }) => ({ status: options?.status ?? 200, payload })
 const request = (body: unknown) => new Request('http://localhost/api/ob/assignments', {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -43,6 +44,7 @@ function harness(path: string, existing: Record<string, unknown> = {}) {
     '@/lib/assignments/server': server,
     '@/lib/assignments/linkIncidents': { listAssignmentLinkIssues: async () => ({ available: true, items: [] }) },
     '@/lib/ob/objectType': objectType,
+    '@/lib/ob/assignmentEditLock': editLock,
   })
   return { route, server, created, updated }
 }
@@ -127,3 +129,55 @@ for (const code of ['OB_STATUS_OBJECT_AGREEMENT_LOCKED', 'OB_STATUS_PROFILE_AGRE
     assert.equal(h.updated.length, 0)
   })
 }
+
+for (const assignmentType of ['OB', 'STATUS']) {
+  for (const existing of [
+    ...['sent', 'ordered', 'booked', 'completed', 'expired', 'cancelled'].map(status => ({ status })),
+    { status: 'draft', accepted_at: '2026-10-15' },
+    { status: 'draft', last_sent_at: '2026-10-15' },
+    { status: 'draft', booked_at: '2026-10-15' },
+    { status: 'draft', archived_at: '2026-10-15' },
+  ]) {
+    test(`${assignmentType} issued content stays locked: ${JSON.stringify(existing)}`, async () => {
+      const h = harness(patchPath, { assignment_type: assignmentType, ...existing })
+      for (const body of [
+        { customer_name: 'Changed' }, { price_amount: 0 }, { property_address: 'Changed' },
+        { status: 'draft' }, { status: 'cancelled', archived_at: null, notes_internal: 'Sneak edit' },
+        { archived_at: null, customer_name: 'Sneak edit' },
+      ]) {
+        const result = await h.route.PATCH(request(body), context)
+        assert.equal(result.status, 409)
+        assert.match(result.payload.error, /Skapa en ny uppdragsbekräftelse/)
+      }
+      assert.equal(h.updated.length, 0)
+    })
+  }
+
+  test(`${assignmentType} preserves booking, cancellation and archive without content normalization`, async () => {
+    const ordered = harness(patchPath, { assignment_type: assignmentType, status: 'ordered' })
+    assert.equal((await ordered.route.PATCH(request({ status: 'booked' }), context)).status, 200)
+    assert.deepEqual(ordered.updated[0].patch, { status: 'booked' })
+    assert.equal(ordered.updated[0].requireUnissuedDraft, false)
+
+    const completed = harness(patchPath, { assignment_type: assignmentType, status: 'completed' })
+    assert.equal((await completed.route.PATCH(request({ archived_at: '2026-10-15T12:00:00Z' }), context)).status, 200)
+    assert.deepEqual(completed.updated[0].patch, { archived_at: '2026-10-15T12:00:00.000Z', archived_by: 'actor' })
+    assert.equal((await completed.route.PATCH(request({ archived_at: null }), context)).status, 200)
+    assert.deepEqual(completed.updated[1].patch, { archived_at: null, archived_by: null })
+
+    const sent = harness(patchPath, { assignment_type: assignmentType, status: 'sent' })
+    assert.equal((await sent.route.PATCH(request({ archived_at: '2026-10-15' }), context)).status, 409)
+    assert.equal((await sent.route.PATCH(request({ status: 'cancelled', archived_at: '2026-10-15' }), context)).status, 200)
+    assert.deepEqual(sent.updated[0].patch, { status: 'cancelled', archived_at: '2026-10-15T00:00:00.000Z', archived_by: 'actor' })
+  })
+}
+
+test('OB draft edits require an atomic unissued check, including replacements linked to an early-start inspection', async () => {
+  const h = harness(patchPath, { assignment_type: 'OB', inspection_id: 'inspection', converted_at: '2026-10-15' })
+  assert.equal((await h.route.PATCH(request({ customer_name: 'New version' }), context)).status, 200)
+  assert.equal(h.updated[0].requireUnissuedDraft, true)
+  h.server.updateAssignmentById = async () => { throw Error('OB_ASSIGNMENT_CONTENT_LOCKED') }
+  const result = await h.route.PATCH(request({ customer_name: 'Concurrent stale edit' }), context)
+  assert.equal(result.status, 409)
+  assert.match(result.payload.error, /låst för redigering/)
+})

@@ -21,6 +21,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { TU_ANALYSIS_UPDATED_EVENT } from '@/lib/tu/analysis'
 import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import { getTuRequiredReportSectionsBlocker } from '@/lib/tu/reportQuality'
+import TuCopyInvestigationLink from './TuCopyInvestigationLink'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
 import {
@@ -140,6 +142,7 @@ type ObjectDetailsForm = {
 }
 
 type AssignmentScopeForm = {
+  inspectionDate: string
   propertyAddress: string
   propertyPostalCode: string
   propertyCity: string
@@ -557,6 +560,7 @@ function ReadOnlyInfoRow({ label, value }: { label: string; value: string | null
 
 function buildAssignmentScopeForm(investigation: TuInvestigationDetails): AssignmentScopeForm {
   return {
+    inspectionDate: investigation.date ?? investigation.inspection.date ?? '',
     propertyAddress: investigation.property?.address ?? investigation.propertyAddress ?? '',
     propertyPostalCode: investigation.property?.postal_code ?? '',
     propertyCity: investigation.property?.city ?? investigation.propertyCity ?? '',
@@ -1063,6 +1067,7 @@ export default function TuInvestigationEditorClient({
     setAssignmentScopeSaving(true)
     try {
       await savePatch({
+        inspectionDate: assignmentScopeForm.inspectionDate,
         propertyAddress: assignmentScopeForm.propertyAddress,
         propertyPostalCode: assignmentScopeForm.propertyPostalCode,
         propertyCity: assignmentScopeForm.propertyCity,
@@ -1486,17 +1491,11 @@ export default function TuInvestigationEditorClient({
   })
   const refreshWorkflowState = workflowState.refresh
   const finalizationBlockedReason = useMemo(() => {
+    if (autosave.status === 'saving') return 'Vänta tills rapportens ändringar har sparats.'
+    if (autosave.status === 'error') return 'Rapportens ändringar kunde inte sparas. Försök spara igen innan du fastställer.'
     if (!aiWorkflowEnabled) return null
-    const assessmentStep = workflowState.steps.find((step) => step.id === 'assessment')
-    const reportStep = workflowState.steps.find((step) => step.id === 'report')
-    if (assessmentStep?.status !== 'complete') {
-      return assessmentStep?.statusText ?? 'Bedömningen måste slutföras.'
-    }
-    if (reportStep?.status !== 'complete') {
-      return reportStep?.statusText ?? 'Utlåtandet måste slutgranskas.'
-    }
-    return null
-  }, [aiWorkflowEnabled, workflowState.steps])
+    return getTuRequiredReportSectionsBlocker(draft.sections)
+  }, [aiWorkflowEnabled, autosave.status, draft.sections])
   const handleDeliveryStatusChange = useCallback(({ reportLockedAt }: { reportLockedAt: string | null }) => {
     setInvestigation((current) => (
       current.reportLockedAt === reportLockedAt ? current : { ...current, reportLockedAt }
@@ -2388,6 +2387,7 @@ export default function TuInvestigationEditorClient({
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
+              <TuCopyInvestigationLink inspectionId={investigation.inspectionId} organizationId={investigation.orgId} />
               {!aiWorkflowEnabled ? <button
                 type="button"
                 onClick={openAssignmentScopeEditor}
@@ -2562,9 +2562,10 @@ export default function TuInvestigationEditorClient({
             <button
               type="button"
               onClick={() => setWorkspaceView('delivery')}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800"
+              disabled={autosave.isSaving}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-wait disabled:opacity-50"
             >
-              {locked ? 'Gå vidare till leverans' : 'Gå vidare till fastställande'}
+              {locked ? 'Gå vidare till leverans' : 'Klar med granskningen'}
               <ArrowRight size={16} aria-hidden />
             </button>
             <span className="text-xs text-gray-500">
@@ -2808,7 +2809,7 @@ export default function TuInvestigationEditorClient({
                   value={objectAddress || investigation.propertyAddress || investigation.property?.address}
                 />
                 <ReadOnlyInfoRow
-                  label="Arbetsnummer"
+                  label="Uppdragsnummer"
                   value={investigation.assignmentNumber ?? investigation.inspection.assignment_number}
                 />
                 <ReadOnlyInfoRow
@@ -3911,6 +3912,20 @@ export default function TuInvestigationEditorClient({
 
               <div className="space-y-5 px-4 py-5 sm:px-5">
                 <label className="block space-y-1.5">
+                  <span className="text-sm font-semibold text-gray-950">Besiktningsdatum</span>
+                  <input
+                    type="date"
+                    value={assignmentScopeForm.inspectionDate}
+                    onChange={(event) => setAssignmentScopeForm((current) => ({
+                      ...current,
+                      inspectionDate: event.target.value,
+                    }))}
+                    disabled={assignmentScopeSaving}
+                    className="h-10 w-full min-w-0 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100"
+                  />
+                </label>
+
+                <label className="block space-y-1.5">
                   <span className="text-sm font-semibold text-gray-950">Objektadress eller adresser *</span>
                   <textarea
                     autoFocus
@@ -3972,7 +3987,7 @@ export default function TuInvestigationEditorClient({
                 </label>
 
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
-                  Om analysen redan är klar behöver den uppdateras mot de nya uppgifterna. Text som du själv har redigerat ersätts inte automatiskt.
+                  Granska utlåtandet mot de ändrade uppgifterna. En ny AI-analys är valfri och ersätter inte din text automatiskt.
                 </div>
               </div>
 

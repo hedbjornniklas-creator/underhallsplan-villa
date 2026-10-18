@@ -39,7 +39,7 @@ function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (schemaMissing(error.code)) throw new Error('CUSTOMER_OFFER_SCHEMA')
   throw new Error(
-    error.message?.match(/CUSTOMER_(?:OFFER|CHOICE)_[A-Z_]+/)?.[0] ??
+    error.message?.match(/CUSTOMER_(?:OFFER|CHOICE|SENDER)_[A-Z_]+/)?.[0] ??
       'CUSTOMER_OFFER_FAILED'
   )
 }
@@ -146,6 +146,7 @@ export async function saveCustomerOffer(
     throw new Error('CUSTOMER_OFFER_INVALID')
   let draft = normalizeCustomerOffer(payload.draft)
   await requireCase(ctx, caseId)
+  if (target === 'contract') await assertContractSenderDraft(ctx, caseId, draft)
   if (draft.contractForm === 'abs18') {
     const file = await findStandardTermsFile(ctx.orgId, caseId) ?? await prepareStandardContractTerms(ctx, caseId)
     let files: CustomerOfferFile[] = []
@@ -196,7 +197,9 @@ export async function prepareStandardContractTerms(ctx: Context, caseId: string)
 }
 export async function bindContractCustomer(ctx: Context, caseId: string, payload: Payload) {
   await requireCase(ctx, caseId)
-  await checkPricingSchema(normalizeCustomerOffer(payload.draft))
+  const draft = normalizeCustomerOffer(payload.draft)
+  await assertContractSenderDraft(ctx, caseId, draft)
+  await checkPricingSchema(draft)
   await writeContractCustomer(ctx, caseId, payload, true)
 }
 export async function separateCustomerChoices(ctx: Context, caseId: string, payload: Payload) {
@@ -208,6 +211,14 @@ export async function separateCustomerChoices(ctx: Context, caseId: string, payl
     p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
     p_revision: payload.revision, p_planning_revision: payload.planningRevision
   })
+  checked(result.error)
+}
+async function assertContractSenderDraft(ctx: Context, caseId: string, draft: CustomerOfferDraft) {
+  if (!draft.senderProfile) return
+  const result = await createSupabaseAdminClient().rpc('assert_action_case_contract_sender_body', {
+    p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId, p_body: draft,
+  })
+  if (result.error && schemaMissing(result.error.code)) throw new Error('CUSTOMER_SENDER_SCHEMA')
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
@@ -320,6 +331,7 @@ export async function publishCustomerOffer(
   if (workspace.revision !== payload.revision || !workspace.revision)
     throw new Error('CUSTOMER_OFFER_STALE')
   const draft = workspace.draft
+  await assertContractSenderDraft(ctx, caseId, draft)
   if (draft.signingMethod === 'external') throw new Error('CUSTOMER_OFFER_SIGNING_METHOD')
   if (draft.items.some((i) => i.kind === 'option'))
     throw new Error('CUSTOMER_OFFER_SEPARATE_CHOICES')
@@ -337,12 +349,12 @@ export async function publishCustomerOffer(
     .eq('org_id', ctx.orgId)
     .eq('role', 'customer')
     .maybeSingle()
-  const org = await db
+  const org = draft.senderProfile ? { data: { name: draft.senderProfile.name }, error: null } : await db
     .from('organizations')
     .select('name')
     .eq('id', ctx.orgId)
     .single()
-  const sender = await db
+  const sender = draft.senderProfile ? { data: { email: draft.senderProfile.email }, error: null } : await db
     .from('profiles')
     .select('email')
     .eq('id', ctx.userId)

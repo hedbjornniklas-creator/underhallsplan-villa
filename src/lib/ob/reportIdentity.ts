@@ -1,4 +1,5 @@
 import 'server-only'
+import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { requireConfiguredOrganizationProfileCard } from '@/lib/organizations/profileCard'
 import { readOrganizationBranding } from '@/lib/organizations/companyProfile'
 
@@ -30,10 +31,14 @@ export async function resolveObReportIdentity(input: {
   if (!company?.configured || company.id !== input.orgId || card.orgId !== input.orgId || card.profileId !== input.profileId) {
     throw new Error('ORG_PROFILE_CARD_REQUIRED')
   }
+  const logoPath = company.logoPath?.trim() || null
+  const logoUrl = logoPath && !/^(https?:\/\/|\/)/i.test(logoPath)
+    ? createSupabaseAdminClient().storage.from('property-media').getPublicUrl(logoPath).data.publicUrl
+    : logoPath
   return {
     full_name: card.displayName, phone: card.phone, email: card.email,
     company_name: company.name, company_orgno: company.organizationNumber,
     company_address: company.address, company_postal_code: company.postalCode,
-    company_city: company.city, company_website: company.website, logo_path: company.logoPath,
+    company_city: company.city, company_website: company.website, logo_path: logoUrl,
   }
 }

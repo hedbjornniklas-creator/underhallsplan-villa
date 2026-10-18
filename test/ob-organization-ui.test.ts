@@ -112,7 +112,7 @@ test('an inconsistent successful context reply cannot render the wrong organizat
 })
 
 test('creation surfaces use a scoped server endpoint and no longer insert inspections from the browser', () => {
-  for (const path of ['src/components/ob/ObHomeActions.tsx', 'src/app/(dashboard)/inspections/page.tsx', 'src/app/(app)/properties/[id]/ob/page.tsx']) {
+  for (const path of ['src/components/ob/ObHomeActions.tsx', 'src/app/(app)/properties/[id]/ob/page.tsx']) {
     const source = read(path)
     assert.match(source, /fetch\(withObOrganization\('\/api\/ob\/inspections', orgId\)/)
     assert.doesNotMatch(source, /\.insert\(/)

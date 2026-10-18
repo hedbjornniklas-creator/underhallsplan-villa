@@ -27,6 +27,7 @@ function harness() {
   }
   const queue = load('src/hooks/useAutosaveQueue.ts', {})
   const { useCustomerOfferAutosave } = load('src/components/tasks/useCustomerOfferAutosave.ts', { '@/hooks/useAutosaveQueue': queue })
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- This isolated hook harness injects the React hooks above.
   const api = useCustomerOfferAutosave({ initialRevision: 5,
     save: (snapshot, revision) => new Promise((resolve, reject) => requests.push({ snapshot, revision, resolve, reject })),
     onSaved: (result, snapshot) => saved.push({ result, snapshot }), onError: (error) => errors.push(error),
@@ -149,7 +150,7 @@ test('contract autosave has a fixed status slot, no success toast, explicit reci
   assert.doesNotMatch(save, /toast.success|onCustomerChanged|setPlanningReset|publish'|bind_customer'/)
   assert.match(editor, /flex h-8 w-60 max-w-full shrink-0[^"]*" role="status" data-testid="contract-save-status"/)
   assert.match(editor, /Bekräfta mottagare/)
-  assert.match(editor, /if \(running.current \|\| autosave.isPending\(\)\) return false/)
+  assert.match(editor, /if \(senderOperation.current \|\| running.current \|\| autosave.isPending\(\)\) return false/)
   assert.match(route, /body.operation === 'autosave'\) await saveCustomerOffer\(ctx, caseId, body, 'autosave', target\)/)
 })
 

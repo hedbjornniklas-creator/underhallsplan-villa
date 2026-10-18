@@ -18,7 +18,7 @@ export function overviewInspection(overrides: Partial<OverviewInspection> = {}):
   }
 }
 
-export function overviewDemoItems() {
+export function overviewDemoItems(changes: Record<string, Partial<OverviewAssignment>> = {}) {
   const assignments = [
     overviewAssignment({ inspection_id: 'inspection-1' }),
     overviewAssignment({ id: 'assignment-2', customer_name: 'Johan Lind', property_address: 'Björkgatan 8',
@@ -42,6 +42,6 @@ export function overviewDemoItems() {
       assignment_number: `2026-0910-${index + 1}`,
     })),
   ]
-  return buildObOverview(assignments, inspections, [{ inspection_id: 'inspection-1', initial_assignment_id: 'assignment-1',
+  return buildObOverview(assignments.map(assignment => ({ ...assignment, ...changes[assignment.id] })), inspections, [{ inspection_id: 'inspection-1', initial_assignment_id: 'assignment-1',
     current_assignment_id: 'assignment-1', needsReview: true, paused: false, reason: 'Inväntar kundens godkännande.' }])
 }

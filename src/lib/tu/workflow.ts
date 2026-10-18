@@ -88,13 +88,12 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
       && locked
     )
 
-  const preparationRequired = source.workflowProfile === 'post_damage_review'
+  const preparationAvailable = source.workflowProfile === 'post_damage_review'
   const preparation = source.preparation
   const preparationRun = preparation?.run ?? null
   const includedControlItems = preparation?.items.filter((item) => item.reviewStatus !== 'rejected').length ?? 0
   let preparationStatus: TuWorkflowStepState = 'not_started'
   let preparationStatusText = 'Lägg till tidigare underlag'
-  let preparationBlockers = 1
   if (preparationRun?.status === 'queued' || preparationRun?.status === 'processing') {
     preparationStatus = 'in_progress'
     preparationStatusText = preparationRun.progressMessage || 'Kontrollinriktningen skapas i bakgrunden'
@@ -109,11 +108,9 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     preparationStatusText = includedControlItems > 0
       ? `${includedControlItems} områden föreslagna · godkänn inriktningen`
       : 'Välj minst ett uppmärksamhetsområde'
-    preparationBlockers = 1
   } else if (preparation?.case.status === 'plan_approved') {
     preparationStatus = 'complete'
     preparationStatusText = `${preparation.items.filter((item) => item.reviewStatus === 'accepted').length} uppmärksamhetsområden`
-    preparationBlockers = 0
   } else if ((preparation?.readableSourceDocumentCount ?? 0) > 0) {
     preparationStatus = 'in_progress'
     preparationStatusText = `${preparation?.readableSourceDocumentCount ?? 0} underlag redo för analys`
@@ -194,35 +191,27 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   }
 
   let reportStatus: TuWorkflowStepState = 'not_started'
-  let reportStatusText = 'Väntar på godkänd bedömning'
-  let reportBlockers = workflow?.status === 'analysis_approved' ? 0 : 1
-  if (analysisStale && source.reportFilledSectionCount > 0) {
+  let reportStatusText = 'Skriv eller granska utlåtandet'
+  let reportBlockers = 0
+  if (workflow?.analysisStaleAt && source.reportFilledSectionCount > 0) {
     reportStatus = 'needs_attention'
     reportStatusText = 'Underlaget ändrades · kontrollera utlåtandet'
     reportBlockers = 1
-  } else if (reportProcessing) {
-    reportStatus = 'in_progress'
-    reportStatusText = reportRun?.progressMessage || 'Utlåtandeförslag skapas i bakgrunden'
-    reportBlockers = 0
-  } else if (reportFailed) {
-    reportStatus = 'needs_attention'
-    reportStatusText = 'Utlåtandeförslaget kunde inte skapas'
-    reportBlockers = 1
-  } else if (reportRun?.status === 'completed' && !reportApplied) {
-    reportStatus = 'needs_attention'
-    reportStatusText = 'Förslaget är klart för granskning'
-    reportBlockers = source.reportDraft?.sections.filter((section) => section.status === 'pending').length ?? 1
-  } else if (
-    workflow?.status === 'analysis_approved'
-    && (reportApplied || source.reportFilledSectionCount > 0)
-  ) {
+  } else if (source.reportFilledSectionCount > 0) {
     reportStatus = 'in_progress'
     reportStatusText = `${source.reportFilledSectionCount} av ${source.reportSectionCount} delar har text`
-    reportBlockers = 0
     if (source.reportSectionCount > 0 && source.reportFilledSectionCount >= source.reportSectionCount) {
       reportStatus = 'complete'
       reportStatusText = 'Utlåtandet är klart för slutgranskning'
     }
+  } else if (reportProcessing) {
+    reportStatus = 'in_progress'
+    reportStatusText = reportRun?.progressMessage || 'Utlåtandeförslag skapas i bakgrunden'
+    reportBlockers = 0
+  } else if (reportRun?.status === 'completed' && !reportApplied) {
+    reportStatus = 'needs_attention'
+    reportStatusText = 'Förslaget är klart för granskning'
+    reportBlockers = source.reportDraft?.sections.filter((section) => section.status === 'pending').length ?? 1
   }
 
   let deliveryStatus: TuWorkflowStepState = 'not_started'
@@ -240,15 +229,15 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
   }
 
   const steps: Array<Omit<TuWorkflowStep, 'number'>> = []
-  if (preparationRequired) {
+  if (preparationAvailable) {
     steps.push({
       id: 'preparation',
       title: 'Förbered kontrollen',
       shortTitle: 'Förbered',
       description: 'Underlag och kontrollinriktning',
       status: preparationStatus,
-      statusText: preparationStatusText,
-      blockerCount: preparationBlockers,
+      statusText: `Valfritt · ${preparationStatusText}`,
+      blockerCount: 0,
     })
   }
   steps.push(
@@ -272,11 +261,11 @@ export function deriveTuWorkflowSteps(source: TuWorkflowSource): TuWorkflowStep[
     },
     {
       id: 'assessment',
-      title: 'Skapa utlåtandet',
-      shortTitle: 'Skapa',
-      description: 'Samlad analys och sammanhållet textförslag',
+      title: 'Skapa med AI',
+      shortTitle: 'AI (valfritt)',
+      description: 'Valfritt textförslag',
       status: assessmentStatus,
-      statusText: assessmentStatusText,
+      statusText: `Valfritt · ${assessmentStatusText}`,
       blockerCount: assessmentBlockers,
     },
     {

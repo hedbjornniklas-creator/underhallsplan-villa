@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url)
 const root = resolve(import.meta.dirname, '..')
 type Row = Record<string, any>
 
-function harness(options: { side?: string; locked?: boolean; accessError?: string; failureTable?: string } = {}) {
+function harness(options: { side?: string; locked?: boolean; accessError?: string; failureTable?: string; canEdit?: boolean } = {}) {
   const side = options.side ?? 'apartment'
   const frozenProfile = { full_name: 'Original inspector', company_name: 'Original company', company_website: '' }
   const frozenCompany = { logo_url: 'original-logo.png' }
@@ -19,7 +19,7 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
     inspections: [{ id: 'inspection', property_id: 'property', inspection_side: side,
       inspection_variant: 'OB', type: 'OB', date: '2026-10-01',
       locked_at: options.locked ? '2026-10-01T16:38:28Z' : null }],
-    properties: [{ id: 'property', address: 'Test address', brf_name: 'Test association' }],
+    properties: [{ id: 'property', owner: 'inspector', address: 'Test address', brf_name: 'Test association' }],
     assignments: [{ id: 'assignment', inspection_id: 'inspection', org_id: 'org' }],
     inspection_report_links: [{ inspection_id: 'inspection', org_id: 'org', revoked_at: null,
       snapshot_payload: { reportData: { mock: { profile: frozenProfile, company: frozenCompany } } } }],
@@ -31,6 +31,7 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
   const before = structuredClone(rows)
   const queries: string[] = []
   const authorized: unknown[][] = []
+  const clients: string[] = []
   let liveIdentityReads = 0
   let rendered: Row | undefined
   const db = { from(table: string) {
@@ -60,20 +61,27 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
     'server-only': {},
     'next/headers': { cookies: async () => ({ getAll: () => [] }) },
     '../../_components/AutoPrintTrigger': () => null,
-    '../../_components/ReportToolbar': () => createElement('nav', null, 'Report toolbar'),
+    '../../_components/ReportToolbar': (props: Row) => createElement('nav', { 'data-back-href': props.backHref }, 'Report toolbar'),
     '../../_components/SessionBridge': () => createElement('div', null, 'Session bridge'),
     '../../_components/ClientSessionDebug': () => null,
     '@/components/report/ReportRenderer': (props: Row) => {
       rendered = props
       return createElement('article', null, 'Report rendered')
     },
-    '@/lib/supabase/server': { createSupabaseServerClient: () => db },
-    '@/lib/ob/organizationBindings': { requireObInspectionContext: async (...args: unknown[]) => {
+    '@/lib/supabase/server': { createSupabaseServerClient: () => { clients.push('user'); return db } },
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => {
+      assert.equal(authorized.length, 1, 'privileged data reads follow the read guard')
+      clients.push('admin'); return { ...db, storage: { from: () => ({
+        getPublicUrl: (path: string) => ({ data: { publicUrl: `https://storage.example.test/${path}` } }),
+      }) } }
+    } },
+    '@/lib/ob/organizationBindings': { requireObInspectionReadContext: async (...args: unknown[]) => {
       authorized.push(args)
       if (options.accessError) throw Error(options.accessError)
-      return { orgId: 'org', userId: 'inspector' }
+      return { orgId: 'org', userId: options.canEdit === false ? 'viewer' : 'inspector', canEdit: options.canEdit !== false }
     } },
-    '@/lib/organizations/profileCard': { requireConfiguredOrganizationProfileCard: async () => {
+    '@/lib/organizations/profileCard': { requireConfiguredOrganizationProfileCard: async (input: Row) => {
+      assert.equal(input.profileId, 'inspector', 'the saved property owner is the report inspector, never the viewer')
       liveIdentityReads++
       return { orgId: 'org', profileId: 'inspector', displayName: 'Current inspector' }
     } },
@@ -110,9 +118,9 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
     return mod.exports
   }
   const Page = load(resolve(root, 'src/app/utlatande/[propertyId]/[inspectionId]/page.tsx')).default
-  return { rows, before, queries, authorized, get rendered() { return rendered }, get liveIdentityReads() { return liveIdentityReads },
-    async render(embed = true) {
-      return renderToStaticMarkup(await Page({ params: Promise.resolve({ propertyId: 'property', inspectionId: 'inspection' }),
+  return { rows, before, queries, authorized, clients, get rendered() { return rendered }, get liveIdentityReads() { return liveIdentityReads },
+    async render(embed = true, propertyId = 'property') {
+      return renderToStaticMarkup(await Page({ params: Promise.resolve({ propertyId, inspectionId: 'inspection' }),
         searchParams: Promise.resolve({ orgId: 'org', ...(embed ? { embed: '1', pdf: '1' } : {}) }) }))
     } }
 }
@@ -140,6 +148,33 @@ test('standalone preview preserves its toolbar without attempting a second sessi
   assert.match(await harness().render(false), /Report toolbar/)
 })
 
+test('the legacy preview rejects mismatched property URLs and never loads their issuer identity', async () => {
+  const h = harness({ canEdit: false })
+  h.rows.properties.push({ id: 'foreign-property', owner: 'foreign-inspector', address: 'Private foreign property' })
+  await assert.rejects(h.render(false, 'foreign-property'), /OB_ORGANIZATION_FORBIDDEN/)
+  assert.equal(h.liveIdentityReads, 0)
+  assert.equal(h.rendered, undefined)
+})
+
+test('a colleague preview reads through the guarded client, preserves the owner identity and offers no editor link', async () => {
+  const h = harness({ canEdit: false })
+  const html = await h.render(false)
+  assert.match(html, /Report rendered/)
+  assert.equal(h.rendered?.mockData.mock.profile.full_name, 'Current inspector')
+  assert.deepEqual(h.clients, ['admin'])
+  assert.doesNotMatch(html, /data-back-href="\/properties\/property\/ob\/inspection/)
+  assert.deepEqual(h.rows, h.before)
+})
+
+test('a colleague reading a locked preview sees the preserved original inspector without live identity reads', async () => {
+  const h = harness({ canEdit: false, locked: true })
+  assert.match(await h.render(false), /Report rendered/)
+  assert.equal(h.rendered?.mockData.mock.profile.full_name, 'Original inspector')
+  assert.equal(h.rendered?.mockData.mock.profile.company_name, 'Original company')
+  assert.equal(h.liveIdentityReads, 0)
+  assert.deepEqual(h.rows, h.before)
+})
+
 test('diagnostics use the verified user when a supporting query fails', async () => {
   const h = harness({ failureTable: 'inspection_documents' })
   const html = await h.render()
@@ -154,6 +189,7 @@ for (const accessError of ['UNAUTHORIZED', 'OB_ORGANIZATION_MISMATCH', 'OB_ORGAN
     const h = harness({ accessError })
     await assert.rejects(h.render(), new RegExp(accessError))
     assert.deepEqual(h.queries, [])
+    assert.deepEqual(h.clients, [])
     assert.equal(h.rendered, undefined)
   })
 }

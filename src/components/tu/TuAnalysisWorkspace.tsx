@@ -230,12 +230,15 @@ export default function TuAnalysisWorkspace({
             <BrainCircuit size={21} aria-hidden />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-gray-950">Skapa utlåtandet</h2>
+            <h2 className="text-base font-semibold text-gray-950">Skapa med AI <span className="text-sm font-normal text-gray-600">· Valfritt</span></h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
               Hela underlaget analyseras tillsammans. Därefter skrivs alla rapportdelar som en sammanhängande helhet.
             </p>
           </div>
         </div>
+        <button type="button" onClick={onOpenReport} className="inline-flex min-h-11 items-center gap-2 rounded-md border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+          <FileText size={17} aria-hidden />Granska utlåtandet
+        </button>
       </header>
 
       <div className="space-y-5 p-4 sm:p-5">

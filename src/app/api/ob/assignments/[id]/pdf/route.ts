@@ -1,4 +1,4 @@
-import { requireObAssignmentContext } from '@/lib/ob/organizationBindings'
+import { requireObAssignmentReadContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { getAssignmentById } from '@/lib/assignments/server'
@@ -14,7 +14,7 @@ function failure(error: string, status: number) {
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireObAssignmentContext((await context.params).id, obRequestOrgId(request))
+    const org = await requireObAssignmentReadContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
     const assignment = await getAssignmentById(org.orgId, id)
     if (!assignment || !['OB', 'STATUS'].includes(assignment.assignment_type)) return failure('Uppdraget hittades inte.', 404)

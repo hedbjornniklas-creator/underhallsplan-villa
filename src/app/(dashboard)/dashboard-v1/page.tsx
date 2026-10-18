@@ -1,79 +1,26 @@
-import DashboardV1Client, { type ModuleCardData } from './DashboardV1Client'
-import { hasCurrentUserAccess } from '@/lib/access/server'
-import type { PlatformModuleKeyMap } from '@/lib/access/model'
+import type { Metadata } from 'next'
+import { redirect } from 'next/navigation'
+import DashboardV1Client from './DashboardV1Client'
+import { getDashboardData } from '@/lib/dashboard/server'
+import type { DashboardData } from '@/lib/dashboard/model'
 
-const MODULE_CATALOG: Array<
-  Omit<ModuleCardData, 'active'> & {
-    moduleKey: PlatformModuleKeyMap['dashboard']
+export const dynamic = 'force-dynamic'
+export const metadata: Metadata = { title: 'Min arbetsdag', robots: { index: false, follow: false } }
+
+export default async function DashboardV1Page({ searchParams }: { searchParams?: Promise<{ orgId?: string | string[] }> }) {
+  const params = searchParams ? await searchParams : {}
+  let initialData: DashboardData | undefined
+  let initialError: string | null = null
+  try { initialData = await getDashboardData(params.orgId) } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (message === 'UNAUTHORIZED') redirect('/login')
+    initialError = message === 'ORG_SELECTION_INVALID'
+      ? 'Den valda organisationen är ogiltig. Återställ startsidan.'
+      : message === 'DASHBOARD_ORGANIZATION_UNSUPPORTED'
+        ? 'Startsidan visar din standardorganisation. Öppna respektive arbetsområde för att byta organisation.'
+      : ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED', 'PRODUCT_ACCESS_REQUIRED'].includes(message)
+        ? 'Du saknar behörighet till den valda organisationen.'
+        : 'Översikten kunde inte hämtas. Försök igen.'
   }
-> = [
-  {
-    id: 'ob',
-    moduleKey: 'inspections',
-    title: 'Överlåtelsebesiktning',
-    description:
-      'Skapa och hantera överlåtelsebesiktningar med fokus på ett enkelt operativt flöde.',
-    href: '/ob',
-    accentClass: 'from-indigo-500 to-sky-400',
-    badgeClass: 'border-indigo-200 bg-indigo-50 text-indigo-700',
-  },
-  {
-    id: 'eb',
-    moduleKey: 'construction_inspections',
-    title: 'Entreprenadbesiktning',
-    description:
-      'Samla entreprenadobjekt, kallelser och slutbesiktningar i ett grönt BesiktApp-flöde.',
-    href: '/eb',
-    accentClass: 'from-emerald-500 to-lime-400',
-    badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  },
-  {
-    id: 'tu',
-    moduleKey: 'technical_investigations',
-    title: 'Tekniska utredningar',
-    description:
-      'Hantera uppdragsbekräftelser och utlåtanden för tekniska utredningar i ett fristående lila flöde.',
-    href: '/tu',
-    accentClass: 'from-violet-600 to-fuchsia-400',
-    badgeClass: 'border-violet-200 bg-violet-50 text-violet-700',
-  },
-  {
-    id: 'moisture',
-    moduleKey: 'moisture_safety',
-    title: 'Fuktsäkerhet',
-    description:
-      'Samla uppdrag, fastighetsuppgifter och underlag för fuktsäkerhetsarbetet i en gemensam guide.',
-    href: '/fuktsakerhet',
-    accentClass: 'from-cyan-600 to-teal-400',
-    badgeClass: 'border-cyan-200 bg-cyan-50 text-cyan-800',
-  },
-  {
-    id: 'tasks',
-    moduleKey: 'tasks',
-    title: 'Uppdrag',
-    description:
-      'Tilldela, följ upp och kontrollera uppgifter så att ansvar och nästa steg alltid är tydliga.',
-    href: '/uppdrag',
-    accentClass: 'from-amber-500 to-orange-400',
-    badgeClass: 'border-amber-200 bg-amber-50 text-amber-800',
-  },
-]
-
-export default async function DashboardV1Page() {
-  const accessResults = await Promise.all(
-    MODULE_CATALOG.map((module) =>
-      hasCurrentUserAccess({ productKey: 'dashboard', moduleKey: module.moduleKey })
-    )
-  )
-  const modules = MODULE_CATALOG.map((module, index) => ({
-    id: module.id,
-    title: module.title,
-    description: module.description,
-    href: module.href,
-    accentClass: module.accentClass,
-    badgeClass: module.badgeClass,
-    active: Boolean(accessResults[index]),
-  }))
-
-  return <DashboardV1Client modules={modules} />
+  return <DashboardV1Client key={Array.isArray(params.orgId) ? params.orgId.join('|') : params.orgId ?? 'default'} initialData={initialData} initialError={initialError} />
 }

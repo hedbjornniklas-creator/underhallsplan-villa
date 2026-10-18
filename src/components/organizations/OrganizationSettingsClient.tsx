@@ -5,17 +5,18 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Building2, CheckCircle2, ImagePlus, Plug, Save, ShieldCheck, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Building2, CheckCircle2, ImagePlus, Plug, Plus, RefreshCw, Save, UserRound, UserRoundPlus, UsersRound } from 'lucide-react'
 import FortnoxConnectionCard from '@/components/settings/FortnoxConnectionCard'
+import OrganizationSenderProfiles from './OrganizationSenderProfiles'
 import type { OrganizationAdministrationWorkspace, OrganizationProfileValues } from '@/lib/organizations/administrationTypes'
 
 type Role = 'admin' | 'inspector'
 type OrganizationProfile = OrganizationProfileValues
 type OrganizationSettingsWorkspace = OrganizationAdministrationWorkspace
-type Member = { profileId: string; displayName: string | null; email: string | null; role: Role; isActive: boolean; modules: string[] }
+type Member = { profileId: string; displayName: string | null; email: string | null; role: Role; isActive: boolean; modules: string[]; obVisibility?: { canViewColleagues: boolean; revision: number; canEnable: boolean } }
 type Invitation = { id: string; email: string; fullName: string; role: Role; modules: string[]; status: 'pending' | 'accepted' | 'revoked'; expiresAt: string; revision: number; notificationState: string }
-type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[] }
-type Tab = 'organization' | 'members' | 'integrations'
+type MembersPayload = { members: Member[]; invitations: Invitation[]; enabledModules: string[]; obVisibilityMigrationRequired?: boolean }
+type Tab = 'organization' | 'sender-profiles' | 'members' | 'integrations'
 const WORK_MODULES = [
   { key: 'inspections', label: 'ÖB – överlåtelsebesiktning' },
   { key: 'technical_investigations', label: 'TU – teknisk utredning' },
@@ -115,23 +116,15 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
 
   return (
     <div className="space-y-5">
-      <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="rounded-xl bg-indigo-50 p-3 text-indigo-600"><Building2 size={24} aria-hidden /></span>
-            <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Aktiv arbetsorganisation</p><h1 className="mt-1 break-words text-2xl font-semibold tracking-tight text-slate-950">{workspace.organization.name}</h1></div>
-          </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700"><ShieldCheck size={14} aria-hidden />{roleLabel(workspace.role)}</span>
-        </div>
-        <p className="mt-4 text-sm leading-6 text-slate-600">Företagets gemensamma uppgifter, medlemmar och anslutningar finns här. Du hittar dina egna kontaktuppgifter, profilbild och underskrift under Min profil.</p>
-      </header>
+      <h1 className="sr-only">Organisationsinställningar för {workspace.organization.name}</h1>
 
       <nav aria-label="Organisationsinställningar" className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        {([{ id: 'organization', label: 'Organisation', icon: Building2 }, ...(isAdmin ? [{ id: 'members', label: 'Medlemmar', icon: UsersRound }] : []), { id: 'integrations', label: 'Integrationer', icon: Plug }] as const).map(item => {
+        {([{ id: 'organization', label: 'Organisation', icon: Building2 }, { id: 'sender-profiles', label: 'Avsändarprofiler', icon: ImagePlus }, ...(isAdmin ? [{ id: 'members', label: 'Medlemmar', icon: UsersRound }] : []), { id: 'integrations', label: 'Integrationer', icon: Plug }] as const).map(item => {
           const Icon = item.icon
           return <button key={item.id} type="button" aria-current={tab === item.id ? 'page' : undefined} onClick={() => { if (item.id !== tab && canNavigate()) setTab(item.id as Tab) }} className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${tab === item.id ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}><Icon size={17} aria-hidden />{item.label}</button>
         })}
         <Link href={`/settings/profil?orgId=${encodeURIComponent(orgId)}`} onClick={event => { if (!canNavigate()) event.preventDefault() }} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><UserRound size={17} aria-hidden />Min profil</Link>
+        <Link href={`/settings/kunder?orgId=${encodeURIComponent(orgId)}`} onClick={event => { if (!canNavigate()) event.preventDefault() }} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"><UsersRound size={17} aria-hidden />Kundregister</Link>
       </nav>
 
       {workspace.migrationRequired && <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Organisationsinställningarna förbereds. Du kan läsa uppgifterna, men ändringar och inbjudningar är tillfälligt avstängda.</p>}
@@ -152,6 +145,8 @@ export default function OrganizationSettingsClient({ initialWorkspace, initialTa
         {notice && <p role="status" className="mt-5 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={17} aria-hidden />{notice}</p>}
         {isAdmin && <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5"><p className="text-sm text-slate-500">{dirty ? 'Du har osparade ändringar.' : workspace.organization.configured ? 'Alla ändringar är sparade.' : 'Kontrollera uppgifterna och spara organisationsprofilen.'}</p><button type="submit" className={primaryClass} disabled={!canEdit || (!dirty && workspace.organization.configured) || Boolean(busy) || !form.name.trim()}><Save size={17} aria-hidden />{busy === 'save' ? 'Sparar…' : 'Spara företagsuppgifter'}</button></div>}
       </form>}
+      {tab === 'organization' && <div className="flex flex-wrap items-center justify-between gap-3 px-1"><p className="text-sm text-slate-600">Vill du lägga till ett annat företag på ditt konto?</p><Link href="/settings/organisation/skapa" onClick={event => { if (!canNavigate()) event.preventDefault() }} className={secondaryClass}><Plus size={16} aria-hidden />Skapa organisation</Link></div>}
+      {tab === 'sender-profiles' && <OrganizationSenderProfiles key={orgId} orgId={orgId} />}
       {tab === 'members' && isAdmin && <OrganizationMembers key={orgId} orgId={orgId} viewerProfileId={workspace.profileId} disabled={workspace.migrationRequired} />}
       {tab === 'integrations' && (isAdmin ? <FortnoxConnectionCard preferredOrgId={orgId} externalNavigationBlocked={dirty || Boolean(busy) || workspace.migrationRequired} /> : <section className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600"><h2 className="mb-2 text-lg font-semibold text-slate-950">Integrationer</h2>Organisationens administratör hanterar Fortnox och andra anslutningar.</section>)}
     </div>
@@ -170,17 +165,53 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
   const [selectedModules, setSelectedModules] = useState<string[]>(['technical_investigations'])
   const requestId = useRef<string | null>(null)
   const inFlight = useRef(false)
+  const refreshingRef = useRef(false)
+  const refreshGeneration = useRef(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const [hasDirtyMembers, setHasDirtyMembers] = useState(false)
+  const dirtyMembers = useRef(new Set<string>())
+  const editingRef = useRef(false)
+  editingRef.current = Boolean(fullName || email || busy)
+  const onDirtyChange = useCallback((profileId: string, dirty: boolean) => {
+    if (dirty) dirtyMembers.current.add(profileId)
+    else dirtyMembers.current.delete(profileId)
+    setHasDirtyMembers(dirtyMembers.current.size > 0)
+  }, [])
   useUnsavedChanges(Boolean(fullName || email), busy)
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    const result = await requestJson<MembersPayload>(`/api/organizations/members?orgId=${encodeURIComponent(orgId)}`, { signal })
-    if (!Array.isArray(result.members) || !Array.isArray(result.invitations) || !Array.isArray(result.enabledModules)) throw new Error('Medlemslistan kunde inte läsas.')
-    setData(result)
+  const refresh = useCallback(async (signal?: AbortSignal, force = false) => {
+    if (refreshingRef.current && !signal && !force) return
+    const generation = ++refreshGeneration.current
+    refreshingRef.current = true; setRefreshing(true)
+    try {
+      const result = await requestJson<MembersPayload>(`/api/organizations/members?orgId=${encodeURIComponent(orgId)}`, { signal })
+      if (!Array.isArray(result.members) || !Array.isArray(result.invitations) || !Array.isArray(result.enabledModules)) throw new Error('Medlemslistan kunde inte läsas.')
+      if (signal?.aborted || generation !== refreshGeneration.current) return
+      setData(current => {
+        if (!current) return result
+        // Keep edited rows mounted even if an earlier background request finishes now.
+        const previous = new Map(current.members.map(member => [member.profileId, member]))
+        const members = result.members.map(member => dirtyMembers.current.has(member.profileId)
+          ? previous.get(member.profileId) ?? member : member)
+        for (const member of current.members) if (dirtyMembers.current.has(member.profileId) &&
+          !members.some(row => row.profileId === member.profileId)) members.push(member)
+        return { ...result, members }
+      })
+    } finally { if (generation === refreshGeneration.current) { refreshingRef.current = false; setRefreshing(false) } }
   }, [orgId])
   useEffect(() => {
     if (disabled) { setLoading(false); return }
     const controller = new AbortController()
     void refresh(controller.signal).catch(failure => { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : 'Kunde inte läsa medlemmar.') }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
+  }, [disabled, refresh])
+  useEffect(() => {
+    const update = () => {
+      if (disabled || document.visibilityState !== 'visible' || editingRef.current || dirtyMembers.current.size) return
+      void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte uppdatera medlemslistan.'))
+    }
+    window.addEventListener('focus', update)
+    document.addEventListener('visibilitychange', update)
+    return () => { window.removeEventListener('focus', update); document.removeEventListener('visibilitychange', update) }
   }, [disabled, refresh])
   async function action(body: Record<string, unknown>) {
     if (inFlight.current || disabled) return
@@ -189,7 +220,7 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
       const result = await requestJson<{ message: string }>('/api/organizations/invitations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, ...body }) })
       setNotice(result.message)
       if (body.action === 'create') { setFullName(''); setEmail(''); setRole('inspector'); setSelectedModules(['technical_investigations']); requestId.current = null }
-      await refresh()
+      await refresh(undefined, true)
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Inbjudan kunde inte sparas.') }
     finally { inFlight.current = false; setBusy(false) }
   }
@@ -218,20 +249,39 @@ function OrganizationMembers({ orgId, viewerProfileId, disabled }: { orgId: stri
     </section>
     {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" className="mt-2 underline" disabled={busy || disabled} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte läsa listan.')) }}>Hämta aktuell medlemslista</button></div>}
     {notice && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold text-slate-950">Medlemmar {data && <span className="ml-1 text-sm font-normal text-slate-500">({data.members.length})</span>}</h2><p className="mt-1 text-sm leading-6 text-slate-600">När en medlem avaktiveras sparas tidigare uppdrag och dokument. Organisationen måste ha minst en aktiv administratör.</p>{loading && <p role="status" className="mt-4 text-sm text-slate-500">Laddar medlemmar…</p>}<div className="mt-5 space-y-3">{data?.members.map(member => <MemberEditor key={`${member.profileId}:${JSON.stringify(member)}`} member={member} orgId={orgId} isSelf={member.profileId === viewerProfileId} disabled={disabled || busy} enabledModules={data.enabledModules} onSaved={refresh} />)}</div></section>
+    {data?.obVisibilityMigrationRequired && <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">Databasstödet för ÖB-läsbehörighet behöver installeras innan du kan ändra det. Övrig medlemshantering fungerar som tidigare.</p>}
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-950">Medlemmar {data && <span className="ml-1 text-sm font-normal text-slate-500">({data.members.length})</span>}</h2>
+        <button type="button" aria-label="Uppdatera medlemslistan" title="Uppdatera medlemslistan" className={secondaryClass} disabled={disabled || busy || refreshing || hasDirtyMembers || Boolean(fullName || email)} onClick={() => { setError(''); void refresh().catch(failure => setError(failure instanceof Error ? failure.message : 'Kunde inte uppdatera medlemslistan.')) }}><RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} aria-hidden /></button>
+      </div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">När en medlem avaktiveras sparas tidigare uppdrag och dokument. Organisationen måste ha minst en aktiv administratör.</p>
+      {loading && <p role="status" className="mt-4 text-sm text-slate-500">Laddar medlemmar…</p>}
+      <div className="mt-5 space-y-3">{data?.members.map(member => <MemberEditor key={`${member.profileId}:${JSON.stringify(member)}`} member={member} orgId={orgId} isSelf={member.profileId === viewerProfileId} disabled={disabled || busy} enabledModules={data.enabledModules} onSaved={() => refresh(undefined, true)} onDirtyChange={onDirtyChange} />)}</div>
+    </section>
     {pending.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"><h2 className="text-lg font-semibold text-slate-950">Väntande inbjudningar</h2><div className="mt-4 divide-y divide-slate-100">{pending.map(invitation => <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 py-4"><div className="min-w-0"><p className="break-words font-medium text-slate-900">{invitation.fullName}</p><p className="break-all text-sm text-slate-600">{invitation.email}</p><p className="mt-1 text-xs text-slate-500">{roleLabel(invitation.role)} · {invitation.modules.map(moduleLabel).join(', ')} · Giltig till {new Date(invitation.expiresAt).toLocaleDateString('sv-SE')}</p>{invitation.notificationState === 'failed' && <p className="mt-1 text-xs text-amber-800">Mejlet kunde inte bekräftas. Skicka en ny länk.</p>}</div><div className="flex flex-wrap gap-2"><button type="button" className={secondaryClass} disabled={disabled || busy} onClick={() => void action({ action: 'resend', id: invitation.id, revision: invitation.revision })}>Skicka ny länk</button><button type="button" className="rounded-xl px-3 py-2 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50" disabled={disabled || busy} onClick={() => void action({ action: 'revoke', id: invitation.id, revision: invitation.revision })}>Återkalla</button></div></div>)}</div></section>}
   </div>
 }
 
-export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void> }) {
+export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, onSaved, onDirtyChange }: { member: Member; orgId: string; isSelf: boolean; enabledModules: string[]; disabled: boolean; onSaved: () => Promise<void>; onDirtyChange?: (profileId: string, dirty: boolean) => void }) {
   const router = useRouter()
   const [role, setRole] = useState(member.role)
   const [isActive, setActive] = useState(member.isActive)
   const [modules, setModules] = useState(member.isActive ? member.modules : [])
+  const visibilityDirty = useRef(false)
+  const memberDirty = useRef(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const inFlight = useRef(false)
   const dirty = role !== member.role || isActive !== member.isActive || JSON.stringify(modules) !== JSON.stringify(member.modules)
+  memberDirty.current = dirty || busy
+  const onVisibilityDirtyChange = useCallback((value: boolean) => {
+    visibilityDirty.current = value
+    onDirtyChange?.(member.profileId, memberDirty.current || value)
+  }, [onDirtyChange, member.profileId])
+  useEffect(() => {
+    onDirtyChange?.(member.profileId, dirty || busy || visibilityDirty.current)
+    return () => onDirtyChange?.(member.profileId, false)
+  }, [onDirtyChange, member.profileId, dirty, busy])
   useUnsavedChanges(dirty, busy)
   async function save(event: FormEvent) {
     event.preventDefault()
@@ -239,13 +289,14 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
     inFlight.current = true; setBusy(true); setError('')
     try {
       await requestJson('/api/organizations/members', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orgId, moduleSetVersion: 2, profileId: member.profileId, role, isActive, modules: isActive ? modules.filter(key => WORK_MODULES.some(module => module.key === key)) : [] }) })
+      onDirtyChange?.(member.profileId, false)
       if (isSelf && (role !== member.role || isActive !== member.isActive)) { router.refresh(); return }
       await onSaved()
-    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Medlemmen kunde inte uppdateras.') }
+    } catch (failure) { onDirtyChange?.(member.profileId, dirty); setError(failure instanceof Error ? failure.message : 'Medlemmen kunde inte uppdateras.') }
     finally { inFlight.current = false; setBusy(false) }
   }
   const otherModules = member.modules.filter(key => !WORK_MODULES.some(module => module.key === key))
-  return <form onSubmit={save} className="rounded-xl border border-slate-200 p-4">
+  return <div className="rounded-xl border border-slate-200 p-4"><form onSubmit={save}>
     <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><h3 className="break-words font-semibold text-slate-900">{member.displayName || member.email || 'Medlem'}</h3><p className="break-all text-sm text-slate-500">{member.email}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${member.isActive ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{member.isActive ? 'Aktiv' : 'Avaktiverad'}</span></div>
     <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium text-slate-600">Roll för {member.displayName || member.email}<select value={role} onChange={event => setRole(event.target.value as Role)} disabled={disabled || busy} className={inputClass}><option value="inspector">Medlem / besiktningsman</option><option value="admin">Organisationsadministratör</option></select></label><label className="text-xs font-medium text-slate-600">Medlemskap<select value={isActive ? 'active' : 'inactive'} onChange={event => { const active = event.target.value === 'active'; setActive(active); if (!active) setModules([]) }} disabled={disabled || busy} className={inputClass}><option value="active">Aktivt</option><option value="inactive">Avaktiverat</option></select></label></div>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><fieldset className="flex flex-wrap gap-4"><legend className="mb-2 text-xs font-medium text-slate-600">Arbetsområden i den här organisationen</legend>{WORK_MODULES.map(module => <label key={module.key} className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={modules.includes(module.key)} disabled={disabled || busy || !isActive || (!enabledModules.includes(module.key) && !modules.includes(module.key))} onChange={event => setModules(current => event.target.checked ? [...current.filter(key => key !== module.key), module.key] : current.filter(key => key !== module.key))} />{moduleLabel(module.key)}</label>)}</fieldset><button type="submit" className={secondaryClass} disabled={!dirty || disabled || busy}>{busy ? 'Sparar…' : 'Spara medlem'}</button></div>
@@ -253,4 +304,59 @@ export function MemberEditor({ member, orgId, isSelf, enabledModules, disabled, 
     {otherModules.length > 0 && <p className="mt-2 text-xs text-slate-500">Övriga befintliga arbetsområden: {otherModules.map(moduleLabel).join(', ')}</p>}
     {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
   </form>
+    <ObVisibilityEditor key={`${member.profileId}:${JSON.stringify(member.obVisibility)}`} member={member} orgId={orgId}
+      disabled={disabled || busy || dirty || !member.obVisibility} onSaved={onSaved} onDirtyChange={onVisibilityDirtyChange} />
+  </div>
+}
+
+export function ObVisibilityEditor({ member, orgId, disabled, onSaved, onDirtyChange }: {
+  member: Member; orgId: string; disabled: boolean; onSaved: () => Promise<void>; onDirtyChange?: (dirty: boolean) => void
+}) {
+  const [selected, setSelected] = useState(member.obVisibility?.canViewColleagues === true)
+  const [saved, setSaved] = useState(member.obVisibility?.canViewColleagues === true)
+  const [revision, setRevision] = useState(member.obVisibility?.revision ?? 0)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const inFlight = useRef(false)
+  const dirty = selected !== saved
+  useEffect(() => {
+    onDirtyChange?.(dirty || busy)
+    return () => onDirtyChange?.(false)
+  }, [onDirtyChange, dirty, busy])
+  useUnsavedChanges(dirty, busy)
+  const canEnable = member.isActive && member.obVisibility?.canEnable === true
+  async function save() {
+    if (disabled || inFlight.current || !dirty || (selected && !canEnable)) return
+    inFlight.current = true; setBusy(true); setError(''); setMessage('')
+    try {
+      const result = await requestJson<{ saved: boolean; canViewColleagues: boolean; revision: number }>('/api/organizations/members/ob-visibility', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId, profileId: member.profileId, canViewColleagues: selected, revision }),
+      })
+      if (result.saved !== true || result.canViewColleagues !== selected || !Number.isInteger(result.revision)) throw new Error('Läsbehörigheten kunde inte bekräftas. Ladda om sidan.')
+      setSaved(result.canViewColleagues); setRevision(result.revision)
+      onDirtyChange?.(false)
+      setMessage('Läsbehörigheten är sparad.')
+      await onSaved()
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Läsbehörigheten kunde inte sparas.') }
+    finally { inFlight.current = false; setBusy(false) }
+  }
+  return <section className="mt-4 border-t border-slate-100 pt-4" aria-label={`ÖB-läsbehörighet för ${member.displayName || member.email || 'medlem'}`}>
+    <label className="flex items-start gap-2 text-sm font-medium text-slate-800">
+      <input type="checkbox" className="mt-0.5 h-4 w-4 accent-indigo-600" checked={selected}
+        disabled={disabled || busy || (!canEnable && !selected)} onChange={event => {
+          onDirtyChange?.(event.target.checked !== saved || busy)
+          setSelected(event.target.checked); setMessage('')
+        }} />
+      Se kollegornas ÖB-uppdrag
+    </label>
+    <p className="mt-1 text-xs leading-5 text-slate-600">Läs uppdragsbekräftelser och utlåtanden inom den här organisationen. Ger inte rätt att ändra, skicka eller ta över kollegans uppdrag. Avstängt innebär endast egna ÖB-uppdrag. Kundregistret påverkas inte.</p>
+    {!canEnable && <p className="mt-1 text-xs text-slate-500">Medlemmen behöver ett aktivt medlemskap och arbetsområdet ÖB för att få läsbehörighet.</p>}
+    <button type="button" className={`${secondaryClass} mt-3`} disabled={disabled || busy || !dirty || (selected && !canEnable)} onClick={() => void save()}>
+      {busy ? 'Sparar läsbehörighet…' : 'Spara läsbehörighet'}
+    </button>
+    {message && <p role="status" className="mt-2 text-sm text-emerald-800">{message}</p>}
+    {error && <p role="alert" className="mt-2 text-sm text-rose-800">{error}</p>}
+  </section>
 }

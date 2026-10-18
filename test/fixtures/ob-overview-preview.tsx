@@ -7,6 +7,7 @@ import ActiveOrganizationSwitcher from '../../src/components/organizations/Activ
 import OrganizationContextProvider from '../../src/components/organizations/OrganizationContextProvider'
 import { overviewDemoItems } from './ob-overview-data'
 import { selectObOverview, type OverviewFilter, type OverviewSort } from '../../src/lib/ob/overview'
+import type { OverviewAssignment } from '../../src/lib/ob/overview'
 
 declare global {
   interface Window {
@@ -14,6 +15,8 @@ declare global {
   }
 }
 const state = new URL(location.href).searchParams.get('state')
+const assignmentChanges: Record<string, Partial<OverviewAssignment>> = {}
+Object.assign(window, { overviewMutationQa: { requests: [], fail: false, delay: 0 } })
 window.__obOverviewTest = { fail: state === 'error', empty: state === 'empty', delay: 0, reads: 0, writes: 0, urls: [], pageLengths: [], clockOffset: 0, contextReads: 0 }
 const realNow = Date.now
 Date.now = () => realNow() + window.__obOverviewTest.clockOffset
@@ -49,6 +52,16 @@ window.fetch = async (input, init) => {
     return Response.json(homeTest.quickStatus === 200 ? { ok: true } :
       { error: 'Syntetiskt utskicksfel', acceptUrl: '/synthetic-customer-link' }, { status: homeTest.quickStatus })
   }
+  const assignmentMatch = requestUrl.pathname.match(/^\/api\/ob\/assignments\/([^/]+)$/)
+  if (assignmentMatch && init?.method === 'PATCH' && new URLSearchParams(location.search).has('manage')) {
+    const qa = (window as unknown as { overviewMutationQa: { requests: unknown[]; fail: boolean; delay: number } }).overviewMutationQa
+    const body = JSON.parse(String(init.body))
+    qa.requests.push({ url: String(input), body })
+    await new Promise(resolve => setTimeout(resolve, qa.delay))
+    if (qa.fail) return Response.json({ error: 'Syntetiskt fel. Inget ändrades.' }, { status: 503 })
+    assignmentChanges[assignmentMatch[1]] = { ...assignmentChanges[assignmentMatch[1]], ...body }
+    return Response.json({ assignment: { id: assignmentMatch[1], ...body } })
+  }
   if ((init?.method ?? 'GET') !== 'GET') {
     window.__obOverviewTest.writes++
     throw Error('This preview does not send or save anything')
@@ -59,7 +72,7 @@ window.fetch = async (input, init) => {
   window.__obOverviewTest.urls.push(url.search)
   const responseState = { ...window.__obOverviewTest }
   await new Promise(resolve => setTimeout(resolve, responseState.delay))
-  const items = selectedOrganization.id === organizations[0].id ? overviewDemoItems() : overviewDemoItems().slice(0, 1).map(item => ({ ...item, id: 'inspection:other-org', address: 'Hushub 1:s testuppdrag', customer: 'Testkund i Hushub 1' }))
+  const items = selectedOrganization.id === organizations[0].id ? overviewDemoItems(assignmentChanges) : overviewDemoItems().slice(0, 1).map(item => ({ ...item, id: 'inspection:other-org', address: 'Hushub 1:s testuppdrag', customer: 'Testkund i Hushub 1' }))
   items.filter(item => item.inspection === 'Klar').forEach(item => {
     item.pdfHref = `/api/report-v2/${item.id.replace('inspection:', '')}/pdf`
   })
@@ -98,7 +111,7 @@ function SyntheticMutationReceipt() {
     window.addEventListener('popstate', clear)
     return () => { window.removeEventListener('ob-preview-created', onCreated); window.removeEventListener('popstate', clear) }
   }, [])
-  return created ? <aside role="status" className="mx-4 mt-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-950">
+  return created ? <aside role="status" style={{ overflowWrap: 'anywhere' }} className="mx-4 mt-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-950">
     <strong>Syntetisk besiktning skapad för {created.name}</strong>
     <p>Organisation i skapandebegäran: {created.id}</p>
     <p>Endast testdata i webbfönstret. Ingen riktig besiktning, kund eller faktura har skapats.</p>

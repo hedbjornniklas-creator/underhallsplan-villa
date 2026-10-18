@@ -9,6 +9,35 @@
 - Corrections require a new confirmation, not editing the accepted document.
   This initial implementation has one acceptance document per assignment.
 
+## Editing lock correction, prepared 2026-10-15
+
+The details form and OB PATCH endpoint now share one rule: only an unarchived
+`draft` without `last_sent_at`, `accepted_at` or `booked_at` is editable. Conversion
+to `completed`, cancellation, expiry or unlocking the inspection never unlocks
+the confirmation. A replacement draft for an early-start inspection may retain
+`inspection_id` and `converted_at`; these links do not make a new draft historical.
+
+Content updates recheck the draft/issue markers in the database UPDATE itself,
+so a stale tab cannot overwrite a draft issued by another tab. A conflict reloads
+the saved data and disables further autosave. Booking, cancellation and archive
+operations stay separate from content changes and do not normalize old fields.
+Existing reissue remains limited to its supported sent/ordered/booked states;
+completed and other historical documents offer a new-confirmation link instead.
+
+Apply `docs/db/2026-10-15_01_ob_approved_assignment_content_lock.sql` before
+production rollout. It installs an additional database guard for approved OB and
+STATUS contents, including an acceptance-evidence check if old row markers are
+inconsistent. It allows first customer acceptance, booking, conversion, reissue
+and archive operations. It does not update/backfill old rows or regenerate files.
+The public acceptance handler no longer performs its old post-acceptance field
+sync for OB/STATUS: contents must be committed in the acceptance transaction,
+before snapshot capture. TU/EB compatibility behavior is unchanged.
+
+On 2026-10-15 the user confirmed applying this SQL and authorized publication.
+The release also integrates the existing production colleague-read permission:
+read-only colleagues cannot edit even an unissued draft. Publication verification
+is recorded separately in `OB_RELEASE_2026-10-15.md`.
+
 ## Published, activation setting confirmed
 
 The code was published on 2026-09-24 as `a6b5ce9`. Production deployment
@@ -90,7 +119,8 @@ new snapshot version rather than silently changing that renderer.
 3. Deploy the application code to staging, then enable the flag there. Run a
    synthetic new acceptance and verify one snapshot, one original PDF, and that
    the email attachment and download SHA-256 are identical.
-4. Change synthetic current assignment/profile data: approved terms and the
+4. Attempt to change synthetic approved assignment contents: the database guard
+   must reject it. Change synthetic current profile data: approved terms and the
    downloaded PDF must remain unchanged. Verify an old acceptance creates no
    new snapshot/PDF, and another organization's account cannot read the archive.
 5. Exercise renderer/archive/mail failure recovery and manual retry. Verify the
@@ -106,6 +136,22 @@ archive tables or restore an older database over archived documents as rollback.
 
 ## Verification
 
+- The 2026-10-15 lock correction passed 185 focused/regression tests covering
+  OB/STATUS approval, booking, early start/reissue, archives, terms/PDF originals,
+  organization boundaries and unchanged TU behavior. The new tests are
+  `ob-assignment-edit-lock.test.ts` and `ob-approved-assignment-content-sql.test.ts`;
+  the OB status PATCH and public acceptance suites also cover this correction.
+  The SQL suite executes the real token consumer, snapshot capture, conversion
+  and early-start reissue routines with the new guard installed.
+- `node scripts/preview-assignment-link-recovery.mjs --test-form-layout` passed
+  at 320/390/768/1024/1280/1920, including disabled historical forms, no edits on
+  mobile/desktop, ordinary draft autosave and concurrent issue conflicts without
+  an autosave retry loop. Accepted-terms/PDF browser verification also passed.
+  Desktop/mobile screenshots were visually inspected. All browser data is synthetic.
+- Full `tsc --noEmit --incremental false` and the isolated Next production build
+  passed using staging configuration only. Four changed source modules pass
+  ESLint; the shared assignment server retains exactly its eight pre-existing
+  `no-explicit-any` findings, with no new findings introduced.
 - `node --experimental-strip-types --test test/assignment-pdf-archive.test.ts test/ob-confirmation-snapshot.test.ts test/ob-accepted-assignment-terms.test.ts test/assignment-public-link.test.ts`
 - PGlite executes the actual migration twice and checks no backfill, atomic
   snapshot validation, addon capture, immutable rows, grants/RLS and deletion

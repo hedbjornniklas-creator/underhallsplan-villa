@@ -14,7 +14,8 @@ export function obApiDomainBoundary(name: string, dependencies: Record<string, u
       if (!server?.requireOrgContext) throw new Error('Missing organization fixture')
       return server.requireOrgContext()
     }
-    return { requireObContext: context, requireObAssignmentContext: context, requireObInspectionContext: context }
+    return { requireObContext: context, requireObAssignmentContext: context, requireObInspectionContext: context,
+      requireObAssignmentReadContext: context, requireObInspectionReadContext: context }
   }
   if (name === '@/lib/ob/organizationHttp') {
     return { obRequestOrgId: () => undefined, obOrganizationFailure: () => null }

@@ -303,5 +303,31 @@ test('real SQL: ÖB organization invitations, module administration and two-orga
       assert.deepEqual(checks.filter(row=>row.ok!==true),[])
       assert.deepEqual(await snapshot(),before)
     })
+    await t.test('identity repair migration is repeatable and only fills empty fields when a new invitation is accepted', async () => {
+      const repair = sql('2026-10-14_01_organization_invitation_profile_identity.sql')
+      const before = await snapshot()
+      await db.exec(repair)
+      await db.exec(repair)
+      assert.deepEqual(await snapshot(), before, 'Installation cannot backfill any existing business row')
+      const newAdmin = await person(db)
+      const freshOrg = orgId(await create(db, operator, newAdmin))
+      for (const empty of [true, false]) {
+        const colleague = await person(db)
+        await db.query('update profiles set full_name=$2,email=$3 where id=$1', [colleague,
+          empty ? '   ' : '  Preserve exact personal name  ', empty ? null : 'unchanged-contact@example.test'])
+        const values = inviteValues(email(colleague))
+        await invite(db, newAdmin, freshOrg, values)
+        await accept(db, colleague, values.tokenHash)
+        const row = (await db.query('select full_name,email from profiles where id=$1', [colleague])).rows[0]
+        assert.deepEqual(row, { full_name: empty ? values.fullName : '  Preserve exact personal name  ',
+          email: empty ? values.email : 'unchanged-contact@example.test' })
+        const accepted = await snapshot()
+        await accept(db, colleague, values.tokenHash)
+        assert.deepEqual(await snapshot(), accepted, 'Repeated acceptance cannot alter identity or permissions')
+      }
+      for (const role of ['anon', 'authenticated'] as const) await asRole(db, role, async () => {
+        await assert.rejects(accept(db, newAdmin, token()), /permission denied/)
+      })
+    })
   } finally { await db.close() }
 })

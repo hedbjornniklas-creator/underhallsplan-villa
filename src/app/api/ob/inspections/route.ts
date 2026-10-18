@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     })
     checkRpcError(error)
     if (!Array.isArray(data) || data.some(row => !row || !isOrganizationUuid(row.id) || !isOrganizationUuid(row.property_id) ||
-      (propertyId !== undefined && row.property_id !== propertyId) || typeof row.hasReadyPdf !== 'boolean') ||
+      (propertyId !== undefined && row.property_id !== propertyId) || typeof row.hasReadyPdf !== 'boolean' || typeof row.canEdit !== 'boolean') ||
       new Set(data.map(row => row.id)).size !== data.length) throw new Error('OB_ORGANIZATION_READ_FAILED')
     return Response.json({ inspections: data, orgId: context.orgId }, { headers: ORGANIZATION_RESPONSE_HEADERS })
   } catch (error) { return fail(error) }

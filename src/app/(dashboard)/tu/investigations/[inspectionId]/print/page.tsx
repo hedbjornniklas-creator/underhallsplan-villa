@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
+import { getTuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflowServer'
 import TuPrintPreviewToolbar from '@/components/tu/TuPrintPreviewToolbar'
 import TuPrintPagedDocument, {
   type TuPrintHeader,
@@ -234,7 +235,7 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
       : investigation.cadastralId
   const objectIdentifierLabel =
     investigation.objectType === 'apartment' ? 'BRF/lägenhet' : 'Fastighetsbeteckning'
-  const inspectionDate = formatInspectionDate(assignment?.preferred_date ?? investigation.inspection.date)
+  const inspectionDate = formatInspectionDate(investigation.inspection.date ?? assignment?.preferred_date)
   const inspectionTime = formatInspectionTime(assignment?.preferred_time ?? investigation.inspection.inspection_time)
 
   return {
@@ -433,6 +434,7 @@ export default async function TuInvestigationPrintPage({
       }
     : null
   const companyLogoAlt = investigation.inspector?.company_name ?? 'Besiktningsbolag'
+  const assignmentWorkflow = await getTuAssignmentWorkflow(inspectionId, investigation.orgId)
   const printTitle = buildReportPdfFileName({
     assignmentNumber:
       investigation.assignmentNumber ?? investigation.inspection.assignment_number,
@@ -449,6 +451,7 @@ export default async function TuInvestigationPrintPage({
         />
       )}
       <TuPrintPagedDocument
+        pendingAssignmentApproval={Boolean(assignmentWorkflow && !assignmentWorkflow.canDeliver)}
         companyLogoUrl={investigation.inspector?.logo_url ?? null}
         companyLogoAlt={companyLogoAlt}
         header={buildHeader(investigation, reportDateShort)}

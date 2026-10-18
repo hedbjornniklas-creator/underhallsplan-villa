@@ -43,6 +43,8 @@ function record(value: unknown): Record<string, unknown> {
 
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'TU_WORK_PAUSED') return jsonError('Arbetet är pausat. Öppna uppdragsbekräftelsen och kontrollera dess status innan du fortsätter.', 409)
+  if (message === 'TU_DELIVERY_BLOCKED') return jsonError('Uppdraget måste godkännas, accepteras och stämmas av innan utlåtandet kan fastställas eller skickas.', 409)
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
@@ -52,9 +54,6 @@ function mapError(error: unknown) {
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
   if (message === 'TU_ANALYSIS_TEMPLATE_NOT_SUPPORTED') {
     return jsonError('Helhetsanalysen är inte aktiverad för den här utredningens arbetssätt.', 409)
-  }
-  if (message === 'TU_CONTROL_PLAN_NOT_APPROVED') {
-    return jsonError('Godkänn kontrollinriktningen under Förbered kontrollen innan helhetsanalysen startas.', 409)
   }
   if (normalized.includes('tu_analysis_') || normalized.includes('tu_ai_analysis_items') || normalized.includes('42p01')) {
     return jsonError('Analysarbetsflödet är inte aktiverat i databasen ännu.', 409)

@@ -88,9 +88,37 @@ export async function testAssignmentFormLayout(base, output) {
     await page.evaluate(() => { document.documentElement.style.fontSize = '200%' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, '200% text overflow')
     await page.screenshot({ path: resolve(output, 'assignment-large-text.png'), fullPage: true })
+    for (const width of [390, 1280]) {
+      await page.setViewport({ width, height: 950, isMobile: width < 768, hasTouch: width < 768 })
+      for (const state of ['completed', 'cancelled', 'expired', 'draft-accepted_at', 'draft-last_sent_at', 'draft-booked_at', 'draft-archived_at']) {
+        const writeCount = writes.length
+        await load(`locked=${state}`)
+        assert.equal(await page.$eval(fieldset, node => node.disabled), true, state)
+        const input = `${fieldset} input`
+        const value = await page.$eval(input, node => node.value)
+        await page.click(input)
+        await page.keyboard.type('Cannot overwrite approved content')
+        assert.equal(await page.$eval(input, node => node.value), value, state)
+        assert.ok(await page.$$eval('[role="status"]', nodes => nodes.some(node => node.textContent.includes('låst för redigering'))))
+        assert.equal(writes.length, writeCount, state)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, state)
+        if (state === 'completed') await page.screenshot({ path: resolve(output, `assignment-completed-locked-${width}.png`), fullPage: true })
+      }
+    }
+    // A draft can be issued in a second tab while this form is still open.
+    const beforeConflict = writes.length
+    await load('form=conflict')
+    assert.equal(await page.$eval(fieldset, node => node.disabled), false)
+    await page.click(address, { clickCount: 3 })
+    await page.type(address, 'Stale draft edit')
+    await page.waitForFunction(() => document.querySelector('fieldset[aria-label="Uppdragsdata"]')?.disabled)
+    await page.waitForNetworkIdle({ idleTime: 1000 })
+    assert.equal(writes.length, beforeConflict + 1, 'conflict must not trigger repeated autosaves')
+    assert.equal(await page.$eval(address, node => node.value), 'Testgatan 1', 'conflict reloads the actual saved contents')
+    await page.screenshot({ path: resolve(output, 'assignment-concurrent-lock.png'), fullPage: true })
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: UB compact form at 320/390/768/1024/1280/1920, 200% text, autosave/focus/geometry, role choices and sent/ordered/booked locks; synthetic data only.')
+    console.log('PASS: UB form at 320/390/768/1024/1280/1920, autosave/focus, all issued/historical locks on mobile/desktop, concurrent issue conflict stops autosave; synthetic data only.')
   } catch (error) {
     await page.screenshot({ path: resolve(output, 'assignment-layout-failure.png'), fullPage: true })
     throw error

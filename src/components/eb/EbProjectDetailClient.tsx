@@ -31,6 +31,7 @@ import EbAgreementDocumentField from '@/components/eb/EbAgreementDocumentField'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
+import { getEbInspectionLifecycle } from '@/lib/eb/inspectionLifecycle'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import EbProjectForm, {
   buildEbProjectForm,
@@ -258,15 +259,6 @@ function formatDateTime(value: string | null) {
   })
 }
 
-function getStatusLabel(status: string | null) {
-  const normalized = String(status ?? '').trim().toLowerCase()
-  if (normalized === 'draft') return 'Utkast'
-  if (normalized === 'ongoing') return 'Pågående'
-  if (normalized === 'completed') return 'Klar'
-  if (normalized === 'archived') return 'Arkiverad'
-  return status ?? 'Pågående'
-}
-
 function inspectionScheduleHasPassed(
   inspectionDate: string | null,
   inspectionTime: string | null,
@@ -427,51 +419,13 @@ function getInvitationPreparationStatus(
 }
 
 function getReportStatus(inspection: EbInspectionSummary) {
-  if (!inspection.reportLockedAt && inspection.reportDeliveryStatus === 'sent') {
-    return {
-      label: 'Upplåst · tidigare version skickad',
-      className: 'bg-amber-100 text-amber-900',
-    }
-  }
-  if (inspection.reportDeliveryStatus === 'sent') {
-    return {
-      label: 'Utlåtande skickat',
-      className: 'bg-emerald-100 text-emerald-800',
-    }
-  }
-  if (inspection.reportDeliveryStatus === 'failed') {
-    return {
-      label: 'Utskick misslyckades',
-      className: 'bg-rose-100 text-rose-800',
-    }
-  }
-  if (inspection.reportPdfStatus === 'failed') {
-    return {
-      label: 'Fastställt · PDF-fel',
-      className: 'bg-rose-100 text-rose-800',
-    }
-  }
-  if (inspection.reportPdfStatus === 'pending' || inspection.reportPdfStatus === 'processing') {
-    return {
-      label: 'Fastställt · PDF skapas',
-      className: 'bg-amber-100 text-amber-900',
-    }
-  }
-  if (inspection.reportPdfDownloadUrl) {
-    return {
-      label: 'Fastställt · inte skickat',
-      className: 'bg-blue-100 text-blue-800',
-    }
-  }
-  if (inspection.reportLockedAt) {
-    return {
-      label: 'Fastställt · inte skickat',
-      className: 'bg-blue-100 text-blue-800',
-    }
-  }
+  const lifecycle = getEbInspectionLifecycle(inspection)
   return {
-    label: 'Utlåtande i utkast',
-    className: 'bg-gray-100 text-gray-700',
+    label: lifecycle.deliveryLabel,
+    className: inspection.reportPdfStatus === 'failed' || inspection.reportDeliveryStatus === 'failed'
+      ? 'bg-rose-100 text-rose-800'
+      : lifecycle.needsAttention || lifecycle.isReopened ? 'bg-amber-100 text-amber-900'
+        : lifecycle.workStatus === 'completed' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700',
   }
 }
 
@@ -3190,7 +3144,7 @@ export default function EbProjectDetailClient({
                                 </h3>
                                 <span className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600">
                                   <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
-                                  Besiktning: {getStatusLabel(inspection.status)}
+                                  Besiktning: {getEbInspectionLifecycle(inspection, currentProject.status).workLabel}
                                 </span>
                               </div>
                               <div className="mt-3 flex items-start gap-2 text-sm text-gray-700">
@@ -3355,7 +3309,7 @@ export default function EbProjectDetailClient({
                                     className={inspectionMenuItemClassName({ disabled: actionInProgress })}
                                   >
                                     <Send size={16} />
-                                    {isLocked ? 'Leverera och visa status' : 'Fastställ och leverera'}
+                                    {isLocked ? 'Leverera och visa status' : 'Klarmarkera och leverera'}
                                   </button>
                                   {isLocked ? <button
                                     type="button"

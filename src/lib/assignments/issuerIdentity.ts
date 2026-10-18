@@ -124,6 +124,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u
 const URI_SCHEME = /^[a-z][a-z\d+.-]*:/iu
 const UNSAFE_MEDIA_SCHEME = /^(?:data|javascript|vbscript):/iu
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u
+const MULTILINE_CONTROL_CHARACTER = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u
 
 function isRecord(value: unknown): value is UnknownRecord {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -159,6 +160,13 @@ function optionalEmail(value: unknown): string | null | undefined {
   const email = optionalText(value, 320)
   if (email === undefined || email === null) return email
   return EMAIL.test(email) ? email : undefined
+}
+
+function optionalMultilineText(value: unknown, maxLength: number): string | null | undefined {
+  if (value === null) return null
+  if (typeof value !== 'string' || value.length > maxLength) return undefined
+  if (!value || value !== value.trim() || MULTILINE_CONTROL_CHARACTER.test(value)) return undefined
+  return value
 }
 
 function isoTimestamp(value: unknown): string | undefined {
@@ -314,7 +322,8 @@ export function parseAssignmentIssuerIdentitySnapshotV1(
   const postalCode = optionalText(companyRow.postalCode, 40)
   const city = optionalText(companyRow.city, 160)
   const logoPath = optionalMediaPath(companyRow.logoPath)
-  const reportFooterText = optionalText(companyRow.reportFooterText, 2_000)
+  // The company editor stores the report footer as multiline text.
+  const reportFooterText = optionalMultilineText(companyRow.reportFooterText, 2_000)
   if (
     !companyName ||
     organizationNumber === undefined ||

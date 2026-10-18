@@ -764,33 +764,35 @@ export async function POST(
       userAgent: request.headers.get('user-agent'),
     })
 
-    // Keep customer postal code/city in sync even if RPC function is older in DB.
-    const admin = createSupabaseAdminClient()
-    try {
-      const { error: contactUpdateError } = await admin
-      .from('assignments')
-      .update({
-        customer_postal_code: payload.customer_postal_code,
-        customer_city: payload.customer_city,
-        property_owner_name: payload.property_owner_name,
-        cadastral_id: payload.cadastral_id,
-        brf_name: payload.brf_name,
-        apartment_number: payload.apartment_number,
-        apartment_holder_name: payload.apartment_holder_name,
-        scope_description: payload.scope_description,
-        orderer_role: payload.orderer_role,
-        ...(statusSource ? { assignment_details: payload.assignment_details } : {}),
-      })
-      .eq('org_id', link.org_id)
-      .eq('id', assignment.id)
+    // OB/STATUS contents are committed with acceptance and must not be rewritten
+    // by a legacy compatibility sync after their immutable snapshot is captured.
+    if (assignment.assignment_type !== 'OB' && assignment.assignment_type !== 'STATUS') {
+      const admin = createSupabaseAdminClient()
+      try {
+        const { error: contactUpdateError } = await admin
+          .from('assignments')
+          .update({
+            customer_postal_code: payload.customer_postal_code,
+            customer_city: payload.customer_city,
+            property_owner_name: payload.property_owner_name,
+            cadastral_id: payload.cadastral_id,
+            brf_name: payload.brf_name,
+            apartment_number: payload.apartment_number,
+            apartment_holder_name: payload.apartment_holder_name,
+            scope_description: payload.scope_description,
+            orderer_role: payload.orderer_role,
+          })
+          .eq('org_id', link.org_id)
+          .eq('id', assignment.id)
 
-      if (contactUpdateError) throw contactUpdateError
-    } catch (contactUpdateError) {
-      console.error('[assignments.accept] failed to update customer postal/city after consume', {
-        assignmentId: assignment.id,
-        orgId: link.org_id,
-        code: publicLinkErrorCode(contactUpdateError),
-      })
+        if (contactUpdateError) throw contactUpdateError
+      } catch (contactUpdateError) {
+        console.error('[assignments.accept] failed to update customer postal/city after consume', {
+          assignmentId: assignment.id,
+          orgId: link.org_id,
+          code: publicLinkErrorCode(contactUpdateError),
+        })
+      }
     }
 
     let confirmationEmailSent = false

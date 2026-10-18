@@ -17,6 +17,20 @@ function renderRow(label: string, value: string) {
   return renderToStaticMarkup(createElement(loaded.exports.PartyRows, { rows: [{ label, value }] }))
 }
 
+test('TU consistently labels the assignment number Uppdragsnummer', () => {
+  for (const file of [
+    '../src/components/tu/TuPrintPagedDocument.tsx',
+    '../src/components/tu/TuPublicReportSnapshotView.tsx',
+    '../src/components/tu/TuInvestigationEditorClient.tsx',
+    '../src/lib/tu/reportDraftServer.ts',
+    '../src/lib/tu/server.ts',
+  ]) {
+    const contents = readFileSync(new URL(file, import.meta.url), 'utf8')
+    assert.match(contents, /uppdragsnummer/iu, file)
+    assert.doesNotMatch(contents, /arbetsnummer/iu, file)
+  }
+})
+
 test('inspector and customer email values use the same 12px type as ordinary contact values', () => {
   for (const [label, value] of [
     ['E-Post', 'inspector@example.test'],

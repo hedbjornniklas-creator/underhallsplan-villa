@@ -442,8 +442,10 @@ body.ob-round-fullscreen [data-app-topbar="true"] {
     margin-bottom: 8mm;
   }
 
+  /* Keep appendix images inside the same measured grid cell as the preview. */
   .tu-report-image-grid-block img {
-    max-height: 52mm !important;
+    height: 100%;
+    max-height: none;
   }
 
   .tu-report-page header img {

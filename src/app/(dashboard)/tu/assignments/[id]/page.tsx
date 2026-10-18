@@ -12,12 +12,25 @@ import {
   MapPin,
   ShieldCheck,
   UserRound,
+  RefreshCw,
 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import TuAssignmentScheduleEditor from '@/components/tu/TuAssignmentScheduleEditor'
 import type { AssignmentDetails } from '@/lib/assignments/server'
+import type { TuReportTemplateOption } from '@/lib/tu/server'
+import type { AssignmentLinkIssues } from '@/lib/assignments/linkIncidents'
+import { AssignmentLinkIssueNotice } from '@/components/assignments/AssignmentLinkIssues'
+import { canStartTuBeforeApproval, tuAssignmentState, tuMessageLabel, type TuAssignmentMessage, type TuAssignmentProgress } from '@/lib/tu/assignmentProgress'
+import { canStartTuOverviewAssignment } from '@/lib/tu/overview'
+import TuAssignmentActions, { allowTuAssignmentNavigation, tuActionButton } from '@/components/tu/TuAssignmentActions'
+import TuAssignmentEditor from '@/components/tu/TuAssignmentEditor'
+import TuAssignmentStartDialog from '@/components/tu/TuAssignmentStartDialog'
 
 type DetailResponse = {
-  assignment: AssignmentDetails
+  assignment: AssignmentDetails & { progress?: TuAssignmentProgress }
+  messages: TuAssignmentMessage[] | null
+  linkIssues: AssignmentLinkIssues | null
+  reportTemplates: TuReportTemplateOption[]
   customerType: 'consumer' | 'business' | null
   currentTerms: {
     version: string
@@ -33,23 +46,6 @@ type DetailResponse = {
     resolvedAt: string | null
     resolutionNote: string | null
   } | null
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  draft: 'Utkast',
-  sent: 'Skickad',
-  ordered: 'Godkänd',
-  booked: 'Bokad',
-  completed: 'Startad',
-  expired: 'Utgången länk',
-  cancelled: 'Avbruten',
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return 'Ej angivet'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('sv-SE')
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -83,9 +79,11 @@ export default function TuAssignmentDetailPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const organizationId = searchParams.get('orgId')
-  const [data, setData] = useState<DetailResponse | null>(null)
+  const [data, setData] = useState<(DetailResponse & { loadRevision: number }) | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [revision, setRevision] = useState(0)
+  const refresh = () => setRevision(value => value + 1)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -108,7 +106,7 @@ export default function TuAssignmentDetailPage() {
         if (payload.assignment.org_id !== organizationId) {
           throw new Error('Uppdraget tillhör inte den valda organisationen.')
         }
-        if (!controller.signal.aborted) setData(payload as DetailResponse)
+        if (!controller.signal.aborted) setData({ ...payload as DetailResponse, loadRevision: revision })
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setError(
@@ -123,7 +121,7 @@ export default function TuAssignmentDetailPage() {
     }
     void load()
     return () => controller.abort()
-  }, [organizationId, params.id])
+  }, [organizationId, params.id, revision])
 
   const assignment = data?.assignment
   const isApartment = Boolean(assignment?.brf_name || assignment?.apartment_number)
@@ -136,13 +134,14 @@ export default function TuAssignmentDetailPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
+                  if (!window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', { cancelable: true }))) return
                   router.push(
                     organizationId
                       ? organizationUrl('/tu/assignments', organizationId)
                       : '/tu/assignments'
                   )
-                }
+                }}
                 aria-label="Till uppdragsbekräftelser"
                 title="Till uppdragsbekräftelser"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
@@ -151,7 +150,7 @@ export default function TuAssignmentDetailPage() {
               </button>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold uppercase text-violet-700">Teknisk utredning</p>
-                <h1 className="mt-1 text-2xl font-semibold text-slate-950">Uppdragsbekräftelse</h1>
+                <h1 className="mt-1 break-words text-2xl font-semibold text-slate-950">Uppdragsbekräftelse</h1>
                 {assignment ? (
                   <p className="mt-1 break-words text-sm text-slate-600">
                     {display(assignment.customer_name)} ·{' '}
@@ -165,12 +164,13 @@ export default function TuAssignmentDetailPage() {
               {assignment ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-900">
-                    {STATUS_LABELS[assignment.status] ?? assignment.status}
+                    {tuAssignmentState(assignment).label}
                   </span>
                   {assignment.inspection_id ? (
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!allowTuAssignmentNavigation()) return
                         router.push(
                           organizationId
                             ? organizationUrl(
@@ -179,13 +179,14 @@ export default function TuAssignmentDetailPage() {
                               )
                             : `/tu/investigations/${assignment.inspection_id}`
                         )
-                      }
+                      }}
                       className="inline-flex h-10 items-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
                     >
                       <ExternalLink size={16} aria-hidden />
                       Öppna utredning
                     </button>
                   ) : null}
+                  <button type="button" className={tuActionButton} aria-label="Uppdatera status" title="Uppdatera status" disabled={loading} onClick={() => { if (allowTuAssignmentNavigation()) refresh() }}><RefreshCw size={16} aria-hidden /></button>
                 </div>
               ) : null}
             </div>
@@ -199,6 +200,7 @@ export default function TuAssignmentDetailPage() {
           {error ? (
             <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
               {error}
+              <button type="button" className={`${tuActionButton} ml-3`} onClick={refresh}><RefreshCw size={16} aria-hidden />Försök igen</button>
             </div>
           ) : null}
 
@@ -206,13 +208,32 @@ export default function TuAssignmentDetailPage() {
             <>
               <section className="grid gap-px overflow-hidden rounded-lg border border-slate-200 bg-slate-200 sm:grid-cols-2 lg:grid-cols-4">
                 <SummaryCell label="Skapad" value={formatDateTime(assignment.created_at)} />
-                <SummaryCell label="Senast skickad" value={formatDateTime(assignment.last_sent_at)} />
-                <SummaryCell label="Godkänd" value={formatDateTime(assignment.accepted_at)} />
-                <SummaryCell
-                  label="Beställartyp"
-                  value={data.customerType === 'consumer' ? 'Privatperson' : 'Företag/organisation'}
-                />
+                <SummaryCell label="Senaste utskick" value={formatDateTime(assignment.last_sent_at)} />
+                <SummaryCell label="Kundens godkännande" value={tuAssignmentState(assignment).verified ? formatDateTime(assignment.accepted_at) : assignment.accepted_at ? 'Behöver kontrolleras' : 'Inte registrerat'} />
+                <SummaryCell label="Accepterat av besiktningsmannen" value={formatDateTime(assignment.booked_at)} />
               </section>
+
+              <section id="uppdrag" aria-label="Hantera uppdrag" className="space-y-3 border-y border-slate-200 bg-white p-4">
+                {tuAssignmentState(assignment).attention && <p className="text-sm font-semibold text-slate-800">{tuAssignmentState(assignment).attention}</p>}
+                {!assignment.archived_at && ['sent', 'expired'].includes(assignment.status) && !assignment.accepted_at && assignment.progress?.linkState === 'active' && <p className="text-sm text-slate-600">Kundens godkännandelänk gäller till {formatDateTime(assignment.progress.linkExpiresAt)}.</p>}
+                <TuAssignmentActions key={`${assignment.org_id}:${assignment.id}`} assignment={assignment} onChanged={refresh} onNavigate={path => router.push(path)} />
+                <div className="flex flex-wrap gap-2">
+                  <TuAssignmentEditor key={`edit:${assignment.org_id}:${assignment.id}:${data.loadRevision}`} assignment={assignment} onSaved={refresh} />
+                  {canStartTuOverviewAssignment(assignment) && <TuAssignmentStartDialog assignmentId={assignment.id} organizationId={assignment.org_id} early={canStartTuBeforeApproval(assignment)} templates={data.reportTemplates ?? []} onStarted={path => router.push(path)} onChanged={refresh} />}
+                </div>
+              </section>
+              <AssignmentLinkIssueNotice issues={data.linkIssues} />
+
+              <details className="rounded-lg border border-slate-200 bg-white p-4">
+                <summary className="cursor-pointer font-semibold text-slate-900">Utskick och historik</summary>
+                {data.messages === null ? <p role="status" className="mt-3 text-sm text-amber-800">Utskickshistoriken kunde inte hämtas. Uppdatera status innan du skickar igen.</p> : !data.messages?.length ? <p className="mt-3 text-sm text-slate-600">Inga utskick finns registrerade för denna bekräftelse.</p> : <>
+                  <ul className="mt-3 divide-y divide-slate-200">{data.messages.map(message => <li key={message.id} className="flex flex-col gap-1 py-3 text-sm sm:flex-row sm:justify-between sm:gap-4">
+                    <div className="min-w-0"><p className="font-medium">{tuMessageLabel(message.template_key)}</p><p className="break-words text-slate-600 [overflow-wrap:anywhere]">{message.recipient_email}</p></div>
+                    <div className="shrink-0"><p className={message.status === 'failed' ? 'text-rose-700' : 'text-slate-800'}>{message.status === 'sent' ? 'Skickat' : message.status === 'failed' ? 'Kunde inte skickas' : 'Utskick ej bekräftat'}</p><time className="text-slate-600">{formatDateTime(message.sent_at || message.created_at)}</time></div>
+                  </li>)}</ul><p className="mt-2 text-xs text-slate-500">De senaste 20 utskicken visas. Skickat betyder att e-posttjänsten tagit emot meddelandet, inte att kunden har läst det.</p>
+                </>}
+                <p className="mt-3 text-sm text-slate-600">Utredning startad: {formatDateTime(assignment.converted_at)}. Arkiverad: {formatDateTime(assignment.archived_at)}.</p>
+              </details>
 
               {data.withdrawal ? (
                 <section className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
@@ -260,8 +281,12 @@ export default function TuAssignmentDetailPage() {
 
                 <DetailSection icon={<CalendarDays size={18} aria-hidden />} title="Tid och pris">
                   <FactGrid>
-                    <Fact label="Datum" value={formatDate(assignment.preferred_date)} />
-                    <Fact label="Tid" value={display(assignment.preferred_time)} />
+                    <TuAssignmentScheduleEditor
+                      key={`${assignment.org_id}:${assignment.id}:${data.loadRevision}`}
+                      assignment={assignment}
+                      onSaved={updated => setData(current => current?.assignment.id === updated.id && current.assignment.org_id === updated.org_id
+                        ? { ...current, assignment: { ...current.assignment, ...updated } } : current)}
+                    />
                     <Fact label="Pris" value={money(assignment.price_amount, assignment.currency, data.customerType)} />
                   </FactGrid>
                 </DetailSection>

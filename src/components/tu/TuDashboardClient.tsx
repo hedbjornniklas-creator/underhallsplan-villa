@@ -5,13 +5,12 @@ import GettingStarted from '@/components/besiktapp/GettingStarted'
 import AssignmentCustomerSelector, {
   type AssignmentCustomerBinding,
 } from '@/components/customers/AssignmentCustomerSelector'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   CalendarDays,
   IdCard,
-  FilePlus2,
   Loader2,
   Mail,
   Play,
@@ -26,6 +25,7 @@ import '../ob/ob-home.css'
 import type { OrganizationCustomer } from '@/lib/customers/domain'
 import { normalizeOrganizationCustomerIdentity } from '@/lib/customers/domain'
 import { tuReportAuthoringModeLabel } from '@/lib/tu/authoring'
+import { EMPTY_TU_COPY_EXTRAS, tuCopyPrefill, type TuCopyExtraFields, type TuCopySource } from '@/lib/tu/copy'
 import type {
   TuAssignmentListItem,
   TuInspectionSummary,
@@ -33,7 +33,7 @@ import type {
   TuReportTemplateOption,
 } from '@/lib/tu/server'
 
-type TuFormState = {
+type TuFormState = TuCopyExtraFields & {
   objectType: 'villa' | 'apartment'
   customerType: 'consumer' | 'business'
   customerAddressMatchesObject: boolean
@@ -61,7 +61,7 @@ type TuFormState = {
   notesInternal: string
 }
 
-type ScratchFormState = {
+type ScratchFormState = TuCopyExtraFields & {
   reportTemplateKey: string
   objectType: 'villa' | 'apartment'
   title: string
@@ -88,6 +88,7 @@ type ScratchFormState = {
 }
 
 const EMPTY_TU_FORM: TuFormState = {
+  ...EMPTY_TU_COPY_EXTRAS,
   objectType: 'villa',
   customerType: 'consumer',
   customerAddressMatchesObject: false,
@@ -116,6 +117,7 @@ const EMPTY_TU_FORM: TuFormState = {
 }
 
 const EMPTY_SCRATCH_FORM: ScratchFormState = {
+  ...EMPTY_TU_COPY_EXTRAS,
   reportTemplateKey: '',
   objectType: 'villa',
   title: '',
@@ -177,6 +179,8 @@ const CUSTOMER_BINDING_FORM_KEYS = new Set<keyof TuFormState>([
   'customerPostalCode',
   'customerCity',
   'invoiceEmail',
+  'invoiceName',
+  'invoiceAddress',
 ])
 
 const CUSTOMER_ADDRESS_SOURCE_KEYS = new Set<keyof TuFormState>([
@@ -193,6 +197,8 @@ export default function TuDashboardClient({
   initialReportTemplates,
   inspectorProfile,
   initialError,
+  initialCopySource = null,
+  initialCopyError = null,
 }: {
   organizationId: string
   organizationName: string | null
@@ -201,6 +207,8 @@ export default function TuDashboardClient({
   initialReportTemplates: TuReportTemplateOption[]
   inspectorProfile: TuInspectorProfileCard | null
   initialError: string | null
+  initialCopySource?: TuCopySource | null
+  initialCopyError?: string | null
 }) {
   const router = useRouter()
   const [assignments, setAssignments] = useState(initialAssignments)
@@ -209,14 +217,23 @@ export default function TuDashboardClient({
   const [overviewError, setOverviewError] = useState(initialError)
   const overviewRequest = useRef<AbortController | null>(null)
   const [reportTemplates] = useState(initialReportTemplates)
-  const [form, setForm] = useState<TuFormState>(EMPTY_TU_FORM)
-  const [scratchForm, setScratchForm] = useState<ScratchFormState>(EMPTY_SCRATCH_FORM)
-  const [dialog, setDialog] = useState<'quick' | 'scratch' | null>(null)
+  const [copySource, setCopySource] = useState(initialCopySource)
+  const [reuseScope, setReuseScope] = useState(false)
+  const [reusePrice, setReusePrice] = useState(false)
+  const [form, setForm] = useState<TuFormState>(() => initialCopySource
+    ? { ...EMPTY_TU_FORM, ...tuCopyPrefill(initialCopySource), customerType: initialCopySource.customerType }
+    : EMPTY_TU_FORM)
+  const [scratchForm, setScratchForm] = useState<ScratchFormState>(() => {
+    if (!initialCopySource) return EMPTY_SCRATCH_FORM
+    const template = initialReportTemplates.find(item => item.key === initialCopySource.reportTemplateKey)
+    return { ...EMPTY_SCRATCH_FORM, ...tuCopyPrefill(initialCopySource), reportTemplateKey: template?.key ?? '', title: template?.documentTitle ?? '' }
+  })
+  const [dialog, setDialog] = useState<'quick' | 'scratch' | null>(initialCopySource ? 'scratch' : null)
   const [selectedAssignment, setSelectedAssignment] = useState<TuAssignmentListItem | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialCopyError)
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [customerBinding, setCustomerBinding] = useState<AssignmentCustomerBinding | null>(null)
+  const [customerBinding, setCustomerBinding] = useState<AssignmentCustomerBinding | null>(initialCopySource?.customerBinding ?? null)
   const savedCustomerAddressRef = useRef({
     customerAddress: '',
     customerPostalCode: '',
@@ -339,11 +356,17 @@ export default function TuDashboardClient({
       customerPostalCode: customer.postalCode ?? '',
       customerCity: customer.city ?? '',
       invoiceEmail: customer.invoiceSameAsCustomer ? '' : customer.invoiceEmail ?? '',
+      invoiceName: customer.invoiceSameAsCustomer ? '' : customer.invoiceName ?? '',
+      invoiceAddress: customer.invoiceSameAsCustomer ? '' : customer.invoiceAddress ?? '',
     }))
   }
 
   const updateScratchForm = <K extends keyof ScratchFormState>(key: K, value: ScratchFormState[K]) => {
     setError(null)
+    if (copySource && (CUSTOMER_BINDING_FORM_KEYS.has(key as keyof TuFormState) ||
+      (scratchForm.customerAddressMatchesObject && CUSTOMER_ADDRESS_SOURCE_KEYS.has(key as keyof TuFormState)))) {
+      setCustomerBinding(null)
+    }
     setScratchForm((current) => {
       if (key === 'customerAddressMatchesObject') {
         if (value) {
@@ -403,6 +426,10 @@ export default function TuDashboardClient({
   }
 
   const switchToDirectCreation = () => {
+    if (busy) return
+    savedScratchCustomerAddressRef.current = form.customerAddressMatchesObject
+      ? { ...savedCustomerAddressRef.current }
+      : { customerAddress: form.customerAddress, customerPostalCode: form.customerPostalCode, customerCity: form.customerCity }
     setScratchForm((current) => ({
       ...current,
       objectType: form.objectType,
@@ -424,6 +451,10 @@ export default function TuDashboardClient({
       customerPostalCode: form.customerPostalCode,
       customerCity: form.customerCity,
       invoiceEmail: form.invoiceEmail,
+      customerIdentityNumber: form.customerIdentityNumber,
+      customerRole: form.customerRole,
+      invoiceName: form.invoiceName,
+      invoiceAddress: form.invoiceAddress,
       date: form.preferredDate,
       time: form.preferredTime,
     }))
@@ -431,7 +462,11 @@ export default function TuDashboardClient({
   }
 
   const switchToConfirmation = () => {
-    setCustomerBinding(null)
+    if (busy) return
+    savedCustomerAddressRef.current = scratchForm.customerAddressMatchesObject
+      ? { ...savedScratchCustomerAddressRef.current }
+      : { customerAddress: scratchForm.customerAddress, customerPostalCode: scratchForm.customerPostalCode, customerCity: scratchForm.customerCity }
+    if (!copySource) setCustomerBinding(null)
     setForm((current) => ({
       ...current,
       objectType: scratchForm.objectType,
@@ -453,6 +488,10 @@ export default function TuDashboardClient({
       customerPostalCode: scratchForm.customerPostalCode,
       customerCity: scratchForm.customerCity,
       invoiceEmail: scratchForm.invoiceEmail,
+      customerIdentityNumber: scratchForm.customerIdentityNumber,
+      customerRole: scratchForm.customerRole,
+      invoiceName: scratchForm.invoiceName,
+      invoiceAddress: scratchForm.invoiceAddress,
       preferredDate: scratchForm.date,
       preferredTime: scratchForm.time,
     }))
@@ -460,6 +499,7 @@ export default function TuDashboardClient({
   }
 
   const submitAssignment = async (sendNow: boolean) => {
+    if (busy || (copySource && sendNow)) return
 
     if (!form.customerEmail.trim() || !EMAIL_REGEX.test(form.customerEmail.trim())) {
       setError('Ange en giltig beställarmejl.')
@@ -530,6 +570,11 @@ export default function TuDashboardClient({
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-uppdrag.')
 
+      if (copySource && payload.assignment?.id) {
+        router.push(organizationUrl(`/tu/assignments/${payload.assignment.id}`, organizationId))
+        return
+      }
+
       const assignmentResponse = await fetch(
         organizationUrl('/api/tu/assignments', organizationId),
         { cache: 'no-store' }
@@ -561,6 +606,7 @@ export default function TuDashboardClient({
   }
 
   const createScratchInvestigation = async () => {
+    if (busy) return
     if (!scratchForm.reportTemplateKey.trim()) {
       setError('Välj en mall innan utredningen skapas.')
       setNotice(null)
@@ -600,7 +646,14 @@ export default function TuDashboardClient({
       const response = await fetch('/api/tu/investigations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId: organizationId, ...scratchForm }),
+        body: JSON.stringify({ orgId: organizationId, ...scratchForm, ...(copySource ? {
+          customerDetails: {
+            customerIdentityNumber: scratchForm.customerIdentityNumber,
+            customerRole: scratchForm.customerRole,
+            invoiceName: scratchForm.invoiceName,
+            invoiceAddress: scratchForm.invoiceAddress,
+          },
+        } : {}) }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-utredning.')
@@ -615,6 +668,38 @@ export default function TuDashboardClient({
       setBusy(null)
     }
   }
+
+  const closeCreationDialog = () => {
+    if (busy) return
+    setError(null)
+    setDialog(null)
+    if (copySource) {
+      setCopySource(null)
+      setForm(EMPTY_TU_FORM)
+      setScratchForm(EMPTY_SCRATCH_FORM)
+      setCustomerBinding(null)
+      router.replace(organizationUrl('/tu', organizationId), { scroll: false })
+    }
+  }
+
+  const copyOptions = copySource ? <section className="my-4 space-y-3 border-b border-slate-200 pb-4" aria-label="Återanvänd uppgifter">
+    <p className="break-words text-sm font-medium text-slate-800">{copySource.title} · {copySource.propertyAddress || 'Adress saknas'}</p>
+    {copySource.scopeDescription && <label className="flex items-start gap-2 text-sm">
+      <input type="checkbox" className="mt-1" checked={reuseScope} disabled={Boolean(busy)} onChange={event => {
+        const checked = event.target.checked
+        setReuseScope(checked)
+        setForm(current => ({ ...current, scopeDescription: checked ? copySource.scopeDescription : current.scopeDescription === copySource.scopeDescription ? '' : current.scopeDescription }))
+        setScratchForm(current => ({ ...current, scopeDescription: checked ? copySource.scopeDescription : current.scopeDescription === copySource.scopeDescription ? '' : current.scopeDescription }))
+      }} />Återanvänd uppdragets omfattning
+    </label>}
+    {dialog === 'quick' && copySource.priceAmount && <label className="flex items-start gap-2 text-sm">
+      <input type="checkbox" className="mt-1" checked={reusePrice} disabled={Boolean(busy)} onChange={event => {
+        const checked = event.target.checked
+        setReusePrice(checked)
+        setForm(current => ({ ...current, priceAmount: checked ? copySource.priceAmount : current.priceAmount === copySource.priceAmount ? '' : current.priceAmount }))
+      }} />Återanvänd pris: {copySource.priceAmount} kr
+    </label>}
+  </section> : null
 
   const startInvestigationFromAssignment = async (reportTemplateKey: string) => {
     if (!selectedAssignment || !canStartTuOverviewAssignment(selectedAssignment)) return
@@ -669,10 +754,7 @@ export default function TuDashboardClient({
               <button type="button" className="obh-primary" disabled={Boolean(busy)} onClick={() => openCreationDialog('scratch')}>
                 <Plus size={20} aria-hidden /><span>Ny utredning</span>
               </button>
-              <button type="button" disabled={Boolean(busy)} onClick={() => openCreationDialog('quick')}>
-                <FilePlus2 size={20} aria-hidden /><span>Skapa uppdragsbekräftelse</span>
-              </button>
-              <nav className="obh-list-links" aria-label="TU-listor och profil">
+              <nav className="obh-list-links ml-auto flex flex-wrap gap-x-5 gap-y-1 [&>a]:min-h-11 [&>a]:text-[#245eb5]" aria-label="TU-listor och profil">
                 <PendingLink href={organizationUrl('/tu/assignments', organizationId)} autoPending pendingLabel="Öppnar bekräftelser...">Alla uppdragsbekräftelser</PendingLink>
                 <PendingLink href={organizationUrl('/tu/investigations', organizationId)} autoPending pendingLabel="Öppnar utredningar...">Alla utredningar</PendingLink>
                 <PendingLink href={organizationUrl('/settings/profil', organizationId)} autoPending pendingLabel="Öppnar visitkort..."
@@ -713,10 +795,8 @@ export default function TuDashboardClient({
             customerBinding={customerBinding}
             busy={busy}
             error={error}
-            onClose={() => {
-              setError(null)
-              setDialog(null)
-            }}
+            onClose={closeCreationDialog}
+            copyOptions={copyOptions}
             onChange={updateForm}
             onCustomerBindingChange={setCustomerBinding}
             onUseCustomer={useExistingCustomer}
@@ -731,10 +811,8 @@ export default function TuDashboardClient({
             reportTemplates={reportTemplates}
             busy={busy}
             error={error}
-            onClose={() => {
-              setError(null)
-              setDialog(null)
-            }}
+            onClose={closeCreationDialog}
+            copyOptions={copyOptions}
             onChange={updateScratchForm}
             onTemplateChange={updateScratchTemplate}
             onModeChange={switchToConfirmation}
@@ -866,16 +944,25 @@ function DialogShell({
   children: React.ReactNode
   onClose: () => void
 }) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  const titleId = useId()
+  useEffect(() => {
+    const dialog = dialogRef.current
+    dialog?.showModal()
+    return () => dialog?.close()
+  }, [])
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/55 p-0 sm:items-center sm:p-4">
-      <section
+      <dialog
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        className="max-h-[92vh] w-full overflow-auto rounded-t-2xl border border-violet-100 bg-white p-4 shadow-2xl sm:max-w-3xl sm:rounded-2xl sm:p-5"
+        aria-labelledby={titleId}
+        onCancel={event => { event.preventDefault(); onClose() }}
+        className="fixed inset-0 m-auto max-h-[92dvh] w-[calc(100%-1rem)] max-w-3xl overflow-auto rounded-lg border border-violet-100 bg-white p-4 shadow-2xl backdrop:bg-slate-950/55 sm:p-5"
       >
         <header className="flex items-start justify-between gap-3 border-b border-slate-200 pb-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+            <h2 id={titleId} className="text-lg font-semibold text-slate-950">{title}</h2>
             <p className="mt-1 text-sm text-slate-600">{subtitle}</p>
           </div>
           <button
@@ -889,8 +976,7 @@ function DialogShell({
           </button>
         </header>
         {children}
-      </section>
-    </div>
+      </dialog>
   )
 }
 
@@ -904,6 +990,7 @@ function DialogError({ message }: { message: string | null }) {
 }
 
 function QuickAssignmentDialog({
+  copyOptions,
   organizationId,
   form,
   customerBinding,
@@ -916,6 +1003,7 @@ function QuickAssignmentDialog({
   onModeChange,
   onSubmit,
 }: {
+  copyOptions?: ReactNode
   organizationId: string
   form: TuFormState
   customerBinding: AssignmentCustomerBinding | null
@@ -930,11 +1018,12 @@ function QuickAssignmentDialog({
 }) {
   return (
     <DialogShell
-      title="Ny teknisk utredning"
+      title={copyOptions ? 'Ny utredning med samma uppgifter' : 'Ny teknisk utredning'}
       subtitle="Välj vad som ska hända när uppgifterna är ifyllda."
       onClose={onClose}
     >
       <CreationModePicker mode="confirmation" onChange={onModeChange} />
+      {copyOptions}
       <p className="mt-2 text-xs text-slate-500">
         <span className="font-semibold text-rose-600">*</span> Obligatoriskt för att skicka. Ett ofullständigt
         uppdrag kan fortfarande sparas som utkast.
@@ -1066,6 +1155,7 @@ function QuickAssignmentDialog({
           <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
+        {copyOptions && <CopyExtraFields form={form} onChange={onChange} includeIdentity={false} />}
       </section>
 
       <section className="py-4">
@@ -1076,7 +1166,7 @@ function QuickAssignmentDialog({
         <Textarea label="Notering" value={form.notesInternal} onChange={(value) => onChange('notesInternal', value)} rows={3} />
       </section>
 
-      <div className="sticky bottom-0 mt-4 border-t border-slate-200 bg-white pt-3">
+      <div className="sticky -bottom-4 -mx-4 mt-4 border-t border-slate-200 bg-white px-4 pb-4 pt-3 sm:-bottom-5 sm:-mx-5 sm:px-5 sm:pb-5">
         <DialogError message={error} />
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
@@ -1089,7 +1179,7 @@ function QuickAssignmentDialog({
           {busy === 'draft' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Plus size={16} aria-hidden />}
           {busy === 'draft' ? 'Sparar...' : 'Spara utkast'}
           </button>
-          <button
+          {!copyOptions && <button
           type="button"
           onClick={() => onSubmit(true)}
           disabled={busy !== null}
@@ -1098,7 +1188,7 @@ function QuickAssignmentDialog({
         >
           {busy === 'quick-send' ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Mail size={16} aria-hidden />}
             {busy === 'quick-send' ? 'Skickar...' : 'Skicka uppdragsbekräftelse'}
-          </button>
+          </button>}
         </div>
       </div>
     </DialogShell>
@@ -1106,6 +1196,7 @@ function QuickAssignmentDialog({
 }
 
 function ScratchInvestigationDialog({
+  copyOptions,
   form,
   reportTemplates,
   busy,
@@ -1116,6 +1207,7 @@ function ScratchInvestigationDialog({
   onModeChange,
   onSubmit,
 }: {
+  copyOptions?: ReactNode
   form: ScratchFormState
   reportTemplates: TuReportTemplateOption[]
   busy: string | null
@@ -1130,11 +1222,12 @@ function ScratchInvestigationDialog({
 
   return (
     <DialogShell
-      title="Ny teknisk utredning"
+      title={copyOptions ? 'Ny utredning med samma uppgifter' : 'Ny teknisk utredning'}
       subtitle="Välj vad som ska hända när uppgifterna är ifyllda."
       onClose={onClose}
     >
       <CreationModePicker mode="direct" onChange={onModeChange} />
+      {copyOptions}
       <p className="mt-2 text-xs text-slate-500">
         <span className="font-semibold text-rose-600">*</span> Obligatoriskt för att skapa utredningen.
       </p>
@@ -1237,9 +1330,10 @@ function ScratchInvestigationDialog({
           <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
+        {copyOptions && <CopyExtraFields form={form} onChange={onChange} includeIdentity />}
       </section>
 
-      <div className="sticky bottom-0 mt-4 border-t border-slate-200 bg-white pt-3">
+      <div className="sticky -bottom-4 -mx-4 mt-4 border-t border-slate-200 bg-white px-4 pb-4 pt-3 sm:-bottom-5 sm:-mx-5 sm:px-5 sm:pb-5">
         <DialogError message={error} />
         <div className="flex justify-end">
           <button
@@ -1256,6 +1350,19 @@ function ScratchInvestigationDialog({
       </div>
     </DialogShell>
   )
+}
+
+function CopyExtraFields({ form, onChange, includeIdentity }: {
+  form: TuCopyExtraFields
+  onChange: <K extends keyof TuCopyExtraFields>(key: K, value: string) => void
+  includeIdentity: boolean
+}) {
+  return <div className="mt-3 grid gap-3 md:grid-cols-2">
+    {includeIdentity && <Field label="Person-/org.nr" value={form.customerIdentityNumber} onChange={value => onChange('customerIdentityNumber', value)} />}
+    <Field label="Roll/beställartyp" value={form.customerRole} onChange={value => onChange('customerRole', value)} />
+    <Field label="Fakturanamn" value={form.invoiceName} onChange={value => onChange('invoiceName', value)} />
+    <Textarea label="Fakturaadress" rows={2} value={form.invoiceAddress} onChange={value => onChange('invoiceAddress', value)} />
+  </div>
 }
 
 function TemplateSelect({

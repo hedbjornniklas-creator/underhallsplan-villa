@@ -124,6 +124,10 @@ export async function POST(request: Request) {
       preferredTime: text(body, 'preferredTime') || null,
       priceAmount: price,
       notesInternal: text(body, 'notesInternal') || null,
+      invoiceName: text(body, 'invoiceName') || null,
+      invoiceAddress: text(body, 'invoiceAddress') || null,
+      customerRole: text(body, 'customerRole') || null,
+      customerIdentityNumber: text(body, 'customerIdentityNumber') || null,
     })
 
     let customerLink

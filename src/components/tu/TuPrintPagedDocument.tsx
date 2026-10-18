@@ -19,7 +19,8 @@ const PARAGRAPH_GAP_MM = 2.5
 const PARAGRAPH_CONTINUATION_GAP_MM = 0
 const PRINT_IMAGE_POLICY = {
   coverMaxLongSidePx: 1200,
-  appendixMaxLongSidePx: 900,
+  appendixMaxLongSidePx: 1600,
+  appendixQuality: 80,
   quality: 68,
 }
 
@@ -35,7 +36,7 @@ const PRINT_META_VALUE_STYLE = {
   overflowWrap: 'anywhere',
 } satisfies CSSProperties
 
-function toPrintImageProxyUrl(src: string, maxLongSidePx: number) {
+function toPrintImageProxyUrl(src: string, maxLongSidePx: number, quality = PRINT_IMAGE_POLICY.quality) {
   if (!src) return src
   if (src.startsWith('data:')) return src
   if (src.startsWith('/')) return src
@@ -43,7 +44,7 @@ function toPrintImageProxyUrl(src: string, maxLongSidePx: number) {
   const params = new URLSearchParams({
     url: src,
     max: String(maxLongSidePx),
-    q: String(PRINT_IMAGE_POLICY.quality),
+    q: String(quality),
   })
   return `/api/image-proxy?${params.toString()}`
 }
@@ -53,7 +54,7 @@ function getCoverPrintImageSrc(src: string) {
 }
 
 function getAppendixPrintImageSrc(src: string) {
-  return toPrintImageProxyUrl(src, PRINT_IMAGE_POLICY.appendixMaxLongSidePx)
+  return toPrintImageProxyUrl(src, PRINT_IMAGE_POLICY.appendixMaxLongSidePx, PRINT_IMAGE_POLICY.appendixQuality)
 }
 
 export type TuPrintMetaRow = {
@@ -120,6 +121,7 @@ export type TuPrintSignature = {
 }
 
 export type TuPrintPagedDocumentProps = {
+  pendingAssignmentApproval?: boolean
   companyLogoUrl: string | null
   companyLogoAlt: string
   header: TuPrintHeader
@@ -990,32 +992,28 @@ function ImageGridBlock({
   onImageReady?: (id: string) => void
 }) {
   const singleImage = images.length === 1
-  const twoImages = images.length === 2
-  const gridClassName = singleImage
-    ? 'grid grid-cols-1 justify-items-center'
-    : 'grid grid-cols-2 gap-x-5 gap-y-5'
-  const figureClassName = singleImage
-    ? 'grid h-[132mm] w-full max-w-[155mm] grid-rows-[minmax(0,1fr)_auto]'
-    : twoImages
-      ? 'grid h-[108mm] grid-rows-[minmax(0,1fr)_auto]'
-      : 'grid h-[66mm] grid-rows-[minmax(0,1fr)_auto]'
+  const figureHeightMm = singleImage ? 185 : images.length === 2 ? 140 : 96
   return (
     <section
-      className={`tu-report-block tu-report-image-grid-block ${gridClassName}`}
-      style={{ marginBottom: mm(BLOCK_GAP_MM) }}
+      className={`tu-report-block tu-report-image-grid-block grid ${singleImage ? 'grid-cols-1 justify-items-center' : 'grid-cols-2 gap-x-4'}`}
+      style={{ marginBottom: mm(BLOCK_GAP_MM), rowGap: mm(10) }}
     >
       {images.map((image) => (
-        <figure key={image.id} className={figureClassName}>
+        <figure
+          key={image.id}
+          className={`grid min-w-0 w-full grid-rows-[minmax(0,1fr)_auto] ${singleImage ? 'max-w-[155mm]' : ''}`}
+          style={{ height: mm(figureHeightMm) }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={getAppendixPrintImageSrc(image.src)}
             alt={image.caption}
             data-tu-print-measure-image="true"
-            className="h-full w-full object-contain object-center"
+            className="h-full min-h-0 w-full object-contain object-center"
             onLoad={() => onImageReady?.(image.id)}
             onError={() => onImageReady?.(image.id)}
           />
-          <figcaption className="mt-1 max-h-[18mm] overflow-hidden whitespace-pre-wrap text-[12px] leading-[17px] text-gray-700">
+          <figcaption className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-[17px] text-gray-700">
             {image.caption}
           </figcaption>
         </figure>
@@ -1195,7 +1193,7 @@ function ReportHeader({
         />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
-        <HeaderValue label="Arbetsnummer" value={header.assignmentNumber} nowrap />
+        <HeaderValue label="Uppdragsnummer" value={header.assignmentNumber} nowrap />
       </div>
       <div className="min-h-0 min-w-0 overflow-hidden border-r border-black">
         <HeaderValue label="Sida" value={pageValue} nowrap />
@@ -1509,9 +1507,17 @@ export default function TuPrintPagedDocument(props: TuPrintPagedDocumentProps) {
   return (
     <div
       className="report-root tu-print-paged-document"
+      data-tu-assignment-pending={props.pendingAssignmentApproval ? 'true' : undefined}
       data-report-pagination-ready={pagePlan ? '1' : '0'}
       data-tu-print-pagination-ready={pagePlan ? '1' : '0'}
     >
+      {props.pendingAssignmentApproval && <style>{`
+        [data-tu-assignment-pending="true"] .tu-report-page::before {
+          content: "UTKAST – uppdragets godkännande och avstämning är inte klara";
+          position: absolute; top: 2mm; left: 12mm; right: 12mm;
+          text-align: center; color: #9a3412; font: bold 10px Arial, sans-serif;
+        }
+      `}</style>}
       <div
         className="tu-print-measure pointer-events-none absolute left-[-10000px] top-0 opacity-0"
         aria-hidden="true"

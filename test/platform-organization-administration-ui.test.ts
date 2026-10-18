@@ -136,6 +136,15 @@ test('organization invitations retain least privilege defaults and an explicit O
   assert.equal((ui.match(/moduleSetVersion: 2/g) ?? []).length, 2)
 })
 
+test('sender profile administration has its own organization-scoped tab without document mutations', () => {
+  const ui = source('src/components/organizations/OrganizationSettingsClient.tsx')
+  assert.match(ui, /id: 'sender-profiles', label: 'Avsändarprofiler'/)
+  assert.match(ui, /tab === 'sender-profiles' && <OrganizationSenderProfiles key=\{orgId\} orgId=\{orgId\}/)
+  const sender = source('src/components/organizations/OrganizationSenderProfiles.tsx')
+  assert.doesNotMatch(sender, /\/api\/(?:assignments|action-cases|tu|ob)\//)
+  assert.doesNotMatch(sender, /from\(['"](?:assignments|action_cases|assignment_links|inspection_report_links)['"]\)/)
+})
+
 test('member editor clears OB and TU on deactivation, does not resurrect them, and submits an inactive empty grant list', async () => {
   type UiNode = { type: unknown; props: Record<string, unknown> }
   const values: unknown[] = []
@@ -152,6 +161,7 @@ test('member editor clears OB and TU on deactivation, does not resurrect them, a
     },
     'react/jsx-runtime': { jsx, jsxs: jsx }, 'next/link': {}, 'next/navigation': { useRouter: () => ({ refresh: () => undefined }) },
     'lucide-react': {}, '@/components/settings/FortnoxConnectionCard': {},
+    './OrganizationSenderProfiles': { default: 'OrganizationSenderProfiles' },
   })
   const member = { profileId: 'colleague', displayName: 'Kollega', email: 'colleague@example.test', role: 'inspector', isActive: true, modules: ['inspections', 'technical_investigations'] }
   const render = () => { hookIndex = 0; return ui.MemberEditor({ member, orgId: 'org-a', isSelf: false, enabledModules: member.modules, disabled: false, onSaved: async () => undefined }) }

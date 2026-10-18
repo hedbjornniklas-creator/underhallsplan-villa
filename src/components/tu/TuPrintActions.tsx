@@ -55,6 +55,7 @@ type DeliveryResponse = {
   revisionStatus?: 'finalized' | 'published' | null
   publishedRevisionNumber?: number | null
   analysisStale?: boolean
+  assignmentWorkflowBlocker?: string | null
   analysisStaleAt?: string | null
   qualityIssues?: Array<{
     id: string
@@ -193,6 +194,7 @@ export default function TuPrintActions({
       setRecipient((current) => current.trim() || payload.defaultRecipientEmail || '')
       onStatusChange?.({ reportLockedAt: payload.reportLockedAt ?? null })
     } catch (loadError) {
+      setMeta(null)
       showDeliveryError(loadError, 'Kunde inte hämta leveransstatus.')
     } finally {
       if (!options?.silent) setLoading(false)
@@ -204,7 +206,13 @@ export default function TuPrintActions({
   }, [loadMeta])
 
   useEffect(() => {
-    if (!meta?.analysisStale) setStaleAnalysisAcknowledged(false)
+    const refresh = () => { void loadMeta() }
+    window.addEventListener('tu:assignment-workflow-updated', refresh)
+    return () => window.removeEventListener('tu:assignment-workflow-updated', refresh)
+  }, [loadMeta])
+
+  useEffect(() => {
+    setStaleAnalysisAcknowledged(false)
   }, [meta?.analysisStale, meta?.analysisStaleAt])
 
   useEffect(() => {
@@ -363,10 +371,11 @@ export default function TuPrintActions({
       setCopyingLink(false)
     }
   }
-  const canSend = (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
+  const canSend = Boolean(meta) && !loading && !meta?.assignmentWorkflowBlocker && (locked || hasPublishedVersion) && !busyAction && !unlockBusy && !regeneratingPdf && isValidEmail(recipient)
   const serverQualityBlocker = meta?.qualityIssues?.find((issue) => issue.severity === 'blocker') ?? null
-  const effectiveFinalizationBlockedReason = meta?.analysisStale ? null : finalizationBlockedReason
-  const canFinalize = !locked
+  const visibleQualityIssues = meta?.qualityIssues?.filter((issue) => !meta.improvementReview || issue.severity === 'blocker') ?? []
+  const effectiveFinalizationBlockedReason = meta?.assignmentWorkflowBlocker ?? finalizationBlockedReason
+  const canFinalize = Boolean(meta) && !loading && !locked
     && !effectiveFinalizationBlockedReason
     && (!meta?.analysisStale || staleAnalysisAcknowledged)
     && !serverQualityBlocker
@@ -464,9 +473,9 @@ export default function TuPrintActions({
 
         {!locked && meta?.analysisStale ? (
           <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950">
-            <p className="text-sm font-semibold">Underlaget har ändrats efter AI-analysen</p>
+            <p className="text-sm font-semibold">Kontrollera ändrat underlag</p>
             <p className="mt-1 text-sm leading-5">
-              Din redigerade rapporttext behålls. Du kan uppdatera analysen eller fastställa den text du själv har granskat.
+              Din rapporttext behålls. Granska den mot det aktuella underlaget. Ingen ny AI-körning krävs.
             </p>
             <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-amber-200 bg-white px-3 py-2 text-sm leading-5">
               <input
@@ -480,11 +489,11 @@ export default function TuPrintActions({
           </div>
         ) : null}
 
-        {!locked && !meta?.improvementReview && meta?.qualityIssues?.length ? (
+        {!locked && visibleQualityIssues.length > 0 ? (
           <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
             <h3 className="text-sm font-semibold text-amber-950">Teknisk slutkontroll</h3>
             <ul className="mt-2 space-y-1.5 text-sm leading-5 text-amber-950">
-              {meta.qualityIssues.map((issue) => (
+              {visibleQualityIssues.map((issue) => (
                 <li key={issue.id} className="flex items-start gap-2">
                   <span
                     className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${issue.severity === 'blocker' ? 'bg-rose-600' : 'bg-amber-500'}`}

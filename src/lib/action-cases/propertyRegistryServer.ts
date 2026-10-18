@@ -36,6 +36,15 @@ export async function bindProjectProperty(ctx: Context, caseId: string, payload:
   const binding = payload.binding as Record<string, unknown>
   if (!['existing', 'create'].includes(String(binding.mode))) throw new Error('PROPERTY_INVALID')
   const draft = normalizeCustomerOffer(payload.draft)
+  if (draft.senderProfile) {
+    const guard = await createSupabaseAdminClient().rpc('assert_action_case_contract_sender_body', {
+      p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId, p_body: draft,
+    })
+    if (guard.error) {
+      if (missing(guard.error.code)) throw new Error('CUSTOMER_SENDER_SCHEMA')
+      throw new Error(guard.error.message?.match(/CUSTOMER_(?:SENDER|OFFER)_[A-Z_]+/)?.[0] ?? 'CUSTOMER_SENDER_FAILED')
+    }
+  }
   if (!draft.contractDetails) throw new Error('PROPERTY_INVALID')
   if (!draft.contractDetails.property && draft.contractDetails.fields.property.text) {
     draft.contractDetails.propertyReference = draft.contractDetails.fields.property.text

@@ -36,6 +36,7 @@ const nextConfig: NextConfig = {
     ],
   },
   outputFileTracingIncludes: {
+    '/api/ob/inspections/*/word': ['./public/report-assets/**/*', './src/content/standardtexts/**/*.txt'],
     '/api/action-cases/*/customer-offers': ['./public/abs18-2018-06.pdf'],
     '/api/action-cases/*/contract-signing{,/**}': ['./public/uppdrag/brand/pdf/*.ttf'],
     '/api/**/*': [

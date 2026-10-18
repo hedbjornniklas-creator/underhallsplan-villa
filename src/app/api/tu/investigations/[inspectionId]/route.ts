@@ -16,6 +16,8 @@ function jsonError(message: string, status: number) {
 
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'TU_WORK_PAUSED') return jsonError('Arbetet är pausat. Öppna uppdragsbekräftelsen och kontrollera dess status innan du fortsätter.', 409)
+  if (message === 'TU_DELIVERY_BLOCKED') return jsonError('Uppdraget måste godkännas, accepteras och stämmas av innan utlåtandet kan fastställas eller skickas.', 409)
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
@@ -23,6 +25,8 @@ function mapError(error: unknown) {
   if (message === 'TU_INVESTIGATION_NOT_FOUND') return jsonError('TU-utredningen hittades inte.', 404)
   if (message === 'TU_PROPERTY_NOT_FOUND') return jsonError('Objektet kunde inte uppdateras.', 409)
   if (message === 'TU_REPORT_LOCKED') return jsonError('Utlåtandet är låst och kan inte ändras.', 409)
+  if (message === 'TU_INSPECTION_DATE_INVALID') return jsonError('Ange ett giltigt besiktningsdatum eller lämna datumet tomt.', 400)
+  if (message === 'TU_INSPECTION_DATE_SAVE_FAILED') return jsonError('Besiktningsdatumet kunde inte sparas. Försök igen.', 500)
   return null
 }
 
@@ -64,6 +68,12 @@ export async function PATCH(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const patch: Parameters<typeof updateTuInvestigationDraft>[0]['patch'] = {}
 
+    if ('inspectionDate' in body) {
+      if (body.inspectionDate !== null && typeof body.inspectionDate !== 'string') {
+        throw new Error('TU_INSPECTION_DATE_INVALID')
+      }
+      patch.inspectionDate = body.inspectionDate as string | null
+    }
     if ('title' in body) patch.title = typeof body.title === 'string' ? body.title : null
     if ('projectType' in body) patch.projectType = typeof body.projectType === 'string' ? body.projectType : null
     if ('scopeDescription' in body) {

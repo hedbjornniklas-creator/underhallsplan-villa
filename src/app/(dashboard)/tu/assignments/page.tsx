@@ -2,38 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Archive, ArrowLeft, Ban, ChevronsLeft, FileText, Mail, Play, Plus } from 'lucide-react'
+import { ArrowLeft, FileText, Plus, RefreshCw } from 'lucide-react'
 import Protected from '@/components/Protected'
+import TuAssignmentActions from '@/components/tu/TuAssignmentActions'
+import { tuAssignmentState } from '@/lib/tu/assignmentProgress'
+import { canStartTuOverviewAssignment } from '@/lib/tu/overview'
+import type { TuAssignmentListItem } from '@/lib/tu/server'
 
-type AssignmentItem = {
-  id: string
-  org_id: string
-  status: 'draft' | 'sent' | 'ordered' | 'booked' | 'completed' | 'expired' | 'cancelled'
-  assignment_type: 'TU'
-  customer_name: string | null
-  customer_email: string
-  customer_phone: string | null
-  preferred_date: string | null
-  preferred_time: string | null
-  preliminary_address: string | null
-  property_address: string | null
-  property_postal_code: string | null
-  property_city: string | null
-  cadastral_id: string | null
-  brf_name: string | null
-  apartment_number: string | null
-  apartment_holder_name: string | null
-  scope_description: string | null
-  accepted_at: string | null
-  converted_at: string | null
-  inspection_id: string | null
-  responsible_profile_id: string
-  created_at: string
-  updated_at: string
-  last_sent_at: string | null
-  archived_at: string | null
-  archived_by: string | null
-}
+type AssignmentItem = TuAssignmentListItem
 
 type ListResponse = {
   items: AssignmentItem[]
@@ -42,6 +18,7 @@ type ListResponse = {
 
 type StatusFilter =
   | 'all'
+  | 'attention'
   | 'draft'
   | 'sent'
   | 'ordered'
@@ -75,41 +52,24 @@ function organizationUrl(path: string, organizationId: string) {
 const STATUS_TABS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'all', label: 'Alla' },
   { key: 'draft', label: 'Utkast' },
-  { key: 'sent', label: 'Skickad' },
-  { key: 'ordered', label: 'Godkänd' },
-  { key: 'booked', label: 'Bokad' },
+  { key: 'sent', label: 'Inväntar kund' },
+  { key: 'ordered', label: 'Godkänd av kund' },
+  { key: 'booked', label: 'Accepterad' },
   { key: 'completed', label: 'Startad' },
-  { key: 'cancelled', label: 'Avbruten' },
-  { key: 'expired', label: 'Utgången länk' },
+  { key: 'cancelled', label: 'Avbokad' },
+  { key: 'expired', label: 'Länk behöver förnyas' },
+  { key: 'attention', label: 'Kontrollera status' },
 ]
 
-function getStatusLabel(status: AssignmentItem['status']) {
-  switch (status) {
-    case 'ordered':
-      return 'Godkänd'
-    case 'booked':
-      return 'Bokad'
-    case 'completed':
-      return 'Startad'
-    case 'sent':
-      return 'Skickad'
-    case 'expired':
-      return 'Utgången länk'
-    case 'cancelled':
-      return 'Avbruten'
-    default:
-      return 'Utkast'
-  }
+function getStatusLabel(item: AssignmentItem) {
+  return tuAssignmentState(item).label
 }
 
-function getStatusBucket(status: AssignmentItem['status']): StatusFilter {
-  if (status === 'cancelled') return 'cancelled'
-  if (status === 'draft') return 'draft'
-  if (status === 'sent') return 'sent'
-  if (status === 'ordered') return 'ordered'
-  if (status === 'booked') return 'booked'
-  if (status === 'completed') return 'completed'
-  return 'expired'
+function getStatusBucket(item: AssignmentItem): StatusFilter {
+  if (item.status === 'cancelled' || item.status === 'draft') return item.status
+  if (tuAssignmentState(item).verified) return item.inspection_id ? 'completed' : item.booked_at ? 'booked' : 'ordered'
+  if (!item.progress?.available || item.accepted_at || item.progress.approvalRecorded || !['sent', 'expired'].includes(item.status)) return 'attention'
+  return item.progress.linkState === 'active' ? 'sent' : 'expired'
 }
 
 function getStatusSortRank(status: AssignmentItem['status']) {
@@ -203,14 +163,9 @@ export default function TuAssignmentsPage() {
   const [sortField, setSortField] = useState<SortField>('status')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [showArchived, setShowArchived] = useState(false)
-  const [showExpired, setShowExpired] = useState(false)
+  const [showExpired, setShowExpired] = useState(true)
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [currentPage, setCurrentPage] = useState(1)
-  const [actionState, setActionState] = useState<{
-    id: string
-    type: 'archive' | 'cancel' | 'convert' | 'send'
-  } | null>(null)
-
   const loadAssignments = useCallback(async (signal?: AbortSignal) => {
     if (!organizationId) return
     try {
@@ -284,7 +239,7 @@ export default function TuAssignmentsPage() {
   const visibleItems = useMemo(
     () =>
       items.filter(
-        (item) => (showArchived || !item.archived_at) && (showExpired || item.status !== 'expired')
+        (item) => (showArchived || !item.archived_at) && (showExpired || getStatusBucket(item) !== 'expired')
       ),
     [items, showArchived, showExpired]
   )
@@ -301,6 +256,7 @@ export default function TuAssignmentsPage() {
   const statusCounts = useMemo(() => {
     const counts: Record<StatusFilter, number> = {
       all: visibleItems.length,
+      attention: 0,
       draft: 0,
       sent: 0,
       ordered: 0,
@@ -309,14 +265,14 @@ export default function TuAssignmentsPage() {
       expired: 0,
       cancelled: 0,
     }
-    for (const item of visibleItems) counts[getStatusBucket(item.status)] += 1
+    for (const item of visibleItems) counts[getStatusBucket(item)] += 1
     return counts
   }, [visibleItems])
 
   const filteredAndSorted = useMemo(() => {
     const q = search.trim().toLowerCase()
     const filtered = visibleItems.filter((item) => {
-      if (statusFilter !== 'all' && getStatusBucket(item.status) !== statusFilter) return false
+      if (statusFilter !== 'all' && getStatusBucket(item) !== statusFilter) return false
       if (!q) return true
       const searchable = [
         item.customer_name ?? '',
@@ -324,7 +280,7 @@ export default function TuAssignmentsPage() {
         item.customer_phone ?? '',
         item.scope_description ?? '',
         getAddress(item),
-        getStatusLabel(item.status),
+        getStatusLabel(item),
       ]
         .join(' ')
         .toLowerCase()
@@ -392,127 +348,6 @@ export default function TuAssignmentsPage() {
     setSortDirection(field === 'status' ? 'asc' : 'desc')
   }
 
-  const isArchived = (item: AssignmentItem) => Boolean(item.archived_at)
-  const canArchiveAssignment = (item: AssignmentItem) => {
-    if (isArchived(item)) return true
-    return !['sent', 'ordered', 'booked'].includes(item.status)
-  }
-  const canStartInvestigation = (item: AssignmentItem) =>
-    item.status === 'ordered' && !item.inspection_id && !item.archived_at
-  const canSend = (item: AssignmentItem) =>
-    !item.archived_at && (item.status === 'draft' || item.status === 'sent')
-  const canCancelAssignment = (item: AssignmentItem) => item.status !== 'cancelled'
-
-  const updateRow = (updated: AssignmentItem) => {
-    setItems((prev) => prev.map((row) => (row.id === updated.id ? updated : row)))
-  }
-
-  const handleSend = async (item: AssignmentItem) => {
-    if (!canSend(item)) return
-    try {
-      setError(null)
-      setActionState({ id: item.id, type: 'send' })
-      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget skickas.')
-      const response = await fetch(
-        organizationUrl(`/api/tu/assignments/${item.id}/send`, organizationId),
-        { method: 'POST' }
-      )
-      const payload = (await response.json().catch(() => ({}))) as { error?: string }
-      if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skicka uppdragsbekräftelse.')
-      await loadAssignments()
-    } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : 'Kunde inte skicka uppdragsbekräftelse.')
-    } finally {
-      setActionState(null)
-    }
-  }
-
-  const handleArchive = async (item: AssignmentItem) => {
-    const nextArchived = !isArchived(item)
-    const confirmed = window.confirm(
-      nextArchived
-        ? 'Är du säker på att du vill arkivera uppdragsbekräftelsen?'
-        : 'Vill du återföra uppdragsbekräftelsen från arkivet?'
-    )
-    if (!confirmed) return
-
-    try {
-      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget ändras.')
-      setError(null)
-      setActionState({ id: item.id, type: 'archive' })
-      const response = await fetch(organizationUrl(`/api/tu/assignments/${item.id}`, organizationId), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ archived_at: nextArchived ? new Date().toISOString() : null }),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; assignment?: AssignmentItem }
-        | null
-      if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte uppdatera arkivering.')
-      if (payload?.assignment) updateRow(payload.assignment)
-      else await loadAssignments()
-    } catch (archiveError) {
-      setError(archiveError instanceof Error ? archiveError.message : 'Kunde inte uppdatera arkivering.')
-    } finally {
-      setActionState(null)
-    }
-  }
-
-  const handleCancel = async (item: AssignmentItem) => {
-    if (!canCancelAssignment(item)) return
-    const confirmed = window.confirm(
-      'Är du säker på att du vill avbryta uppdragsbekräftelsen och flytta den till arkivet?'
-    )
-    if (!confirmed) return
-
-    try {
-      if (!organizationId) throw new Error('Välj arbetsorganisation innan uppdraget ändras.')
-      setError(null)
-      setActionState({ id: item.id, type: 'cancel' })
-      const response = await fetch(organizationUrl(`/api/tu/assignments/${item.id}`, organizationId), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled', archived_at: new Date().toISOString() }),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; assignment?: AssignmentItem }
-        | null
-      if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte avbryta uppdragsbekräftelse.')
-      if (payload?.assignment) updateRow(payload.assignment)
-      else await loadAssignments()
-    } catch (cancelError) {
-      setError(cancelError instanceof Error ? cancelError.message : 'Kunde inte avbryta uppdragsbekräftelse.')
-    } finally {
-      setActionState(null)
-    }
-  }
-
-  const handleConvertToInvestigation = async (item: AssignmentItem) => {
-    if (!canStartInvestigation(item)) return
-    try {
-      if (!organizationId) throw new Error('Välj arbetsorganisation innan utredningen startas.')
-      setError(null)
-      setActionState({ id: item.id, type: 'convert' })
-      const response = await fetch(`/api/tu/assignments/${item.id}/convert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId: organizationId }),
-      })
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; inspectionId?: string }
-        | null
-      if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte starta utredning.')
-      if (!payload?.inspectionId) throw new Error('Konverteringen saknar utrednings-id.')
-      router.push(
-        organizationUrl(`/tu/investigations/${payload.inspectionId}`, organizationId)
-      )
-    } catch (convertError) {
-      setError(convertError instanceof Error ? convertError.message : 'Kunde inte starta utredning.')
-    } finally {
-      setActionState(null)
-    }
-  }
-
   return (
     <Protected>
       <main className="relative min-h-full overflow-hidden">
@@ -528,22 +363,14 @@ export default function TuAssignmentsPage() {
                 <button
                   type="button"
                   onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
-                  aria-label="Till huvudsidan"
-                  title="Till huvudsidan"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
-                >
-                  <ChevronsLeft size={15} strokeWidth={2.2} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => router.push(organizationId ? organizationUrl('/tu', organizationId) : '/tu')}
                   aria-label="Tillbaka"
                   title="Tillbaka"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
                 >
                   <ArrowLeft size={16} strokeWidth={2} />
                 </button>
-                <h1 className="text-2xl font-semibold text-slate-950">Uppdragsbekräftelser</h1>
+                <h1 className="min-w-0 flex-1 break-words text-xl font-semibold text-slate-950">Uppdragsbekräftelser</h1>
+                <button type="button" aria-label="Uppdatera status" title="Uppdatera status" disabled={loading} onClick={() => void loadAssignments()} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300"><RefreshCw size={18} aria-hidden /></button>
               </div>
 
               <button
@@ -664,11 +491,7 @@ export default function TuAssignmentsPage() {
                   </thead>
                   <tbody>
                     {pagedRows.map((item) => {
-                      const archived = isArchived(item)
-                      const archiveEnabled = canArchiveAssignment(item)
-                      const sendEnabled = canSend(item)
-                      const convertEnabled = canStartInvestigation(item)
-                      const cancelEnabled = canCancelAssignment(item)
+                      const archived = Boolean(item.archived_at)
                       return (
                         <tr
                           key={item.id}
@@ -709,9 +532,9 @@ export default function TuAssignmentsPage() {
                           <td className="max-w-[280px] px-3 py-2 align-middle">
                             <div className="line-clamp-2 text-xs leading-5">{item.scope_description || '-'}</div>
                           </td>
-                          <td className="px-3 py-2 align-middle whitespace-nowrap font-medium">
+                          <td className="max-w-[230px] px-3 py-2 align-middle font-medium">
                             <div className="flex items-center gap-2">
-                              <span>{getStatusLabel(item.status)}</span>
+                              <span>{getStatusLabel(item)}</span>
                               {archived ? (
                                 <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
                                   Arkiverad
@@ -739,69 +562,14 @@ export default function TuAssignmentsPage() {
                                   }
                                   title="Öppna utredning"
                                   aria-label="Öppna utredning"
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50"
+                                  className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50"
                                 >
-                                  <FileText size={13} />
+                                  <FileText size={18} />
                                 </button>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => void handleSend(item)}
-                                disabled={!sendEnabled || Boolean(actionState)}
-                                title={sendEnabled
-                                  ? item.status === 'sent'
-                                    ? 'Skicka om uppdragsbekräftelse'
-                                    : 'Skicka uppdragsbekräftelse'
-                                  : 'Kan inte skickas i denna status'}
-                                aria-label={item.status === 'sent'
-                                  ? 'Skicka om uppdragsbekräftelse'
-                                  : 'Skicka uppdragsbekräftelse'}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                <Mail size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleCancel(item)}
-                                disabled={!cancelEnabled || Boolean(actionState)}
-                                title={cancelEnabled ? 'Avbryt och flytta till arkiv' : 'Uppdraget är redan avbrutet'}
-                                aria-label="Avbryt uppdragsbekräftelse"
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                <Ban size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleArchive(item)}
-                                disabled={!archiveEnabled || Boolean(actionState)}
-                                title={
-                                  archiveEnabled
-                                    ? archived
-                                      ? 'Återför från arkiv'
-                                      : 'Arkivera uppdragsbekräftelse'
-                                    : 'Skickad, Godkänd och Bokad kan inte arkiveras'
-                                }
-                                aria-label={archived ? 'Återför från arkiv' : 'Arkivera uppdragsbekräftelse'}
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                <Archive size={13} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleConvertToInvestigation(item)}
-                                disabled={!convertEnabled || Boolean(actionState)}
-                                title={
-                                  convertEnabled
-                                    ? 'Starta utredning från godkänd uppdragsbekräftelse'
-                                    : archived
-                                      ? 'Återför först från arkiv'
-                                      : 'Tillgänglig när status är Godkänd'
-                                }
-                                aria-label="Starta utredning"
-                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-gray-300 bg-white/95 text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-45"
-                              >
-                                <Play size={13} />
-                              </button>
+                              <TuAssignmentActions key={`${item.org_id}:${item.id}:${item.updated_at}`} assignment={item} compact
+                                onChanged={() => loadAssignments()} onNavigate={path => router.push(path)}
+                                onStart={canStartTuOverviewAssignment(item) ? () => router.push(organizationUrl(`/tu/assignments/${item.id}`, item.org_id)) : undefined} />
                             </div>
                           </td>
                         </tr>

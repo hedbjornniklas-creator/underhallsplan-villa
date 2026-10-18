@@ -1,0 +1,209 @@
+.wrapper {
+  min-width: 0;
+  margin: 0 14px 14px;
+  padding: 17px;
+  border: 1px solid #dbe4ed;
+  border-radius: 9px;
+  background: #f8faff;
+  color: #233448;
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heading h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.headingIcon {
+  display: inline-flex;
+  color: #365fae;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: fit-content;
+  min-height: 44px;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.checkbox input {
+  flex-shrink: 0;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #365fae;
+}
+
+.checkbox input:focus-visible,
+.wrapper a:focus-visible,
+.wrapper button:focus-visible {
+  outline: 3px solid #365fae;
+  outline-offset: 3px;
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 13px 0 17px;
+}
+
+.total {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 3px;
+  color: #52657e;
+  font-size: 11px;
+}
+
+.total strong {
+  color: #243f73;
+  font-size: 27px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.origin {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 20px;
+  border-left: 1px solid #dbe4ed;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.origin > svg { flex-shrink: 0; color: #52657e; margin-top: 2px; }
+.origin div { min-width: 0; overflow-wrap: anywhere; }
+.origin strong, .origin span { display: block; }
+.origin strong { font-size: 12px; }
+.origin span { margin-top: 3px; color: #52657e; }
+
+.legs {
+  display: grid;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: 1px solid #e0e6ef;
+}
+
+.legs li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px 0;
+  border-bottom: 1px solid #e0e6ef;
+}
+
+.stopIcon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 25px;
+  height: 25px;
+  border: 1px solid #cbd9f0;
+  border-radius: 50%;
+  background: #edf3ff;
+  color: #365fae;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.tentativeStop {
+  border: 1px dashed #bd811b;
+  background: #fff4d6;
+  color: #754a03;
+}
+
+.legPlaces {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #52657e;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.legPlaces strong {
+  color: #233448;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.legFrom { display: flex; align-items: center; gap: 4px; }
+.legFrom svg { flex-shrink: 0; }
+.tentativeLabel { color: #754a03; font-weight: 650; }
+
+.legMeasures {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 3px;
+  text-align: right;
+  color: #52657e;
+  font-size: 10px;
+}
+
+.legMeasures strong { color: #243f73; font-size: 12px; font-weight: 750; }
+
+.directions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.directions a, .retry, .settingsLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #d0dcef;
+  border-radius: 7px;
+  background: white;
+  color: #3158a1;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.directions a:hover, .retry:hover, .settingsLink:hover { background: #edf3ff; }
+.message { margin: 8px 0 16px; font-size: 12px; line-height: 1.6; }
+.message strong { font-size: 13px; }
+.message p { margin: 5px 0 12px; color: #52657e; }
+.loading { display: flex; align-items: center; gap: 7px; min-height: 65px; margin: 0; color: #52657e; font-size: 12px; }
+.precision { margin: 13px 0 0; color: #754a03; font-size: 10px; line-height: 1.6; }
+.caption { margin: 13px 0 0; color: #52657e; font-size: 10px; line-height: 1.6; }
+.attribution { margin: 4px 0 0; color: #66788d; font-size: 9px; line-height: 1.6; }
+.attribution a { color: inherit; text-underline-offset: 2px; }
+
+@media (max-width: 600px) {
+  .wrapper { margin: 0 10px 10px; padding: 14px; }
+  .summary { flex-wrap: wrap; gap: 14px; }
+  .total strong { font-size: 25px; }
+  .origin { padding-left: 14px; }
+  .legs li { gap: 8px; }
+  .legMeasures { max-width: 86px; }
+}
+
+@media (max-width: 360px) {
+  .origin { flex-basis: 100%; padding-left: 0; border-left: 0; }
+}

@@ -403,7 +403,131 @@ Every new login or entry point must document:
 
 This must be documented before the implementation is considered complete.
 
+## Organization self-service (2026-10-12)
+
+The approved first step is creation of a **new** organization from Settings →
+Organisation. It reuses the signed-in account; it does not register another
+account, join an existing organization or change existing memberships.
+
+- `/settings/organisation/skapa` requires authentication, not an existing
+  Dashboard membership. Its isolated route-group intentionally does not inherit
+  the existing Dashboard-only settings layout. The other settings routes keep
+  their current guards.
+- `POST /api/organizations` requires a confirmed account email and a same-origin
+  JSON request. Only `requestId`, `name` and `organizationNumber` are accepted.
+  The actor is derived from the verified server session, never from form data.
+  An Auth account without a profile receives only a minimal non-global-admin
+  profile from its verified email, inside the same transaction. Existing profile
+  fields are never overwritten. Users without a workspace get a creation link
+  on `/app`; the exact creation route is also an allowed login return address.
+- Creation gives that actor an active `admin` membership and a scoped
+  `dashboard_admin` assignment **only in the new organization**. It gives no
+  `hushub_admin`, RenoApp, ÖB, EB, TU, Uppdrag or other work-module assignment.
+  ÖB and TU organization entitlements start explicitly disabled.
+- Existing default organizations, grants, customers and assignments are not
+  moved or modified. Success opens the new organization's company profile using
+  an explicit `orgId`; this is not a change of the user's saved default.
+- A normalized organization-number collision refuses creation and directs the
+  user to request an invitation. It never returns the existing organization's
+  name, membership or ID. Historical duplicate organization numbers are not
+  merged or rewritten. Number validation is not proof of authority to represent
+  a company, and this flow does not create a verified-company badge.
+- Creation is atomic and service-only in SQL. Matching retries reuse the
+  resulting organization; a changed payload conflicts and another actor cannot
+  retrieve that result. Request keys are scoped to the actor. Successful
+  creations are limited to three per account in a rolling 24-hour period, with
+  retries excluded from that limit.
+- Profiles still depending on legacy Dashboard fallback are refused with an
+  access-review message. We do not silently replace their old access when adding
+  the first managed assignment.
+
+Deployment requires
+`docs/db/2026-10-12_01_organization_self_service.sql` and the application release.
+The migration adds the creation mechanism only; installation does not create
+organizations or backfill permissions. This description is not confirmation
+that the migration or release has been applied in production.
+
+Company-profile setup, module activation by HusHub administration and scoped
+work-module assignments remain separate steps. Selecting an issuing
+organization for **Uppdrag** contracts/PDFs/email is a later feature and is not
+made ready by organization creation alone.
+
+## Organization sender profiles (2026-10-12)
+
+Approved model: one legal organization can use multiple sender names, including
+a registered secondary business name. These are **sender profiles**, not user
+accounts, memberships or separate organizations. The same organization number,
+customer register, members, module access and Fortnox connection remain shared.
+Do not create another organization solely to represent another company name.
+
+The implemented first step is administration only:
+
+- Settings → Organisation → Avsändarprofiler, also addressable with
+  `tab=sender-profiles`. The existing authenticated settings guards remain in
+  place. Active organization members can read; only an active organization
+  administrator can save the registered legal name or sender profiles.
+- `GET/PUT /api/organizations/sender-profiles?orgId=...` always validates the
+  current session and explicit organization membership. Writes additionally
+  require the admin role, a same-origin JSON request and a bounded exact payload.
+  The client cannot choose the acting profile or add permissions.
+- `organizations.legal_name` is a separate, explicitly entered registered name.
+  No existing organization display name is assumed to be the legal name or
+  rewritten. Sender profiles contain their own name, logo and contact fields,
+  but no separate organization number, Fortnox connection or permission grants.
+- SQL writes use service-only functions, serialized organization/admin checks,
+  independent optimistic versions and identifier-only audit entries. Creation
+  retries reuse the same sender-profile UUID and exact values; stale edits
+  conflict. Names are unique within an organization, including archived profiles.
+  Up to 20 profiles can be retained per organization. Archive/restore preserves
+  the profile identity; there is no hard-delete operation.
+- Logo uploads reuse the admin-only organization media route. References must
+  point to an existing immutable logo object owned by that organization. Neither
+  an arbitrary external image nor a different organization's logo is accepted.
+- An unconfirmed save locks the UI to the exact pending request until it is
+  retried or the user explicitly reloads the saved state. Unsaved changes guard
+  tab/organization navigation and page unload.
+
+Deployment requires `docs/db/2026-10-12_02_organization_sender_profiles.sql`
+and the application release. The additive, rerunnable migration creates no
+company names or sender profiles and does not rewrite historical data. Before
+installation the UI explains the missing schema and disables saving. This
+document is not confirmation of a production deployment or migration.
+
+Phase 1 above only administers profiles; it does not itself change document
+senders. The next approved step (2026-10-12) adds an explicit sender-profile
+selection to **Uppdrag → Avtal**, not a global user/topbar preference:
+
+- Select an active profile from the same organization, then explicitly confirm
+  replacing the saved draft's company details. Other contract content and the
+  personal contact/F-tax fields are preserved. Save pending edits first.
+- The selected profile, legal identity and an embedded server-normalized PNG
+  logo are copied into the contract draft. Updating/archiving the profile later
+  does not silently update the draft. Re-select explicitly to fetch changes.
+- Company fields from the selected profile cannot be overwritten by ordinary
+  draft saves. A dedicated revision-checked operation verifies organization,
+  module access and profile versions. Stable request IDs make uncertain retries
+  safe; the UI does not assume a failed response means the save failed.
+- Contract PDF, customer contract view and new online-contract email content /
+  Reply-To use the same saved identity. Mail still uses the configured verified
+  transport sender; this is not arbitrary sending from the profile's domain.
+- Existing published/signed versions, stored PDFs and retry email payloads are
+  never rewritten. Profile selection does not change organization ownership,
+  customers, memberships, Fortnox or the independent estimate draft.
+- Legal name and organization number remain visible alongside the selected
+  sender name. Long profile footer text flows at the end of the document rather
+  than being clipped into the fixed page-number footer.
+
+This contract integration requires the additive migration
+`docs/db/2026-10-12_03_action_case_contract_sender_profiles.sql` followed by
+application deployment. Install it after sender-profile SQL 02 and contract
+delivery `2026-10-11_04`; it does not select a profile for any existing project.
+The UI is read-only for profile selection until the schema is available.
+This description is not evidence of installation.
+TU/ÖB, other outgoing documents, independent estimate branding and UE/RFQ
+communication are outside this step and retain their existing senders.
+
 ## Summary
+
 The long-term model is:
 - shared identity
 - separate product access

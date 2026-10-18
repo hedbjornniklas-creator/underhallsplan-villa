@@ -33,6 +33,8 @@ function stringArray(value: unknown) {
 
 function mapError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'TU_WORK_PAUSED') return jsonError('Arbetet är pausat. Öppna uppdragsbekräftelsen och kontrollera dess status innan du fortsätter.', 409)
+  if (message === 'TU_DELIVERY_BLOCKED') return jsonError('Uppdraget måste godkännas, accepteras och stämmas av innan utlåtandet kan fastställas eller skickas.', 409)
   const normalized = message.toLowerCase()
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
@@ -47,9 +49,6 @@ function mapError(error: unknown) {
     return jsonError('Underlaget har ändrats efter analysen. Uppdatera analysen innan utlåtandet skapas om.', 409)
   }
   if (message === 'TU_ANALYSIS_NOT_APPROVED') return jsonError('Godkänn helhetsanalysen innan rapportutkastet skapas.', 409)
-  if (message === 'TU_CONTROL_PLAN_NOT_APPROVED') {
-    return jsonError('Godkänn kontrollinriktningen innan rapportutkastet skapas.', 409)
-  }
   if (message === 'TU_ANALYSIS_HAS_NO_ACCEPTED_ITEMS') return jsonError('Analysen saknar godkända underlag för utlåtandet.', 409)
   if (message === 'TU_REPORT_DRAFT_TEMPLATE_NOT_SUPPORTED') {
     return jsonError('Sammanhållet rapportutkast är inte aktiverat för den här utredningens arbetssätt.', 409)

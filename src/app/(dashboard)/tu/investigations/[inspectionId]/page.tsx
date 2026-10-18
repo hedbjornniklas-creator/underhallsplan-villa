@@ -1,5 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import TuInvestigationEditorClient from '@/components/tu/TuInvestigationEditorClient'
+import TuAssignmentWorkflowBoundary from '@/components/tu/TuAssignmentWorkflowBoundary'
+import { getTuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflowServer'
 import {
   getTuInvestigationById,
   listTuReportSectionTypeOptions,
@@ -39,11 +41,14 @@ export default async function TuInvestigationPage({
   }
 
   if (!investigation) notFound()
+  const workflow = await getTuAssignmentWorkflow(inspectionId, investigation.orgId)
   return (
+    <TuAssignmentWorkflowBoundary key={inspectionId} initialWorkflow={workflow} inspectionId={inspectionId} orgId={investigation.orgId}>
     <TuInvestigationEditorClient
       initialInvestigation={investigation}
       sectionTypeOptions={sectionTypeOptions}
       initialWorkspaceView={resolvedSearchParams.view === 'report' ? 'report' : undefined}
     />
+    </TuAssignmentWorkflowBoundary>
   )
 }

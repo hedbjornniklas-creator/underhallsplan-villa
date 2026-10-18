@@ -1,5 +1,6 @@
 import { requireOrganizationAdmin } from '@/lib/organizations/administration'
 import { listOrganizationMembers, listOrganizationInvitations, updateOrganizationMember } from '@/lib/organizations/invitations'
+import { listOrganizationObVisibility } from '@/lib/organizations/obVisibilityAdministration'
 import { organizationJson, organizationFailure, organizationOrgId, readOrganizationJson, isOrganizationUuid } from '@/lib/organizations/administrationHttp'
 
 export const dynamic = 'force-dynamic'
@@ -7,10 +8,13 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   try {
     const context = await requireOrganizationAdmin(organizationOrgId(request))
-    const [members, invitations] = await Promise.all([
+    const [members, invitations, visibility] = await Promise.all([
       listOrganizationMembers(context.organization.id), listOrganizationInvitations(context.organization.id),
+      listOrganizationObVisibility(context.organization.id),
     ])
-    return organizationJson({ members, invitations, enabledModules: context.modules })
+    return organizationJson({ members: members.map(member => ({ ...member,
+      obVisibility: visibility.migrationRequired ? undefined : visibility.permissions[member.profileId],
+    })), invitations, enabledModules: context.modules, obVisibilityMigrationRequired: visibility.migrationRequired })
   } catch (error) { return organizationFailure(error) }
 }
 

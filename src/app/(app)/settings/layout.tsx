@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { requireProductAccess } from '@/lib/access/server'
 
@@ -18,6 +19,8 @@ export default async function SettingsLayout({ children }: { children: ReactNode
           <p className="mt-4 max-w-2xl text-sm leading-7">
             Inställningarna i den här delen tillhör Dashboard och kräver separat Dashboard-behörighet.
           </p>
+          <p className="mt-4 max-w-2xl text-sm leading-7">Du kan skapa en ny organisation med ditt befintliga konto. Om företaget redan finns i HusHub behöver dess administratör bjuda in dig.</p>
+          <Link href="/settings/organisation/skapa" className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Skapa organisation</Link>
         </section>
       </main>
     )

@@ -41,6 +41,8 @@ export type OverviewWorkflow = {
 }
 
 export type ObOverviewItem = {
+  assignment?: { id: string; status: string; archived: boolean }
+  canEdit?: boolean
   pdfHref?: string | null
   id: string
   date: string | null
@@ -130,6 +132,7 @@ export function makeObOverviewItem(
     : Boolean(assignment?.archived_at)
   return {
     id: inspection ? `inspection:${inspection.id}` : `assignment:${assignment!.id}`,
+    ...(assignment ? { assignment: { id: assignment.id, status: assignment.status, archived: Boolean(assignment.archived_at) } } : {}),
     date: first(inspection?.date, assignment?.preferred_date) || null,
     createdAt: inspection?.created_at ?? assignment!.created_at,
     address: first(inspection?.address, assignment?.property_address, assignment?.preliminary_address) || 'Adress saknas',

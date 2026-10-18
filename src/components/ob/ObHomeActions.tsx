@@ -226,10 +226,6 @@ export default function ObHomeActions({ onSent }: { onSent: () => void }) {
       <button type="button" className="obh-quick-trigger" aria-haspopup="dialog" onClick={() => dialogRef.current?.showModal()}>
         <Send size={18} aria-hidden="true" /><span>Snabbskicka UB</span>
       </button>
-      <nav aria-label="Separata listor" className="obh-list-links">
-        <Link href={withObOrganization('/ob/assignments', orgId)}>Uppdragsbekräftelser</Link>
-        <Link href={withObOrganization('/inspections', orgId)}>Besiktningar</Link>
-      </nav>
     </div>
     <QuickSend onSent={onSent} dialogRef={dialogRef} />
   </section>

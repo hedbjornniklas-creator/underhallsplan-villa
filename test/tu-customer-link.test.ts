@@ -51,6 +51,7 @@ function routeHarness(options: {
   revisions?: Record<string, unknown>[]
   authError?: string
   inspectionFound?: boolean
+  approvalBlocked?: boolean
 } = {}) {
   const queries: Array<{ table: string; filters: Array<[string, unknown]> }> = []
   const tables: Record<string, Record<string, unknown>[]> = {
@@ -101,6 +102,11 @@ function routeHarness(options: {
       }),
     },
     '@/lib/tu/reportSnapshot': {},
+    '@/lib/tu/assignmentWorkflowServer': {
+      getTuAssignmentWorkflow: async () => options.approvalBlocked ? { canDeliver: false, reason: 'Inväntar kundens godkännande.' } : null,
+      assertTuAssignmentDelivery: async () => { if (options.approvalBlocked) throw new Error('TU_DELIVERY_BLOCKED') },
+    },
+    '@/lib/tu/assignmentWorkflow': { tuAssignmentWorkflowError: (error: Error) => error.message === 'TU_DELIVERY_BLOCKED' ? [409, 'Uppdraget behöver godkännas och stämmas av.'] : null },
     '@/lib/tu/authoring': { usesTuAiAssistedWorkflow: () => false },
     '@/lib/tu/evidence': { TU_MOISTURE_DAMAGE_TEMPLATE_KEY: 'moisture' },
     '@/lib/tu/evidenceServer': {},
@@ -112,11 +118,23 @@ function routeHarness(options: {
   return {
     queries,
     get: () => route.GET(new Request('https://hushub.se/api/tu/investigations/inspection-1/report-delivery?orgId=org-1'), context) as Promise<Response>,
-    regenerate: () => route.POST(new Request('https://hushub.se/api/tu/investigations/inspection-1/report-delivery?orgId=org-1', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'regenerate_pdf' }),
+    regenerate: (action = 'regenerate_pdf') => route.POST(new Request('https://hushub.se/api/tu/investigations/inspection-1/report-delivery?orgId=org-1', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
     }), context) as Promise<Response>,
   }
 }
+
+test('early-start approval gate blocks every delivery action before writes, email or background PDF jobs', async () => {
+  for (const action of ['lock_only', 'send_open', 'send_and_lock', 'resend', 'regenerate_pdf']) {
+    const h = routeHarness({ approvalBlocked: true })
+    const response = await h.regenerate(action)
+    assert.equal(response.status, 409)
+    assert.doesNotMatch(await response.text(), /TU_DELIVERY_BLOCKED/)
+    assert.equal(h.queries.length, 0)
+  }
+  const response = await routeHarness({ approvalBlocked: true }).get()
+  assert.equal((await response.json()).assignmentWorkflowBlocker, 'Inväntar kundens godkännande.')
+})
 
 test('reload retrieves the same published customer link without writes, sending or token generation', async () => {
   await withTokenKey(async ciphertext => {

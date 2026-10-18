@@ -149,14 +149,24 @@ test('blocks an audit-style list of missing measurement metadata', () => {
   assert.ok(issues.some((issue) => issue.id === 'measurement-audit-language-in-report'))
 })
 
-test('requires the assignment-nature disclaimer for post-damage follow-up reports', () => {
+test('suggests the assignment-nature disclaimer without blocking finalization', () => {
   const issues = evaluateTuReportQuality({
     reportText: 'Uppdraget omfattar en teknisk kontroll av åtkomliga delar.',
     observations: [],
     appendixImages: [],
     reportTemplateKey: 'post_damage_remediation_review',
   })
-  assert.ok(issues.some((issue) => issue.id === 'post-damage-assignment-nature-missing'))
+  assert.equal(issues.find((issue) => issue.id === 'post-damage-assignment-nature-missing')?.severity, 'warning')
+  assert.equal(issues.some((issue) => issue.severity === 'blocker'), false)
+  const review = evaluateTuReportImprovements({
+    reportText: 'Uppdraget omfattar en teknisk kontroll av åtkomliga delar.',
+    observations: [],
+    appendixImages: [],
+    qualityIssues: issues,
+  })
+  const suggestions = review.categories.find((category) => category.id === 'report_text')?.suggestions ?? []
+  assert.ok(suggestions.length > 0)
+  assert.ok(suggestions.every((suggestion) => !suggestion.requiredBeforeFinalization))
 })
 
 test('warns when a technical follow-up is described as approved', () => {

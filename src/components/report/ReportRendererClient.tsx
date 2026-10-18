@@ -907,6 +907,7 @@ export default function ReportRendererClient({
     : undefined
   const isPdfMode = rootClasses.includes('report-root--pdf')
   const modernLayout = spec.some(section => section.layoutVersion === 2)
+  const flowOversizedObservations = spec.some(section => section.observationPagination === 'flow')
 
   const [pagePlan, setPagePlan] = useState<{
     pages: PagePlan[]
@@ -1551,7 +1552,7 @@ export default function ReportRendererClient({
           const heading = continuationEntries.get(id)
           const node = continuationRefs.current[id]
           return heading && node ? { entry: heading, height: node.getBoundingClientRect().height } : null
-        })
+        }, flowOversizedObservations)
       return pages.map((entries, index) => {
         const pageNumber = startPageNumber + index
         entries.forEach(entry => {
@@ -1615,7 +1616,7 @@ export default function ReportRendererClient({
     setPaginationImageVersion((version) =>
       version === imageSettledVersion ? version : imageSettledVersion
     )
-  }, [appendices, contentEntries, continuationEntries, coverSection, mockData, isPdfMode, imageSettledVersion])
+  }, [appendices, contentEntries, continuationEntries, coverSection, mockData, isPdfMode, imageSettledVersion, flowOversizedObservations])
 
   const companyLogoValue = getMockValue(mockData, 'mock.company.logo_url')
   const companyLogoUrl = companyLogoValue === 'saknas' ? null : companyLogoValue

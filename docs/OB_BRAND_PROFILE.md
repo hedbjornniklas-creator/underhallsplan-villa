@@ -71,7 +71,8 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
   **Skapa uppdragsbekräftelse**. Enligt uppföljande beslut 2026-09-28 ligger
   **Snabbskicka UB** som en knapp till höger om Skapa uppdragsbekräftelse på
   datorn och öppnar en dialog med snabbformuläret. Visitkortet tas bort här, inte från inställningar eller
-  rapportunderlag. De gamla listorna behålls som textlänkar under övergången.
+  rapportunderlag. Enligt beslut 2026-10-14 avslutas övergången: de två gamla
+  generella listorna omdirigerar till `/ob`, utan länkar till dem på startsidan.
 - En rad representerar ett uppdrag, inte en fastighet. Flera besiktningar på
   samma fastighet ska inte slås ihop. Ersatta bekräftelser hör till historiken
   för samma uppdrag, inte till dubbla aktiva rader.
@@ -104,6 +105,9 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
 - En tredje ikon hämtar sparat utlåtande som PDF när en fil finns. Den skapar
   inte ett nytt utlåtande. Upplåsning ligger på **Skicka utlåtande** och kräver
   anledning samt befintlig behörighetskontroll och loggning.
+- Arkivering, återföring från arkiv och avbokning av uppdragsbekräftelsen
+  ligger i detaljraden och kräver en bekräftelsedialog. De fyller inte
+  standardraden med extra knappar och ändrar inte besiktningens status.
 
 ## Mobil
 
@@ -116,6 +120,9 @@ Vid smalare tillgänglig yta eller större text byter listan till staplad layout
   **Bekräftelse** och **Besiktning**. Hela statusen får radbrytas vid behov.
 - Ge direkt åtkomst till bekräftelsen och besiktningen med separata,
   tydliga handlingar. Begränsa inte åtkomsten till svep eller en okänd ikon.
+- **Detaljer och åtgärder** öppnar samma uppgifter och UB-kommandon som på
+  dator. Avbryt får initialt fokus i dialogerna; stängning utan bekräftelse
+  utför ingen åtgärd. Dialogen ryms inom skärmens bredd och höjd.
 - Sökning ligger nära listan. Filter som inte ryms blir en vanlig väljare;
   sortering och **Kräver åtgärd** förblir åtkomliga. Minska inte textstorleken
   för att trycka in datorns filterrad.
@@ -313,7 +320,8 @@ för översikter/listor och kompletterar, inte ersätter, ÖB-rundans arbetsvyer
 - Tangentbord, synligt fokus, namngivna ikonverktyg, etiketter och pekmål.
 - Båda statusarna begripliga utan färg; textkontrast minst 4,5:1.
 - Tom lista, laddning, fel, utebliven åtkomst och filter utan träffar.
-- Befintliga listor och skapandeflöden tillgängliga under övergången.
+- Äldre listadresser omdirigerar till den gemensamma listan med bevarat
+  organisationsval. Befintliga detalj- och skapandeflöden är tillgängliga.
 - Ingen förlust av uppdrag, historik, rapporter eller lokala utkast.
 
 Denna leverans granskar profildokument och bilder. Den utgör inte ett utfört
@@ -323,6 +331,7 @@ mobiltest, ett funktionstest eller en publicering av listan.
 
 | Datum | Beslut | Avgränsning |
 | --- | --- | --- |
+| 2026-10-14 | Avveckla de två gamla generella listorna för uppdragsbekräftelser och besiktningar. | Omdirigera till `/ob` med organisationsval, flytta UB:s arkiv-/avbokningskommandon till gemensam detaljrad och rikta tillbaka-länkar hit. Detalj-/skapandeflöden, API:er och historiska dokument behålls. Den fastighetsspecifika listan är utanför beslutet. Lokal implementation, inte publicerad. |
 | 2026-09-27 | Ersätt startsidans kort med skapa-handlingar och utfällbart snabbskick, ta bort visitkortet här, visa PDF-hämtning i listan och upplåsning på Skicka utlåtande. | Gamla listor och profilinformation utanför startsidan behålls. Befintliga skapa-, skicka-, PDF- och upplåsningsflöden återanvänds. Lokal implementation, inte publicerad. |
 | 2026-09-27 | Kompaktare Handlingar & upplysningar, med enradsstart och automatisk höjd för handlingarnas noteringar. | Endast arbetsvyn. Datorns standardrader blir tätare; mobilens pekytor och befintlig sparlogik bevaras. Lokal implementation, inte publicerad. |
 | 2026-09-27 | Gemensam kompakt, ramfri formulärstil för UB och Fastighet & uppdrag. | Endast arbetsvyerna. 16 px sektionsrubriker på dator, 14 px fälttext, 44 px kontroller; mobilen behåller 48 px pekmål. Inga ändringar av historiska dokument eller spar- och godkännandeflöden. Publicerad efter användarens separata godkännande och godkända tester. |

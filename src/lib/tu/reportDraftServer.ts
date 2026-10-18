@@ -488,9 +488,6 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
   const controlPlan = investigation.reportWorkflowProfile === 'post_damage_review'
     ? await getApprovedTuControlPlanSnapshot(input)
     : null
-  if (investigation.reportWorkflowProfile === 'post_damage_review' && !controlPlan) {
-    throw new Error('TU_CONTROL_PLAN_NOT_APPROVED')
-  }
   const sourceImages = images.filter(isTuAnalysisSourceImage)
   const sourceImageIds = new Set(sourceImages.map((image) => image.id))
 
@@ -526,7 +523,7 @@ export async function buildTuReportSnapshot(input: { orgId: string; inspectionId
     if (normalized) sourceFields.push({ key, label, value: normalized, sourceRole })
   }
   addSourceField('assignment.title', 'Uppdragets titel', investigation.title)
-  addSourceField('assignment.assignmentNumber', 'Arbetsnummer', investigation.assignmentNumber)
+  addSourceField('assignment.assignmentNumber', 'Uppdragsnummer', investigation.assignmentNumber)
   addSourceField('assignment.scopeDescription', 'Uppdragets omfattning', investigation.scopeDescription)
   addSourceField('assignment.inspectionDate', 'Besiktningsdatum', investigation.date)
   addSourceField('assignment.inspectionTime', 'Besiktningstid', investigation.inspectionTime)

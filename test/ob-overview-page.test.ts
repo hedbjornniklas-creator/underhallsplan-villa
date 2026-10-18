@@ -28,13 +28,14 @@ const query = load<typeof Query>('src/lib/ob/overviewQuery.ts')
 const fixtures = load<typeof Fixtures>('test/fixtures/ob-overview-data.ts', { '../../src/lib/ob/overview': domain })
 const pdfCalls: { orgId: string; ids: string[] }[] = []
 const loader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain,
+  '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({}) },
   './overviewPdfs': { loadOverviewPdfIds: async (_client: unknown, orgId: string, ids: string[]) => {
     pdfCalls.push({ orgId, ids }); return new Set()
   } },
 })
 const options = query.parseOverviewQuery(new URLSearchParams())
 const rawPage = {
-  rows: [{ assignment: null, inspection: fixtures.overviewInspection(), workflow: null }],
+  rows: [{ assignment: null, inspection: fixtures.overviewInspection(), workflow: null, canEdit: true }],
   total: 51, counts: { all: 51, active: 50, closed: 1 }, page: 2, pageSize: 10,
 }
 function rpcClient(data: unknown, error: unknown = null) {
@@ -76,18 +77,19 @@ test('page loader retains legacy and authoritative paused-workflow rendering', a
   const assignment = fixtures.overviewAssignment({ inspection_id: 'inspection-1' })
   const workflow = { inspection_id: 'inspection-1', current_assignment_id: assignment.id, initial_assignment_id: assignment.id,
     needsReview: true, paused: true, reason: 'Uppdatera uppdraget' }
-  const rpc = rpcClient({ ...rawPage, rows: [{ assignment, inspection: fixtures.overviewInspection(), workflow }] })
+  const rpc = rpcClient({ ...rawPage, rows: [{ assignment, inspection: fixtures.overviewInspection(), workflow, canEdit: true }] })
   const result = await loader.loadObOverview({ userClient: rpc.client, orgId: 'org', options })
-  assert.deepEqual(result.items, domain.buildObOverview([assignment], [fixtures.overviewInspection()], [workflow]))
+  assert.deepEqual(result.items, domain.buildObOverview([assignment], [fixtures.overviewInspection()], [workflow]).map(item => ({ ...item, canEdit: true })))
 })
 
 test('only visible inspections with stored PDFs receive authenticated download links', async () => {
   const pdfLoader = load<typeof Loader>('src/lib/ob/overviewLoader.ts', { './overview': domain,
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({}) },
     './overviewPdfs': { loadOverviewPdfIds: async () => new Set(['inspection-1', 'foreign-inspection']) },
   })
   const rpc = rpcClient({ ...rawPage, rows: [
     rawPage.rows[0],
-    { assignment: fixtures.overviewAssignment({ id: 'without-inspection' }), inspection: null, workflow: null },
+    { assignment: fixtures.overviewAssignment({ id: 'without-inspection' }), inspection: null, workflow: null, canEdit: true },
   ] })
   const result = await pdfLoader.loadObOverview({ userClient: rpc.client, orgId: 'org', options })
   assert.equal(result.items[0].pdfHref, '/api/report-v2/inspection-1/pdf')
@@ -102,11 +104,20 @@ test('missing migration/query error fails closed rather than reverting to all-da
   assert.equal(rpc.calls.length, 1)
 })
 
+test('colleague overview rows retain read-only permission and link to the report preview', async () => {
+  const rpc = rpcClient({ ...rawPage, rows: [{ ...rawPage.rows[0], canEdit: false }] })
+  const result = await loader.loadObOverview({ userClient: rpc.client, orgId: 'org', options })
+  assert.equal(result.items[0].canEdit, false)
+  assert.match(result.items[0].inspectionHref!, /^\/utlatande\/[^/]+\/inspection-1$/)
+  assert.equal(result.items[0].confirmationAction, 'Visa bekräftelse')
+})
+
 test('invalid counts, oversized payloads, duplicate identities and mixed workflows fail closed', async () => {
   const cases = [null, { ...rawPage, total: -1 }, { ...rawPage, page: 0 }, { ...rawPage, pageSize: 50 },
     { ...rawPage, counts: { all: 51, active: 1, closed: 1 } },
     { ...rawPage, rows: Array(11).fill(rawPage.rows[0]) },
     { ...rawPage, rows: [rawPage.rows[0], rawPage.rows[0]] },
+    { ...rawPage, rows: [{ ...rawPage.rows[0], canEdit: undefined }] },
     { ...rawPage, rows: [{ assignment: null, inspection: null, workflow: null }] },
     { ...rawPage, rows: [{ assignment: fixtures.overviewAssignment(), inspection: fixtures.overviewInspection(),
       workflow: { current_assignment_id: 'replacement' } }] },

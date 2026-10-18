@@ -515,12 +515,20 @@ export default function TuPostDamagePreparationWorkspace({
             <Files size={21} aria-hidden />
           </span>
           <div>
-            <h2 className="text-base font-semibold text-gray-950">Förbered kontrollen</h2>
+            <h2 className="text-base font-semibold text-gray-950">Förbered kontrollen · Valfritt</h2>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
               Lägg in tidigare underlag. AI sammanfattar ett fåtal områden att ha i åtanke under besöket.
             </p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onOpenField}
+          className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+        >
+          Dokumentera på plats
+          <ArrowRight size={16} aria-hidden />
+        </button>
         {approved ? (
           <span className="inline-flex h-8 items-center gap-2 rounded-md bg-emerald-50 px-3 text-xs font-semibold text-emerald-800">
             <CheckCircle2 size={15} aria-hidden />
@@ -897,7 +905,7 @@ export default function TuPostDamagePreparationWorkspace({
                 {approved
                   ? 'Inriktningen visas som ett frivilligt minnesstöd. Observationer, mätningar och bilder är det faktiska resultatunderlaget.'
                   : reviewSummary.included === 0
-                    ? 'Välj minst ett uppmärksamhetsområde för att kunna fortsätta.'
+                    ? 'Välj minst ett uppmärksamhetsområde för att godkänna inriktningen.'
                     : 'Godkänn inriktningen när områdena ger en tillräcklig överblick inför besöket.'}
               </p>
               <div className="flex shrink-0 flex-wrap gap-2">

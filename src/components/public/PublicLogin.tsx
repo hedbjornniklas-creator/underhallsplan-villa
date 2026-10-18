@@ -16,6 +16,7 @@ const labels: Record<Destination, string> = {
   '/renoapp/app': 'RenoApp',
   '/mina-uppdrag': 'Mina uppdrag',
   '/organisation/inbjudan': 'din organisationsinbjudan',
+  '/settings/organisation/skapa': 'Skapa organisation',
 }
 
 export default function PublicLogin({ destination, resetSuccess }: { destination: Destination; resetSuccess: boolean }) {
@@ -60,6 +61,7 @@ export default function PublicLogin({ destination, resetSuccess }: { destination
           {(destination === '/dashboard-v1' || destination === '/app') && <p>Vill du börja använda BesiktApp? <Link href="/besiktapp/intresse">Anmäl intresse</Link> så går vi igenom hur du kan få tillgång. Ange gärna företagets namn om ni redan använder tjänsten.</p>}
           {(destination === '/renoapp/app' || destination === '/app') && <p>För tillgång till styrelsens RenoApp, be den som administrerar föreningen om en inbjudan.</p>}
           {destination === '/mina-uppdrag' && <p>Kontakta den som skickade uppdraget om du saknar uppgifter för att logga in.</p>}
+          {destination === '/settings/organisation/skapa' && <p>Logga in med ditt befintliga HusHub-konto för att skapa ett nytt företag. Finns företaget redan ska du be dess administratör om en inbjudan. Saknar du konto? <Link href="/besiktapp/intresse">Anmäl intresse för BesiktApp.</Link></p>}
           {destination !== '/dashboard-v1' && <p>Ska du renovera din lägenhet? <Link href="/renoapp/apply">Gå till ansökan utan att logga in.</Link></p>}
         </div>
       </section>

@@ -9,6 +9,8 @@ import { publicChanges } from './contractChanges.ts'
 import { normalizePaymentPlan, normalizePaymentConditions, paymentPlanIssues, type CustomerPaymentPlan, type PaymentConditions } from './customerPaymentPlan.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeContractParties, contractPartiesIssues, publicContractParties, contractPartiesSummary, type ContractParties } from './customerContractParties.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeContractSenderProfile, type ContractSenderProfileSnapshot } from './contractSenderProfile.ts'
 
 export type CustomerOfferItem = {
   id: string
@@ -24,6 +26,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  senderProfile?: ContractSenderProfileSnapshot
   signingMethod?: 'email_code' | 'external'
   contractPricing?: ContractPricing
   contractParties?: ContractParties
@@ -194,6 +197,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.senderProfile === undefined ? {} : { senderProfile: normalizeContractSenderProfile(d.senderProfile) }),
     ...(d.signingMethod === undefined ? {} : { signingMethod: d.signingMethod as CustomerOfferDraft['signingMethod'] }),
     ...(d.contractPricing === undefined ? {} : { contractPricing: normalizeContractPricing(d.contractPricing) }),
     ...(d.contractParties === undefined ? {} : { contractParties: normalizeContractParties(d.contractParties) }),

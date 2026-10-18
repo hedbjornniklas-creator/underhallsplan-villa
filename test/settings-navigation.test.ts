@@ -88,7 +88,7 @@ test('settings navigation exposes company, personal and customer destinations wi
 })
 
 test('organization destination is current on both canonical and landing settings routes', () => {
-  for (const pathname of ['/settings', '/settings/organisation']) {
+  for (const pathname of ['/settings', '/settings/organisation', '/settings/organisation/skapa']) {
     const html = renderNavigation(pathname)
 
     assert.deepEqual(activeLinks(html), [anchorFor(html, '/settings/organisation')])

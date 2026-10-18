@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getTuAssignmentById, requireTuContext, sendTuAssignmentConfirmation } from '@/lib/tu/server'
 import { AssignmentEmailSendError, isMissingEnvError } from '@/lib/assignments/server'
+import { assertAssignmentCustomerSameOrigin } from '@/lib/assignment-customers/http'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -11,6 +12,8 @@ function jsonError(message: string, status: number, extra?: Record<string, unkno
 
 function mapAccessError(error: unknown) {
   const message = error instanceof Error ? error.message : ''
+  if (message === 'ASSIGNMENT_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Otillåten begäran.', 403)
+  if (message === 'TU_ACTION_NOT_ALLOWED' || message === 'ASSIGNMENT_VERSION_CONFLICT') return jsonError('Uppdraget har ändrats. Uppdatera status innan du skickar igen.', 409)
   if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
   if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
   if (message === 'MODULE_ACCESS_REQUIRED') return jsonError('TU kräver egen modulbehörighet.', 403)
@@ -20,7 +23,7 @@ function mapAccessError(error: unknown) {
     return jsonError('Fyll i företagsvisitkortet för den valda organisationen innan du skickar.', 409)
   }
   if (message === 'ORG_PROFILE_CARD_MIGRATION_REQUIRED') {
-    return jsonError('Databasen saknar migrationen för organisationsprofiler.', 409)
+    return jsonError('Företagsuppgifterna behöver uppdateras innan bekräftelsen kan skickas. Kontakta administratören.', 409)
   }
   return null
 }
@@ -30,6 +33,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    assertAssignmentCustomerSameOrigin(request)
     const { id } = await context.params
     const searchParams = new URL(request.url).searchParams
     if (
@@ -65,7 +69,7 @@ export async function POST(
     if (error instanceof AssignmentEmailSendError) {
       return jsonError('Kunde inte skicka mejl just nu.', 502, { acceptUrl: error.acceptUrl })
     }
-    if (isMissingEnvError(error)) return jsonError('Servern saknar mejlkonfiguration i env.', 500)
+    if (isMissingEnvError(error)) return jsonError('Mejltjänsten är inte tillgänglig. Kontakta administratören.', 500)
     return jsonError('Kunde inte skicka TU-uppdrag.', 500)
   }
 }

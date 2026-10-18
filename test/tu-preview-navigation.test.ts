@@ -50,9 +50,9 @@ async function openInvestigation(query: { orgId?: string; view?: string | string
   }).outputText
   const contextRequests: unknown[] = []
   const inspectionRequests: unknown[] = []
-  const investigation = { inspectionId: 'inspection-1', reportDraft: { sections: [] } }
+  const investigation = { orgId: 'resolved-org', inspectionId: 'inspection-1', reportDraft: { sections: [] } }
   const loaded = { exports: {} as { default: (props: object) => Promise<ReactElement<{
-    initialInvestigation: object; initialWorkspaceView?: TuWorkspaceView
+    children: ReactElement<{ initialInvestigation: object; initialWorkspaceView?: TuWorkspaceView }>
   }>> } }
   const require = createRequire(import.meta.url)
   new Function('require', 'module', 'exports', code)((name: string) => {
@@ -61,6 +61,8 @@ async function openInvestigation(query: { orgId?: string; view?: string | string
       redirect: () => { throw new Error('Unexpected redirect') },
     }
     if (name === '@/components/tu/TuInvestigationEditorClient') return { default: () => null }
+    if (name === '@/components/tu/TuAssignmentWorkflowBoundary') return { default: () => null }
+    if (name === '@/lib/tu/assignmentWorkflowServer') return { getTuAssignmentWorkflow: async (_id: string, orgId: string) => { assert.equal(orgId, 'resolved-org'); return null } }
     if (name === '@/lib/tu/server') return {
       requireTuContext: async (orgId: unknown) => { contextRequests.push(orgId); return { orgId: 'resolved-org' } },
       getTuInvestigationById: async (input: unknown) => { inspectionRequests.push(input); return investigation },
@@ -69,7 +71,7 @@ async function openInvestigation(query: { orgId?: string; view?: string | string
     return require(name)
   }, loaded, loaded.exports)
   const element = await loaded.exports.default({ params: Promise.resolve({ inspectionId: 'inspection-1' }), searchParams: Promise.resolve(query) })
-  return { element, investigation, contextRequests, inspectionRequests }
+  return { element: element.props.children, investigation, contextRequests, inspectionRequests }
 }
 
 test('preview return link opens report review for AI, post-damage and standard investigations', async () => {

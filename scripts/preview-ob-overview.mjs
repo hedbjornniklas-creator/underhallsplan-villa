@@ -26,6 +26,8 @@ body{margin:0;background:#f4f6f8;color:#25313b;font-family:ObOverviewManrope,san
 .preview-notice{padding:6px 16px;background:#edf3fc;color:#245eb5;font-size:14px;text-align:center}
 .preview-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid #d4dce4;background:white;gap:16px}
 .preview-header img{width:140px;height:auto}.preview-header span{font-size:14px;min-width:0;overflow-wrap:anywhere}
+.preview-header > :last-child{flex:1;min-width:0;max-width:28rem}
+@media(max-width:639px){.preview-header{padding:12px 16px;gap:12px}.preview-header img{width:110px;flex-shrink:0}}
 html[data-large-text]{font-size:200%}
 `
 const assets = new Map()
@@ -50,13 +52,18 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB overview preview (synthetic only): ${base}/ob`)
-if (process.argv.includes('--test') || process.argv.includes('--test-actions') || process.argv.includes('--test-guide')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-actions') || process.argv.includes('--test-guide') || process.argv.includes('--test-retirement')) {
   try {
+    if (process.argv.includes('--test-retirement')) {
+      const { testOverviewRetirement } = await import('../test/helpers/ob-overview-retirement-browser.mjs'); await testOverviewRetirement(base, output)
+    }
     if (process.argv.includes('--test-guide')) {
       const { testHomeGuide } = await import('../test/helpers/ob-home-guide-browser.mjs'); await testHomeGuide(base, output)
-    } else if (process.argv.includes('--test-actions')) {
+    }
+    if (process.argv.includes('--test-actions')) {
       const { testHomeActions } = await import('../test/helpers/ob-home-actions-browser.mjs'); await testHomeActions(base, output)
-    } else { const { testOverview } = await import('../test/helpers/ob-overview-browser.mjs'); await testOverview(base, output) }
+    }
+    if (process.argv.includes('--test')) { const { testOverview } = await import('../test/helpers/ob-overview-browser.mjs'); await testOverview(base, output) }
   }
   finally { server.close() }
 }

@@ -1,4 +1,4 @@
-import { requireObInspectionContext } from '@/lib/ob/organizationBindings'
+import { requireObInspectionContext, requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { obRequestOrgId, obOrganizationFailure } from '@/lib/ob/organizationHttp'
 import { NextResponse } from 'next/server'
 import { getObAssignmentWorkflow, obWorkflowRpc, obWorkflowError } from '@/lib/ob/assignmentWorkflowServer'
@@ -16,9 +16,10 @@ function failure(error: unknown) {
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    const org = await requireObInspectionContext((await context.params).id, obRequestOrgId(request))
+    const org = await requireObInspectionReadContext((await context.params).id, obRequestOrgId(request))
     const { id } = await context.params
-    return NextResponse.json({ workflow: await getObAssignmentWorkflow(id, org.orgId) })
+    return NextResponse.json({ workflow: await getObAssignmentWorkflow(id, org.orgId), canEdit: org.canEdit },
+      { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure

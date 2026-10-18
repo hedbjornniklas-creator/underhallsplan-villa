@@ -15,6 +15,7 @@ import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
 import { getLatestObPublishedReportId, obPublishedReportHref } from '@/lib/ob/publishedReport'
+import { obWordExportHref } from '@/lib/ob/wordExportLink'
 import { resolveObInspectionProfile } from '@/lib/ob/inspectionProfile'
 
 export const runtime = 'nodejs'
@@ -43,6 +44,7 @@ type InspectionForDelivery = {
   id: string
   property_id: string | null
   status: string | null
+  locked_at?: string | null
   inspection_side: 'buyer' | 'seller' | 'apartment' | 'status' | null
   inspection_variant?: string | null
   type?: string | null
@@ -393,7 +395,7 @@ async function revokeOlderReportLinks(
 async function getInspectionById(admin: AdminClient, inspectionId: string) {
   const { data, error } = await admin
     .from('inspections')
-    .select('id,property_id,status,inspection_side,inspection_variant,type,client_name,client_contact,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city')
+    .select('id,property_id,status,locked_at,inspection_side,inspection_variant,type,client_name,client_contact,customer_name,customer_email,customer_phone,customer_address,customer_postal_code,customer_city')
     .eq('id', inspectionId)
     .maybeSingle()
 
@@ -755,6 +757,8 @@ export async function GET(
       inspectionStatus,
       canSend: inspectionStatus !== 'archived' && workflow?.canDeliver !== false,
       digitalReportUrl: obPublishedReportHref(id, publishedReportId),
+      wordExportUrl: publishedReportId || (!inspection.locked_at && inspectionStatus !== 'archived')
+        ? obWordExportHref(id, publishedReportId, org.orgId) : null,
       reason:
         inspectionStatus === 'archived'
           ? 'Arkiverad besiktning kan inte skickas.'
@@ -868,6 +872,7 @@ export async function POST(
 
       const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
       const pdfState = await getReportPdfState(admin, id)
+      const publishedReportId = await getLatestObPublishedReportId(admin, id, org.orgId)
       const activityLog = await buildDeliveryActivityLog({
         admin,
         orgId: org.orgId,
@@ -879,7 +884,8 @@ export async function POST(
         inspectionId: id,
         inspectionStatus,
         canSend: inspectionStatus !== 'archived',
-        digitalReportUrl: obPublishedReportHref(id, await getLatestObPublishedReportId(admin, id, org.orgId)),
+        digitalReportUrl: obPublishedReportHref(id, publishedReportId),
+        wordExportUrl: publishedReportId ? obWordExportHref(id, publishedReportId, org.orgId) : null,
         reason: null,
         defaultRecipientEmail: fallbackOrdererEmail,
         ordererEmail: fallbackOrdererEmail,

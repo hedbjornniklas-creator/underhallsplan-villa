@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 type ReportShareButtonProps = {
   shareEndpoint: string
   shareUrl: string
+  requireCustomerLink?: boolean
 }
 
 function isValidEmail(value: string) {
@@ -12,16 +13,18 @@ function isValidEmail(value: string) {
   return emailRegex.test(value.trim())
 }
 
-export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportShareButtonProps) {
+export default function ReportShareButton({ shareEndpoint, shareUrl, requireCustomerLink = false }: ReportShareButtonProps) {
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [sending, setSending] = useState(false)
   const [copying, setCopying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [customerLink, setCustomerLink] = useState('')
+  const titleId = useId()
 
   const normalizedEmail = email.trim().toLowerCase()
-  const canSend = isValidEmail(normalizedEmail) && !sending
+  const canSend = isValidEmail(normalizedEmail) && !sending && !copying && (!requireCustomerLink || Boolean(customerLink.trim()))
   const absoluteShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return shareUrl
     if (shareUrl.startsWith('http://') || shareUrl.startsWith('https://')) return shareUrl
@@ -29,7 +32,7 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
   }, [shareUrl])
 
   const handleClose = () => {
-    if (sending) return
+    if (sending || copying) return
     setOpen(false)
     setError(null)
     setSuccess(null)
@@ -45,7 +48,7 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
       const response = await fetch(shareEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: normalizedEmail }),
+        body: JSON.stringify({ email: normalizedEmail, ...(requireCustomerLink ? { action: 'share', publicUrl: customerLink.trim() } : {}) }),
       })
       const payload = (await response.json().catch(() => null)) as { error?: string } | null
 
@@ -67,10 +70,18 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
     setCopying(true)
     setError(null)
     try {
-      await navigator.clipboard.writeText(absoluteShareUrl)
+      let url = absoluteShareUrl
+      if (requireCustomerLink) {
+        const response = await fetch(shareEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'validate-link', publicUrl: customerLink.trim() }) })
+        const result = await response.json().catch(() => null) as { shareUrl?: string; error?: string } | null
+        if (!response.ok || !result?.shareUrl) throw new Error(result?.error || 'Kundlänken kunde inte verifieras.')
+        url = result.shareUrl
+      }
+      await navigator.clipboard.writeText(url)
       setSuccess('Länken kopierades.')
-    } catch {
-      setError('Kunde inte kopiera länken.')
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Kunde inte kopiera länken.')
     } finally {
       setCopying(false)
     }
@@ -87,11 +98,11 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
       </button>
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+          <div className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">Dela utlåtande</h2>
+                <h2 id={titleId} className="text-base font-semibold text-slate-900">Dela utlåtande</h2>
                 <p className="mt-1 text-sm text-slate-600">
                   Skicka en länk till detta utlåtande.
                 </p>
@@ -99,21 +110,30 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
               <button
                 type="button"
                 onClick={handleClose}
-                disabled={sending}
+                disabled={sending || copying}
                 className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Stäng
               </button>
             </div>
 
+            {requireCustomerLink && <label className="mt-4 block space-y-1">
+              <span className="text-xs font-medium text-slate-700">Kundens utlåtandelänk</span>
+              <input type="url" value={customerLink} disabled={sending || copying}
+                onChange={event => { setCustomerLink(event.target.value); setError(null); setSuccess(null) }}
+                placeholder="https://hushub.se/rapport/…"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm" />
+              <span className="block text-xs text-slate-600">Den ursprungliga kundlänken behövs för denna rapportversion.</span>
+            </label>}
             <label className="mt-4 block space-y-1">
               <span className="text-xs font-medium text-slate-700">E-postadress</span>
               <input
                 type="email"
                 value={email}
+                disabled={sending || copying}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="namn@epost.se"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:text-sm"
               />
             </label>
 
@@ -141,7 +161,7 @@ export default function ReportShareButton({ shareEndpoint, shareUrl }: ReportSha
               <button
                 type="button"
                 onClick={() => void handleCopy()}
-                disabled={copying}
+                disabled={copying || sending || (requireCustomerLink && !customerLink.trim())}
                 className="inline-flex items-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {copying ? 'Kopierar...' : 'Kopiera länk'}

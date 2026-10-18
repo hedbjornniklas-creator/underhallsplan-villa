@@ -2516,15 +2516,21 @@ export default function TuEvidenceWorkspace({
             ? `${observations.length - reviewedCount} fältposter behöver kontrolleras innan helhetsanalysen kan starta.`
             : 'Källmaterialet är kontrollerat och klart för en samlad bedömning.'}
         </p>
+        <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={onOpenAnalysis}
           disabled={pendingDeleteIds.size > 0 || pendingObservationSaveIds.size > 0 || failedObservationSaveIds.size > 0 || reviewedCount < observations.length || observations.length === 0}
           className="inline-flex h-10 items-center gap-2 rounded-md bg-violet-700 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
-          Bedöm och komplettera
+          Skapa med AI (valfritt)
           <ChevronRight size={15} aria-hidden />
         </button>
+        <button type="button" onClick={() => onOpenReport()}
+          className="inline-flex min-h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-4 text-sm font-semibold text-violet-800 hover:bg-violet-50">
+          Granska utlåtandet<ChevronRight size={15} aria-hidden />
+        </button>
+        </div>
       </div>
 
       {fieldEntryDialogOpen ? (

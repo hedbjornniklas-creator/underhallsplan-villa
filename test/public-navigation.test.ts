@@ -39,6 +39,16 @@ test('organization invitation login returns only to the exact token-free invitat
   }
 })
 
+test('organization creation login preserves only the exact local creation route', () => {
+  assert.equal(getPublicLoginDestination('/settings/organisation/skapa'), '/settings/organisation/skapa')
+  for (const rejected of ['/settings/organisation', '/settings/organisation/skapa/other',
+    '/settings/organisation/skapa?orgId=other', '/settings/organisation/skapa#token',
+    '//hushub.se/settings/organisation/skapa', 'https://hushub.se/settings/organisation/skapa',
+    ['/settings/organisation/skapa']]) {
+    assert.equal(getPublicLoginDestination(rejected), '/app')
+  }
+})
+
 test('public headers replace only public RenoApp entry headers, never private or personal-link pages', () => {
   for (const path of ['/renoapp', '/renoapp/apply', '/renoapp/login', '/renoapp/request-access']) {
     assert.equal(isPublicRenoPage(path), true)

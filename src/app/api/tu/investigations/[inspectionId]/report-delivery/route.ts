@@ -1,4 +1,6 @@
 import { NextResponse, after } from 'next/server'
+import { getTuAssignmentWorkflow, assertTuAssignmentDelivery } from '@/lib/tu/assignmentWorkflowServer'
+import { tuAssignmentWorkflowError } from '@/lib/tu/assignmentWorkflow'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { decryptTuReportLinkToken, encryptTuReportLinkToken } from '@/lib/tu/reportLinkToken'
@@ -29,7 +31,7 @@ import {
 import {
   evaluateTuReportImprovements,
   evaluateTuReportQuality,
-  isTuSystemGeneratedReportSection,
+  getTuRequiredReportSectionsBlocker,
 } from '@/lib/tu/reportQuality'
 
 export const runtime = 'nodejs'
@@ -869,16 +871,8 @@ async function getFinalizationBlocker(
   })
   if (analysisBlocker) return analysisBlocker
 
-  const missingSections = investigation.reportDraft.sections.filter((section) => {
-    if (isTuSystemGeneratedReportSection(section.key)) return false
-    if (!section.isRequired) return false
-    return !section.text.trim() && !section.subsections?.some((subsection) => subsection.text.trim())
-  })
-  if (missingSections.length > 0) {
-    const titles = missingSections.slice(0, 3).map((section) => section.title).join(', ')
-    const suffix = missingSections.length > 3 ? ` och ${missingSections.length - 3} till` : ''
-    return `Fyll i obligatoriska rapportdelar: ${titles}${suffix}.`
-  }
+  const missingSections = getTuRequiredReportSectionsBlocker(investigation.reportDraft.sections)
+  if (missingSections) return missingSections
   const qualityIssues = await getReportQualityIssues(investigation)
   const qualityBlocker = qualityIssues.find((issue) => issue.severity === 'blocker')
   if (qualityBlocker) return qualityBlocker.message
@@ -921,6 +915,7 @@ export async function GET(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
 
+    const assignmentWorkflow = await getTuAssignmentWorkflow(inspectionId, org.orgId)
     if (new URL(request.url).searchParams.get('status') === '1') {
       const activeLink = await getLatestReportLink(admin, org.orgId, inspectionId)
       if (!activeLink || activeLink.org_id !== org.orgId) {
@@ -982,8 +977,11 @@ export async function GET(
       improvementReview,
       analysisStale: isTuAnalysisStaleForFinalization(analysisState),
       analysisStaleAt: analysisState?.analysisStaleAt ?? null,
+      assignmentWorkflowBlocker: assignmentWorkflow?.reason ?? null,
     }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
+    const workflowError = tuAssignmentWorkflowError(error)
+    if (workflowError) return jsonError(workflowError[1], workflowError[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)
@@ -1023,6 +1021,7 @@ export async function POST(
     })
     if (!investigation) return jsonError('TU-utredningen hittades inte.', 404)
     const usesFrozenRevision = action === 'resend' || (action === 'send_and_lock' && Boolean(investigation.reportLockedAt))
+    await assertTuAssignmentDelivery(inspectionId, org.orgId)
     if (action !== 'regenerate_pdf' && !usesFrozenRevision) {
       if (!investigation.inspectorProfileId) {
         return jsonError('TU-utredningen saknar ansvarig besiktningsman.', 409)
@@ -1433,6 +1432,8 @@ export async function POST(
       publishedRevisionNumber: hasPublishedLink ? publishedRevision?.revision_number ?? null : null,
     }, { headers: { 'Cache-Control': 'private, no-store, max-age=0' } })
   } catch (error) {
+    const workflowError = tuAssignmentWorkflowError(error)
+    if (workflowError) return jsonError(workflowError[1], workflowError[0])
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401)
     if (message === 'ORG_SELECTION_INVALID') return jsonError('Den valda organisationen är ogiltig.', 400)

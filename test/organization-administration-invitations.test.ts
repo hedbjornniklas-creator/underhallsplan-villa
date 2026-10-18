@@ -71,7 +71,7 @@ function harness(options: {
       const call: Query = { table, ops: [] }
       calls.queries.push(call)
       const builder: Record<string, unknown> = {}
-      for (const name of ['select', 'eq', 'order', 'limit', 'update']) builder[name] = (...args: unknown[]) => {
+      for (const name of ['select', 'eq', 'in', 'order', 'limit', 'update']) builder[name] = (...args: unknown[]) => {
         call.ops.push({ name, args }); return builder
       }
       const run = () => options.query?.(call) ?? { data: table === 'organization_enabled_modules'
@@ -248,6 +248,38 @@ test('member list projects only exact-org active unexpired OB and TU inspector g
     ['scope_type', 'organization'], ['scope_id', ORG], ['is_active', true],
   ])
   assert.match(String(grantQuery.ops.find(op => op.name === 'select')?.args[0]), /role:platform_roles\(key\)/u)
+})
+
+test('member identity uses its organization card and accepted invitation without mutating profiles or grants', async () => {
+  const { domain, calls } = harness({ query: call => ({ error: null, data: call.table === 'org_members'
+    ? [{ profile_id: MEMBER, role: 'inspector', is_active: true, profile: { full_name: null, email: null } }]
+    : call.table === 'profile_org_cards' ? [{ profile_id: MEMBER, display_name: 'Organization name', email: 'contact@example.test' }]
+    : call.table === 'organization_invitations' ? [{ accepted_by_profile_id: MEMBER, full_name: 'Invited name', email: 'login@example.test' }]
+    : [] }) })
+  const result = await domain.listOrganizationMembers(ORG)
+  assert.equal(result[0].displayName, 'Organization name')
+  assert.equal(result[0].email, 'login@example.test')
+  for (const table of ['profile_org_cards', 'organization_invitations']) {
+    const query = calls.queries.find(call => call.table === table)!
+    assert.ok(query.ops.some(op => op.name === 'eq' && op.args[0] === 'org_id' && op.args[1] === ORG))
+    assert.ok(query.ops.some(op => op.name === 'in' && JSON.stringify(op.args[1]) === JSON.stringify([MEMBER])))
+  }
+  assert.ok(calls.queries.find(call => call.table === 'organization_invitations')!.ops.some(op =>
+    op.name === 'eq' && op.args[0] === 'status' && op.args[1] === 'accepted'))
+  assert.deepEqual(calls.rpc, [])
+  assert.ok(calls.queries.every(call => call.ops.every(op => op.name !== 'update')))
+})
+
+test('accepted invitation only fills missing identity and never supersedes a filled personal profile', async () => {
+  for (const empty of [true, false]) {
+    const { domain } = harness({ query: call => ({ error: null, data: call.table === 'org_members'
+      ? [{ profile_id: MEMBER, role: 'inspector', is_active: true, profile: empty ? {} : { full_name: 'Personal name', email: 'personal@example.test' } }]
+      : call.table === 'organization_invitations' ? [{ accepted_by_profile_id: MEMBER, full_name: 'Invited name', email: draft.email }]
+      : [] }) })
+    const result = await domain.listOrganizationMembers(ORG)
+    assert.equal(result[0].displayName, empty ? 'Invited name' : 'Personal name')
+    assert.equal(result[0].email, empty ? draft.email : 'personal@example.test')
+  }
 })
 
 test('member editing hides unmanaged OB grants but keeps OB visible when explicitly managed even if disabled', async () => {

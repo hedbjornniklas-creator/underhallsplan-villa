@@ -24,12 +24,8 @@ export function getTuAnalysisFinalizationBlocker(input: {
   if (isTuAnalysisStaleForFinalization(input.state)) {
     return input.staleAnalysisAcknowledged
       ? null
-      : 'Underlaget har ändrats efter den senaste AI-analysen. Granska att utlåtandet tar hänsyn till ändringen eller uppdatera analysen.'
+      : 'Underlaget har ändrats. Granska utlåtandet mot det aktuella underlaget och bekräfta granskningen innan du fastställer.'
   }
-
-  if (input.state?.status !== 'analysis_approved') {
-    return 'Den samlade bedömningen måste vara aktuell och godkänd innan utlåtandet kan fastställas.'
-  }
-
+  // AI completion is not a delivery prerequisite; report checks run separately.
   return null
 }

@@ -20,6 +20,7 @@ await new Promise((ok, fail) => webpack({
     'next/navigation': resolve('test/fixtures/assignment-link-navigation.tsx'),
     '@/components/Protected': resolve('test/fixtures/assignment-link-navigation.tsx'),
     '@/components/ob/ObAssignmentWorkflowBoundary': resolve('test/fixtures/assignment-link-navigation.tsx'),
+    '@/components/organizations/OrganizationContextProvider': resolve('test/fixtures/assignment-link-navigation.tsx'),
     'next/link': resolve('test/helpers/preview-link.tsx'),
     '@/components/ob/ob-forms.css': false, '@/components/ob/ob-assignment-form.css': false,
     '@': resolve('src'),
@@ -33,7 +34,7 @@ const css = [globalCss, ...await Promise.all([
 ].map(path => readFile(path, 'utf8')))].join('\n').replaceAll(/@import '[^']+';/g, '')
 const font = await readFile('public/ob/brand/manrope.ttf')
 const js = await readFile(resolve(output, 'view.js'))
-const assignment = { id: 'synthetic-assignment', org_id: 'synthetic-org', status: 'sent', assignment_type: 'OB',
+const assignment = { id: 'synthetic-assignment', org_id: 'synthetic-org', canEdit: true, status: 'sent', assignment_type: 'OB',
   customer_name: 'Testkund', customer_email: 'test@example.test', customer_phone: '0700000000',
   customer_address: 'Testgatan 1', customer_postal_code: '12345', customer_city: 'Teststad',
   property_address: 'Testgatan 1', preliminary_address: 'Testgatan 1', property_postal_code: '12345',
@@ -67,12 +68,19 @@ const server = createServer(async (request, response) => {
   const scenario = previewUrl.searchParams.get('terms')
   const formMode = previewUrl.searchParams.get('form')
   const statusObject = previewUrl.searchParams.get('object')
+  const editLock = previewUrl.searchParams.get('locked')
   response.setHeader('Cache-Control', 'no-store')
   if (url.pathname.startsWith('/api/')) {
     response.setHeader('Content-Type', 'application/json; charset=utf-8')
     if (url.pathname === '/api/ob/assignments') { response.end(JSON.stringify({ items: [assignment], linkIssues })); return }
     if (url.pathname === `/api/ob/assignments/${assignment.id}`) {
       if (request.method === 'PATCH') {
+        if (formMode === 'conflict') {
+          counters.set('draft-issued-elsewhere', true)
+          response.writeHead(409)
+          response.end(JSON.stringify({ error: 'Uppdragsbekräftelsen är låst för redigering. Skapa en ny uppdragsbekräftelse.' }))
+          return
+        }
         if (formMode !== 'draft') { response.writeHead(405); response.end('{}'); return }
         const chunks = []
         for await (const chunk of request) chunks.push(chunk)
@@ -91,8 +99,18 @@ const server = createServer(async (request, response) => {
       }
       const approved = scenario ? { ...assignment, status: 'booked', accepted_at: '2026-09-24T09:00:00Z',
         terms_version: '2026-02-21.v1', orderer_role: scenario in acceptedDocuments ? scenario : 'buyer' } : assignment
-      const row = formMode === 'draft' ? statusDrafts.get(statusObject) ?? draft : formMode === 'ordered' ? { ...approved, status: 'ordered' } : approved
-      response.end(JSON.stringify({ assignment: row, addonOrders: [], linkIssues: formMode ? { available: true, items: [] } : linkIssues })); return
+      let row = formMode === 'draft' || formMode === 'conflict' ? statusDrafts.get(statusObject) ?? draft : formMode === 'ordered' ? { ...approved, status: 'ordered' } : approved
+      if (editLock) {
+        row = { ...approved, status: editLock, accepted_at: '2026-09-24T09:00:00Z', booked_at: '2026-09-24T10:00:00Z' }
+        if (editLock.startsWith('draft-')) {
+          const marker = editLock.slice('draft-'.length)
+          row = { ...draft, [marker]: '2026-10-15T09:00:00Z' }
+        }
+      }
+      if (formMode === 'conflict' && counters.get('draft-issued-elsewhere')) {
+        row = { ...approved, status: 'completed', accepted_at: '2026-09-24T09:00:00Z' }
+      }
+      response.end(JSON.stringify({ assignment: row, addonOrders: [], linkIssues: formMode || editLock ? { available: true, items: [] } : linkIssues })); return
     }
     if (url.pathname === `/api/ob/assignments/${assignment.id}/terms`) {
       const key = `terms:${scenario}`

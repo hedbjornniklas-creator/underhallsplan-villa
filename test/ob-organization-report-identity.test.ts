@@ -4,14 +4,21 @@ import test from 'node:test'
 import ts from 'typescript'
 import type * as Identity from '../src/lib/ob/reportIdentity'
 
-function harness(options: { missingCompany?: boolean; configured?: boolean; cardError?: string; wrongOrg?: boolean } = {}) {
+function harness(options: { missingCompany?: boolean; configured?: boolean; cardError?: string; wrongOrg?: boolean; logoPath?: string | null } = {}) {
   const calls: unknown[] = []
+  const mediaCalls: unknown[] = []
   const code = ts.transpileModule(readFileSync('src/lib/ob/reportIdentity.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const compiled = { exports: {} }
   const dependencies: Record<string, unknown> = {
     'server-only': {},
+    '@/lib/supabase/admin': { createSupabaseAdminClient: () => ({ storage: { from: (bucket: string) => ({
+      getPublicUrl: (path: string) => {
+        mediaCalls.push({ bucket, path })
+        return { data: { publicUrl: `https://storage.example.test/storage/v1/object/public/${bucket}/${path}` } }
+      },
+    }) } }) },
     '@/lib/organizations/profileCard': { requireConfiguredOrganizationProfileCard: async (input: unknown) => {
       calls.push(input)
       if (options.cardError) throw new Error(options.cardError)
@@ -22,14 +29,14 @@ function harness(options: { missingCompany?: boolean; configured?: boolean; card
       calls.push(orgId)
       return options.missingCompany ? null : { id: options.wrongOrg ? 'org-a' : 'org-b', configured: options.configured !== false,
         name: 'Company B', organizationNumber: '123456-7890', address: 'Address B', postalCode: '22222', city: 'Town B',
-        website: 'https://b.example.test', logoPath: 'organizations/org-b/logo.png' }
+        website: 'https://b.example.test', logoPath: Object.hasOwn(options, 'logoPath') ? options.logoPath : 'organizations/org-b/logo.png' }
     } },
   }
   new Function('require', 'module', 'exports', code)((name: string) => {
     assert.ok(Object.hasOwn(dependencies, name), name)
     return dependencies[name]
   }, compiled, compiled.exports)
-  return { service: compiled.exports as typeof Identity, calls }
+  return { service: compiled.exports as typeof Identity, calls, mediaCalls }
 }
 const input = { orgId: 'org-b', profileId: 'inspector', locked: false, frozenProfile: null, frozenCompany: null }
 
@@ -40,8 +47,9 @@ test('new OB report identity uses the bound organization and personal card, neve
   assert.deepEqual(profile, {
     full_name: 'Consultant B', phone: '222', email: 'b@example.test', company_name: 'Company B',
     company_orgno: '123456-7890', company_address: 'Address B', company_postal_code: '22222', company_city: 'Town B',
-    company_website: 'https://b.example.test', logo_path: 'organizations/org-b/logo.png',
+    company_website: 'https://b.example.test', logo_path: 'https://storage.example.test/storage/v1/object/public/property-media/organizations/org-b/logo.png',
   })
+  assert.deepEqual(h.mediaCalls, [{ bucket: 'property-media', path: 'organizations/org-b/logo.png' }])
 })
 
 test('locked issuer is preserved including absent and explicitly empty historical fields without live profile reads', async () => {
@@ -60,7 +68,16 @@ test('locked issuer is preserved including absent and explicitly empty historica
   assert.equal(profile.logo_path, 'old-logo.png')
   assert.deepEqual(frozenProfile, before)
   assert.deepEqual(h.calls, [])
+  assert.deepEqual(h.mediaCalls, [])
   assert.equal((await h.service.resolveObReportIdentity({ ...input, locked: true, frozenProfile, frozenCompany: null })).logo_path, null)
+})
+
+test('absolute logo URLs and intentionally absent logos keep their saved values', async () => {
+  for (const logoPath of ['https://images.example.test/logo.png', '/saved-logo.png', null, '']) {
+    const h = harness({ logoPath })
+    assert.equal((await h.service.resolveObReportIdentity(input)).logo_path, logoPath || null)
+    assert.deepEqual(h.mediaCalls, [])
+  }
 })
 
 test('missing locked issuer fails closed instead of reconstructing old documents from current branding', async () => {
@@ -78,7 +95,8 @@ test('unconfigured or mismatched company and missing personal card cannot enter 
 test('both OB preview builders resolve authorized bound identity and no longer read global company fields', () => {
   for (const path of ['src/lib/report/pdfV2/buildReportDataV2.ts', 'src/app/utlatande/[propertyId]/[inspectionId]/page.tsx']) {
     const source = readFileSync(path, 'utf8')
-    assert.match(source, /requireObInspectionContext\(/)
+    assert.match(source, /requireObInspectionReadContext\(/)
+    assert.match(source, /const userId = propertyData\?\.owner/)
     assert.match(source, /resolveObReportIdentity\(/)
     assert.match(source, /\.eq\('org_id', organization.orgId\)/)
     assert.match(source, /company_website: profile.company_website/)
