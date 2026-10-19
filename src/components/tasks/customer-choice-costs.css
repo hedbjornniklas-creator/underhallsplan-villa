@@ -1,0 +1,21 @@
+.uppdrag-scope .gizmo-choice-sheet { max-width: 1120px; }
+.gizmo-choice-costs { min-width: 0; border-block: 1px solid #D5DCDD; padding-block: 16px; }
+.gizmo-choice-price-mode { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-bottom: 12px; }
+.gizmo-choice-price-mode legend { font-size: 14px; font-weight: 600; }
+.gizmo-choice-price-mode label { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; }
+.gizmo-choice-price-mode input { accent-color: #206961; width: 18px; height: 18px; }
+.gizmo-choice-row-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; font-size: 14px; }
+.gizmo-choice-row-title { grid-column: 1 / -1; }
+.gizmo-choice-price-total { max-width: 400px; margin: 12px 0 0 auto; font-size: 14px; font-variant-numeric: tabular-nums; }
+.gizmo-choice-price-total > div { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0; }
+.gizmo-choice-price-total > div:last-child { border-top: 1px solid #D5DCDD; font-weight: 600; }
+@media (max-width: 767px) {
+  .uppdrag-scope .gizmo-choice-sheet { max-width: none; }
+  .gizmo-choice-row-fields { grid-template-columns: minmax(0, 1fr); }
+  .gizmo-choice-costs :is(input, select) { min-height: 48px; font-size: 16px; }
+  .gizmo-choice-costs button, .gizmo-choice-price-mode label { min-height: 48px; }
+  .gizmo-choice-costs input[type='checkbox'], .gizmo-choice-costs input[type='radio'] { min-height: 0; }
+  .gizmo-choice-costs .gizmo-cost-toolbar { flex-wrap: wrap; }
+  .gizmo-choice-price-total { max-width: none; }
+  .gizmo-choice-costs .gizmo-cost-table [data-number] small { margin-left: auto; }
+}

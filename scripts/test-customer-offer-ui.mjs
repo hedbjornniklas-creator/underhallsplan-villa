@@ -23,6 +23,7 @@ import {
   mapCustomerOffer
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
+import { normalizeCustomerChoiceCosting, synchronizeChoicePrices } from '../src/lib/action-cases/customerChoiceCosting.ts'
 import { categoryOptions, legacyChoiceCategories, normalizeChoiceCategories, normalizeChoiceFileRefs, normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
@@ -82,7 +83,7 @@ const { css: base } = await postcss([tailwind()]).process(
   await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -93,7 +94,7 @@ if (process.argv.includes('--legacy-controls')) {
   state.draft.contractDetails.fields.controls = { status: 'specified', text: 'TEST: Tidigare gemensamma rolluppgifter.' }
   state.draft.contractDetails.controlParticipants = { controlOfficer: '', customerInspector: '', previousDetails: state.draft.contractDetails.fields.controls }
 }
-state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, costing: {}, categoriesAvailable: true, categoriesStored: false, categories: [] }
+state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, rowCostingAvailable: true, costing: {}, categoriesAvailable: true, categoriesStored: false, categories: [] }
 function separateChoices() {
   const choices = state.draft.items.filter((i) => i.kind === 'option')
   state.planning.items.push(...choices.map((i) => ({ id: i.id, title: i.title, scope: i.scope,
@@ -126,6 +127,12 @@ if (process.argv.includes('--choice-categories')) {
   state.planning.categories = legacyChoiceCategories(state.planning.items)
   state.planning.categories[0].specification = 'FIKTIVA TESTKRAV: Fönster för tillbyggnaden. Mått, kulör och öppningsfunktioner kontrolleras före beställning.'
   state.planning.sharedItems = []; state.planning.costing = {}; delete state.planning.sharedChoices
+}
+if (process.argv.includes('--choice-costs')) {
+  const option = state.planning.items[0]
+  state.planning.costing[option.id] = { purchaseOre: 10010871, markupBasisPoints: 1000, fixedMarkupOre: null,
+    additions: [{ id: id(980), title: 'Montage, drevning, tätning och normal justering', amountOre: 2000000 }] }
+  option.budgetOre = 16264948
 }
 let choiceRecords = [], choiceRevision = 0
 if (process.argv.includes('--choice-files')) Object.assign(state.planning, { filesAvailable: true, optionFiles: [], sharedFileRefs: [] })
@@ -582,7 +589,8 @@ const server = createServer(async (req, res) => {
         if (body.operation === 'save') {
           if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
           state.planning.items = normalizePlannedItems(body.items)
-          state.planning.costing = normalizeCustomerOfferCosting(body.costing, state.planning.items)
+          state.planning.costing = normalizeCustomerChoiceCosting(body.costing, state.planning.items)
+          state.planning.items = synchronizeChoicePrices(state.planning.items, state.planning.costing)
           state.planning.categories = normalizeChoiceCategories(body.categories ?? legacyChoiceCategories(state.planning.items), state.planning.items)
           state.planning.categoriesStored = true
           if (state.planning.filesAvailable) state.planning.optionFiles = normalizeChoiceFileRefs(body.optionFiles ?? [], state.planning.items)

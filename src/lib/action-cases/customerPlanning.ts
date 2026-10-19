@@ -1,4 +1,4 @@
-import type { CustomerOfferCosting } from './customerOfferCosting'
+import type { CustomerChoiceCosting } from './customerChoiceCosting'
 
 export const planningStatuses = {
   planned: 'Planerat',
@@ -20,8 +20,9 @@ export type CustomerPlanning = {
   items: CustomerPlannedItem[]
   sharedItems: CustomerPlannedItem[]
   available: boolean
-  costing?: CustomerOfferCosting
+  costing?: CustomerChoiceCosting
   costingAvailable?: boolean
+  rowCostingAvailable?: boolean
   categoriesAvailable?: boolean
   categoriesStored?: boolean
   categories?: CustomerChoiceCategory[]

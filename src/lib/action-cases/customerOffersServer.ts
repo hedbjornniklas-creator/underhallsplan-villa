@@ -8,6 +8,7 @@ import {
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
+import { guardChoiceCostingDowngrade, normalizeCustomerChoiceCosting, synchronizeChoicePrices } from './customerChoiceCosting'
 import { getCustomerChoiceFiles, writeCustomerChoiceFiles } from './customerChoiceFilesServer'
 import { getSharedSigningContracts } from './contractSigningDeliveryServer'
 import { legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItems, normalizeSharedChoices, type CustomerPlanning, type CustomerPlannedItem, type SharedCustomerChoices } from './customerPlanning'
@@ -574,10 +575,10 @@ export async function getCustomerPlanning(ctx: Context, caseId: string): Promise
   const items = normalizePlannedItems(saved?.items ?? [])
   const categories = saved?.categories == null ? legacyChoiceCategories(items) : normalizeChoiceCategories(saved.categories, items)
   const sharedChoices = categoriesAvailable && saved?.participant_id ? await getSharedCustomerChoices(ctx.orgId, caseId, saved.participant_id) : undefined
-  return { available: true, revision: saved?.revision ?? 0, costingAvailable, categoriesAvailable, categoriesStored: saved?.categories != null, categories,
+  return { available: true, revision: saved?.revision ?? 0, costingAvailable, rowCostingAvailable: costingAvailable, categoriesAvailable, categoriesStored: saved?.categories != null, categories,
     ...await getCustomerChoiceFiles(ctx.orgId, caseId, items),
     ...(sharedChoices ? { sharedChoices } : {}),
-    costing: normalizeCustomerOfferCosting(saved?.internal_costing, items),
+    costing: normalizeCustomerChoiceCosting(saved?.internal_costing, items),
     items, sharedItems: normalizePlannedItems(saved?.shared_items ?? []) }
 }
 export async function writeCustomerPlanning(ctx: Context, caseId: string, payload: Payload) {
@@ -585,7 +586,17 @@ export async function writeCustomerPlanning(ctx: Context, caseId: string, payloa
   if (!['save', 'share', 'unshare'].includes(String(payload.operation)) || !Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (payload.operation === 'share' && payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_CONFIRM')
-  const items = payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share')
+  let items = payload.operation === 'unshare' ? [] : normalizePlannedItems(payload.items, payload.operation === 'share')
+  const costing = payload.operation === 'save' && payload.costing !== undefined ? normalizeCustomerChoiceCosting(payload.costing, items) : undefined
+  if (payload.operation === 'save') {
+    const stored = await createSupabaseAdminClient().from('action_case_customer_planning')
+      .select('internal_costing').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+    // Old installations may still have manual prices without private worksheets.
+    if (stored.error && !['42703', 'PGRST204'].includes(stored.error.code) && !schemaMissing(stored.error.code)) checked(stored.error)
+    const previous = normalizeCustomerChoiceCosting(stored.data?.internal_costing, items)
+    if (costing) guardChoiceCostingDowngrade(previous, costing)
+    items = synchronizeChoicePrices(items, costing ?? previous)
+  }
   const categories = payload.categories === undefined || payload.operation === 'unshare' ? undefined : normalizeChoiceCategories(payload.categories, items, payload.operation === 'share')
   if (categories) {
     const ready = await createSupabaseAdminClient().rpc('assert_customer_choice_categories', { p_categories: categories, p_items: items, p_complete: payload.operation === 'share' })
@@ -596,14 +607,14 @@ export async function writeCustomerPlanning(ctx: Context, caseId: string, payloa
     await writeCustomerChoiceFiles(ctx, caseId, String(payload.operation), {
       revision: payload.revision, confirmed: payload.confirmed === true, items,
       ...(categories ? { categories } : {}), optionFiles: payload.optionFiles,
-      ...(payload.operation === 'save' && payload.costing !== undefined ? { costing: normalizeCustomerOfferCosting(payload.costing, items) } : {})
+      ...(costing ? { costing } : {})
     }, items)
     return
   }
   if (payload.operation === 'save' && payload.costing !== undefined) {
     const result = await createSupabaseAdminClient().rpc('save_customer_planning_costing', {
       p_org_id: ctx.orgId, p_case_id: offerId(caseId), p_user_id: ctx.userId,
-      p_data: { revision: payload.revision, items, ...(categories ? { categories } : {}), costing: normalizeCustomerOfferCosting(payload.costing, items) }
+      p_data: { revision: payload.revision, items, ...(categories ? { categories } : {}), costing }
     })
     checked(result.error)
     return

@@ -107,6 +107,12 @@ full bredd. Inga nya färgteman, kortlistor eller ändringar av avtalsvyn ingår
   och ett separat sparkommando. Öppen kategori markeras med neutral rubrik och
   grönblå vänsterkant, utan nästlade kort. Detta följer produktbeslutet 2026-10-18
   i gizmo-customer-overview.md; avtalets utseende, innehåll och belopp ändras inte.
+- Beslut 2026-10-19: Alternativets pris använder Projektarbetets kompakta
+  kalkyltabell med kostnad, påslag och kundpris per rad, pennöppnade detaljer
+  och en intern Klar-bock. Panelen får vara 1120 px bred. Belopp i tabellen
+  är exklusive moms; en separat slutsumma visar moms och kundpris inklusive.
+  Samlat kundpris är ett aktivt alternativ till automatisk beräkning.
+  Se [Egna kalkylrader i Val och tillval](gizmo-choice-costing.md).
 - Avtalsstatus är en hopfällbar fullbreddsrad över formuläret. Grundstatus och
   belopp syns direkt; utskick, granskning och versionshistorik öppnas vid behov.
   Ingen fast högerspalt tränger ihop avtalsfälten.
@@ -289,6 +295,11 @@ Läsbarhetsunderlag: [Isofs vägledning](https://www.isof.se/svenska-spraket/kla
 och [GOV.UK:s dokumentvägledning](https://www.gov.uk/guidance/publishing-accessible-documents).
 
 ## Beslutslogg
+
+- 2026-10-19: Prisredigering i Val och tillval ska fungera som Projektarbete,
+  med egna kalkylrader och direkt omräkning inom alternativet. Ingen ändring
+  får föras över till avtalet. Offertens och avtalets befintliga funktioner
+  behålls. Äldre manuella priser ändras inte bara för att panelen öppnas.
 
 - 2026-10-11: Efter nästa PDF-prov begär användaren varmgula huvudrubriker,
   lika stora avsnittsnummer, tydliga ramar och underrubriker, starkare

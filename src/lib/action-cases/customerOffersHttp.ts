@@ -116,6 +116,8 @@ export function customerOfferError(error: unknown) {
     CUSTOMER_OFFER_INVALID: [400, 'Kontrollera uppgifterna och försök igen.'],
     CUSTOMER_CHOICE_INVALID: [400, 'Kontrollera kategorierna och deras alternativ. Varje alternativ ska tillhöra en kategori.'],
     CUSTOMER_CHOICE_SCHEMA: [503, 'Kategorier och kundval behöver aktiveras av administratören.'],
+    CUSTOMER_CHOICE_COSTING_STALE: [409, 'Kalkylen har uppdaterats till kalkylrader. Ladda om sidan innan du ändrar priset. Dina ändringar är kvar.'],
+    CUSTOMER_CHOICE_COSTING_INVALID: [400, 'Kontrollera kalkylradernas namn, kostnader och påslag.'],
     CUSTOMER_CHOICE_FILE_SCHEMA: [503, 'PDF-bilagor för val och tillval behöver aktiveras av administratören.'],
     CUSTOMER_CHOICE_FILES: [400, 'Kontrollera PDF-bilagorna. Välj kundgranskade PDF-filer, högst 20 MB per fil och 50 MB sammanlagt. Interna leverantörsofferter kan inte delas här.'],
     CUSTOMER_CHOICE_NOT_SHARED: [404, 'Dessa val visas inte längre för beställaren.'],

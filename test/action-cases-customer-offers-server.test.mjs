@@ -6,6 +6,7 @@ import ts from 'typescript'
 import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
+import * as choiceCostingDomain from '../src/lib/action-cases/customerChoiceCosting.ts'
 import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
@@ -242,6 +243,7 @@ function harness(options = {}) {
     './quotes': quotes,
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
+    './customerChoiceCosting': choiceCostingDomain,
     './customerPlanning': planningDomain,
     './customerChoiceFilesServer': { async getCustomerChoiceFiles() { return { filesAvailable: false } } },
     './standardContractTerms': { ...standardTerms, withStandardContractTerms: options.standardTerms ? standardTerms.withStandardContractTerms : (draft) => draft },
@@ -877,6 +879,37 @@ test('choice price calculations save privately and public projection strips unex
   await h.api.writeCustomerPlanning(ctx, id(1), { operation: 'save', revision: 2, items: [item], costing })
   assert.equal(h.calls.at(-1).name, 'save_customer_planning_costing')
   assert.deepEqual(h.calls.at(-1).p_data.costing, costing)
+})
+
+test('row choice pricing is derived on the server and writes only independent planning', async () => {
+  const value = choiceFixture(), option = value.items[0], before = JSON.stringify(workspace)
+  const rows = [{ id: id(850), title: 'Fiktivt material', costOre: 1000000, markupBasisPoints: 1000, fixedMarkupOre: null, complete: false },
+    { id: id(851), title: 'Fiktivt montage', costOre: 200000, markupBasisPoints: 0, fixedMarkupOre: null, complete: true }]
+  const costing = { [option.id]: { version: 2, priceMode: 'calculated', rows } }
+  const h = harness({ planning: { items: value.items, internal_costing: {}, shared_items: [] } })
+  await h.api.writeCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1), { operation: 'save', revision: 2, items: value.items, categories: value.categories, costing })
+  const write = h.calls.at(-1)
+  assert.equal(write.name, 'save_customer_planning_costing')
+  assert.equal(write.p_data.items[0].budgetOre, 1625000)
+  assert.equal(write.p_data.items[1].budgetOre, value.items[1].budgetOre)
+  assert.deepEqual(write.p_data.costing, costing)
+  assert.equal(JSON.stringify(workspace), before)
+  assert.ok(h.calls.every(call => ['assert_customer_choice_categories', 'save_customer_planning_costing'].includes(call.name)))
+  const read = h.reads.find(read => read.table === 'action_case_customer_planning')
+  assert.ok(read.filters.some(([key, val]) => key === 'org_id' && val === id(90)))
+  assert.ok(read.filters.some(([key, val]) => key === 'action_case_id' && val === id(1)))
+  assert.deepEqual(h.sent, []); assert.deepEqual(h.copies, []); assert.deepEqual(h.signed, [])
+})
+
+test('old client costing cannot erase saved choice rows, even with a current planning revision', async () => {
+  const value = choiceFixture(), option = value.items[0]
+  const costing = { [option.id]: { version: 2, priceMode: 'calculated', rows: [{ id: id(850), title: 'Material', costOre: 100, markupBasisPoints: 0, fixedMarkupOre: null, complete: true }] } }
+  const h = harness({ planning: { items: value.items, internal_costing: costing, shared_items: [] } })
+  await assert.rejects(h.api.writeCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1), { operation: 'save', revision: 2, items: value.items, costing: {} }), /COSTING_STALE/)
+  assert.equal(h.calls.length, 0)
+  await h.api.writeCustomerPlanning({ orgId: id(90), userId: id(91) }, id(1), { operation: 'save', revision: 2, items: value.items })
+  assert.equal(h.calls.at(-1).p_data.items[0].budgetOre, 125)
+  assert.equal(h.calls.at(-1).name, 'write_customer_planning')
 })
 
 test('assignment metadata requires schema protection before autosave and survives the frozen contract projection', async () => {

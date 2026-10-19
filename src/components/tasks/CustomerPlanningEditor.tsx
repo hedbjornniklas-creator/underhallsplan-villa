@@ -6,7 +6,7 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import { categoryOptions, currentCategoryChoice, legacyChoiceCategories, type CustomerChoiceCategory, type CustomerChoiceFileRef, type CustomerPlannedItem, type CustomerPlanning } from '@/lib/action-cases/customerPlanning'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import { money } from '@/lib/action-cases/customerOffers'
-import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
+import { choiceCalculatedPrice, type CustomerChoiceCosting } from '@/lib/action-cases/customerChoiceCosting'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import CustomerChoiceOptionSheet from './CustomerChoiceOptionSheet'
 import ProjectEditorRow from './ProjectEditorRow'
@@ -24,11 +24,11 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
 }) {
   const [saved, setSaved] = useState(initial), [items, setItems] = useState(initial.items)
   const [categories, setCategories] = useState(initial.categories ?? legacyChoiceCategories(initial.items))
-  const [costing, setCosting] = useState<CustomerOfferCosting>(initial.costing ?? {})
+  const [costing, setCosting] = useState<CustomerChoiceCosting>(initial.costing ?? {})
   const [optionFiles, setOptionFiles] = useState(initial.optionFiles ?? []), [projectFiles, setProjectFiles] = useState(files)
   const [busy, setBusy] = useState(''), [confirmed, setConfirmed] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null), [expandedOption, setExpandedOption] = useState<string | null>(null)
-  const [removed, setRemoved] = useState<{ categories: CustomerChoiceCategory[]; items: CustomerPlannedItem[]; costing: CustomerOfferCosting; files: CustomerChoiceFileRef[]; index: number } | null>(null)
+  const [removed, setRemoved] = useState<{ categories: CustomerChoiceCategory[]; items: CustomerPlannedItem[]; costing: CustomerChoiceCosting; files: CustomerChoiceFileRef[]; index: number } | null>(null)
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const running = useRef(false), toast = useToast()
   const ready = saved.available && saved.categoriesAvailable === true
@@ -169,9 +169,16 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
         {saved.sharedItems.length > 0 && <button type="button" className={button} disabled={!ready || Boolean(busy) || dirty} onClick={() => void action('unshare')}>{busy === 'unshare' ? <Loader2 size={17} className="animate-spin" /> : <EyeOff size={17} />} Dölj val och tillval</button>}
       </div>
     </section>
-    {items.filter((i) => i.id === expandedOption).map((option) => <CustomerChoiceOptionSheet key={option.id} caseId={caseId} option={option} categories={categories} files={projectFiles} references={optionFiles} filesAvailable={saved.filesAvailable === true} costing={costing[option.id]} costingAvailable={saved.costingAvailable === true} busy={Boolean(busy)} dirty={dirty || !structured}
+    {items.filter((i) => i.id === expandedOption).map((option) => <CustomerChoiceOptionSheet key={option.id} caseId={caseId} option={option} categories={categories} files={projectFiles} references={optionFiles} filesAvailable={saved.filesAvailable === true} costing={costing[option.id]} costingAvailable={saved.costingAvailable === true} rowCostingAvailable={saved.rowCostingAvailable === true} busy={Boolean(busy)} dirty={dirty || !structured}
       onChange={(patch) => patchOption(option.id, patch)} onMove={(id) => moveOption(option.id, id)} onFiles={setProjectFiles}
-      onReferences={(refs) => { setOptionFiles(refs); setConfirmed(false) }} onCosting={(value) => { setCosting({ ...costing, [option.id]: value }); setConfirmed(false) }} onSave={() => action('save')} onRemove={() => removeOption(option.id)} onClose={() => setExpandedOption(null)} />)}
+      onReferences={(refs) => { setOptionFiles(refs); setConfirmed(false) }} onCosting={(value) => {
+        setCosting({ ...costing, [option.id]: value }); setConfirmed(false)
+        if (value.priceMode === 'calculated') {
+          let budgetOre: number | null = null
+          try { budgetOre = choiceCalculatedPrice(value.rows)?.grossOre ?? null } catch { /* Keep invalid draft editable; saving validates it. */ }
+          patchOption(option.id, { budgetOre })
+        }
+      }} onSave={() => action('save')} onRemove={() => removeOption(option.id)} onClose={() => setExpandedOption(null)} />)}
   </section>
 }
 

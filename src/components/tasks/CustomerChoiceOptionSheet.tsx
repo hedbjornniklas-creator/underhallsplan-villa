@@ -6,19 +6,20 @@ import { ExternalLink, Loader2, Save, Trash2, Upload, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import type { CustomerChoiceCategory, CustomerChoiceFileRef, CustomerPlannedItem } from '@/lib/action-cases/customerPlanning'
-import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
+import type { CustomerChoiceCalculation, CustomerChoiceCosting } from '@/lib/action-cases/customerChoiceCosting'
 import PriceInput from './CustomerOfferPriceInput'
-import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
+import CustomerChoiceCostTable from './CustomerChoiceCostTable'
 
 const field = 'mt-1 block w-full rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-base sm:text-sm'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
 
-export default function CustomerChoiceOptionSheet({ caseId, option, categories, files, references, filesAvailable, costing, costingAvailable, busy, dirty, onChange, onMove, onReferences, onFiles, onCosting, onSave, onRemove, onClose }: {
+export default function CustomerChoiceOptionSheet({ caseId, option, categories, files, references, filesAvailable, costing, costingAvailable, rowCostingAvailable, busy, dirty, onChange, onMove, onReferences, onFiles, onCosting, onSave, onRemove, onClose }: {
   caseId: string; option: CustomerPlannedItem; categories: CustomerChoiceCategory[]; files: ActionCaseAttachmentView[]
-  references: CustomerChoiceFileRef[]; filesAvailable: boolean; costing?: CustomerOfferCosting[string]; costingAvailable: boolean
+  references: CustomerChoiceFileRef[]; filesAvailable: boolean; costing?: CustomerChoiceCosting[string]; costingAvailable: boolean
+  rowCostingAvailable: boolean
   busy: boolean; dirty: boolean; onChange: (patch: Partial<CustomerPlannedItem>) => void; onMove: (categoryId: string) => void
   onReferences: (refs: CustomerChoiceFileRef[]) => void; onFiles: (files: ActionCaseAttachmentView[]) => void
-  onCosting: (value: CustomerOfferCosting[string]) => void; onSave: () => Promise<boolean>; onRemove: () => void; onClose: () => void
+  onCosting: (value: CustomerChoiceCalculation) => void; onSave: () => Promise<boolean>; onRemove: () => void; onClose: () => void
 }) {
   const dialog = useRef<HTMLDivElement>(null), backdrop = useRef(false), uploadInput = useRef<HTMLInputElement>(null), uploadingRef = useRef(false)
   const [uploading, setUploading] = useState(false), [error, setError] = useState('')
@@ -69,7 +70,7 @@ export default function CustomerChoiceOptionSheet({ caseId, option, categories, 
   if (typeof document === 'undefined') return null
   return createPortal(<div className="uppdrag-scope gizmo-dialog-scope gizmo-choice-categories fixed inset-0 z-[70] flex justify-end bg-black/40"
     onPointerDown={(e) => { backdrop.current = e.target === e.currentTarget }} onClick={(e) => { if (e.target === e.currentTarget && backdrop.current && !working) onClose(); backdrop.current = false }}>
-    <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={working} tabIndex={-1} className="flex h-dvh w-full max-w-3xl flex-col bg-white text-[#252A2D] shadow-2xl outline-none" onKeyDown={(e) => {
+    <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={working} tabIndex={-1} className="gizmo-choice-sheet flex h-dvh w-full flex-col bg-white text-[#252A2D] shadow-2xl outline-none" onKeyDown={(e) => {
       if (e.key === 'Escape') { e.preventDefault(); if (!working) onClose() }
       if (e.key !== 'Tab') return
       const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href]') ?? []).filter((n) => n.tabIndex >= 0 && n.getClientRects().length)
@@ -83,7 +84,8 @@ export default function CustomerChoiceOptionSheet({ caseId, option, categories, 
         <fieldset disabled={working} className="grid min-w-0 gap-4">
           <label className="text-sm">Namn<input className={field} value={option.title} maxLength={250} onChange={(e) => onChange({ title: e.target.value })} /></label>
           <label className="text-sm">Beskrivning<textarea className={field} rows={5} maxLength={12000} value={option.scope} onChange={(e) => onChange({ scope: e.target.value })} /></label>
-          <PriceInput label="Prisunderlag inkl. moms (kr, valfritt)" value={option.budgetOre} onChange={(budgetOre) => onChange({ budgetOre })} />
+          {costingAvailable ? <CustomerChoiceCostTable optionId={option.id} value={costing} customerPrice={option.budgetOre} available={rowCostingAvailable} onChange={onCosting} onPrice={(budgetOre) => onChange({ budgetOre })} />
+            : <PriceInput label="Kundpris inkl. moms (kr)" value={option.budgetOre} onChange={(budgetOre) => onChange({ budgetOre })} />}
           <section className="border-y border-[#D5DCDD] py-4" aria-label="PDF-bilagor"><h3 className="font-semibold">PDF-bilagor</h3>
             {!filesAvailable ? <p role="status" className="mt-2 text-sm text-[#596368]">PDF-bilagor behöver aktiveras av administratören.</p> : <>
               <ul className="mt-2 divide-y divide-[#D5DCDD]">{selected.map((ref) => {
@@ -94,7 +96,6 @@ export default function CustomerChoiceOptionSheet({ caseId, option, categories, 
             </>}
           </section>
           {categories.length > 1 && <label className="text-sm">Kategori<select className={field} value={category?.id || ''} onChange={(e) => onMove(e.target.value)}>{categories.map((c) => <option value={c.id} key={c.id}>{c.title || 'Ny kategori'}</option>)}</select></label>}
-          {costingAvailable && <CustomerOfferCostCalculator value={costing} customerPrice={option.budgetOre} onChange={onCosting} onApply={(budgetOre) => onChange({ budgetOre })} />}
           <button type="button" className={`${button} justify-self-start text-rose-700`} onClick={onRemove}><Trash2 size={16} /> Ta bort alternativ</button>
         </fieldset>
       </div>
