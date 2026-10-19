@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 
 import { NextResponse } from 'next/server'
+import { deliverQuestionMessages } from '@/lib/action-cases/questionDialogueServer'
 
 import {
   runTaskFollowupBatch,
@@ -97,10 +98,12 @@ export async function GET(request: Request) {
       if (!digestMayHaveMore) break
     }
 
+    const questionMessages = await deliverQuestionMessages()
     return NextResponse.json({
       ok: true,
       ...totals,
       digests: digestTotals,
+      questionMessages,
       batches: taskBatches + digestBatches,
       taskBatches,
       digestBatches,

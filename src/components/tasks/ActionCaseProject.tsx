@@ -15,6 +15,7 @@ import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import type { ContractContractor } from '@/lib/action-cases/customerContractParties'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import ProjectQuestions from './ProjectQuestions'
+import ProjectManagerField from './ProjectManagerField'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -58,6 +59,8 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [workDirty, setWorkDirty] = useState(false)
   const [scheduleDirty, setScheduleDirty] = useState(false)
   const [questionsDirty, setQuestionsDirty] = useState(false)
+  const [questionsRefresh, setQuestionsRefresh] = useState(0)
+  const managerChanged = useCallback(() => setQuestionsRefresh(v => v + 1), [])
   const questionFiles = useCallback((files: ActionCaseAttachmentView[]) => {
     setWorkspace(current => ({ ...current, cases: current.cases.map(c => c.id === caseId ? { ...c, attachments: files } : c) }))
   }, [caseId])
@@ -172,6 +175,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
         <section hidden={view !== 'overview'}>
           <div className="gizmo-section-heading"><h2>Översikt</h2><span className="gizmo-secondary">{projectStatus[project.status]}</span></div>
+          <ProjectManagerField caseId={caseId} active={view === 'overview'} disabled={questionsDirty} onChanged={managerChanged} />
           <dl className="gizmo-overview-facts"><div><dt>Beställare</dt><dd>{customer?.name ?? project.customerName}</dd><dd>{customer?.email ?? project.customerEmail ?? 'E-post saknas'}</dd></div><div><dt>{offerLabel}</dt><dd>{priceDraft ? customerPriceLabel(priceDraft) : 'Belopp saknas'}</dd><dd>{priceDraft?.contractPricing?.mode === 'running' ? 'Enligt avtalets prisgrunder' : priceDraft?.contractPricing?.mode === 'mixed' ? 'Fast del inkl. moms + löpande del' : 'Grundåtagande inkl. moms'}</dd></div><div><dt>Underlag</dt><dd>{project.items.length} åtgärder</dd><dd>{project.attachments.length} bilder och filer</dd></div></dl>
           <div className="gizmo-overview-row"><div><h3>Projektarbete</h3><p>{projectNeeds(project)}</p></div>{open('work', 'Öppna projektarbete')}</div>
           <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{estimate ? `${estimate.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(estimate.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
@@ -180,7 +184,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           <div className="gizmo-overview-row"><div><h3>Betalning och fakturering</h3><p>{(contract ? contract.snapshot.paymentPlan : offer?.draft.paymentPlan)?.installments.length ?? 0} delbetalningar{contract ? ' · i avtalsversionen' : ' · internt utkast'}</p></div>{open('payments', 'Öppna betalning och fakturering')}</div>
         </section>
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
-        <ProjectQuestions caseId={caseId} active={view === 'questions'} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
+        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
           customerRefresh={customerRefresh}
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />

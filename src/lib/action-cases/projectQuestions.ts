@@ -1,13 +1,14 @@
 export const questionStatuses = { open: 'Öppen', investigating: 'Under utredning', answered: 'Besvarad', closed: 'Avslutad' } as const
 export type QuestionStatus = keyof typeof questionStatuses
 export type QuestionAssignee = { id: string; kind: 'profile' | 'contact' | 'customer'; name: string; email?: string | null }
-export type QuestionBody = { title: string; description: string; source: string; meetingDate: string; assignee: QuestionAssignee | null; status: QuestionStatus; conclusion: string }
+export type QuestionBody = { title: string; description: string; source: string; meetingDate: string; assignee: QuestionAssignee | null; status: QuestionStatus }
 export type QuestionFile = { id: string; name: string }
+export type QuestionParticipant = { id: string; kind: QuestionAssignee['kind']; personId: string; name: string; email: string | null; shared: boolean }
 export type QuestionEvent = { id: string; operation: string; actorName: string; createdAt: string; text: string; reportedBy: string; body: QuestionBody; files: QuestionFile[]; revision: number; taskId: string | null }
 export type QuestionTask = { id: string; status: string; active?: boolean; dueAt: string; assigneeName: string; events: Array<{ id: string; actorName: string; type: string; text: string; createdAt: string }>; files: Array<{ id: string; name: string; text: string | null; createdAt: string }> }
-export type ProjectQuestion = { id: string; number: number; revision: number; createdAt: string | null; updatedAt: string; body: QuestionBody; events: QuestionEvent[]; tasks: QuestionTask[] }
-export type QuestionWorkspace = { questions: ProjectQuestion[]; assignees: QuestionAssignee[]; customersAvailable?: boolean }
-export const emptyQuestion = (): QuestionBody => ({ title: '', description: '', source: '', meetingDate: '', assignee: null, status: 'open', conclusion: '' })
+export type ProjectQuestion = { id: string; number: number; revision: number; createdAt: string | null; updatedAt: string; body: QuestionBody; events: QuestionEvent[]; tasks: QuestionTask[]; participants: QuestionParticipant[] }
+export type QuestionWorkspace = { questions: ProjectQuestion[]; assignees: QuestionAssignee[]; privateFiles?: Array<import('./contracts').ActionCaseAttachmentView & { questionId: string }>; customersAvailable?: boolean; userId: string; managerId: string | null; canManageParticipants: boolean }
+export const emptyQuestion = (): QuestionBody => ({ title: '', description: '', source: '', meetingDate: '', assignee: null, status: 'open' })
 export function questionAssigneeOptions(people: QuestionAssignee[], selected: QuestionAssignee | null) {
   const options = new Map<string, QuestionAssignee>()
   for (const person of people) {
@@ -32,16 +33,16 @@ function text(v: unknown, max: number, required = false) {
 export function questionMutation(v: Record<string, unknown>) {
   if (!questionUuid(v.questionId) || !questionUuid(v.requestId) || !Number.isSafeInteger(v.revision) || Number(v.revision) < 0) throw new Error('PROJECT_QUESTION_INVALID')
   const operation = String(v.operation)
-  if (!['create', 'update', 'answer', 'note', 'conclusion', 'close', 'reopen', 'send'].includes(operation)) throw new Error('PROJECT_QUESTION_INVALID')
+  if (!['create', 'update', 'answer', 'note', 'close', 'reopen', 'send'].includes(operation)) throw new Error('PROJECT_QUESTION_INVALID')
   if (!Array.isArray(v.fileIds) || v.fileIds.length > 20 || !v.fileIds.every(questionUuid) || new Set(v.fileIds).size !== v.fileIds.length) throw new Error('PROJECT_QUESTION_INVALID')
   let body: QuestionBody | null = null
   if (['create', 'update'].includes(operation)) {
     const b = v.body as QuestionBody
     if (!b || typeof b !== 'object' || !questionDate(b.meetingDate) || !['open', 'investigating', 'answered'].includes(b.status)) throw new Error('PROJECT_QUESTION_INVALID')
     if (b.assignee !== null && (!b.assignee || !questionUuid(b.assignee.id) || !['profile', 'contact', 'customer'].includes(b.assignee.kind))) throw new Error('PROJECT_QUESTION_INVALID')
-    body = { title: text(b.title, 250, true), description: text(b.description, 12000, true), source: text(b.source, 500), meetingDate: b.meetingDate, assignee: b.assignee ? { id: b.assignee.id, kind: b.assignee.kind, name: '' } : null, status: b.status, conclusion: '' }
+    body = { title: text(b.title, 250, true), description: text(b.description, 12000, true), source: text(b.source, 500), meetingDate: b.meetingDate, assignee: b.assignee ? { id: b.assignee.id, kind: b.assignee.kind, name: '' } : null, status: b.status }
   }
-  const message = text(v.text ?? '', 12000, ['answer', 'note', 'conclusion', 'close', 'reopen'].includes(operation))
+  const message = text(v.text ?? '', 12000, ['answer', 'note', 'close', 'reopen'].includes(operation))
   const reportedBy = text(v.reportedBy ?? '', 250)
   if (reportedBy && operation !== 'answer') throw new Error('PROJECT_QUESTION_INVALID')
   let dueAt: string | null = null, followupAt: string | null = null

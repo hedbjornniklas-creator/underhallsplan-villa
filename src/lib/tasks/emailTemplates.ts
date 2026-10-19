@@ -8,7 +8,8 @@ type TaskEmailTemplateInput = {
   lead: string
   taskTitle: string
   contextLabel?: string | null
-  dueLabel: string
+  dueLabel: string | null
+  itemLabel?: string
   instruction?: string | null
   actionUrl?: string | null
   actionLabel?: string
@@ -61,9 +62,9 @@ function bulletproofButton(href: string, label: string) {
  */
 export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
   const details = [
-    detailRow('Uppdrag', input.taskTitle),
+    detailRow(input.itemLabel ?? 'Uppdrag', input.taskTitle),
     input.contextLabel ? detailRow('Projekt', input.contextLabel) : '',
-    detailRow('Slutdatum', input.dueLabel, true),
+    input.dueLabel ? detailRow('Slutdatum', input.dueLabel, true) : '',
   ].join('')
   const instruction = input.instruction
     ? `<p style="margin:22px 0 0;font-family:Arial,sans-serif;font-size:15px;line-height:24px;color:#44403c;">${escapeHtml(input.instruction)}</p>`

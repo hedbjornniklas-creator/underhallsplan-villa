@@ -264,6 +264,7 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
     ...(requestRows ?? []).map((request) => request.response_document_id),
   ].filter(Boolean))
   for (const row of attachments ?? []) {
+    if (row.question_id) continue
     const list = attachmentsByCase.get(row.action_case_id) ?? []
     list.push({
       id: row.id,
@@ -460,6 +461,12 @@ export async function addActionCaseParticipant(context: Context, payload: Record
   if (error) throw new Error('ACTION_CASE_PARTICIPANT_CREATE_FAILED')
 }
 
+async function requireQuestionFileScope(context: Context, caseId: string, questionId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(questionId)) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  const scope = await createSupabaseAdminClient().rpc('project_question_internal_participant', { p_org_id: context.orgId, p_case_id: caseId, p_question_id: questionId, p_profile_id: context.userId })
+  if (scope.error || scope.data !== true) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+}
+function uploadQuestion(filePath: string) { return filePath.split('/')[2] === 'questions' ? filePath.split('/')[3] : null }
 export async function createActionCaseSignedUpload(context: Context, payload: Record<string, unknown>) {
   const caseId = text(payload.caseId)
   const fileName = text(payload.fileName)
@@ -470,10 +477,13 @@ export async function createActionCaseSignedUpload(context: Context, payload: Re
     throw new Error(fileSize > MAX_FILE_BYTES ? 'ACTION_CASE_FILE_TOO_LARGE' : 'ACTION_CASE_FILE_INVALID')
   }
   await requireCase(context, caseId)
-  const filePath = `${context.orgId}/${caseId}/${Date.now()}-${randomUUID()}.${allowed.extension}`
-  const { data, error } = await createSupabaseAdminClient().storage.from(ACTION_CASE_BUCKET).createSignedUploadUrl(filePath, { upsert: false })
+  const questionId = nullableText(payload.questionId)
+  if (questionId) await requireQuestionFileScope(context, caseId, questionId)
+  const bucket = questionId ? 'project-question-files' : ACTION_CASE_BUCKET
+  const filePath = `${context.orgId}/${caseId}/${questionId ? `questions/${questionId}/` : ''}${Date.now()}-${randomUUID()}.${allowed.extension}`
+  const { data, error } = await createSupabaseAdminClient().storage.from(bucket).createSignedUploadUrl(filePath, { upsert: false })
   if (error || !data?.token) throw new Error('ACTION_CASE_FILE_UPLOAD_URL_FAILED')
-  return { bucket: ACTION_CASE_BUCKET, filePath, token: data.token, contentType: allowed.contentType }
+  return { bucket, filePath, token: data.token, contentType: allowed.contentType }
 }
 
 export async function abortActionCaseUpload(context: Context, payload: Record<string, unknown>) {
@@ -483,12 +493,14 @@ export async function abortActionCaseUpload(context: Context, payload: Record<st
     throw new Error('ACTION_CASE_FILE_INVALID')
   }
   await requireCase(context, caseId)
+  const questionId = uploadQuestion(filePath)
+  if (questionId) await requireQuestionFileScope(context, caseId, questionId)
   const admin = createSupabaseAdminClient()
   // A retry must never remove an original that has already been registered.
   const registered = await admin.from('action_case_attachments').select('id').eq('org_id', context.orgId).eq('action_case_id', caseId).eq('file_path', filePath).limit(1)
   if (registered.error) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
   if (registered.data?.length) throw new Error('ACTION_CASE_FILE_IN_USE')
-  const { error } = await admin.storage.from(ACTION_CASE_BUCKET).remove([filePath])
+  const { error } = await admin.storage.from(questionId ? 'project-question-files' : ACTION_CASE_BUCKET).remove([filePath])
   if (error) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
 }
 
@@ -504,6 +516,10 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     throw new Error('ACTION_CASE_FILE_INVALID')
   }
   await requireCase(context, caseId)
+  const questionId = nullableText(payload.questionId)
+  if (uploadQuestion(filePath) !== questionId) throw new Error('ACTION_CASE_FILE_INVALID')
+  if (questionId) await requireQuestionFileScope(context, caseId, questionId)
+  const bucket = questionId ? 'project-question-files' : ACTION_CASE_BUCKET
   const itemId = nullableText(payload.itemId)
   if (itemId) {
     const { data } = await createSupabaseAdminClient().from('action_case_items').select('id').eq('id', itemId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
@@ -512,6 +528,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
   const requestedGrants = Array.isArray(payload.participantIds)
     ? [...new Set(payload.participantIds.map(text).filter(Boolean))]
     : []
+  if (questionId && (itemId || requestedGrants.length)) throw new Error('ACTION_CASE_FILE_GRANT_INVALID')
   const admin = createSupabaseAdminClient()
   const registered = await admin.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes').eq('org_id', context.orgId).eq('action_case_id', caseId).eq('file_path', filePath).limit(1)
   if (registered.error) throw new Error('ACTION_CASE_FILE_SAVE_FAILED')
@@ -521,7 +538,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     throw new Error('ACTION_CASE_FILE_IN_USE')
   }
   const { data: storedObject, error: storedObjectError } = await admin.storage
-    .from(ACTION_CASE_BUCKET)
+    .from(bucket)
     .info(filePath)
   const storedSize = Number(storedObject?.size ?? storedObject?.metadata?.size ?? 0)
   const storedContentType = String(storedObject?.contentType ?? storedObject?.metadata?.mimetype ?? '').toLowerCase()
@@ -531,7 +548,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     || (storedSize > 0 && storedSize !== fileSize)
     || (storedContentType && storedContentType !== allowed.contentType)
   ) {
-    await admin.storage.from(ACTION_CASE_BUCKET).remove([filePath])
+    await admin.storage.from(bucket).remove([filePath])
     throw new Error('ACTION_CASE_FILE_UPLOAD_INCOMPLETE')
   }
   const { data: validParticipants } = requestedGrants.length
@@ -546,14 +563,15 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     attachment_type: allowed.type,
     title: nullableText(payload.title),
     file_name: safeName(fileName),
-    storage_bucket: ACTION_CASE_BUCKET,
+    storage_bucket: bucket,
+    ...(questionId ? { question_id: questionId } : {}),
     file_path: filePath,
     content_type: allowed.contentType,
     file_size_bytes: fileSize,
     uploaded_by: context.userId,
   }).select('id').single()
   if (error || !attachment) {
-    await admin.storage.from(ACTION_CASE_BUCKET).remove([filePath])
+    if (!questionId) await admin.storage.from(bucket).remove([filePath])
     throw new Error('ACTION_CASE_FILE_SAVE_FAILED')
   }
   if (requestedGrants.length) {
@@ -564,7 +582,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
       throw new Error('ACTION_CASE_FILE_GRANT_FAILED')
     }
   }
-  await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, action_case_item_id: itemId, event_type: 'attachment_added', message: `${allowed.type === 'image' ? 'Bild' : 'Dokument'} lades till: ${safeName(fileName)}.`, performed_by: context.userId })
+  if (!questionId) await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, action_case_item_id: itemId, event_type: 'attachment_added', message: `${allowed.type === 'image' ? 'Bild' : 'Dokument'} lades till: ${safeName(fileName)}.`, performed_by: context.userId })
 }
 
 export async function updateActionCaseAttachmentGrants(context: Context, payload: Record<string, unknown>) {
@@ -573,8 +591,8 @@ export async function updateActionCaseAttachmentGrants(context: Context, payload
   const participantIds = Array.isArray(payload.participantIds) ? [...new Set(payload.participantIds.map(text).filter(Boolean))] : []
   await requireCase(context, caseId)
   const admin = createSupabaseAdminClient()
-  const { data: attachment } = await admin.from('action_case_attachments').select('id').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
-  if (!attachment) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  const { data: attachment } = await admin.from('action_case_attachments').select('id,question_id').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
+  if (!attachment || attachment.question_id) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
   const { data: participants } = participantIds.length ? await admin.from('action_case_participants').select('id').eq('action_case_id', caseId).eq('org_id', context.orgId).in('id', participantIds) : { data: [] }
   if ((participants ?? []).length !== participantIds.length) throw new Error('ACTION_CASE_FILE_GRANT_INVALID')
   await admin.from('action_case_attachment_grants').delete().eq('attachment_id', attachmentId)
@@ -589,8 +607,9 @@ export async function deleteActionCaseAttachment(context: Context, payload: Reco
   const attachmentId = text(payload.attachmentId)
   await requireCase(context, caseId)
   const admin = createSupabaseAdminClient()
-  const { data: attachment } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
+  const { data: attachment } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name,question_id').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
   if (!attachment) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  if (attachment.question_id) await requireQuestionFileScope(context, caseId, attachment.question_id)
   // Let database references protect historical quote documents before touching storage.
   const { data: deleted, error } = await admin.from('action_case_attachments').delete().eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).select('id').maybeSingle()
   if (error) {
@@ -603,14 +622,15 @@ export async function deleteActionCaseAttachment(context: Context, payload: Reco
     console.error('ACTION_CASE_FILE_STORAGE_CLEANUP_FAILED', { orgId: context.orgId, caseId, attachmentId, bucket: attachment.storage_bucket, path: attachment.file_path, error: storageError.message })
     throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
   }
-  await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, event_type: 'attachment_deleted', message: `Filen togs bort: ${attachment.file_name}.`, performed_by: context.userId })
+  if (!attachment.question_id) await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, event_type: 'attachment_deleted', message: `Filen togs bort: ${attachment.file_name}.`, performed_by: context.userId })
 }
 
 export async function createActionCaseAttachmentUrl(context: Context, caseId: string, attachmentId: string) {
   await requireCase(context, caseId)
   const admin = createSupabaseAdminClient()
-  const { data } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name,content_type').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
+  const { data } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name,content_type,question_id').eq('id', attachmentId).eq('action_case_id', caseId).eq('org_id', context.orgId).maybeSingle()
   if (!data) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  if (data.question_id) await requireQuestionFileScope(context, caseId, data.question_id)
   const inline = data.content_type.startsWith('image/') || data.content_type === 'application/pdf'
   const { data: signed, error } = await admin.storage.from(data.storage_bucket).createSignedUrl(data.file_path, 60, inline ? undefined : { download: data.file_name })
   if (error || !signed) throw new Error('ACTION_CASE_FILE_SIGN_FAILED')

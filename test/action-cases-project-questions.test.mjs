@@ -1,9 +1,17 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
-import { emptyQuestion, questionAssigneeOptions, questionMutation } from '../src/lib/action-cases/projectQuestions.ts'
+import ts from 'typescript'
+import { emptyQuestion, questionAssigneeOptions, questionMutation, questionUuid } from '../src/lib/action-cases/projectQuestions.ts'
+
+const dialogueModule = { exports: {} }
+new Function('require', 'module', 'exports', ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/questionDialogue.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(() => ({ questionUuid }), dialogueModule, dialogueModule.exports)
+const { dialogueMutation } = dialogueModule.exports
+const linkModule = { exports: {} }
+new Function('require', 'module', 'exports', ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/questionDialogueLinks.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(key => key === 'node:crypto' ? { createHmac, timingSafeEqual } : { questionUuid }, linkModule, linkModule.exports)
+const { parseQuestionLink, questionLinkToken } = linkModule.exports
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const org=id(1), actor=id(2), caseId=id(3), other=id(9), contact=id(5), original=id(7)
@@ -22,10 +30,12 @@ const db=new PGlite()
 before(async()=>{
   await db.exec(`create role anon;create role authenticated;create role service_role;
     create schema auth;create function auth.role() returns text language sql as $$select coalesce(current_setting('test.role',true),'service_role')$$;
+    create schema storage;create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);insert into storage.buckets values('action-case-files','action-case-files',false,26214400,array['application/pdf']);
     create table organizations(id uuid primary key);create table profiles(id uuid primary key,full_name text,email text);
     create table org_members(org_id uuid,profile_id uuid,is_active boolean,role text);
     create table organization_contacts(id uuid primary key default gen_random_uuid(),org_id uuid,name text,is_active boolean,email text,phone text,preferred_channel text,created_by uuid,updated_by uuid);
     create table action_cases(id uuid primary key,org_id uuid,title text,updated_at timestamptz default now(),customer_name text,customer_email text,customer_phone text);
+    create table action_case_events(org_id uuid,action_case_id uuid,event_type text,message text,performed_by uuid);
     create table action_case_participants(id uuid primary key,org_id uuid,action_case_id uuid,role text,name text,email text,phone text);
     create table action_case_customer_contract_drafts(org_id uuid,action_case_id uuid,body jsonb);
     create table action_case_attachments(id uuid primary key,org_id uuid,action_case_id uuid,file_name text,storage_bucket text,file_path text,content_type text,file_size_bytes bigint,attachment_type text);
@@ -48,28 +58,37 @@ before(async()=>{
     insert into action_case_attachments values('${original}','${org}','${caseId}','Ritning.pdf','action-case-files','original.pdf','application/pdf',120,'document');`)
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_01_project_questions.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_03_project_question_customers.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../docs/db/2026-10-19_04_project_question_dialogue.sql',import.meta.url),'utf8'))
+  await db.exec(readFileSync(new URL('../docs/db/2026-10-19_05_project_question_participants.sql',import.meta.url),'utf8'))
+  await db.query('select set_project_manager($1,$2,$3,$3,null)',[org,caseId,actor])
 })
 after(()=>db.close())
 const write=(v,o=org,c=caseId,a=actor)=>db.query('select mutate_project_question($1,$2,$3,$4::jsonb)',[o,c,a,JSON.stringify(questionMutation(v))])
 const row=async q=>(await db.query('select * from action_case_questions where id=$1',[q])).rows[0]
 const count=async table=>Number((await db.query(`select count(*) n from ${table}`)).rows[0].n)
-test('create, assign, answer, correct, conclude and close preserve original snapshots and timestamps; stale writes fail',async()=>{
+const dialogue=(q,version,operation,extra={})=>dialogueMutation({requestId:randomUUID(),version,operation,...extra})
+const chat=(q,request,user=actor,member=null,nonce=null)=>db.query('select mutate_project_question_dialogue($1,$2,$3,$4,$5,$6,$7)',[org,caseId,q,user,member,nonce,request])
+const version=async q=>(await db.query('select version from action_case_question_conversations where question_id=$1',[q])).rows[0].version
+const member=async(q,person)=>(await db.query('select * from action_case_question_participants where question_id=$1 and person_id=$2',[q,person])).rows[0]
+const canRead=async(q,user)=>(await db.query('select project_question_internal_participant($1,$2,$3,$4) ok',[org,caseId,q,user])).rows[0].ok
+test('create, assign, answer and close preserve original snapshots; replies do not resolve the question',async()=>{
   const q=id(21), create=mutation(q,0,'create',{body:body(),fileIds:[original]})
   await write(create);await write(create);assert.equal((await row(q)).revision,1)
   await write(mutation(q,1,'update',{body:{...body(),description:'Förtydligad fråga',assignee:{id:contact,kind:'contact',name:'fake'}}}))
   assert.equal((await row(q)).body.assignee.name,'VVS Test')
   await assert.rejects(write(mutation(q,1,'update',{body:body()})),/STALE/)
   await write(mutation(q,2,'answer',{text:'Ja enligt muntligt besked',reportedBy:'VVS-montören'}))
+  assert.equal((await row(q)).body.status,'open')
   await write(mutation(q,3,'note',{text:'Behöver verifieras mot systemets driftläge'}))
-  await write(mutation(q,4,'conclusion',{text:'Inväntar tekniskt underlag'}))
-  await write(mutation(q,5,'close',{text:'Frågan hanterad'}))
-  await assert.rejects(write(mutation(q,6,'note',{text:'Tyst ändring'})),/CLOSED/)
-  await write(mutation(q,6,'reopen',{text:'Nytt underlag inkom'}))
+  assert.throws(()=>questionMutation(mutation(q,4,'conclusion',{text:'Inte en funktion'})),/INVALID/)
+  await write(mutation(q,4,'close',{text:'Frågan hanterad'}))
+  await assert.rejects(write(mutation(q,5,'note',{text:'Tyst ändring'})),/CLOSED/)
+  await write(mutation(q,5,'reopen',{text:'Nytt underlag inkom'}))
   const events=(await db.query('select * from action_case_question_events where question_id=$1 order by revision',[q])).rows
-  assert.equal(events.length,7);assert.equal(events[0].body.description,body().description)
+  assert.equal(events.length,6);assert.equal(events[0].body.description,body().description)
   assert.equal(events[2].reported_by,'VVS-montören');assert.equal(events[2].actor_name,'Testledare')
-  assert.equal(events[6].body.status,'open');assert.equal(events[6].body.conclusion,'Inväntar tekniskt underlag')
-  assert.ok(events.every(e=>e.created_at));assert.equal((await row(q)).revision,7)
+  assert.equal(events[5].body.status,'open');assert.ok(events.every(e=>!('conclusion' in e.body)))
+  assert.ok(events.every(e=>e.created_at));assert.equal((await row(q)).revision,6)
   await assert.rejects(db.query('update action_case_question_events set message=$1 where question_id=$2',['replace',q]),/IMMUTABLE/)
   await assert.rejects(db.query('delete from action_case_question_events where question_id=$1',[q]),/IMMUTABLE/)
   await assert.rejects(db.query('delete from action_case_attachments where id=$1',[original]),/foreign key/)
@@ -136,6 +155,7 @@ const customerCase = id(80)
 const customerPeople = async () => (await db.query('select * from project_question_customers($1,$2)', [org, customerCase])).rows
 test('customer directory reuses project and contract names without duplicates, identifiers, writes or invitations', async () => {
   await db.query('insert into action_cases(id,org_id,title,customer_name,customer_email) values($1,$2,$3,$4,$5)', [customerCase, org, 'Fiktivt kundprojekt', 'Nina Test', 'nina@example.invalid'])
+  await db.query('select set_project_manager($1,$2,$3,$3,null)',[org,customerCase,actor])
   await db.query('insert into action_case_participants values($1,$2,$3,$4,$5,$6,$7)', [id(81), org, customerCase, 'customer', 'Nina Test', 'NINA@example.invalid', null])
   await db.query('insert into action_case_customer_contract_drafts values($1,$2,$3)', [org, customerCase, { contractParties: { customers: [{ name: 'Nina Test', personalNumber: 'PRIVATE' }, { name: 'Thomas Test', personalNumber: 'PRIVATE' }], email: 'nina@example.invalid', mobile: '' } }])
   const before = await count('organization_contacts'), tasks = await count('operational_tasks')
@@ -197,10 +217,119 @@ test('customer changes and disabled contacts cannot be bypassed to dispatch a sa
 test('a customer without email can be assigned internally but cannot be sent a question or reused across projects', async () => {
   const project = id(85), q = id(86), contacts = await count('organization_contacts')
   await db.query('insert into action_cases(id,org_id,title,customer_name) values($1,$2,$3,$4)', [project, org, 'Fiktiv reservkund', 'Beställare utan e-post'])
+  await db.query('select set_project_manager($1,$2,$3,$3,null)',[org,project,actor])
   const person = (await db.query('select * from project_question_customers($1,$2)', [org, project])).rows[0]
   await write(mutation(q, 0, 'create', { body: { ...body(), assignee: { ...person, kind: 'customer' } } }), org, project)
   assert.equal((await row(q)).body.assignee.email, null)
   assert.equal(await count('organization_contacts'), contacts)
   await assert.rejects(write(mutation(q, 1, 'send', { confirmed: true, dueAt: '2026-11-01T12:00:00Z', followupAt: '2026-10-29T12:00:00Z' }), org, project), /RECIPIENT_CHANGED/)
   await assert.rejects(write(mutation(id(87), 0, 'create', { body: { ...body(), assignee: { ...person, kind: 'customer' } } }), org, customerCase), /ASSIGNEE/)
+})
+
+test('only the explicit project manager may manage participants; unrelated staff cannot read or mutate a question',async()=>{
+  const staff=id(101), outsider=id(102), q=id(103)
+  await db.query("insert into profiles values($1,'Intern deltagare','staff@example.invalid'),($2,'Annan medarbetare','other@example.invalid')",[staff,outsider])
+  await db.query("insert into org_members values($1,$2,true,'inspector'),($1,$3,true,'inspector')",[org,staff,outsider])
+  await write(mutation(q,0,'create',{body:body()}))
+  assert.equal(await canRead(q,outsider),false)
+  await assert.rejects(write(mutation(q,1,'note',{text:'Unauthorized'}),org,caseId,outsider),/NOT_FOUND/)
+  await assert.rejects(db.query('select set_project_manager($1,$2,$3,$3,$4)',[org,caseId,staff,actor]),/MANAGER_FORBIDDEN/)
+  const add=dialogue(q,0,'participants',{participants:[{kind:'profile',id:staff}]})
+  await chat(q,add);await chat(q,add)
+  assert.equal(await version(q),1);assert.equal(await canRead(q,staff),true)
+  await assert.rejects(chat(q,dialogue(q,1,'participants',{participants:[{kind:'profile',id:outsider}]}),staff),/FORBIDDEN/)
+  await assert.rejects(write(mutation(q,1,'update',{body:{...body(),assignee:{id:outsider,kind:'profile',name:''}}}),org,caseId,staff),/PARTICIPANT_REQUIRED/)
+  await chat(q,dialogue(q,1,'participants',{participants:[]}))
+  assert.equal(await canRead(q,staff),false)
+  await assert.rejects(write(mutation(q,1,'note',{text:'Removed'}),org,caseId,staff),/NOT_FOUND/)
+  await assert.rejects(chat(q,dialogue(q,1,'participants',{participants:[{kind:'profile',id:outsider}]})),/STALE/)
+  await db.exec("set test.role='authenticated'")
+  await assert.rejects(db.query('update action_cases set manager_profile_id=$1 where id=$2',[staff,caseId]),/MANAGER_FORBIDDEN/)
+  await db.exec("set test.role='service_role'")
+})
+
+test('shared discussion excludes internal notes, supports many participants, preserves snapshots and revokes old links',async()=>{
+  const q=id(110), first=id(111), late=id(112), staff=id(101)
+  await db.query("insert into organization_contacts(id,org_id,name,email,is_active) values($1,$3,'Kund Ett','one@example.invalid',true),($2,$3,'Kund Två','two@example.invalid',true)",[first,late,org])
+  await write(mutation(q,0,'create',{body:body()}))
+  await write(mutation(q,1,'note',{text:'ENDAST INTERNT'}))
+  const refs=[{kind:'contact',id:first},{kind:'profile',id:staff}]
+  await chat(q,dialogue(q,0,'participants',{participants:refs}))
+  const before=await member(q,first)
+  assert.equal(before.shared,false);assert.equal(await count('action_case_question_deliveries'),0)
+  const share=dialogue(q,1,'share',{confirmed:true,fileIds:[original]})
+  await assert.rejects(chat(q,share,staff),/FORBIDDEN/)
+  await chat(q,share);await chat(q,share)
+  const invited=await member(q,first)
+  assert.equal(invited.shared,true);assert.equal(await count('action_case_question_deliveries'),2)
+  const externalReply=dialogue(q,2,'reply',{text:'Ett svar från beställaren'})
+  await chat(q,externalReply,null,invited.id,invited.link_nonce);await chat(q,externalReply,null,invited.id,invited.link_nonce)
+  await chat(q,dialogue(q,2,'reply',{text:'Vi återkommer med underlag.'}),staff)
+  assert.equal((await row(q)).body.status,'open')
+  const shared=(await db.query('select * from action_case_question_messages where question_id=$1 order by created_at,id',[q])).rows
+  assert.equal(shared.filter(m=>m.operation==='reply').length,2)
+  assert.equal(JSON.stringify(shared).includes('ENDAST INTERNT'),false)
+  assert.equal(shared.find(m=>m.id===share.requestId).snapshot.description,body().description)
+  await assert.rejects(db.query('update action_case_question_messages set message=$1 where id=$2',['rewrite',share.requestId]),/IMMUTABLE/)
+  await chat(q,dialogue(q,await version(q),'participants',{participants:[...refs,{kind:'contact',id:late}]}))
+  const newcomer=await member(q,late)
+  await assert.rejects(chat(q,dialogue(q,await version(q),'reply',{text:'Not invited yet'}),null,newcomer.id,newcomer.link_nonce),/NOT_FOUND/)
+  await chat(q,dialogue(q,await version(q),'share',{confirmed:true}))
+  const reloaded=await member(q,late)
+  await chat(q,dialogue(q,0,'reply',{text:'Ny deltagare kan svara.'}),null,reloaded.id,reloaded.link_nonce)
+  await chat(q,dialogue(q,await version(q),'participants',{participants:[{kind:'contact',id:late},{kind:'profile',id:staff}]}))
+  await assert.rejects(chat(q,dialogue(q,0,'reply',{text:'Old link'}),null,invited.id,invited.link_nonce),/NOT_FOUND/)
+  assert.notEqual((await member(q,first)).link_nonce,invited.link_nonce)
+  const deliveries=(await db.query('select * from action_case_question_deliveries where message_id in(select id from action_case_question_messages where question_id=$1)',[q])).rows
+  assert.ok(deliveries.every(d=>!d.body_text.includes('underlag.')&&!d.body_text.includes('ENDAST INTERNT')))
+})
+
+test('manager transfer revokes automatic manager membership but preserves explicit participation and administrator appointment checks',async()=>{
+  const staff=id(101), q=id(120)
+  await write(mutation(q,0,'create',{body:body()}),org,caseId,staff)
+  assert.equal((await member(q,actor)).added_as_manager,true)
+  await db.query('select set_project_manager($1,$2,$3,$4,$3)',[org,caseId,actor,staff])
+  assert.equal(await canRead(q,actor),false);assert.equal(await canRead(q,staff),true)
+  await assert.rejects(chat(q,dialogue(q,0,'participants',{participants:[]})),/NOT_FOUND/)
+  await chat(q,dialogue(q,0,'participants',{participants:[]}),staff)
+  await assert.rejects(db.query('select set_project_manager($1,$2,$3,$3,$3)',[org,caseId,actor]),/MANAGER_STALE/)
+  await db.query('select set_project_manager($1,$2,$3,$3,$4)',[org,caseId,actor,staff])
+  assert.equal(await canRead(q,actor),true);assert.equal(await canRead(q,staff),true)
+})
+
+test('personal question links are purpose-bound, unforgeable, key-specific and use the persisted revocation nonce',()=>{
+  const key='test-only-secret-'.repeat(4), token=questionLinkToken(id(130),id(131),key)
+  assert.deepEqual(parseQuestionLink(token,key),{participantId:id(130),nonce:id(131)})
+  for(const bad of [token.replace(id(130),id(132)),token.replace(id(131),id(133)),`${token.slice(0,-1)}!`,'bad'])assert.throws(()=>parseQuestionLink(bad,key),/NOT_FOUND/)
+  assert.throws(()=>parseQuestionLink(token,key+'changed'),/NOT_FOUND/)
+  assert.throws(()=>dialogueMutation({operation:'participants',version:0,requestId:randomUUID(),participants:[{id:id(1),kind:'profile'},{id:id(1),kind:'profile'}]}),/INVALID/)
+})
+
+test('sharing rejects stale recipient details, deduplicates one person and prevents cross-question private files',async()=>{
+  const q=id(140), otherQuestion=id(141), first=id(142), copy=id(143), file=id(144)
+  await db.query("insert into organization_contacts(id,org_id,name,email,is_active) values($1,$3,'Samma Person','same@example.invalid',true),($2,$3,'Samma Person','same@example.invalid',true)",[first,copy,org])
+  await write(mutation(q,0,'create',{body:body()}));await write(mutation(otherQuestion,0,'create',{body:body()}))
+  await chat(q,dialogue(q,0,'participants',{participants:[{kind:'contact',id:first},{kind:'contact',id:copy}]}))
+  assert.equal((await db.query("select count(*)::int n from action_case_question_participants where question_id=$1 and active and person_kind='contact'",[q])).rows[0].n,1)
+  await db.query('update organization_contacts set email=$1 where id=$2',['changed@example.invalid',first])
+  await assert.rejects(chat(q,dialogue(q,1,'share',{confirmed:true})),/ASSIGNEE/)
+  assert.equal((await member(q,first)).shared,false)
+  await db.query('update organization_contacts set email=$1 where id=$2',['same@example.invalid',first])
+  await db.query("insert into action_case_attachments(id,org_id,action_case_id,file_name,storage_bucket,file_path,content_type,file_size_bytes,attachment_type,question_id) values($1,$2,$3,'Privat.pdf','project-question-files','private.pdf','application/pdf',120,'document',$4)",[file,org,caseId,otherQuestion])
+  await assert.rejects(chat(q,dialogue(q,1,'share',{confirmed:true,fileIds:[file]})),/FILES/)
+  await assert.rejects(write(mutation(q,1,'note',{text:'Wrong scope',fileIds:[file]})),/FILES/)
+  await chat(q,dialogue(q,1,'share',{confirmed:true}))
+  const claimed=(await db.query('select * from claim_project_question_delivery($1)',[q])).rows[0]
+  assert.equal(claimed.attempts,1)
+  assert.equal((await db.query('select * from claim_project_question_delivery($1)',[q])).rows.length,0)
+  await db.query('select finish_project_question_delivery($1,$2,null)',[claimed.id,claimed.attempts])
+  assert.equal((await db.query('select * from claim_project_question_delivery($1)',[q])).rows.length,0)
+  await db.query("update action_case_question_deliveries set claimed_until=now()-interval '1 second' where id=$1",[claimed.id])
+  const retry=(await db.query('select * from claim_project_question_delivery($1)',[q])).rows[0]
+  assert.equal(retry.id,claimed.id);assert.equal(retry.attempts,2)
+  await db.query('select finish_project_question_delivery($1,$2,$3)',[claimed.id,1,'stale-provider'])
+  assert.equal((await db.query('select status from action_case_question_deliveries where id=$1',[claimed.id])).rows[0].status,'sending')
+  await chat(q,dialogue(q,await version(q),'participants',{participants:[]}))
+  await db.query('select * from claim_project_question_delivery($1)',[q])
+  assert.equal((await db.query('select status from action_case_question_deliveries where id=$1',[claimed.id])).rows[0].status,'cancelled')
 })

@@ -13,7 +13,7 @@ function harness() {
   const states = [], refs = [], requests = []
   let stateIndex = 0, refIndex = 0, tree, failRefresh = false
   const customer = { id: id(2), kind: 'customer', name: 'Testbeställare', email: 'test@example.invalid' }
-  const workspace = { questions: [], assignees: [customer], customersAvailable: true }
+  const workspace = { questions: [], assignees: [customer], customersAvailable: true, userId: id(9), managerId: id(9), canManageParticipants: true }
   const original = { fetch: globalThis.fetch, document: globalThis.document, raf: globalThis.requestAnimationFrame }
   globalThis.document = { body: {}, activeElement: null }
   globalThis.requestAnimationFrame = fn => fn()
@@ -34,6 +34,7 @@ function harness() {
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': {}, './project-questions.css': {},
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso: () => null, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': { emptyQuestion, questionAssigneeOptions, questionStatuses },
+    './QuestionDialogue': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
   }
   const code = ts.transpileModule(readFileSync(new URL('../src/components/tasks/ProjectQuestions.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText

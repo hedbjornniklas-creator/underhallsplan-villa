@@ -32,6 +32,15 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_MANAGER_INVALID: [400, 'Välj en aktiv intern medarbetare med åtkomst till Uppdrag.'],
+    PROJECT_MANAGER_FORBIDDEN: [403, 'Endast en organisationsadministratör kan utse projektansvarig.'],
+    PROJECT_MANAGER_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],
+    PROJECT_MANAGER_STALE: [409, 'Projektansvarig har ändrats. Ladda om Översikt innan du försöker igen.'],
+    PROJECT_MANAGER_SCHEMA: [503, 'Projektansvarig behöver aktiveras i databasen.'],
+    PROJECT_MANAGER_FAILED: [500, 'Projektansvarig kunde inte sparas. Ditt val är kvar.'],
+    PROJECT_QUESTION_PARTICIPANT_REQUIRED: [403, 'Endast projektansvarig får lägga till en ny person till frågan.'],
+    PROJECT_QUESTION_RATE_LIMITED: [429, 'För många meddelanden. Vänta en stund och försök igen.'],
+    PROJECT_QUESTION_LINK_CONFIG: [503, 'Frågornas personliga länkar behöver konfigureras av administratören.'],
     PROJECT_QUESTION_INVALID: [400, 'Kontrollera frågans rubrik, text och valda filer.'],
     PROJECT_QUESTION_DATES: [400, 'Ange svarsdatum och uppföljning. Uppföljningen får inte ligga efter svarsdatumet. Bekräfta utskicket.'],
     PROJECT_QUESTION_ASSIGNEE: [400, 'Välj en tillgänglig ansvarig. Vid utskick behöver en extern mottagare en e-postadress.'],
@@ -192,6 +201,6 @@ export function customerOfferError(error: unknown) {
   ]
   return NextResponse.json(
     { error: message },
-    { status, headers: { 'Cache-Control': 'no-store' } }
+    { status, headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } }
   )
 }

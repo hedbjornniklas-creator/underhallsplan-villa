@@ -7,7 +7,7 @@ import { questionMutation, questionUuid, type ProjectQuestion, type QuestionAssi
 type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
-  if (['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_QUESTION_SCHEMA')
+  if (['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_QUESTION_SCHEMA')
   const code = error.message?.match(/PROJECT_QUESTION_[A-Z_]+/)?.[0]
   throw new Error(code || 'PROJECT_QUESTION_FAILED')
 }
@@ -36,8 +36,13 @@ export async function questionAssignees(ctx: Context, caseId: string) {
 export async function getProjectQuestions(ctx: Context, caseId: string): Promise<QuestionWorkspace> {
   await requireProject(ctx, caseId)
   const db = createSupabaseAdminClient()
-  const rows = await pages<Record<string, unknown>>((a, b) => db.from('action_case_questions').select('id,number,revision,body,updated_at').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('number').range(a, b))
-  const events = await pages<Record<string, unknown>>((a, b) => db.from('action_case_question_events').select('id,question_id,revision,operation,actor_name,body,message,reported_by,task_id,created_at,files:action_case_question_files(attachment_id,file_name)').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('created_at').order('id').range(a, b))
+  const project = await db.from('action_cases').select('manager_profile_id').eq('org_id', ctx.orgId).eq('id', caseId).maybeSingle(); checked(project.error)
+  const managerId: string | null = project.data?.manager_profile_id ?? null
+  const ownMemberships = await pages<{ question_id: string }>((a, b) => db.from('action_case_question_participants').select('question_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('person_kind', 'profile').eq('person_id', ctx.userId).eq('active', true).order('question_id').range(a, b))
+  const visible = ownMemberships.map(m => m.question_id)
+  const members = visible.length ? await pages<Record<string, unknown>>((a, b) => db.from('action_case_question_participants').select('id,question_id,person_kind,person_id,name,email,shared').eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('active', true).in('question_id', visible).order('joined_at').order('id').range(a, b)) : []
+  const rows = visible.length ? await pages<Record<string, unknown>>((a, b) => db.from('action_case_questions').select('id,number,revision,body,updated_at').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', visible).order('number').range(a, b)) : []
+  const events = visible.length ? await pages<Record<string, unknown>>((a, b) => db.from('action_case_question_events').select('id,question_id,revision,operation,actor_name,body,message,reported_by,task_id,created_at,files:action_case_question_files(attachment_id,file_name)').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('question_id', visible).order('created_at').order('id').range(a, b)) : []
   const tasks = new Map<string, QuestionTask>()
   for (const event of events) {
     if (typeof event.task_id !== 'string') continue
@@ -51,11 +56,14 @@ export async function getProjectQuestions(ctx: Context, caseId: string): Promise
       files: files.map(f => ({ id: String(f.id), name: String(f.file_name || f.title || 'Bilaga'), text: f.text_content as string | null, createdAt: String(f.created_at) })) })
   }
   const questions: ProjectQuestion[] = rows.map(r => ({ id: String(r.id), number: Number(r.number), revision: Number(r.revision), body: r.body as QuestionBody,
+    participants: members.filter(m => m.question_id === r.id).map(m => ({ id: String(m.id), kind: m.person_kind as QuestionAssignee['kind'], personId: String(m.person_id), name: String(m.name), email: m.email as string | null, shared: Boolean(m.shared) })),
     createdAt: (events.find(e => e.question_id === r.id && e.operation === 'create' && Number(e.revision) === 1)?.created_at as string | undefined) ?? null, updatedAt: String(r.updated_at),
     events: events.filter(e => e.question_id === r.id).map(e => ({ id: String(e.id), revision: Number(e.revision), operation: String(e.operation), actorName: String(e.actor_name), createdAt: String(e.created_at), text: String(e.message), reportedBy: String(e.reported_by), body: e.body as QuestionBody, taskId: e.task_id as string | null,
       files: ((e.files || []) as Array<{ attachment_id: string; file_name: string }>).map(f => ({ id: f.attachment_id, name: f.file_name })) })),
     tasks: events.filter(e => e.question_id === r.id && typeof e.task_id === 'string').flatMap(e => tasks.has(String(e.task_id)) ? [tasks.get(String(e.task_id))!] : []) }))
-  return { questions, ...await questionAssignees(ctx, caseId) }
+  const privateRows = visible.length ? await pages<Record<string, unknown>>((a, b) => db.from('action_case_attachments').select('id,question_id,file_name,content_type,file_size_bytes,created_at,attachment_type').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('question_id', visible).order('created_at').order('id').range(a, b)) : []
+  const privateFiles = privateRows.map(f => ({ id: String(f.id), questionId: String(f.question_id), fileName: String(f.file_name), contentType: String(f.content_type), fileSizeBytes: Number(f.file_size_bytes), type: f.attachment_type as 'image' | 'document', createdAt: String(f.created_at), actionCaseItemId: null, title: null, grantedParticipantIds: [] }))
+  return { questions, privateFiles, userId: ctx.userId, managerId, canManageParticipants: managerId === ctx.userId, ...await questionAssignees(ctx, caseId) }
 }
 export async function mutateProjectQuestion(ctx: Context, caseId: string, payload: Record<string, unknown>) {
   const request = questionMutation(payload)
@@ -74,7 +82,10 @@ export async function mutateProjectQuestion(ctx: Context, caseId: string, payloa
 export async function projectQuestionTaskFile(ctx: Context, caseId: string, taskId: string, fileId: string) {
   await requireProject(ctx, caseId)
   if (!questionUuid(taskId) || !questionUuid(fileId)) throw new Error('PROJECT_QUESTION_INVALID')
-  const r = await createSupabaseAdminClient().from('action_case_question_events').select('id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('task_id', taskId).maybeSingle(); checked(r.error)
+  const db = createSupabaseAdminClient()
+  const r = await db.from('action_case_question_events').select('id,question_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('task_id', taskId).maybeSingle(); checked(r.error)
   if (!r.data) throw new Error('PROJECT_QUESTION_NOT_FOUND')
+  const scope = await db.rpc('project_question_internal_participant', { p_org_id: ctx.orgId, p_case_id: caseId, p_question_id: r.data.question_id, p_profile_id: ctx.userId }); checked(scope.error)
+  if (scope.data !== true) throw new Error('PROJECT_QUESTION_NOT_FOUND')
   return createTaskAttachmentSignedUrl({ orgId: ctx.orgId, taskId, attachmentId: fileId })
 }

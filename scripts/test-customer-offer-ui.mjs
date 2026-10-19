@@ -291,11 +291,18 @@ const contractSnapshot = () => {
     customerName: p?.customers[0]?.name ?? '', customerEmail: p?.email ?? '', issuerName: p?.contractor.companyName ?? '', replyEmail: p?.contractor.email ?? '' })
 }
 const choiceUploads = new Map()
-const questionData = { questions: [], customersAvailable: true, assignees: [{ id: id(90), kind: 'profile', name: 'Anna Testledare' }, { id: id(91), kind: 'contact', name: 'VVS Test' }, { id: id(92), kind: 'customer', name: 'Nina Testbeställare', email: 'customer@example.invalid' }, { id: id(93), kind: 'customer', name: 'Thomas Testbeställare', email: 'customer@example.invalid' }, { id: id(94), kind: 'contact', name: 'Nina Testbeställare', email: 'customer@example.invalid' }] }
+const questionData = { questions: [], userId: id(90), managerId: id(90), canManageParticipants: true, customersAvailable: true, assignees: [{ id: id(90), kind: 'profile', name: 'Anna Testledare' }, { id: id(91), kind: 'contact', name: 'VVS Test', email: 'vvs@example.invalid' }, { id: id(92), kind: 'customer', name: 'Nina Testbeställare', email: 'customer@example.invalid' }, { id: id(93), kind: 'customer', name: 'Thomas Testbeställare', email: 'customer@example.invalid' }, { id: id(94), kind: 'contact', name: 'Nina Testbeställare', email: 'customer@example.invalid' }] }
+const fakeMember = person => ({ id: randomUUID(), kind: person.kind, personId: person.id, name: person.name, email: person.email || null, shared: false })
+const dialogues = new Map()
+const getDialogue = q => {
+  if (!dialogues.has(q.id)) dialogues.set(q.id, { questionId: q.id, version: 0, managerId: questionData.managerId, canManage: true, viewerId: q.participants[0].id, sharedAt: null, snapshot: null, participants: q.participants, messages: [], deliveries: [] })
+  return { ...dialogues.get(q.id), status: q.body.status }
+}
+const fakeManager = () => ({ managerId: questionData.managerId, managerName: 'Anna Testledare', canEdit: true, people: [{ id: id(90), name: 'Anna Testledare' }] })
 if (process.argv.includes('--question-dates')) {
   const body = { ...emptyQuestion(), title: 'Fiktiv fråga från byggmöte', description: 'Kan golvvärmen vara på under sommaren?', assignee: questionData.assignees[2] }
   const createdAt = '2026-10-17T08:00:00Z', updatedAt = '2026-10-19T10:00:00Z'
-  questionData.questions.push({ id: id(950), number: 1, revision: 2, body, createdAt, updatedAt, tasks: [], events: [
+  questionData.questions.push({ id: id(950), number: 1, revision: 2, body, createdAt, updatedAt, participants: [fakeMember(questionData.assignees[0]), fakeMember(questionData.assignees[2])], tasks: [], events: [
     { id: id(951), operation: 'create', revision: 1, actorName: 'Anna Testledare', createdAt, body, text: '', reportedBy: '', files: [], taskId: null },
     { id: id(952), operation: 'update', revision: 2, actorName: 'Anna Testledare', createdAt: updatedAt, body, text: '', reportedBy: '', files: [], taskId: null }
   ] })
@@ -321,6 +328,9 @@ const server = createServer(async (req, res) => {
     choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
   }
   if (path === '/project-fixture') { json(projects); return }
+  if (path.endsWith('/manager') && req.method === 'GET') { json(fakeManager()); return }
+  const dialogueId = path.match(/\/questions\/([^/]+)\/dialogue$/)?.[1]
+  if (dialogueId && req.method === 'GET') { const q = questionData.questions.find(q => q.id === dialogueId); json(q ? getDialogue(q) : { error: 'Saknas' }, q ? 200 : 404); return }
   if (path.endsWith('/questions') && req.method === 'GET') { json(questionData); return }
   if (path === '/__test__/question-task-response' && req.method === 'POST') {
     const task = questionData.questions.flatMap(q => q.tasks)[0]
@@ -387,6 +397,27 @@ const server = createServer(async (req, res) => {
     const body = JSON.parse(raw)
     if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/manager')) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel.' }, 503); return }
+      questionData.managerId = body.managerId; questionData.canManageParticipants = body.managerId === questionData.userId
+      json(fakeManager()); return
+    }
+    if (dialogueId) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Dina uppgifter är kvar.' }, 503); return }
+      const q = questionData.questions.find(q => q.id === dialogueId), d = q && getDialogue(q)
+      if (!d) { json({ error: 'Saknas' }, 404); return }
+      if (d.messages.some(m => m.id === body.requestId)) { json({ messageId: body.requestId, questionId: q.id }); return }
+      if (body.operation !== 'reply' && body.version !== d.version) { json({ error: 'Ändrat i annan flik.' }, 409); return }
+      if (body.operation === 'participants') {
+        q.participants = body.participants.map(ref => q.participants.find(p => p.kind === ref.kind && p.personId === ref.id) || fakeMember(questionData.assignees.find(p => p.kind === ref.kind && p.id === ref.id)))
+        d.participants = q.participants
+      } else {
+        if (body.operation === 'share') { d.snapshot = { title: q.body.title, description: q.body.description }; d.sharedAt = new Date().toISOString(); d.participants.forEach(p => p.shared = true) }
+        d.messages.push({ id: body.requestId, participantId: d.viewerId, actorName: 'Anna Testledare', actorMethod: 'internal_login', operation: body.operation, text: body.text, snapshot: body.operation === 'share' ? d.snapshot : null, createdAt: new Date().toISOString(), files: [] })
+      }
+      d.version++; dialogues.set(q.id, d)
+      json({ messageId: body.requestId, questionId: q.id }); return
+    }
     if (path.endsWith('/questions')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
       let request
@@ -396,19 +427,17 @@ const server = createServer(async (req, res) => {
       if (prior) { json(prior === JSON.stringify(request) ? { questionId: request.questionId } : { error: 'Gammalt försök.' }, prior === JSON.stringify(request) ? 200 : 409); return }
       let q = questionData.questions.find(q => q.id === request.questionId)
       if ((!q && request.operation !== 'create') || (q && q.revision !== request.revision)) { json({ error: 'Frågan har ändrats. Hämta sparad version.' }, 409); return }
-      if (!q) { q = { id: request.questionId, number: questionData.questions.length + 1, revision: 0, updatedAt: '', body: emptyQuestion(), events: [], tasks: [] }; questionData.questions.push(q) }
+      if (!q) { q = { id: request.questionId, number: questionData.questions.length + 1, revision: 0, updatedAt: '', body: emptyQuestion(), participants: [fakeMember(questionData.assignees[0])], events: [], tasks: [] }; questionData.questions.push(q) }
       if (q.body.status === 'closed' && request.operation !== 'reopen') { json({ error: 'Frågan är avslutad.' }, 409); return }
       if (request.body) {
         const assignee = request.body.assignee ? questionData.assignees.find(a => a.kind === request.body.assignee.kind && a.id === request.body.assignee.id) : null
-        q.body = { ...request.body, assignee, conclusion: q.body.conclusion }
+        q.body = { ...request.body, assignee }
       }
       let taskId = null
       if (request.operation === 'send') {
         if (!q.body.assignee || q.tasks.some(t => !['approved','cancelled'].includes(t.status))) { json({ error: 'Välj ansvarig och avsluta tidigare aktiv uppgift.' }, 409); return }
         taskId = randomUUID(); q.tasks.push({ id: taskId, status: 'assigned', dueAt: request.dueAt, assigneeName: q.body.assignee.name, events: [], files: [] }); q.body.status = 'investigating'
       }
-      if (request.operation === 'answer') q.body.status = 'answered'
-      if (request.operation === 'conclusion') q.body.conclusion = request.text
       if (request.operation === 'close') q.body.status = 'closed'
       if (request.operation === 'reopen') q.body.status = 'open'
       q.revision++; q.updatedAt = new Date().toISOString()

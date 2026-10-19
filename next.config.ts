@@ -21,6 +21,8 @@ const nextConfig: NextConfig = {
       { source: '/api/eb/customer/:path*', headers: privateBearerHeaders },
       { source: '/rapport/bestallare/:path*', headers: privateBearerHeaders },
       { source: '/atgardsarende/:path*', headers: privateBearerHeaders },
+      { source: '/fraga/:path*', headers: privateBearerHeaders },
+      { source: '/api/mina-uppdrag/fragor/:path*', headers: privateBearerHeaders },
       { source: '/api/action-cases/public/:path*', headers: privateBearerHeaders },
       { source: '/organisation/inbjudan', headers: privateBearerHeaders },
     ]

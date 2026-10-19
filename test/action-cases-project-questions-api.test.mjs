@@ -56,9 +56,9 @@ test('creation dates come from the immutable create event, never the latest upda
   const calls = []
   const db = { async rpc() { return { data: [] } }, from(table) {
     const call = { table, filters: [] }; calls.push(call)
-    const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, order() { return q },
-      async maybeSingle() { return { data: { id: caseId } } },
-      async range(from, to) { return { data: (table === 'action_case_questions' ? questions : events).slice(from, to + 1) } } }
+    const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, in(...args) { call.filters.push(args); return q }, order() { return q },
+      async maybeSingle() { return { data: { id: caseId, manager_profile_id: ctx.userId } } },
+      async range(from, to) { return { data: (table === 'action_case_questions' ? questions : table === 'action_case_attachments' ? [] : table === 'action_case_question_participants' ? questions.map(row => ({ id: id(100 + row.number), question_id: row.id, person_kind: 'profile', person_id: ctx.userId, name: 'Test', active: true })) : events).slice(from, to + 1) } } }
     return q
   } }
   const server = load('../src/lib/action-cases/projectQuestionsServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async getTaskPeople() { return [] } }, '@/lib/tasks/attachments': {}, './projectQuestions': { questionMutation, questionUuid } })

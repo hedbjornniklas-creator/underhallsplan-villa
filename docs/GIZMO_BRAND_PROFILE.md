@@ -47,6 +47,9 @@ Förtydligande 2026-10-19: fliken ligger efter Tidsplan. Beställare återanvän
 direkt i ansvariglistan utan extra bock eller automatisk delning. Spara och skapa
 nästa öppnar ett tomt formulär först efter bekräftad sparning. Se
 [Frågor: beställare och snabbregistrering](gizmo-project-question-improvements.md).
+Beslut 2026-10-19: Projektansvarig ligger under Översikt. Frågans deltagare och
+delade dialog visas i samma högerpanel, med Intern anteckning och Intern
+historik separerade från kunddialogen. Se [Frågedialog och deltagare](gizmo-question-dialogue.md).
 
 ## Listor och dator
 
