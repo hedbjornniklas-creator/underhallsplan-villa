@@ -50,7 +50,7 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_FILE_UPLOAD_INCOMPLETE') return NextResponse.json({ error: 'Uppladdningen blev inte komplett. Försök igen.', code }, { status: 409 })
   if (code === 'ACTION_CASE_NOT_FOUND') return NextResponse.json({ error: 'Åtgärdsärendet kunde inte hittas.', code }, { status: 404 })
   if (code === 'ACTION_CASE_FILE_NOT_FOUND') return NextResponse.json({ error: 'Filen kunde inte hittas.', code }, { status: 404 })
-  if (code === 'ACTION_CASE_FILE_IN_USE') return NextResponse.json({ error: 'Filen ingår i sparat offertunderlag och kan inte tas bort.', code }, { status: 409 })
+  if (code === 'ACTION_CASE_FILE_IN_USE') return NextResponse.json({ error: 'Filen ingår i sparat underlag eller historik och kan inte tas bort.', code }, { status: 409 })
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {

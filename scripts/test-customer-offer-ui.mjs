@@ -35,6 +35,7 @@ import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/proper
 import { signingDraft } from '../test/fixtures/contract-signing.ts'
 import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
+import { emptyQuestion, questionMutation } from '../src/lib/action-cases/projectQuestions.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -78,7 +79,7 @@ const { css: base } = await postcss([tailwind()]).process(
   await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8'),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -268,13 +269,15 @@ const contractSnapshot = () => {
     customerName: p?.customers[0]?.name ?? '', customerEmail: p?.email ?? '', issuerName: p?.contractor.companyName ?? '', replyEmail: p?.contractor.email ?? '' })
 }
 const choiceUploads = new Map()
+const questionData = { questions: [], assignees: [{ id: id(90), kind: 'profile', name: 'Anna Testledare' }, { id: id(91), kind: 'contact', name: 'VVS Test' }] }
+const questionRequests = new Map()
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
     const query = new URL(req.url, 'http://localhost').searchParams
-    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${query.get('view') === 'choices' ? 'choices' : 'contract'}`
+    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions'].includes(query.get('view')) ? query.get('view') : 'contract'}`
     res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="${target}"></iframe></body></html>`)
     return
   }
@@ -288,6 +291,13 @@ const server = createServer(async (req, res) => {
     choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
   }
   if (path === '/project-fixture') { json(projects); return }
+  if (path.endsWith('/questions') && req.method === 'GET') { json(questionData); return }
+  if (path === '/__test__/question-task-response' && req.method === 'POST') {
+    const task = questionData.questions.flatMap(q => q.tasks)[0]
+    if (!task) { json({ error: 'Skapa en fiktiv uppgift först.' }, 409); return }
+    task.status = 'ready_for_review'; task.events.push({ id: randomUUID(), actorName: 'VVS Test', type: 'comment', text: 'FIKTIVT TESTSVAR: Driftläget behöver kontrolleras mot tillverkarens underlag.', createdAt: new Date().toISOString() })
+    json({ ok: true }); return
+  }
   if (customerRegistryTest && path === '/api/settings/customers') { json({ workspace: registry }); return }
   if (propertyRegistryTest && path.endsWith('/properties') && req.method === 'GET') { json({ properties }); return }
   if (path === '/__test__/writes') { json(writes); return }
@@ -347,6 +357,36 @@ const server = createServer(async (req, res) => {
     const body = JSON.parse(raw)
     if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/questions')) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
+      let request
+      try { request = questionMutation(body) } catch { json({ error: 'Kontrollera frågan och datum inför utskick.' }, 400); return }
+      const before = JSON.stringify(state)
+      const prior = questionRequests.get(request.requestId)
+      if (prior) { json(prior === JSON.stringify(request) ? { questionId: request.questionId } : { error: 'Gammalt försök.' }, prior === JSON.stringify(request) ? 200 : 409); return }
+      let q = questionData.questions.find(q => q.id === request.questionId)
+      if ((!q && request.operation !== 'create') || (q && q.revision !== request.revision)) { json({ error: 'Frågan har ändrats. Hämta sparad version.' }, 409); return }
+      if (!q) { q = { id: request.questionId, number: questionData.questions.length + 1, revision: 0, updatedAt: '', body: emptyQuestion(), events: [], tasks: [] }; questionData.questions.push(q) }
+      if (q.body.status === 'closed' && request.operation !== 'reopen') { json({ error: 'Frågan är avslutad.' }, 409); return }
+      if (request.body) {
+        const assignee = request.body.assignee ? questionData.assignees.find(a => a.kind === request.body.assignee.kind && a.id === request.body.assignee.id) : null
+        q.body = { ...request.body, assignee, conclusion: q.body.conclusion }
+      }
+      let taskId = null
+      if (request.operation === 'send') {
+        if (!q.body.assignee || q.tasks.some(t => !['approved','cancelled'].includes(t.status))) { json({ error: 'Välj ansvarig och avsluta tidigare aktiv uppgift.' }, 409); return }
+        taskId = randomUUID(); q.tasks.push({ id: taskId, status: 'assigned', dueAt: request.dueAt, assigneeName: q.body.assignee.name, events: [], files: [] }); q.body.status = 'investigating'
+      }
+      if (request.operation === 'answer') q.body.status = 'answered'
+      if (request.operation === 'conclusion') q.body.conclusion = request.text
+      if (request.operation === 'close') q.body.status = 'closed'
+      if (request.operation === 'reopen') q.body.status = 'open'
+      q.revision++; q.updatedAt = new Date().toISOString()
+      q.events.push({ id: request.requestId, operation: request.operation, actorName: 'Anna Testledare', createdAt: q.updatedAt, text: request.text, reportedBy: request.reportedBy, body: structuredClone(q.body), files: request.fileIds.flatMap(fid => projects.cases[0].attachments.filter(f => f.id === fid).map(f => ({ id: f.id, name: f.fileName }))), revision: q.revision, taskId })
+      questionRequests.set(request.requestId, JSON.stringify(request))
+      assert.equal(JSON.stringify(state), before, 'Question changes must never modify offer, agreement, choice or payment data')
+      json({ questionId: q.id }); return
+    }
     if (path.endsWith('/name')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
       const project = projects.cases.find((c) => path === `/api/action-cases/${c.id}/name`)

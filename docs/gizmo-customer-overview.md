@@ -3,6 +3,70 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-07.
 
+## Beslut 2026-10-19: Fragor och beslut i projektet
+
+Godkant: intern fragelogg med tilldelning, svar, bilagor och historik. Fragor
+kan registreras utan datum. Svarsdatum och forsta uppfoljning kravs forst vid
+utskick till ansvarig. Anvandaren valde samma system som Uppdrag, inte en ny
+extern fragportal. ATA byggs separat senare; inget i denna funktion bestaller
+extra arbete eller skriver till avtal, priser, betalplan eller val/tillval.
+
+- Fliken Fragor och beslut foljer varumarkesprofilens kompakta tabell och
+  hogerpanel. Alla modulatkomliga anvandare i projektets organisation kan lasa
+  den interna loggen. Externa mottagare ser bara den uttryckligen skickade
+  uppgiften och valda bilagor genom Uppdrags befintliga mottagaratkomst.
+- Varje fraga har stabilt UUID och projektspecifikt nummer. Sammanhang och
+  eventuellt motesdatum ar skilda fran serverns registreringstid. Fragans
+  senaste text kan rattas; samtliga tidigare versioner bevaras i historiken.
+- Intern anteckning, eget svar, atergivet svar fran annan och intern slutsats
+  skiljs at. Ett atergivet muntligt besked ar registrerat av den inloggade
+  anvandaren, inte ett verifierat kundsvar eller en underskrift.
+- Ansvarig valjs fran Uppdrags aktiva person-/kontaktregister. Tilldelning
+  sparar bara ett internt ansvar. Ingen avisering eller extern atkomst ges
+  innan anvandaren granskat och uttryckligen valt Skicka uppgift.
+- Utskicket anvander `create_operational_task_with_recurrence` med uppskjuten
+  initial leverans och `finalize_operational_task_initial_dispatch`. Skapande,
+  kallkoppling, valda bilagors metadata och outbox koas i samma transaktion.
+  Befintlig uppfoljningsmotor hanterar leverans, mottagarportal och paminnelser.
+  Appen pastar inte att ett mejl levererats bara for att uppgiften har koats.
+- Endast fragetext, sammanhang, motesdatum och uttryckligen valda filer skickas.
+  Interna svar, slutsatser och historik skickas inte automatiskt. Interna
+  leverantorsofferter erbjuds inte som utskicksbilagor. Senare fragandringar
+  skriver aldrig om en skapad uppgifts underlag.
+- Fragans org-skopade kallkoppling ger projektets interna anvandare lasatkomst
+  till just dess skapade uppgifters kommentarer, status och redovisningsfiler.
+  Den ger inte generell atkomst till andra uppgifter eller deras underuppgifter.
+  Uppgiftens befintliga rattigheter for att skriva/granska andras inte.
+  Svar hamtas vid uppdatering av fragelistan; fragans status/slutsats andras inte
+  automatiskt av att uppgiften blir klar. Uppgiftsstatus Hantering klar ar inte
+  ett avtals- eller ATA-godkannande.
+- Optimistisk revision, transaktionella historikposter och idempotenta
+  request-ID skyddar samtidiga andringar och osakra aterforsok. Aktiv uppgift
+  maste hanteras/avslutas innan en ny skickas eller fragan avslutas. Avslutade
+  fragor bevaras och kan ateroppnas med en ny historikpost och motivering.
+- Historiktabellerna saknar direkt skrivrattsatkomst och skyddas mot update/
+  delete. Filreferenser hindrar radering av registrerade original; deras
+  lagringsmetadata far inte bytas ut. Uppladdningens abort/complete far inte
+  radera ett redan registrerat projektoriginal. Uppgiftsunderlag ateranvander
+  originalets privata objekt, inte en publik URL eller bredare filgrants.
+
+Ny migration: `docs/db/2026-10-19_01_project_questions.sql`. Den skapar endast
+nya fragetabeller, funktioner och filskydd; skriver inte om befintliga projekt.
+Inte automatiskt kord eller publicerad. Ingen garanti om bevisvarde,
+oforanderlighet mot databas-/lagringsadministratorer eller juridisk acceptans
+utlovas. Export/forsegling, ATA och nya signeringsregler ingar inte i detta steg.
+
+Verifierat lokalt 2026-10-19: 547 regressionstester inklusive 10 nya doman-,
+PGlite- och API-tester, riktad ESLint och webpack-produktionsbygge passerar.
+Klicktest med fiktiv backend provar tilldelad fraga utan datum, explicit
+utskick med svarsdatum/uppfoljning och vald bilaga, atergivet svar, historik,
+sparfel/aterforsok, avslut/filter och separat simulerat mottagarsvar. Mobilpanel
+390 px kontrollerad utan overflow pa falt/knappar. Den fiktiva backendens
+avtals-/offertdata ar oforandrade efter varje frageskrivning. PGlite-proven
+stubbar den underliggande task-RPC:n; produktionsleverans, mottagarinloggning
+och verklig e-post ar inte end-to-end-provade med den nya kopplingen innan SQL
+har korts i Supabase. Inga riktiga projekt eller externa mottagare har anvants.
+
 ## Beslut 2026-10-19: byt projektnamn utan avtalsandring
 
 - Pennikon intill projektets rubrik oppnar ett kompakt namnformular. Spara ar

@@ -483,7 +483,12 @@ export async function abortActionCaseUpload(context: Context, payload: Record<st
     throw new Error('ACTION_CASE_FILE_INVALID')
   }
   await requireCase(context, caseId)
-  const { error } = await createSupabaseAdminClient().storage.from(ACTION_CASE_BUCKET).remove([filePath])
+  const admin = createSupabaseAdminClient()
+  // A retry must never remove an original that has already been registered.
+  const registered = await admin.from('action_case_attachments').select('id').eq('org_id', context.orgId).eq('action_case_id', caseId).eq('file_path', filePath).limit(1)
+  if (registered.error) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
+  if (registered.data?.length) throw new Error('ACTION_CASE_FILE_IN_USE')
+  const { error } = await admin.storage.from(ACTION_CASE_BUCKET).remove([filePath])
   if (error) throw new Error('ACTION_CASE_FILE_DELETE_FAILED')
 }
 
@@ -508,6 +513,13 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     ? [...new Set(payload.participantIds.map(text).filter(Boolean))]
     : []
   const admin = createSupabaseAdminClient()
+  const registered = await admin.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes').eq('org_id', context.orgId).eq('action_case_id', caseId).eq('file_path', filePath).limit(1)
+  if (registered.error) throw new Error('ACTION_CASE_FILE_SAVE_FAILED')
+  if (registered.data?.length) {
+    const saved = registered.data[0]
+    if (saved.file_name === safeName(fileName) && saved.content_type === allowed.contentType && Number(saved.file_size_bytes) === fileSize) return
+    throw new Error('ACTION_CASE_FILE_IN_USE')
+  }
   const { data: storedObject, error: storedObjectError } = await admin.storage
     .from(ACTION_CASE_BUCKET)
     .info(filePath)

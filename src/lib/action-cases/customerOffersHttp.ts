@@ -32,6 +32,18 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_QUESTION_INVALID: [400, 'Kontrollera frågans rubrik, text och valda filer.'],
+    PROJECT_QUESTION_DATES: [400, 'Ange svarsdatum och uppföljning. Uppföljningen får inte ligga efter svarsdatumet. Bekräfta utskicket.'],
+    PROJECT_QUESTION_ASSIGNEE: [400, 'Välj en aktiv ansvarig i Uppdrag. En extern mottagare behöver en e-postadress.'],
+    PROJECT_QUESTION_RECIPIENT_CHANGED: [409, 'Den ansvariges kontaktuppgifter har ändrats. Hämta frågorna, välj den ansvarige igen och spara före utskick.'],
+    PROJECT_QUESTION_FILES: [409, 'En vald bilaga är inte längre tillgänglig i projektet.'],
+    PROJECT_QUESTION_STALE: [409, 'Frågan har ändrats i en annan session. Din text finns kvar. Hämta den sparade versionen innan du fortsätter.'],
+    PROJECT_QUESTION_CLOSED: [409, 'Frågan är avslutad. Återöppna den innan du lägger till något.'],
+    PROJECT_QUESTION_TASK_OPEN: [409, 'Frågan har en aktiv uppgift. Hantera eller avsluta den i Uppdrag innan frågan avslutas eller skickas på nytt.'],
+    PROJECT_QUESTION_NOT_FOUND: [404, 'Frågan eller projektet kunde inte hittas.'],
+    PROJECT_QUESTION_FORBIDDEN: [403, 'Du saknar behörighet till projektfrågan.'],
+    PROJECT_QUESTION_SCHEMA: [503, 'Frågor och beslut behöver aktiveras i databasen. Övriga projektet påverkas inte.'],
+    PROJECT_QUESTION_FAILED: [500, 'Åtgärden kunde inte bekräftas. Din text är kvar. Försök igen med samma uppgifter.'],
     PROJECT_NAME_INVALID: [400, 'Ange ett projektnamn med 1–250 tecken på en rad.'],
     PROJECT_NAME_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],
     PROJECT_NAME_STALE: [409, 'Projektnamnet har ändrats i en annan flik. Ladda om sidan innan du försöker igen.'],
