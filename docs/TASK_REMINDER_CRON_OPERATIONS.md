@@ -10,6 +10,13 @@ dagar av avslutade köjobb.
 Inga endpointvärden eller hemligheter finns i migrationen. Cronanropet läser
 dem från Supabase Vault vid varje körning.
 
+## Tidsformat vid inlasning
+
+Uppdrags datumtolkning accepterar PostgreSQL-tidsstamplar med upp till sex
+decimaler i sekunddelen. JavaScript behaller millisekunder. En registreringstid
+med mikrosekunder far inte bli ett saknat tilldelningsdatum och tyst hoppa over
+det forsta utskicket. Regressionstest: `test/task-database-timestamps.test.mjs`.
+
 ## 1. Förutsättningar
 
 - Migrationen ska vara körd i produktionsdatabasen.

@@ -67,6 +67,15 @@ stubbar den underliggande task-RPC:n; produktionsleverans, mottagarinloggning
 och verklig e-post ar inte end-to-end-provade med den nya kopplingen innan SQL
 har korts i Supabase. Inga riktiga projekt eller externa mottagare har anvants.
 
+Publiceringsprov 2026-10-19 efter anvandarens SQL-korning: den riktiga
+task-RPC:n skapar en lankad uppgift atomiskt i ett isolerat fiktivt testprojekt.
+En fraga utan datum och utskickets datum/mottagare sparas korrekt. Provet
+upptackte att Uppdrags gemensamma datumtolkning nekade databasens sexdecimala
+registreringstid och darfor hoppade over forsta tilldelningsmejlet. Tolkningen
+accepterar nu PostgreSQL-precision; felaktiga datum och offset nekas fortfarande.
+652 tester inklusive regression for faktisk databastidsstampel passerar.
+Ingen ny migration eller andring av befintliga projektdata behovs for rattningen.
+
 ## Beslut 2026-10-19: byt projektnamn utan avtalsandring
 
 - Pennikon intill projektets rubrik oppnar ett kompakt namnformular. Spara ar

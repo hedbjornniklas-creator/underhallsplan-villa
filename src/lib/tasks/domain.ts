@@ -310,8 +310,9 @@ export function getTaskBallHolder(input: {
 
 export type TaskTimeValue = string | number | Date
 
+// PostgreSQL timestamps carry up to six fractional digits; Date.parse retains milliseconds.
 const TASK_ISO_TIME_PATTERN =
-  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-]\d{2}:\d{2}))?$/
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(Z|[+-]\d{2}:\d{2}))?$/
 
 function isValidTaskIsoTime(value: string) {
   const match = TASK_ISO_TIME_PATTERN.exec(value)
