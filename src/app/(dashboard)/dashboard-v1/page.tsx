@@ -13,7 +13,7 @@ export default async function DashboardV1Page({ searchParams }: { searchParams?:
   let initialError: string | null = null
   try { initialData = await getDashboardData(params.orgId) } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'UNAUTHORIZED') redirect('/login')
+    if (message === 'UNAUTHORIZED') redirect('/login?next=%2Fdashboard-v1')
     initialError = message === 'ORG_SELECTION_INVALID'
       ? 'Den valda organisationen är ogiltig. Återställ startsidan.'
       : message === 'DASHBOARD_ORGANIZATION_UNSUPPORTED'

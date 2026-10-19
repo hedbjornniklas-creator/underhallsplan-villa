@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Lock, MapPin, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
 import DailyRouteMap from '@/components/dashboard/DailyRouteMap'
 import TravelSummary from '@/components/dashboard/TravelSummary'
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
 import type { DashboardAction, DashboardBooking, DashboardData, DashboardModule, DashboardModuleId } from '@/lib/dashboard/model'
 import { bookingCountLabel, bookingDate, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
 import './dashboard.css'
@@ -177,13 +178,14 @@ export default function DashboardV1Client({ initialData, initialError = null }: 
   const selectionKey = selections.join('|')
   const requestedOrgId = selections[0]
   const [revision, setRevision] = useState(0)
-  const [snapshot, setSnapshot] = useState<{ key: string; revision: number; data?: DashboardData; error?: string | null } | null>(initialData || initialError ? { key: selectionKey, revision: 0, data: initialData, error: initialError } : null)
+  const [snapshot, setSnapshot] = useState<{ key: string; revision: number; data?: DashboardData; error?: string | null; unauthorized?: boolean } | null>(initialData || initialError ? { key: selectionKey, revision: 0, data: initialData, error: initialError } : null)
   const initialSelection = useRef(selectionKey)
   useEffect(() => {
     if (revision === 0 && selectionKey === initialSelection.current && (initialData || initialError)) return
     const controller = new AbortController()
     let current = true
     let discardPrevious = false
+    let unauthorized = false
     if (selectionKey.includes('|')) return () => controller.abort()
     const params = new URLSearchParams()
     if (requestedOrgId !== undefined) params.set('orgId', requestedOrgId)
@@ -191,12 +193,14 @@ export default function DashboardV1Client({ initialData, initialError = null }: 
       .then(async response => {
         const body = await response.json().catch(() => ({}))
         discardPrevious = response.status === 401 || response.status === 403 || response.status === 400
+        unauthorized = response.status === 401
         if (!response.ok || !Array.isArray(body.modules) || !Array.isArray(body.actions) || !Array.isArray(body.bookings) || !isCalendarDate(body.today ?? '')) throw new Error(body.error || 'Översikten kunde inte hämtas. Försök igen.')
         if (requestedOrgId !== undefined && body.organizationId !== requestedOrgId.trim().toLowerCase()) throw new Error('Översikten kunde inte hämtas för den valda organisationen.')
         if (current) setSnapshot({ key: selectionKey, revision, data: body as DashboardData })
       })
       .catch(loadError => { if (current && !controller.signal.aborted) setSnapshot(previous => ({ key: selectionKey, revision,
         data: !discardPrevious && previous?.key === selectionKey ? previous.data : undefined,
+        unauthorized,
         error: loadError instanceof Error ? loadError.message : 'Översikten kunde inte hämtas.',
       })) })
     return () => { current = false; controller.abort() }
@@ -212,5 +216,6 @@ export default function DashboardV1Client({ initialData, initialError = null }: 
   const loading = !invalidSelection && (snapshot?.key !== selectionKey || snapshot.revision !== revision)
   const error = invalidSelection ? 'Flera organisationsval finns i adressen. Återställ startsidan.' : snapshot?.key === selectionKey && !loading ? snapshot.error : null
   const refresh = () => setRevision(value => value + 1)
+  if (!invalidSelection && snapshot?.key === selectionKey && snapshot.unauthorized && !loading) return <DashboardAccessRecovery reason="unavailable" embedded />
   return visibleData ? <DashboardContent key={`${selectionKey}:${visibleData.today}`} data={visibleData} refreshing={loading} onRefresh={refresh} error={error} /> : <DashboardLoading error={error ?? null} onRetry={refresh} />
 }

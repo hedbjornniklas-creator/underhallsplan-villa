@@ -11,6 +11,8 @@ const require = createRequire(import.meta.url)
 const { NextRequest, NextResponse } = require('next/server') as typeof import('next/server')
 const { RequestCookiesAdapter } = require('next/dist/server/web/spec-extension/adapters/request-cookies')
 const path = '/settings/organisation/skapa'
+const dashboardPath = '/dashboard-v1'
+const protectedPaths = [path, dashboardPath]
 const origin = 'https://hushub.example.test'
 const authOrigin = 'https://local.supabase.test'
 const cookieName = 'sb-local-auth-token'
@@ -40,7 +42,7 @@ function load<T>(file: string, dependencies: Record<string, unknown>, environmen
   return mod.exports as T
 }
 
-function fixture(mode: 'success' | 'revoked' = 'success') {
+function fixture(mode: 'success' | 'revoked' | 'unavailable' = 'success') {
   const calls: string[] = []
   const fetch: typeof globalThis.fetch = async input => {
     const url = new URL(String(input))
@@ -50,6 +52,7 @@ function fixture(mode: 'success' | 'revoked' = 'success') {
       status: 400, headers: { 'Content-Type': 'application/json', 'X-Supabase-Api-Version': '2024-01-01' },
     })
     assert.ok(['/auth/v1/token', '/auth/v1/user'].includes(url.pathname))
+    if (mode === 'unavailable' && url.pathname === '/auth/v1/user') return new Response('Synthetic upstream failure', { status: 503 })
     return new Response(JSON.stringify(url.pathname.endsWith('/token') ? session() : user), {
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
@@ -121,9 +124,9 @@ test('unrefreshed expired RSC session reproduces the real cookie-write crash, ev
   assert.ok(result.unhandled.every(message => message.includes('Cookies can only be modified')))
 })
 
-test('creation proxy refreshes expired real SDK cookies for BOTH RSC request and browser response', async () => {
+for (const target of protectedPaths) test(`${target} proxy refreshes expired real SDK cookies for BOTH RSC request and browser response`, async () => {
   const f = fixture()
-  const request = f.request(true)
+  const request = f.request(true, target)
   const original = request.cookies.get(cookieName)?.value
   const response = await f.proxy(request)
   assert.equal(response.status, 200)
@@ -153,25 +156,25 @@ test('creation proxy refreshes expired real SDK cookies for BOTH RSC request and
   await new Promise(resolve => setTimeout(resolve, 30))
 })
 
-test('fresh session still validates with Auth and does not manufacture cookies', async () => {
+for (const target of protectedPaths) test(`${target} fresh session still validates with Auth and does not manufacture cookies`, async () => {
   const f = fixture()
-  const response = await f.proxy(f.request(false))
+  const response = await f.proxy(f.request(false, target))
   assert.equal(response.status, 200)
   assertPrivate(response)
   assert.deepEqual(f.calls, ['/auth/v1/user'])
   assert.deepEqual(response.cookies.getAll(), [])
 })
 
-test('anonymous and rejected sessions redirect only to exact login return; rejection clears reach browser', async () => {
+for (const targetPath of protectedPaths) test(`${targetPath} anonymous and rejected sessions redirect only to exact login return; rejection clears reach browser`, async () => {
   for (const expired of [undefined, true]) {
     const f = fixture(expired ? 'revoked' : 'success')
-    const request = f.request(expired)
+    const request = f.request(expired, `${targetPath}?next=https://untrusted.example.test&other=value`)
     const response = await f.proxy(request)
     assert.equal(response.status, 307)
     const target = new URL(response.headers.get('location')!)
     assert.equal(target.origin, origin)
     assert.equal(target.pathname, '/login')
-    assert.equal(target.searchParams.get('next'), path)
+    assert.equal(target.searchParams.get('next'), targetPath)
     assert.deepEqual([...target.searchParams.keys()], ['next'])
     assertPrivate(response)
     if (expired) {
@@ -186,10 +189,10 @@ test('anonymous and rejected sessions redirect only to exact login return; rejec
   await new Promise(resolve => setTimeout(resolve, 30))
 })
 
-test('only the exact creation route is matched; unrelated routes never instantiate Auth or alter headers', async () => {
+test('only exact creation and dashboard routes are matched; unrelated routes never instantiate Auth or alter headers', async () => {
   const f = fixture()
-  assert.deepEqual(f.config.matcher, [path])
-  for (const target of ['/settings/organisation', '/login', '/api/organizations', '/renoapp/app', `${path}/other`]) {
+  assert.deepEqual(f.config.matcher, protectedPaths)
+  for (const target of ['/settings/organisation', '/login', '/auth/session-unavailable', '/api/organizations', '/renoapp/app', `${path}/other`, `${dashboardPath}/other`]) {
     const response = await f.proxy(f.request(true, target))
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), null)
@@ -198,7 +201,7 @@ test('only the exact creation route is matched; unrelated routes never instantia
   assert.deepEqual(f.calls, [])
 })
 
-test('missing configuration and unexpected Auth failures fail closed without a login redirect loop', async () => {
+for (const targetPath of protectedPaths) test(`${targetPath} missing configuration and unexpected Auth failures fail closed without a login redirect loop`, async () => {
   for (const mode of ['missing', 'throws', 'unavailable'] as const) {
     let clients = 0
     const proxyModule = load<{ proxy: (request: InstanceType<typeof NextRequest>) => Promise<Response> }>('src/proxy.ts', {
@@ -219,9 +222,10 @@ test('missing configuration and unexpected Auth failures fail closed without a l
         } } }
       } },
     }, mode === 'missing' ? {} : { NEXT_PUBLIC_SUPABASE_URL: authOrigin, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'synthetic-anon-key' })
-    const response = await proxyModule.proxy(new NextRequest(`${origin}${path}`))
+    const response = await proxyModule.proxy(new NextRequest(`${origin}${targetPath}?next=https://untrusted.example.test&private=value`))
     assert.equal(response.status, 503)
     assert.equal(response.headers.get('location'), null)
+    assert.equal(response.headers.get('x-middleware-rewrite'), targetPath === dashboardPath ? `${origin}/auth/session-unavailable` : null)
     assertPrivate(response)
     assert.doesNotMatch(await response.text(), /private diagnostic/)
     assert.equal(clients, mode === 'missing' ? 0 : 1)
@@ -230,4 +234,26 @@ test('missing configuration and unexpected Auth failures fail closed without a l
       assert.match(response.headers.get('set-cookie') ?? '', /synthetic-cleared=;.*Max-Age=0/)
     }
   }
+})
+
+test('dashboard upstream failure after real SDK rotation rewrites to public recovery and preserves rotated and cleared browser cookies', async () => {
+  const f = fixture('unavailable')
+  // The old chunk is removed when the smaller refreshed session becomes one
+  // cookie. Both browser changes must survive the recovery-page rewrite.
+  const request = new NextRequest(`${origin}${dashboardPath}?next=https://untrusted.example.test&private=value`, {
+    headers: { cookie: `${cookieName}.0=${encode(session(true))}` },
+  })
+  const response = await f.proxy(request)
+  assert.equal(response.status, 503)
+  assertPrivate(response)
+  assert.equal(response.headers.get('location'), null)
+  assert.equal(response.headers.get('x-middleware-rewrite'), `${origin}/auth/session-unavailable`)
+  assert.equal(response.cookies.get(cookieName)?.value, request.cookies.get(cookieName)?.value)
+  assert.ok((response.cookies.get(cookieName)?.maxAge ?? 0) > 0)
+  assert.equal(response.cookies.get(`${cookieName}.0`)?.value, '')
+  assert.equal(response.cookies.get(`${cookieName}.0`)?.maxAge, 0)
+  assert.equal(request.cookies.get(`${cookieName}.0`)?.value, '')
+  assert.equal(f.calls.filter(call => call === '/auth/v1/token').length, 1)
+  assert.ok(f.calls.includes('/auth/v1/user'))
+  await new Promise(resolve => setTimeout(resolve, 30))
 })

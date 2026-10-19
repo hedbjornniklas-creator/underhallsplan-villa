@@ -414,14 +414,47 @@ export async function testDashboard(base, output) {
     assert.equal(await page.$eval('body', node => /Tallstigen 12|Kvarteret Björken|Storgatan 24/.test(node.textContent)), false, '403 refresh clears customer data and action/calendar/map snapshots')
     await page.screenshot({ path: resolve(output, 'dashboard-access-revoked.png'), fullPage: true })
     assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
+    await testDashboardSessionExpiry(page, base, output)
     assert.deepEqual(errors, [])
     assert.deepEqual(external, [])
-    console.log('PASS: dashboard 390/768/1440px layouts; company-origin and appointment driving legs, summed travel time, tentative inclusion toggle and matching Google directions; single/draft-only visits, date/module scopes, known-coordinate travel requests, provider failure/retry, missing company and rejected foreign org/date responses without stale totals; changed company address reread on dashboard refresh with unchanged bookings, no repeated routing for ordinary local UI renders; tentative calendar/day/map entries, status text/color; scheduled OB/EB/TU drafts and Uppdrag site visits at 390/1440px; confirmed/tentative totals; confirmed-only map numbering/polyline; tentative geocoding and GET-only workflow navigation; status refresh; active-organization links; disabled-module isolation; module menu; action filters; show all/fewer; calendar navigation; empty states; load retry; transient snapshot preservation and 403 clearing. Synthetic data and tiles only; no external requests or writes.')
+    console.log('PASS: dashboard 390/768/1440px layouts; company-origin and appointment driving legs, summed travel time, tentative inclusion toggle and matching Google directions; single/draft-only visits, date/module scopes, known-coordinate travel requests, provider failure/retry, missing company and rejected foreign org/date responses without stale totals; changed company address reread on dashboard refresh with unchanged bookings, no repeated routing for ordinary local UI renders; tentative calendar/day/map entries, status text/color; scheduled OB/EB/TU drafts and Uppdrag site visits at 390/1440px; confirmed/tentative totals; confirmed-only map numbering/polyline; tentative geocoding and GET-only workflow navigation; status refresh; active-organization links; disabled-module isolation; module menu; action filters; show all/fewer; calendar navigation; empty states; load retry; transient snapshot preservation and 403 clearing; 401 refresh clears customer/action/calendar/map/travel data and offers both recovery actions without automatic signOut. Synthetic data and tiles only; no external requests or writes.')
   } catch (error) {
     console.error(await page.$eval('body', node => node.innerText))
     await page.screenshot({ path: resolve(output, 'dashboard-failure.png'), fullPage: true })
     throw error
   } finally { await browser.close() }
+}
+
+// The dashboard may remain open until its session expires. A later 401 must
+// replace the previously loaded customer snapshot with usable recovery actions.
+export async function testDashboardSessionExpiry(page, base, output) {
+  const path = '/dashboard-v1?state=client&orgId=11111111-1111-4111-8111-111111111111'
+  const heading = '#access-recovery-heading'
+  for (const width of [390, 1440]) {
+    await page.setViewport({ width, height: 1000 })
+    await page.goto(`${base}${path}`, { waitUntil: 'networkidle0' })
+    await page.waitForSelector('[data-action-id]')
+    await page.$eval('.dh-map-panel', node => node.scrollIntoView())
+    await page.waitForSelector('.leaflet-marker-icon')
+    await page.waitForSelector('[data-testid="travel-total"]')
+    assert.ok(await page.$('.dh-calendar-booking'), 'The initial snapshot contains booked customer work')
+    assert.equal(await page.evaluate(() => window.__dashboardTest.authSignOuts), 0)
+
+    await page.evaluate(() => { window.__dashboardTest.fail = true; window.__dashboardTest.failureStatus = 401 })
+    await page.click('button[aria-label="Uppdatera översikten"]')
+    await page.waitForSelector(heading)
+    assert.equal(await page.$eval(heading, node => node.textContent), 'Sidan kunde inte öppnas')
+    assert.deepEqual(await page.$$eval('section button', nodes => nodes.map(node => node.textContent.trim())), ['Försök igen', 'Logga in igen'], 'Expired sessions offer clear recovery actions')
+    assert.equal(await page.$('[data-action-id],.dh-agenda-row,.dh-calendar-booking,.leaflet-marker-icon,[data-testid="dashboard-travel"]'), null, '401 removes action, calendar, map and travel snapshots')
+    assert.equal(await page.$eval('body', node => /Tallstigen 12|Äppelvägen 5|Kvarteret Björken|Storgatan 24|Kontorsvägen 1/.test(node.textContent)), false, '401 removes prior customer and company location text')
+    assert.equal(await page.evaluate(() => window.__dashboardTest.authSignOuts), 0, 'An expired API response never signs the user out automatically')
+    assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
+    assert.equal(page.url(), `${base}${path}`, 'Recovery waits for a user action before navigating')
+    assert.equal(await page.$('main main'), null, 'Embedded recovery does not nest main landmarks')
+    const dimensions = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
+    assert.ok(dimensions.scroll <= dimensions.width + 1, `${width}px expired-session recovery has no horizontal overflow`)
+    await page.screenshot({ path: resolve(output, `dashboard-session-expired-${width}.png`), fullPage: true })
+  }
 }
 
 // Exported separately so changes to refresh dependencies can run this regression

@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 const creationPath = '/settings/organisation/skapa'
+const dashboardPath = '/dashboard-v1'
 
 function privateResponse(response: NextResponse) {
   response.headers.set('Cache-Control', 'private, no-store, max-age=0')
@@ -10,20 +11,23 @@ function privateResponse(response: NextResponse) {
   return response
 }
 
-// Only this new RSC entry is in scope. Refresh in a writable request/response
-// boundary, before the page's independent getUser check reads its cookies.
+// Refresh these exact RSC entries in a writable request/response boundary,
+// before each page's independent access checks read the updated cookies.
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname !== creationPath) return NextResponse.next()
+  const pathname = request.nextUrl.pathname
+  if (pathname !== creationPath && pathname !== dashboardPath) return NextResponse.next()
 
   let response = NextResponse.next({ request })
   const unavailable = () => {
-    const result = new NextResponse('Inloggningen kunde inte kontrolleras. Försök igen om en stund.', { status: 503 })
+    const result = pathname === dashboardPath
+      ? NextResponse.rewrite(new URL('/auth/session-unavailable', request.url), { status: 503 })
+      : new NextResponse('Inloggningen kunde inte kontrolleras. Försök igen om en stund.', { status: 503 })
     response.cookies.getAll().forEach(cookie => result.cookies.set(cookie))
     return privateResponse(result)
   }
   const login = () => {
     const url = new URL('/login', request.url)
-    url.searchParams.set('next', creationPath)
+    url.searchParams.set('next', pathname)
     const redirect = NextResponse.redirect(url)
     // A rejected/revoked session can clear cookies before returning an error.
     // Preserve those clears, including their options, on the redirect too.
@@ -63,4 +67,4 @@ export async function proxy(request: NextRequest) {
   }
 }
 
-export const config = { matcher: ['/settings/organisation/skapa'] }
+export const config = { matcher: ['/settings/organisation/skapa', '/dashboard-v1'] }
