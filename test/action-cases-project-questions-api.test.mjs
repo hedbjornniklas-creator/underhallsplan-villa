@@ -27,7 +27,7 @@ test('questions route requires session/module and same-origin body before mutati
 })
 test('writer uses only scoped project reads and the atomic question RPC; assignees must be in the authorized task directory',async()=>{
   const calls=[]
-  const db={from(table){assert.equal(table,'action_cases');const c={table,filters:[]};calls.push(c);const q={select(){return q},eq(...v){c.filters.push(v);return q},async maybeSingle(){return {data:{id:caseId}}}};return q},async rpc(name,args){calls.push({name,args});return {data:id(4)}}}
+  const db={from(table){assert.equal(table,'action_cases');const c={table,filters:[]};calls.push(c);const q={select(){return q},eq(...v){c.filters.push(v);return q},async maybeSingle(){return {data:{id:caseId}}}};return q},async rpc(name,args){if(name==='project_question_customers'){assert.deepEqual(args,{p_org_id:ctx.orgId,p_case_id:caseId});return {data:[]}}calls.push({name,args});return {data:id(4)}}}
   const server=load('../src/lib/action-cases/projectQuestionsServer.ts',{'server-only':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/tasks/server':{async getTaskPeople(){return [{id:ctx.userId,kind:'profile',name:'Test',isActive:true}]}},'@/lib/tasks/attachments':{createTaskAttachmentSignedUrl(){throw Error('unexpected')}},'./projectQuestions':{questionMutation,questionUuid}})
   const body={questionId:id(4),requestId:id(5),revision:0,operation:'create',body:{...emptyQuestion(),title:'VVB',description:'Kan den monteras här?',assignee:{id:ctx.userId,kind:'profile',name:'spoof'}},fileIds:[]}
   await server.mutateProjectQuestion(ctx,caseId,body)
@@ -44,6 +44,49 @@ test('task file access requires the exact project/task relationship before signi
   await assert.rejects(server.projectQuestionTaskFile(ctx,caseId,id(5),id(6)),/NOT_FOUND/)
   assert.deepEqual(calls[1].filters,[['org_id',ctx.orgId],['action_case_id',caseId],['task_id',id(5)]])
   assert.equal(signed.length,0)
+})
+
+test('creation dates come from the immutable create event, never the latest update or meeting date', async () => {
+  const created = '2026-10-17T08:00:00Z', updated = '2026-10-19T10:00:00Z'
+  const questions = [4, 5].map(n => ({ id: id(n), number: n, revision: 2, updated_at: updated, body: { ...emptyQuestion(), meetingDate: '2026-10-01' } }))
+  const events = [
+    { id: id(40), question_id: id(4), revision: 2, operation: 'update', created_at: updated, task_id: null },
+    { id: id(41), question_id: id(4), revision: 1, operation: 'create', created_at: created, task_id: null }
+  ]
+  const calls = []
+  const db = { async rpc() { return { data: [] } }, from(table) {
+    const call = { table, filters: [] }; calls.push(call)
+    const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, order() { return q },
+      async maybeSingle() { return { data: { id: caseId } } },
+      async range(from, to) { return { data: (table === 'action_case_questions' ? questions : events).slice(from, to + 1) } } }
+    return q
+  } }
+  const server = load('../src/lib/action-cases/projectQuestionsServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async getTaskPeople() { return [] } }, '@/lib/tasks/attachments': {}, './projectQuestions': { questionMutation, questionUuid } })
+  const result = await server.getProjectQuestions(ctx, caseId)
+  assert.equal(result.questions[0].createdAt, created)
+  assert.equal(result.questions[0].updatedAt, updated)
+  assert.equal(result.questions[1].createdAt, null)
+  for (const call of calls) assert.ok(call.filters.some(([key, value]) => key === 'org_id' && value === ctx.orgId))
+})
+
+test('customer directory is read-only and missing migration preserves existing contacts without hiding other failures', async () => {
+  let failure = null
+  const customer = { id: id(8), name: 'Beställare', email: 'customer@example.invalid', phone: 'unused' }
+  const db = { async rpc(name, args) {
+    assert.equal(name, 'project_question_customers')
+    assert.deepEqual(args, { p_org_id: ctx.orgId, p_case_id: caseId })
+    return failure ? { error: failure } : { data: [customer] }
+  } }
+  const server = load('../src/lib/action-cases/projectQuestionsServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async getTaskPeople() { return [{ id: id(9), kind: 'contact', name: 'Befintlig kontakt', isActive: true }, { id: id(10), kind: 'contact', name: 'Avstängd', isActive: false }] } }, '@/lib/tasks/attachments': {}, './projectQuestions': { questionMutation, questionUuid } })
+  const result = await server.questionAssignees(ctx, caseId)
+  assert.equal(result.customersAvailable, true)
+  assert.deepEqual(result.assignees[0], { id: customer.id, name: customer.name, email: customer.email, kind: 'customer' })
+  assert.equal(result.assignees.length, 2)
+  failure = { code: 'PGRST202' }
+  const legacy = await server.questionAssignees(ctx, caseId)
+  assert.equal(legacy.customersAvailable, false); assert.equal(legacy.assignees.length, 1)
+  failure = { code: '42501' }
+  await assert.rejects(server.questionAssignees(ctx, caseId), /FAILED/)
 })
 test('abort and complete retries cannot delete registered originals, including originals pinned by question history',async()=>{
   for(const state of ['registered','read-error','pending']) {

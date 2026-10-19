@@ -12,6 +12,15 @@ test('project views are allowlisted and URLs retain the project identity', () =>
   assert.equal(navigation.projectUrl('../other', 'files'), '/uppdrag/..%2Fother?view=files')
 })
 
+test('questions follow the schedule in project navigation without changing deep links', () => {
+  assert.equal(navigation.projectViews.indexOf('questions'), navigation.projectViews.indexOf('schedule') + 1)
+  const source = readFileSync(new URL('../src/components/tasks/ActionCaseProject.tsx', import.meta.url), 'utf8')
+  const section = source.slice(source.indexOf('const sections = ['), source.indexOf('] as const'))
+  const keys = [...section.matchAll(/key: '([^']+)'/g)].map(match => match[1])
+  assert.deepEqual(keys, ['overview', 'work', 'offer', 'contract', 'choices', 'payments', 'schedule', 'questions', 'files'])
+  assert.equal(navigation.projectUrl('project-a', 'questions'), '/uppdrag/project-a?view=questions')
+})
+
 test('list attention counts refer to work items, not fictitious project completion', () => {
   const project = { status: 'pricing', items: [{ status: 'scope_needed' }, { status: 'pricing_needed' }, { status: 'waiting_subcontractor' }] }
   assert.equal(navigation.projectNeeds(project), '1 saknar omfattning · 1 behöver kalkyl · 1 väntar på UE')

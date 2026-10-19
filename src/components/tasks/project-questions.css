@@ -1,10 +1,11 @@
 .gizmo-questions,.gizmo-question-panel { color:#252A2D; letter-spacing:0; }
 .gizmo-question-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:16px; margin:16px 0; font-size:14px; }
-.gizmo-question-toolbar>label { display:flex; align-items:center; gap:8px; }
+.gizmo-question-toolbar>label { display:flex; align-items:center; gap:8px; white-space:nowrap; }
 .gizmo-question-search { width:min(100%,420px); }
 .gizmo-question-field { display:block; width:100%; min-width:0; min-height:44px; border:1px solid #D5DCDD; border-radius:6px; padding:8px 10px; background:white; font-size:16px; color:#252A2D; }
 .gizmo-question-field:focus-visible,.gizmo-question-open:focus-visible { outline:2px solid #206961; outline-offset:2px; }
-.gizmo-question-table-head,.gizmo-question-table-row { display:grid; grid-template-columns:minmax(180px,2fr) minmax(120px,1fr) 140px 150px; gap:16px; align-items:center; padding:8px 12px; border-bottom:1px solid #D5DCDD; }
+.gizmo-question-table-head,.gizmo-question-table-row { display:grid; grid-template-columns:minmax(160px,2fr) minmax(100px,1fr) minmax(110px,.8fr) repeat(2,minmax(130px,.9fr)); gap:16px; align-items:center; padding:8px 12px; border-bottom:1px solid #D5DCDD; }
+.gizmo-question-date-label { display:none; }
 .gizmo-question-table-row>* { min-width:0; overflow-wrap:anywhere; }
 .gizmo-question-table-head { min-height:36px; background:#EDF1F1; font-size:12px; font-weight:600; }
 .gizmo-question-table-row { min-height:60px; font-size:14px; }
@@ -55,7 +56,8 @@
   .gizmo-question-table-head { display:none; }
   .gizmo-question-table-row { grid-template-columns:1fr 1fr; gap:6px 12px; padding:10px 8px; }
   .gizmo-question-table-row>div:first-child { grid-column:1/-1; }
-  .gizmo-question-table-row>span:last-child { grid-column:1/-1; }
+  .gizmo-question-date { grid-column:1/-1; }
+  .gizmo-question-date-label { display:inline; }
   .gizmo-question-panel>header,.gizmo-question-panel>footer,.gizmo-question-panel-body { padding:12px 16px; }
   .gizmo-question-pair { grid-template-columns:1fr; }
   .gizmo-question-panel .gizmo-button,.gizmo-question-panel .gizmo-question-field { min-height:48px; }

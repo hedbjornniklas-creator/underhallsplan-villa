@@ -291,7 +291,15 @@ const contractSnapshot = () => {
     customerName: p?.customers[0]?.name ?? '', customerEmail: p?.email ?? '', issuerName: p?.contractor.companyName ?? '', replyEmail: p?.contractor.email ?? '' })
 }
 const choiceUploads = new Map()
-const questionData = { questions: [], assignees: [{ id: id(90), kind: 'profile', name: 'Anna Testledare' }, { id: id(91), kind: 'contact', name: 'VVS Test' }] }
+const questionData = { questions: [], customersAvailable: true, assignees: [{ id: id(90), kind: 'profile', name: 'Anna Testledare' }, { id: id(91), kind: 'contact', name: 'VVS Test' }, { id: id(92), kind: 'customer', name: 'Nina Testbeställare', email: 'customer@example.invalid' }, { id: id(93), kind: 'customer', name: 'Thomas Testbeställare', email: 'customer@example.invalid' }, { id: id(94), kind: 'contact', name: 'Nina Testbeställare', email: 'customer@example.invalid' }] }
+if (process.argv.includes('--question-dates')) {
+  const body = { ...emptyQuestion(), title: 'Fiktiv fråga från byggmöte', description: 'Kan golvvärmen vara på under sommaren?', assignee: questionData.assignees[2] }
+  const createdAt = '2026-10-17T08:00:00Z', updatedAt = '2026-10-19T10:00:00Z'
+  questionData.questions.push({ id: id(950), number: 1, revision: 2, body, createdAt, updatedAt, tasks: [], events: [
+    { id: id(951), operation: 'create', revision: 1, actorName: 'Anna Testledare', createdAt, body, text: '', reportedBy: '', files: [], taskId: null },
+    { id: id(952), operation: 'update', revision: 2, actorName: 'Anna Testledare', createdAt: updatedAt, body, text: '', reportedBy: '', files: [], taskId: null }
+  ] })
+}
 const questionRequests = new Map()
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
@@ -377,7 +385,7 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && (['save', 'autosave'].includes(body.operation) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
     if (path.endsWith('/questions')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
@@ -404,6 +412,7 @@ const server = createServer(async (req, res) => {
       if (request.operation === 'close') q.body.status = 'closed'
       if (request.operation === 'reopen') q.body.status = 'open'
       q.revision++; q.updatedAt = new Date().toISOString()
+      if (request.operation === 'create') q.createdAt = q.updatedAt
       q.events.push({ id: request.requestId, operation: request.operation, actorName: 'Anna Testledare', createdAt: q.updatedAt, text: request.text, reportedBy: request.reportedBy, body: structuredClone(q.body), files: request.fileIds.flatMap(fid => projects.cases[0].attachments.filter(f => f.id === fid).map(f => ({ id: f.id, name: f.fileName }))), revision: q.revision, taskId })
       questionRequests.set(request.requestId, JSON.stringify(request))
       assert.equal(JSON.stringify(state), before, 'Question changes must never modify offer, agreement, choice or payment data')

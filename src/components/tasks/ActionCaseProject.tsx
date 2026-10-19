@@ -19,12 +19,12 @@ import ProjectQuestions from './ProjectQuestions'
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
   { key: 'work', label: 'Projektarbete', icon: Wrench },
-  { key: 'questions', label: 'Frågor och beslut', icon: MessageSquare },
   { key: 'offer', label: 'Offert', icon: FileText },
   { key: 'contract', label: 'Avtal', icon: FilePenLine },
   { key: 'choices', label: 'Val och tillval', icon: ListChecks },
   { key: 'payments', label: 'Betalning och fakturering', icon: WalletCards },
   { key: 'schedule', label: 'Tidsplan', icon: CalendarClock },
+  { key: 'questions', label: 'Frågor och beslut', icon: MessageSquare },
   { key: 'files', label: 'Bilder och filer', icon: FolderOpen },
 ] as const
 const offerViews: Partial<Record<ProjectView, CustomerEditorView>> = { offer: 'edit', contract: 'contract', choices: 'planning', payments: 'payments', customer: 'customer', review: 'document', offerReview: 'offerDocument' }

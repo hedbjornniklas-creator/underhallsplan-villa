@@ -2,7 +2,7 @@ import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getTaskPeople } from '@/lib/tasks/server'
 import { createTaskAttachmentSignedUrl } from '@/lib/tasks/attachments'
-import { questionMutation, questionUuid, type ProjectQuestion, type QuestionBody, type QuestionWorkspace, type QuestionTask } from './projectQuestions'
+import { questionMutation, questionUuid, type ProjectQuestion, type QuestionAssignee, type QuestionBody, type QuestionWorkspace, type QuestionTask } from './projectQuestions'
 
 type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
@@ -25,8 +25,13 @@ async function pages<T>(query: (from: number, to: number) => PromiseLike<{ data:
     if ((r.data?.length ?? 0) < 500) return all
   }
 }
-export async function questionAssignees(ctx: Context) {
-  return (await getTaskPeople({ ...ctx, isOrgAdmin: false })).filter(p => p.isActive).map(p => ({ id: p.id, kind: p.kind, name: p.name, email: p.email }))
+export async function questionAssignees(ctx: Context, caseId: string) {
+  const people = (await getTaskPeople({ ...ctx, isOrgAdmin: false })).filter(p => p.isActive)
+  const result = await createSupabaseAdminClient().rpc('project_question_customers', { p_org_id: ctx.orgId, p_case_id: caseId })
+  const missing = ['42883', 'PGRST202'].includes(result.error?.code || '')
+  if (!missing) checked(result.error)
+  const customers: QuestionAssignee[] = (missing ? [] : result.data || []).map((c: { id: string; name: string; email: string | null }) => ({ id: c.id, name: c.name, email: c.email, kind: 'customer' }))
+  return { customersAvailable: !missing, assignees: [...customers, ...people.map(p => ({ id: p.id, kind: p.kind, name: p.name, email: p.email }))] }
 }
 export async function getProjectQuestions(ctx: Context, caseId: string): Promise<QuestionWorkspace> {
   await requireProject(ctx, caseId)
@@ -45,21 +50,22 @@ export async function getProjectQuestions(ctx: Context, caseId: string): Promise
       events: comments.map(c => ({ id: String(c.id), actorName: String(c.actor_name || 'Mottagare'), type: String(c.event_type), text: String(c.message || ''), createdAt: String(c.created_at) })),
       files: files.map(f => ({ id: String(f.id), name: String(f.file_name || f.title || 'Bilaga'), text: f.text_content as string | null, createdAt: String(f.created_at) })) })
   }
-  const questions: ProjectQuestion[] = rows.map(r => ({ id: String(r.id), number: Number(r.number), revision: Number(r.revision), body: r.body as QuestionBody, updatedAt: String(r.updated_at),
+  const questions: ProjectQuestion[] = rows.map(r => ({ id: String(r.id), number: Number(r.number), revision: Number(r.revision), body: r.body as QuestionBody,
+    createdAt: (events.find(e => e.question_id === r.id && e.operation === 'create' && Number(e.revision) === 1)?.created_at as string | undefined) ?? null, updatedAt: String(r.updated_at),
     events: events.filter(e => e.question_id === r.id).map(e => ({ id: String(e.id), revision: Number(e.revision), operation: String(e.operation), actorName: String(e.actor_name), createdAt: String(e.created_at), text: String(e.message), reportedBy: String(e.reported_by), body: e.body as QuestionBody, taskId: e.task_id as string | null,
       files: ((e.files || []) as Array<{ attachment_id: string; file_name: string }>).map(f => ({ id: f.attachment_id, name: f.file_name })) })),
     tasks: events.filter(e => e.question_id === r.id && typeof e.task_id === 'string').flatMap(e => tasks.has(String(e.task_id)) ? [tasks.get(String(e.task_id))!] : []) }))
-  return { questions, assignees: await questionAssignees(ctx) }
+  return { questions, ...await questionAssignees(ctx, caseId) }
 }
 export async function mutateProjectQuestion(ctx: Context, caseId: string, payload: Record<string, unknown>) {
   const request = questionMutation(payload)
   await requireProject(ctx, caseId)
   if (request.body?.assignee || request.operation === 'send') {
-    const people = await getTaskPeople({ ...ctx, isOrgAdmin: false })
+    const { assignees } = await questionAssignees(ctx, caseId)
     const b = request.body ?? (await getProjectQuestions(ctx, caseId)).questions.find(q => q.id === request.questionId)?.body
     const assignee = b?.assignee
-    const person = people.find(p => p.id === assignee?.id && p.kind === assignee.kind && p.isActive)
-    if (!person || (request.operation === 'send' && person.kind === 'contact' && !person.email)) throw new Error('PROJECT_QUESTION_ASSIGNEE')
+    const person = assignees.find(p => p.id === assignee?.id && p.kind === assignee.kind)
+    if (!person || (request.operation === 'send' && person.kind !== 'profile' && !person.email)) throw new Error('PROJECT_QUESTION_ASSIGNEE')
   }
   const r = await createSupabaseAdminClient().rpc('mutate_project_question', { p_org_id: ctx.orgId, p_case_id: caseId, p_actor_id: ctx.userId, p_request: request })
   checked(r.error)

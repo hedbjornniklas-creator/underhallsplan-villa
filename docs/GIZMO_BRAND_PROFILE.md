@@ -32,17 +32,21 @@ Projekt är standardvyn på /uppdrag. Aktuellt och Statistik behålls som
 separata tvärgående vyer. Länkar till en specifik befintlig uppgift öppnar fortsatt
 uppgiften i Aktuellt; uppgifter och projekt slås inte ihop i databasen.
 
-Projektnavigering: Översikt, Projektarbete, Frågor och beslut, Offert, Avtal, Val och tillval,
-Betalning och fakturering, Tidsplan, Bilder och filer. Registerflikarna ligger
+Projektnavigering: Översikt, Projektarbete, Offert, Avtal, Val och tillval,
+Betalning och fakturering, Tidsplan, Frågor och beslut, Bilder och filer. Registerflikarna ligger
 över arbetsytan på både dator och mobil. Visa som beställare är en avskild
 förhandsgranskningshandling i projekthuvudet. Kundens sida har inte intern meny.
 Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
 
 Beslut 2026-10-19: Frågor och beslut använder en kompakt sammanhängande tabell
-med frågenummer, rubrik, ansvarig, status i ord och uppdateringstid. Frågan öppnas
+med frågenummer, rubrik, ansvarig, status i ord samt både skapad- och uppdateringstid. Frågan öppnas
 i en högerpanel, med samma grafit, grönblå fokus, Manrope och raka avdelare som
 övriga projektet. Mobilen staplar tabellens uppgifter och använder en panel i
 full bredd. Inga nya färgteman, kortlistor eller ändringar av avtalsvyn ingår.
+Förtydligande 2026-10-19: fliken ligger efter Tidsplan. Beställare återanvänds
+direkt i ansvariglistan utan extra bock eller automatisk delning. Spara och skapa
+nästa öppnar ett tomt formulär först efter bekräftad sparning. Se
+[Frågor: beställare och snabbregistrering](gizmo-project-question-improvements.md).
 
 ## Listor och dator
 

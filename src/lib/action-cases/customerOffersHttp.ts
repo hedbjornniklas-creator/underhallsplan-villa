@@ -34,7 +34,7 @@ export function customerOfferError(error: unknown) {
   const errors: Record<string, [number, string]> = {
     PROJECT_QUESTION_INVALID: [400, 'Kontrollera frågans rubrik, text och valda filer.'],
     PROJECT_QUESTION_DATES: [400, 'Ange svarsdatum och uppföljning. Uppföljningen får inte ligga efter svarsdatumet. Bekräfta utskicket.'],
-    PROJECT_QUESTION_ASSIGNEE: [400, 'Välj en aktiv ansvarig i Uppdrag. En extern mottagare behöver en e-postadress.'],
+    PROJECT_QUESTION_ASSIGNEE: [400, 'Välj en tillgänglig ansvarig. Vid utskick behöver en extern mottagare en e-postadress.'],
     PROJECT_QUESTION_RECIPIENT_CHANGED: [409, 'Den ansvariges kontaktuppgifter har ändrats. Hämta frågorna, välj den ansvarige igen och spara före utskick.'],
     PROJECT_QUESTION_FILES: [409, 'En vald bilaga är inte längre tillgänglig i projektet.'],
     PROJECT_QUESTION_STALE: [409, 'Frågan har ändrats i en annan session. Din text finns kvar. Hämta den sparade versionen innan du fortsätter.'],
