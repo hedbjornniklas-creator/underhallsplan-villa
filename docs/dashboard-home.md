@@ -53,6 +53,27 @@ och Uppdrag-flöden. Ett explicit `orgId` måste vara samma organisation. TU och
 Fuktsäkerhet behåller organisationsvalet i sina länkar. Gemensamt organisations-
 byte ska inte aktiveras förrän alla underliggande flöden stöder det.
 
+## Inloggning efter inaktivitet
+
+`/dashboard-v1` förnyar sessionen i samma skrivbara proxy som
+`/settings/organisation/skapa`. Förnyade cookies skickas både till den efterföljande
+serverrenderingen och till webbläsaren. Sidans produkt-, organisations- och
+modulbehörigheter kontrolleras fortfarande separat; sessionen ger ingen extra
+behörighet. Saknad eller återkallad session skickas till inloggningen med
+startsidan som återgång.
+
+Ett tillfälligt fel vid sessionsförnyelsen visar en återhämtningssida med status
+503 och utan cachelagring, i stället för en omdirigeringsloop. Layouten skiljer
+verklig `PRODUCT_ACCESS_REQUIRED` från andra tekniska fel. Bara det första
+beskrivs som saknad behörighet. Om ett API-anrop efter återgång till fliken får
+401 tas tidigare kunduppgifter bort och samma återhämtningsalternativ visas.
+
+Sidan förklarar nästa steg och erbjuder ”Försök igen”, ”Logga in igen” och en
+länk till HusHub. Ny inloggning avslutar först den lokala sessionen, endast efter
+knapptryck, så att den befintliga inloggningen inte skickar användaren tillbaka
+till felet. Vid verklig saknad behörighet hänvisas användaren till företagets
+administratör. Tekniska felmeddelanden och kunduppgifter visas inte på felsidan.
+
 ## Karttjänster
 
 Leaflet visar OpenStreetMaps kartplattor med källangivelse. Registrerade
@@ -96,6 +117,8 @@ fungerar även när körtidstjänsten är otillgänglig.
 ```powershell
 node --experimental-strip-types --test test/dashboard-model.test.ts test/dashboard-action-cases.test.ts test/dashboard-server.test.ts test/dashboard-calendar.test.ts test/dashboard-geocoding.test.ts test/dashboard-map-api.test.ts
 node --experimental-strip-types --test test/dashboard-routing.test.ts test/dashboard-travel-api.test.ts
+node --experimental-strip-types --test test/organization-create-proxy.test.ts test/dashboard-access-recovery.test.ts
+node scripts/preview-session-recovery.mjs --test
 node scripts/preview-dashboard.mjs --test
 ```
 

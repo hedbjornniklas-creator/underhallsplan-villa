@@ -1,0 +1,40 @@
+.page {
+  min-height: 100vh;
+  padding: 48px 24px;
+  background: #f4f6f8;
+  color: #25313b;
+}
+
+.container { width: 100%; max-width: 640px; margin: 0 auto; }
+.brand { display: inline-block; margin-bottom: 24px; color: #172d36; font-size: 25px; font-weight: 800; text-decoration: none; }
+.card { padding: 36px; border: 1px solid #dce3eb; border-radius: 20px; background: white; box-shadow: 0 12px 36px #23344808; }
+.icon { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; border-radius: 14px; background: #edf1fc; color: #435fb6; }
+.forbidden { background: #fff4df; color: #976318; }
+.eyebrow { margin: 22px 0 8px; color: #657181; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.card h1 { margin: 0; color: #25313b; font-size: clamp(25px, 4vw, 32px); font-weight: 750; line-height: 1.25; letter-spacing: -.025em; }
+.intro { margin: 18px 0 24px; font-size: 15px; line-height: 1.75; color: #536171; }
+.help { padding: 20px; border-radius: 12px; background: #f5f7fa; }
+.help h2 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+.help p { margin: 0; font-size: 14px; line-height: 1.75; color: #536171; }
+.help p + p { margin-top: 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+.actions button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; gap: 9px; padding: 11px 18px; border: 1px solid transparent; border-radius: 9px; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+.actions .primary { background: #435fb6; color: white; }
+.actions .primary:hover { background: #354f9e; }
+.actions .secondary { border-color: #d6dee9; color: #34465c; background: white; }
+.actions .secondary:hover { background: #f5f7fa; }
+.actions button:disabled { opacity: .65; cursor: wait; }
+.brand:focus-visible, .home:focus-visible, .actions button:focus-visible { outline: 3px solid #7390df; outline-offset: 4px; }
+.caption { margin: 18px 0 0; color: #687586; font-size: 12px; line-height: 1.7; }
+.error { margin: 18px 0 0; padding: 12px 14px; border: 1px solid #fecdd3; border-radius: 9px; background: #fff1f2; color: #9f1239; font-size: 14px; line-height: 1.65; }
+.home { display: inline-flex; align-items: center; gap: 8px; margin-top: 24px; color: #536171; font-size: 14px; text-decoration: none; }
+.home:hover { color: #25313b; text-decoration: underline; }
+
+@media (max-width: 520px) {
+  .page { padding: 28px 16px; }
+  .brand { margin-bottom: 20px; }
+  .card { padding: 25px 22px; border-radius: 16px; }
+  .help { padding: 16px; }
+  .actions { flex-direction: column; gap: 10px; }
+  .actions button { width: 100%; }
+}

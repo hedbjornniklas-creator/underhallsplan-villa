@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import DashboardV1Client, { DashboardContent } from '../../src/app/(dashboard)/dashboard-v1/DashboardV1Client'
 import { bookingDate, compareBookings } from '../../src/lib/dashboard/calendar'
+import { supabase as syntheticSupabase } from './ob-overview-client'
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
 const scoped = (path: string) => `${path}?orgId=${organizationId}`
@@ -47,8 +48,14 @@ const data = {
   bookings: state === 'empty' ? [] : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : state === 'travel-known-coordinates' ? bookings.map(booking => ({ ...booking, latitude: 59.3107, longitude: 18.1817 })) : bookings,
   issues: [],
 }
-declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean; travelFail: boolean; travelWrongOrg: boolean; travelWrongDate: boolean; travelDelay: number; travelMissingOrigin: boolean } } }
-window.__dashboardTest = { refreshes: 0, writes: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false, travelFail: state === 'travel-error', travelWrongOrg: state === 'travel-wrong-org', travelWrongDate: state === 'travel-wrong-date', travelDelay: 0, travelMissingOrigin: state === 'travel-missing-origin' || state === 'client-travel-missing-origin' }
+declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; authSignOuts: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean; travelFail: boolean; travelWrongOrg: boolean; travelWrongDate: boolean; travelDelay: number; travelMissingOrigin: boolean } } }
+window.__dashboardTest = { refreshes: 0, writes: 0, authSignOuts: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false, travelFail: state === 'travel-error', travelWrongOrg: state === 'travel-wrong-org', travelWrongDate: state === 'travel-wrong-date', travelDelay: 0, travelMissingOrigin: state === 'travel-missing-origin' || state === 'client-travel-missing-origin' }
+// The isolated dashboard must never clear a session automatically. This stub
+// records accidental calls without exposing real credentials or auth writes.
+Object.assign(syntheticSupabase.auth, { signOut: async () => {
+  window.__dashboardTest.authSignOuts++
+  throw Error('Synthetic dashboard preview blocks signOut')
+} })
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
   window.__dashboardTest.requests.push(`${url.pathname}${url.search}`)
