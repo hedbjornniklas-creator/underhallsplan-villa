@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import MoistureDashboardClient from '@/components/moisture/MoistureDashboardClient'
 import { getMoistureError } from '@/lib/moisture/domain'
@@ -23,7 +25,7 @@ export default async function MoistureDashboardPage({ searchParams }: {
       return { error: getMoistureError(error).message } as const
     }
   })()
-  if ('login' in result) redirect('/login')
+  if ('login' in result) redirect(authLoginUrl(await currentAuthReturnPath('/fuktsakerhet')))
   if ('error' in result) return <WorkspaceError message={result.error!} />
   return <MoistureDashboardClient
     key={result.context.orgId}

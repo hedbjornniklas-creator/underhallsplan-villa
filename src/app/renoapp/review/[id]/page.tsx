@@ -1,4 +1,7 @@
-import Link from 'next/link'
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import { Download } from 'lucide-react'
 import { getRenoAppConsultantCaseDetail } from '@/lib/renoapp/server'
@@ -21,12 +24,9 @@ export default async function ConsultantReviewPage({ params }: { params: Promise
   try { result = await getRenoAppConsultantCaseDetail(id) }
   catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'UNAUTHORIZED') redirect(`/login?next=${encodeURIComponent(`/renoapp/review/${id}`)}`)
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/renoapp/review/${encodeURIComponent(id)}`)))
     if (message === 'REVIEW_NOT_FOUND' || message === 'CASE_NOT_FOUND') notFound()
-    if (message === 'FORBIDDEN' || message.includes('ACCESS') || message === 'PROFILE_NOT_FOUND') {
-      return <main className="mx-auto max-w-3xl bg-white p-8"><h1 className={headingClass}>Åtkomst nekad</h1><p>Ditt konto saknar administratörsbehörighet för RenoApp. Logga ut innan du byter konto.</p><Link className="mt-4 inline-block underline" href="/app">Till HusHub</Link></main>
-    }
-    throw error
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={await currentAuthReturnPath(`/renoapp/review/${encodeURIComponent(id)}`)} productLabel="RenoApp" />
   }
   const { item, order } = result
   if (!item) notFound()
@@ -46,7 +46,7 @@ export default async function ConsultantReviewPage({ params }: { params: Promise
   const fileUrl = (fileId: string) => `/api/renoapp/review/${id}/files/${fileId}`
   const acceptance = item.rulesAcceptance
   return (
-    <main className="mx-auto max-w-5xl bg-white px-5 py-8 text-sm leading-6 sm:px-8 [overflow-wrap:anywhere]">
+    <SessionAccessGuard productLabel="RenoApp"><main className="mx-auto max-w-5xl bg-white px-5 py-8 text-sm leading-6 sm:px-8 [overflow-wrap:anywhere]">
       <header className="pb-6">
         <p className="text-sm font-semibold text-emerald-800">Konsultgranskning · Läsvy</p>
         <h1 className="mt-2 text-2xl font-semibold">{item.caseNumber} · {item.brf.name}</h1>
@@ -113,6 +113,6 @@ export default async function ConsultantReviewPage({ params }: { params: Promise
       {item.completion ? <section className={sectionClass}><h2 className={headingClass}>Senaste kompletteringsbegäran</h2><p className="whitespace-pre-wrap">{item.completion.message}</p><p className="mt-2 text-stone-600">Skickad {date(item.completion.created_at)} · Besvarad {date(item.completion.submitted_at)}</p></section> : null}
       <section className={sectionClass}><h2 className={headingClass}>Styrelsens beslut</h2>{item.decisions.length === 0 ? <p>Inga beslut registrerade.</p> : <ul className="space-y-4">{item.decisions.map(decision => <li key={decision.id}><p className="font-semibold">{statusLabels[decision.decision] ?? decision.decision} · {date(decision.decidedAt)}</p><p className="whitespace-pre-wrap">{decision.reason}</p><p className="whitespace-pre-wrap">{decision.conditions}</p></li>)}</ul>}</section>
       <section className={sectionClass}><h2 className={headingClass}>Ärendehistorik</h2>{item.messages.length === 0 ? <p>Inga meddelanden.</p> : <ul className="space-y-4">{item.messages.map(message => <li key={message.id}><p className="font-semibold">{message.authorName || message.authorRole} · {date(message.createdAt)}</p><p className="whitespace-pre-wrap">{message.message}</p></li>)}</ul>}</section>
-    </main>
+    </main></SessionAccessGuard>
   )
 }

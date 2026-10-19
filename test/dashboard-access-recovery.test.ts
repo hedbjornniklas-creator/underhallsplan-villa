@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { isValidElement, type ReactNode } from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import ts from 'typescript'
+import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
 
 function fixture(error?: unknown) {
   const checks: string[] = []
@@ -13,6 +14,11 @@ function fixture(error?: unknown) {
     'react/jsx-runtime': jsxRuntime,
     'next/navigation': { redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) } },
     '@/components/DashboardLayoutShell': { default: Shell },
+    '@/lib/auth/returnPath': { authLoginUrl },
+    '@/lib/auth/serverRecovery': {
+      currentAuthReturnPath: async () => '/dashboard-v1',
+      authRecoveryReason: (failure: unknown) => failure instanceof Error && failure.message === 'PRODUCT_ACCESS_REQUIRED' ? 'forbidden' : 'unavailable',
+    },
     '@/components/auth/DashboardAccessRecovery': { default: Recovery },
     '@/lib/access/server': { requireProductAccess: async (product: string) => {
       checks.push(product)
@@ -56,7 +62,7 @@ test('only genuine product denial gets permission wording; unexpected failures o
     const result = await f.call()
     assert.ok(isValidElement<{ reason: string }>(result))
     assert.equal(result.type, f.Recovery)
-    assert.deepEqual(result.props, { reason })
+    assert.deepEqual(result.props, { reason, returnTo: '/dashboard-v1', productLabel: 'BesiktApp' })
     assert.deepEqual(f.checks, ['dashboard'])
   }
 })

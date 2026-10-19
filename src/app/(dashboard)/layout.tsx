@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import DashboardLayoutShell from '@/components/DashboardLayoutShell'
@@ -8,11 +10,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   try {
     await requireProductAccess('dashboard')
   } catch (error) {
+    const returnTo = await currentAuthReturnPath('/dashboard-v1')
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      redirect('/login?next=%2Fdashboard-v1')
+      redirect(authLoginUrl(returnTo))
     }
 
-    return <DashboardAccessRecovery reason={error instanceof Error && error.message === 'PRODUCT_ACCESS_REQUIRED' ? 'forbidden' : 'unavailable'} />
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={returnTo} productLabel="BesiktApp" />
   }
 
   return <DashboardLayoutShell>{children}</DashboardLayoutShell>

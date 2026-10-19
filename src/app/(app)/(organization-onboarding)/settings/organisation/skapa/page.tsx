@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import OrganizationCreateForm from '@/components/organizations/OrganizationCreateForm'
 import SettingsNav from '@/components/settings/SettingsNav'
@@ -10,7 +12,7 @@ export const dynamic = 'force-dynamic'
 export default async function CreateOrganizationPage() {
   const supabase = createSupabaseServerClient()
   const { data, error } = await supabase.auth.getUser()
-  if (error || !data.user) redirect('/login?next=%2Fsettings%2Forganisation%2Fskapa')
+  if (error || !data.user) redirect(authLoginUrl(await currentAuthReturnPath('/settings/organisation/skapa')))
 
   return (
     <div className="min-h-full bg-slate-50 px-4 py-6 md:px-6 md:py-8">

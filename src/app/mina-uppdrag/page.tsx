@@ -1,3 +1,5 @@
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import RecipientPortalOverviewClient from '@/components/tasks/RecipientPortalOverviewClient'
 import { recipientLoginUrl } from '@/lib/tasks/recipientAuthPaths'
@@ -14,10 +16,10 @@ export default async function RecipientPortalPage() {
     session = await requireRecipientPortalSession()
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      redirect(recipientLoginUrl('/mina-uppdrag'))
+      redirect(recipientLoginUrl(await currentAuthReturnPath('/mina-uppdrag')))
     }
     throw error
   }
   const overview = await getRecipientPortalOverview(session)
-  return <RecipientPortalOverviewClient initialOverview={overview} />
+  return <SessionAccessGuard productLabel="Mina uppdrag"><RecipientPortalOverviewClient initialOverview={overview} /></SessionAccessGuard>
 }

@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import MoistureProjectClient from '@/components/moisture/MoistureProjectClient'
 import { getMoistureError } from '@/lib/moisture/domain'
@@ -25,7 +27,7 @@ export default async function MoistureProjectPage({ params, searchParams }: {
       return { error: failure.message } as const
     }
   })()
-  if ('login' in result) redirect('/login')
+  if ('login' in result) redirect(authLoginUrl(await currentAuthReturnPath(`/fuktsakerhet/projekt/${encodeURIComponent(id)}`)))
   if ('missing' in result) notFound()
   if ('error' in result) return <WorkspaceError message={result.error!} />
   return <MoistureProjectClient

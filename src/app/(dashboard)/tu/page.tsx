@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import TuDashboardClient from '@/components/tu/TuDashboardClient'
 import { getTuCopySource } from '@/lib/tu/copyServer'
@@ -54,7 +56,7 @@ export default async function TechnicalInvestigationsPage({
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (message === 'UNAUTHORIZED') redirect('/login')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/tu')))
     initialError =
       message === 'ORG_SELECTION_INVALID'
         ? 'Den valda organisationen är ogiltig. Återställ organisationsvalet i topbaren.'

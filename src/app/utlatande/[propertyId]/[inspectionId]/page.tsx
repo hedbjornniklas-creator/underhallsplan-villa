@@ -1,4 +1,9 @@
 ﻿// @ts-nocheck
+import { redirect } from 'next/navigation'
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import AutoPrintTrigger from '../../_components/AutoPrintTrigger'
 import ReportToolbar from '../../_components/ReportToolbar'
 import SessionBridge from '../../_components/SessionBridge'
@@ -113,7 +118,16 @@ export default async function Page({
 }) {
   const resolvedParams = await Promise.resolve(params)
   const resolvedSearchParams: Record<string, string | string[] | undefined> = await Promise.resolve(searchParams ?? {})
-  const organization = await requireObInspectionReadContext(resolvedParams.inspectionId, resolvedSearchParams.orgId)
+  let organization: Awaited<ReturnType<typeof requireObInspectionReadContext>>
+  try {
+    organization = await requireObInspectionReadContext(resolvedParams.inspectionId, resolvedSearchParams.orgId)
+  } catch (error) {
+    const returnTo = await currentAuthReturnPath(`/utlatande/${encodeURIComponent(resolvedParams.propertyId)}/${encodeURIComponent(resolvedParams.inspectionId)}`)
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect(authLoginUrl(returnTo))
+    const reason = error instanceof Error && ['OB_ORGANIZATION_FORBIDDEN', 'OB_ORGANIZATION_MISMATCH'].includes(error.message)
+      ? 'forbidden' : authRecoveryReason(error)
+    return <DashboardAccessRecovery reason={reason} returnTo={returnTo} productLabel="Överlåtelsebesiktning" />
+  }
   const backHref = organization.canEdit
     ? `/properties/${resolvedParams.propertyId}/ob/${resolvedParams.inspectionId}?orgId=${organization.orgId}`
     : `/ob?orgId=${organization.orgId}`
@@ -129,7 +143,7 @@ export default async function Page({
     const data = await buildReportDataV2(resolvedParams, undefined, { readOnly: true })
     const side = data.mock.inspections.side
     const appendices = data.mock.appendices
-    return <div className="min-h-screen bg-neutral-100 print:bg-white">
+    return <SessionAccessGuard productLabel="Överlåtelsebesiktning"><div className="min-h-screen bg-neutral-100 print:bg-white">
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && <ReportToolbar backHref={backHref} readOnly={!organization.canEdit} />}
       <ReportRenderer mockData={data} inspectionSide={side} rootClassName={isPdf ? 'report-root--pdf' : undefined}
@@ -139,7 +153,7 @@ export default async function Page({
           buildings: appendices.buildings,
           environmental: appendices.environmental,
         } })} />
-    </div>
+    </div></SessionAccessGuard>
   }
 
   const fallback = '--'
@@ -1639,7 +1653,7 @@ export default async function Page({
     Boolean(documentError) ||
     Boolean(disclosureError)
   return (
-    <div className="min-h-screen bg-neutral-100 print:bg-white">
+    <SessionAccessGuard productLabel="Överlåtelsebesiktning"><div className="min-h-screen bg-neutral-100 print:bg-white">
       {!userId && <SessionBridge />}
       {isAutoPrint && <AutoPrintTrigger />}
       {!isEmbed && (
@@ -1668,7 +1682,7 @@ export default async function Page({
       ) : (
         content
       )}
-    </div>
+    </div></SessionAccessGuard>
   )
 }
 

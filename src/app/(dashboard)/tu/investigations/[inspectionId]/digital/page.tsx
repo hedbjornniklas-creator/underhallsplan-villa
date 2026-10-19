@@ -1,3 +1,6 @@
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import TuPublicReportSnapshotView from '@/components/tu/TuPublicReportSnapshotView'
 import TuPrintPagedDocument from '@/components/tu/TuPrintPagedDocument'
@@ -144,8 +147,8 @@ export default async function TuInvestigationDigitalReportPage({
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (message === 'UNAUTHORIZED') redirect('/login')
-    if (message === 'ORG_MEMBERSHIP_REQUIRED') redirect('/dashboard')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/tu/investigations/${encodeURIComponent(inspectionId)}/digital`)))
+    if (authRecoveryReason(error) === 'forbidden') return <DashboardAccessRecovery reason="forbidden" returnTo={await currentAuthReturnPath(`/tu/investigations/${encodeURIComponent(inspectionId)}/digital`)} productLabel="Tekniska utredningar" />
     if (message === 'TU_INVESTIGATION_NOT_FOUND') notFound()
     throw error
   }

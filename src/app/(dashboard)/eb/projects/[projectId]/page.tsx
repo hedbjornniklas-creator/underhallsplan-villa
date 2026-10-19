@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import EbProjectDetailClient from '@/components/eb/EbProjectDetailClient'
 import { requireOrgContext } from '@/lib/assignments/server'
@@ -43,7 +45,7 @@ export default async function EbProjectPage({
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') {
-      redirect('/login')
+      redirect(authLoginUrl(await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}`)))
     }
     throw error
   }

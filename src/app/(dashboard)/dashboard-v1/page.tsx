@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import DashboardV1Client from './DashboardV1Client'
@@ -13,7 +15,7 @@ export default async function DashboardV1Page({ searchParams }: { searchParams?:
   let initialError: string | null = null
   try { initialData = await getDashboardData(params.orgId) } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'UNAUTHORIZED') redirect('/login?next=%2Fdashboard-v1')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/dashboard-v1')))
     initialError = message === 'ORG_SELECTION_INVALID'
       ? 'Den valda organisationen är ogiltig. Återställ startsidan.'
       : message === 'DASHBOARD_ORGANIZATION_UNSUPPORTED'

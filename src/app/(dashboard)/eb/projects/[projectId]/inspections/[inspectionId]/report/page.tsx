@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import EbInspectionReportView from '@/components/eb/EbInspectionReportView'
 import { requireModuleAccess } from '@/lib/access/server'
@@ -29,7 +31,7 @@ export default async function EbInspectionReportPage({
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') {
-      redirect('/login')
+      redirect(authLoginUrl(await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/report`)))
     }
     if (message === 'EB_PROJECT_NOT_FOUND' || message === 'EB_INSPECTION_NOT_FOUND') {
       notFound()

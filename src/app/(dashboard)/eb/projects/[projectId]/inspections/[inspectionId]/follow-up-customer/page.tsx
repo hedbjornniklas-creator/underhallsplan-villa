@@ -1,3 +1,6 @@
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import EbFollowUpCustomerSettings from '@/components/eb/EbFollowUpCustomerSettings'
 import { requireModuleAccess } from '@/lib/access/server'
@@ -21,8 +24,8 @@ export default async function EbFollowUpCustomerPage({ params }: {
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'UNAUTHORIZED') redirect('/login')
-    if (message === 'ORG_MEMBERSHIP_REQUIRED' || message === 'MODULE_ACCESS_REQUIRED') redirect('/dashboard')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`)))
+    if (authRecoveryReason(error) === 'forbidden') return <DashboardAccessRecovery reason="forbidden" returnTo={await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`)} productLabel="Entreprenadbesiktning" />
     if (message === 'EB_INSPECTION_NOT_FOUND') notFound()
     if (message !== 'EB_FOLLOW_UP_CONFIGURATION') throw error
   }

@@ -4,15 +4,29 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createServerClient } from '@supabase/ssr'
 import ts from 'typescript'
 
+// Next's matcher test helpers load server internals which expect the runtime's
+// AsyncLocalStorage global. The standalone Node test runner does not install it.
+Object.assign(globalThis, { AsyncLocalStorage })
 const require = createRequire(import.meta.url)
 const { NextRequest, NextResponse } = require('next/server') as typeof import('next/server')
 const { RequestCookiesAdapter } = require('next/dist/server/web/spec-extension/adapters/request-cookies')
+const { unstable_doesMiddlewareMatch } = require('next/dist/experimental/testing/server/middleware-testing-utils') as typeof import('next/experimental/testing/server')
 const path = '/settings/organisation/skapa'
 const dashboardPath = '/dashboard-v1'
-const protectedPaths = [path, dashboardPath]
+const entityId = '22222222-2222-4222-8222-222222222222'
+const protectedPaths = [
+  path, dashboardPath, '/ob', `/ob/assignments/${entityId}`,
+  `/eb/projects/${entityId}/inspections/${entityId}/perform`, `/tu/assignments/${entityId}`,
+  `/fuktsakerhet/projekt/${entityId}`, `/uppdrag/${entityId}/kund`,
+  `/properties/${entityId}/ob/${entityId}`, '/inspections', '/settings/profil', '/admin/access', '/app',
+  `/utlatande/${entityId}/${entityId}`,
+  `/renoapp/app/cases/${entityId}`, `/renoapp/review/${entityId}`,
+  '/mina-uppdrag', `/mina-uppdrag/uppdrag/${entityId}`,
+]
 const origin = 'https://hushub.example.test'
 const authOrigin = 'https://local.supabase.test'
 const cookieName = 'sb-local-auth-token'
@@ -42,6 +56,18 @@ function load<T>(file: string, dependencies: Record<string, unknown>, environmen
   return mod.exports as T
 }
 
+const returnPaths = load<{
+  authLoginUrl: (value: unknown) => string
+  safeAuthReturnPath: (value: unknown, fallback?: string) => string
+}>('src/lib/auth/returnPath.ts', {})
+const proxyDependencies = { 'next/server': { NextResponse }, '@/lib/auth/returnPath': returnPaths }
+
+function expectedLoginPath(target: string) {
+  if (target.startsWith('/renoapp/')) return '/renoapp/login'
+  if (target === '/mina-uppdrag' || target.startsWith('/mina-uppdrag/uppdrag/')) return '/mina-uppdrag/logga-in'
+  return '/login'
+}
+
 function fixture(mode: 'success' | 'revoked' | 'unavailable' = 'success') {
   const calls: string[] = []
   const fetch: typeof globalThis.fetch = async input => {
@@ -60,10 +86,13 @@ function fixture(mode: 'success' | 'revoked' | 'unavailable' = 'success') {
   const sdk = { createServerClient: (url: string, key: string, options: Parameters<typeof createServerClient>[2]) =>
     createServerClient(url, key, { ...options, global: { fetch } }) }
   const proxyModule = load<{ proxy: (request: InstanceType<typeof NextRequest>) => Promise<InstanceType<typeof NextResponse>>; config: { matcher: string[] } }>(
-    'src/proxy.ts', { '@supabase/ssr': sdk, 'next/server': { NextResponse } },
+    'src/proxy.ts', { '@supabase/ssr': sdk, ...proxyDependencies },
   )
   const request = (expired?: boolean, target = path) => new NextRequest(`${origin}${target}`, {
-    headers: expired === undefined ? {} : { cookie: `${cookieName}=${encode(session(expired))}` },
+    headers: {
+      ...(expired === undefined ? {} : { cookie: `${cookieName}=${encode(session(expired))}` }),
+      'x-hushub-return-path': 'https://untrusted.example.test/spoofed',
+    },
   })
   return { ...proxyModule, sdk, request, calls }
 }
@@ -137,6 +166,9 @@ for (const target of protectedPaths) test(`${target} proxy refreshes expired rea
   assert.ok((response.cookies.get(cookieName)?.maxAge ?? 0) > 0)
   assert.equal(response.headers.get('x-middleware-request-cookie'), request.headers.get('cookie'))
   assert.ok(response.headers.get('x-middleware-override-headers')?.split(',').map(v => v.trim()).includes('cookie'))
+  assert.equal(request.headers.get('x-hushub-return-path'), target)
+  assert.equal(response.headers.get('x-middleware-request-x-hushub-return-path'), target)
+  assert.ok(response.headers.get('x-middleware-override-headers')?.split(',').map(v => v.trim()).includes('x-hushub-return-path'))
   assert.equal(f.calls.filter(call => call === '/auth/v1/token').length, 1)
 
   // The unchanged app helper uses Next's real read-only RSC adapter. Before
@@ -163,9 +195,11 @@ for (const target of protectedPaths) test(`${target} fresh session still validat
   assertPrivate(response)
   assert.deepEqual(f.calls, ['/auth/v1/user'])
   assert.deepEqual(response.cookies.getAll(), [])
+  assert.equal(response.headers.get('x-middleware-request-x-hushub-return-path'), target)
 })
 
-for (const targetPath of protectedPaths) test(`${targetPath} anonymous and rejected sessions redirect only to exact login return; rejection clears reach browser`, async () => {
+for (const targetPath of protectedPaths) test(`${targetPath} anonymous and rejected sessions return through the product login; rejection clears reach browser`, async t => {
+  t.mock.method(console, 'error', () => {}) // The real SDK logs the expected synthetic revocation.
   for (const expired of [undefined, true]) {
     const f = fixture(expired ? 'revoked' : 'success')
     const request = f.request(expired, `${targetPath}?next=https://untrusted.example.test&other=value`)
@@ -173,8 +207,8 @@ for (const targetPath of protectedPaths) test(`${targetPath} anonymous and rejec
     assert.equal(response.status, 307)
     const target = new URL(response.headers.get('location')!)
     assert.equal(target.origin, origin)
-    assert.equal(target.pathname, '/login')
-    assert.equal(target.searchParams.get('next'), targetPath)
+    assert.equal(target.pathname, expectedLoginPath(targetPath))
+    assert.equal(target.searchParams.get('next'), targetPath === path ? path : `${targetPath}?other=value`)
     assert.deepEqual([...target.searchParams.keys()], ['next'])
     assertPrivate(response)
     if (expired) {
@@ -189,10 +223,48 @@ for (const targetPath of protectedPaths) test(`${targetPath} anonymous and rejec
   await new Promise(resolve => setTimeout(resolve, 30))
 })
 
-test('only exact creation and dashboard routes are matched; unrelated routes never instantiate Auth or alter headers', async () => {
+test('deep module path and safe organization/view query survive refresh and login while redirect/auth values are removed', async () => {
+  const destination = `/tu/investigations/${entityId}?orgId=${entityId}&tab=measurements&view=report`
+  const requested = `${destination}&next=https%3A%2F%2Funtrusted.example.test&access_token=synthetic-secret`
+  for (const expired of [false, undefined]) {
+    const f = fixture()
+    const request = f.request(expired, requested)
+    const response = await f.proxy(request)
+    if (expired === undefined) {
+      const target = new URL(response.headers.get('location')!)
+      assert.equal(target.origin, origin)
+      assert.equal(target.pathname, '/login')
+      assert.equal(target.searchParams.get('next'), destination)
+    } else {
+      assert.equal(response.status, 200)
+      assert.equal(response.headers.get('x-middleware-request-x-hushub-return-path'), destination)
+    }
+    assert.equal(request.headers.get('x-hushub-return-path'), destination)
+  }
+})
+
+test('matcher covers every protected module and does not intercept public links, logins, APIs or assets', async () => {
   const f = fixture()
-  assert.deepEqual(f.config.matcher, protectedPaths)
-  for (const target of ['/settings/organisation', '/login', '/auth/session-unavailable', '/api/organizations', '/renoapp/app', `${path}/other`, `${dashboardPath}/other`]) {
+  for (const target of protectedPaths) {
+    assert.equal(unstable_doesMiddlewareMatch({ config: f.config, url: `${origin}${target}` }), true, target)
+  }
+  const publicPaths = [
+    '/', '/login', '/auth/session-unavailable', '/auth/callback', '/auth/reset-password',
+    '/api/organizations', '/api/tu/assignments', '/api/renoapp/cases', '/_next/static/app.js', '/favicon.ico',
+    '/besiktapp', '/besiktapp/aktivera', '/renoapp', '/renoapp/login', '/renoapp/apply',
+    '/renoapp/case/synthetic-token', '/renoapp/invite/synthetic-token', '/renoapp/brf/example/apply',
+    '/renoapp/request-access', '/mina-uppdrag/logga-in', '/mina-uppdrag/aktivera/synthetic-token',
+    '/rapport/synthetic-token', '/atgarder/synthetic-token', '/accept/synthetic-token', '/utlatande',
+    '/organisation/inbjudan', '/application', '/settings-other',
+  ]
+  for (const target of publicPaths) {
+    assert.equal(unstable_doesMiddlewareMatch({ config: f.config, url: `${origin}${target}` }), false, target)
+  }
+  // Broad framework matchers can encounter invalid/asset paths under a module;
+  // the runtime guard must also refuse to instantiate Auth for those requests.
+  for (const target of [...publicPaths, '/ob/asset.png', '/tu/styles.css',
+    `/utlatande/${entityId}/not-an-inspection`, `/utlatande/not-a-property/${entityId}`,
+    `/utlatande/${entityId}/${entityId}/other`, `${path}/other`, `${dashboardPath}/other`]) {
     const response = await f.proxy(f.request(true, target))
     assert.equal(response.status, 200)
     assert.equal(response.headers.get('cache-control'), null)
@@ -205,7 +277,7 @@ for (const targetPath of protectedPaths) test(`${targetPath} missing configurati
   for (const mode of ['missing', 'throws', 'unavailable'] as const) {
     let clients = 0
     const proxyModule = load<{ proxy: (request: InstanceType<typeof NextRequest>) => Promise<Response> }>('src/proxy.ts', {
-      'next/server': { NextResponse },
+      ...proxyDependencies,
       '@supabase/ssr': { createServerClient: (_url: string, _key: string, options: {
         cookies: { setAll: (cookies: { name: string; value: string; options: { path: string; maxAge: number } }[]) => void }
       }) => {
@@ -225,7 +297,13 @@ for (const targetPath of protectedPaths) test(`${targetPath} missing configurati
     const response = await proxyModule.proxy(new NextRequest(`${origin}${targetPath}?next=https://untrusted.example.test&private=value`))
     assert.equal(response.status, 503)
     assert.equal(response.headers.get('location'), null)
-    assert.equal(response.headers.get('x-middleware-rewrite'), targetPath === dashboardPath ? `${origin}/auth/session-unavailable` : null)
+    const recovery = new URL(response.headers.get('x-middleware-rewrite')!)
+    assert.equal(recovery.origin, origin)
+    assert.equal(recovery.pathname, '/auth/session-unavailable')
+    const expectedReturn = targetPath === path ? path : `${targetPath}?private=value`
+    assert.equal(recovery.searchParams.get('next'), expectedReturn)
+    assert.deepEqual([...recovery.searchParams.keys()], ['next'])
+    assert.equal(response.headers.get('x-middleware-request-x-hushub-return-path'), expectedReturn)
     assertPrivate(response)
     assert.doesNotMatch(await response.text(), /private diagnostic/)
     assert.equal(clients, mode === 'missing' ? 0 : 1)
@@ -236,18 +314,26 @@ for (const targetPath of protectedPaths) test(`${targetPath} missing configurati
   }
 })
 
-test('dashboard upstream failure after real SDK rotation rewrites to public recovery and preserves rotated and cleared browser cookies', async () => {
+for (const targetPath of [dashboardPath, `/renoapp/app/cases/${entityId}`, `/mina-uppdrag/uppdrag/${entityId}`]) test(`${targetPath} upstream failure after real SDK rotation preserves rotated and cleared cookies in public recovery`, async () => {
   const f = fixture('unavailable')
   // The old chunk is removed when the smaller refreshed session becomes one
   // cookie. Both browser changes must survive the recovery-page rewrite.
-  const request = new NextRequest(`${origin}${dashboardPath}?next=https://untrusted.example.test&private=value`, {
-    headers: { cookie: `${cookieName}.0=${encode(session(true))}` },
+  const request = new NextRequest(`${origin}${targetPath}?next=https://untrusted.example.test&private=value`, {
+    headers: {
+      cookie: `${cookieName}.0=${encode(session(true))}`,
+      'x-hushub-return-path': 'https://untrusted.example.test/spoofed',
+    },
   })
   const response = await f.proxy(request)
   assert.equal(response.status, 503)
   assertPrivate(response)
   assert.equal(response.headers.get('location'), null)
-  assert.equal(response.headers.get('x-middleware-rewrite'), `${origin}/auth/session-unavailable`)
+  const recovery = new URL(response.headers.get('x-middleware-rewrite')!)
+  assert.equal(recovery.origin, origin)
+  assert.equal(recovery.pathname, '/auth/session-unavailable')
+  assert.equal(recovery.searchParams.get('next'), `${targetPath}?private=value`)
+  assert.equal(response.headers.get('x-middleware-request-x-hushub-return-path'), `${targetPath}?private=value`)
+  assert.equal(response.headers.get('x-middleware-request-cookie'), request.headers.get('cookie'))
   assert.equal(response.cookies.get(cookieName)?.value, request.cookies.get(cookieName)?.value)
   assert.ok((response.cookies.get(cookieName)?.maxAge ?? 0) > 0)
   assert.equal(response.cookies.get(`${cookieName}.0`)?.value, '')

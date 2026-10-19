@@ -2,6 +2,7 @@
 
 import Protected from '@/components/Protected'
 import { supabase } from '@/lib/supabaseClient'
+import { authLoginUrl } from '@/lib/auth/returnPath'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -39,7 +40,7 @@ export default function PropertiesPage() {
     const { data: auth } = await supabase.auth.getUser()
     if (!auth.user) {
       setLoading(false)
-      router.replace('/login')
+      router.replace(authLoginUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`))
       return
     }
 
@@ -90,7 +91,7 @@ export default function PropertiesPage() {
     setError(null)
 
     const { data: auth } = await supabase.auth.getUser()
-    if (!auth.user) return router.replace('/login')
+    if (!auth.user) return router.replace(authLoginUrl(`${window.location.pathname}${window.location.search}${window.location.hash}`))
 
     // Temporärt namn t.ex. "Fastighet 2025-11-09 X3AB"
     const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD

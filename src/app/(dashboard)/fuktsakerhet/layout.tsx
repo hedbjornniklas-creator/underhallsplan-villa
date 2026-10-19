@@ -1,15 +1,20 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
 import type { ReactNode } from 'react'
 import { redirect } from 'next/navigation'
 import { requireModuleAccess } from '@/lib/access/server'
-import { getMoistureError } from '@/lib/moisture/domain'
-import WorkspaceError from './WorkspaceError'
 
 export default async function MoistureLayout({ children }: { children: ReactNode }) {
   try {
     await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'moisture_safety' })
   } catch (error) {
-    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
-    return <WorkspaceError message={getMoistureError(error).message} />
+    const returnTo = await currentAuthReturnPath('/fuktsakerhet')
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      redirect(authLoginUrl(returnTo))
+    }
+
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={returnTo} productLabel="Fuktsäkerhet" />
   }
   return <>{children}</>
 }

@@ -1,3 +1,6 @@
+// @ts-expect-error Node's strip-types runner requires the TypeScript extension.
+import { safeAuthReturnPath } from './auth/returnPath.ts'
+
 export type PublicProductId = 'besiktapp' | 'renoapp'
 
 export const PUBLIC_PRODUCTS = {
@@ -20,8 +23,6 @@ export function isPublicRenoPage(pathname: string) {
   return ['/renoapp', '/renoapp/apply', '/renoapp/login', '/renoapp/request-access'].includes(pathname)
 }
 
-// Exact local destinations only; invitation tokens stay in the fragment/session storage.
 export function getPublicLoginDestination(value: unknown) {
-  if (typeof value === 'string' && /^\/renoapp\/review\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) return value
-  return value === '/dashboard-v1' || value === '/renoapp/app' || value === '/mina-uppdrag' || value === '/organisation/inbjudan' || value === '/settings/organisation/skapa' ? value : '/app'
+  return safeAuthReturnPath(value)
 }
