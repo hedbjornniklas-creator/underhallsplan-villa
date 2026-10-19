@@ -113,6 +113,12 @@ full bredd. Inga nya färgteman, kortlistor eller ändringar av avtalsvyn ingår
   är exklusive moms; en separat slutsumma visar moms och kundpris inklusive.
   Samlat kundpris är ett aktivt alternativ till automatisk beräkning.
   Se [Egna kalkylrader i Val och tillval](gizmo-choice-costing.md).
+- Beslut 2026-10-19: Den interna redigeringen av Val och tillval autosparas,
+  inklusive bekräftade borttagningar och ångra. Manuella sparknappar tas bort.
+  Sparar, Sparat och fel med Försök igen visas i en fast statusyta, även i
+  alternativpanelen. Visa för beställaren förblir ett separat bekräftat kommando;
+  kundens valknapp och avtalets sparning ändras inte.
+  Se [Autosparning av Val och tillval](gizmo-choice-autosave.md).
 - Avtalsstatus är en hopfällbar fullbreddsrad över formuläret. Grundstatus och
   belopp syns direkt; utskick, granskning och versionshistorik öppnas vid behov.
   Ingen fast högerspalt tränger ihop avtalsfälten.

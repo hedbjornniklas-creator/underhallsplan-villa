@@ -2,24 +2,26 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ExternalLink, Loader2, Save, Trash2, Upload, X } from 'lucide-react'
+import { ExternalLink, Trash2, Upload, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import type { CustomerChoiceCategory, CustomerChoiceFileRef, CustomerPlannedItem } from '@/lib/action-cases/customerPlanning'
 import type { CustomerChoiceCalculation, CustomerChoiceCosting } from '@/lib/action-cases/customerChoiceCosting'
 import PriceInput from './CustomerOfferPriceInput'
 import CustomerChoiceCostTable from './CustomerChoiceCostTable'
+import CustomerPlanningSaveStatus from './CustomerPlanningSaveStatus'
 
 const field = 'mt-1 block w-full rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-base sm:text-sm'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
 
-export default function CustomerChoiceOptionSheet({ caseId, option, categories, files, references, filesAvailable, costing, costingAvailable, rowCostingAvailable, busy, dirty, onChange, onMove, onReferences, onFiles, onCosting, onSave, onRemove, onClose }: {
+export default function CustomerChoiceOptionSheet({ caseId, option, categories, files, references, filesAvailable, costing, costingAvailable, rowCostingAvailable, busy, saving, saveError, onRetry, onChange, onMove, onReferences, onFiles, onCosting, onRemove, onClose }: {
   caseId: string; option: CustomerPlannedItem; categories: CustomerChoiceCategory[]; files: ActionCaseAttachmentView[]
   references: CustomerChoiceFileRef[]; filesAvailable: boolean; costing?: CustomerChoiceCosting[string]; costingAvailable: boolean
   rowCostingAvailable: boolean
-  busy: boolean; dirty: boolean; onChange: (patch: Partial<CustomerPlannedItem>) => void; onMove: (categoryId: string) => void
+  busy: boolean; saving: boolean; saveError: boolean; onRetry: () => void
+  onChange: (patch: Partial<CustomerPlannedItem>) => void; onMove: (categoryId: string) => void
   onReferences: (refs: CustomerChoiceFileRef[]) => void; onFiles: (files: ActionCaseAttachmentView[]) => void
-  onCosting: (value: CustomerChoiceCalculation) => void; onSave: () => Promise<boolean>; onRemove: () => void; onClose: () => void
+  onCosting: (value: CustomerChoiceCalculation) => void; onRemove: () => void; onClose: () => void
 }) {
   const dialog = useRef<HTMLDivElement>(null), backdrop = useRef(false), uploadInput = useRef<HTMLInputElement>(null), uploadingRef = useRef(false)
   const [uploading, setUploading] = useState(false), [error, setError] = useState('')
@@ -99,7 +101,7 @@ export default function CustomerChoiceOptionSheet({ caseId, option, categories, 
           <button type="button" className={`${button} justify-self-start text-rose-700`} onClick={onRemove}><Trash2 size={16} /> Ta bort alternativ</button>
         </fieldset>
       </div>
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#D5DCDD] bg-white px-4 py-3 sm:px-6"><p role="status" className="min-h-5 text-sm text-[#596368]">{uploading ? 'Laddar upp PDF…' : busy ? 'Sparar…' : dirty ? 'Osparade ändringar' : 'Sparat'}</p><div className="flex gap-2"><button type="button" className={button} disabled={working} onClick={onClose}>Stäng</button><button type="button" className={`${button} bg-[#252A2D] text-white`} disabled={working || !dirty} onClick={() => void onSave()}>{working ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Spara</button></div></footer>
+      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-[#D5DCDD] bg-white px-4 py-3 sm:px-6">{uploading ? <p role="status" className="flex h-8 w-60 max-w-full items-center text-xs text-[#596368]">Laddar upp PDF…</p> : <CustomerPlanningSaveStatus pending={saving || busy} error={saveError} onRetry={onRetry} />}<button type="button" className={button} disabled={working} onClick={onClose}>Stäng</button></footer>
     </div>
   </div>, document.body)
 }
