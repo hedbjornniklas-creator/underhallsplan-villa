@@ -3,6 +3,31 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-07.
 
+## Beslut 2026-10-19: byt projektnamn utan avtalsandring
+
+- Pennikon intill projektets rubrik oppnar ett kompakt namnformular. Spara ar
+  uttryckligt; Enter sparar och Escape/Avbryt stanger utan att spara. Tomma namn
+  och namn over 250 tecken tillats inte. Sparfel behaller inmatad text.
+- Endast befintliga `action_cases.title` uppdateras. Befintlig databas-trigger
+  hanterar uppdateringstid; ingen ny SQL-migrering behovs. Sakerhetskontroller
+  kraver inloggning, organisations-/modulatkomst och ratt projekt. Forvantat
+  tidigare namn skyddar mot samtidiga namnbyten; identiska aterforsok ar sakra.
+- Projektets UUID, fastighetsidentitet, adress, kund, offert-/avtalsutkast,
+  avtalsrubriker, belopp, betalplaner och frysta dokument far aldrig skrivas om.
+  Inga utskick eller delningar sker. Rubriken uppdateras lokalt utan omladdning
+  eller aterstallning av pagaende arbete i andra projektflikar. Aldre svar fran
+  redan startade arbetsanrop far inte aterstalla det nya namnet i rubriken.
+- Godkant av anvandaren 2026-10-19: pennikon vid projektnamnet for namnbyte utan
+  att avtalet paverkas. Implementeras lokalt; publicering ar ett separat steg.
+
+Verifierat lokalt: 537 regressionstester, riktad ESLint och produktionsbygge.
+Testerna provar organisations-/modulatkomst, samtidighet och osakra aterforsok;
+bara namnfaltet skrivs. Klicktester med fiktiv backend provar tomt namn,
+Escape/Avbryt, sparfel/aterforsok, mobil 390 px, namn i en ny session och gammal
+flik som inte kan skriva over ett nyare namn. Fingeravtryck av offert-/avtals-,
+betalnings- och valdata ar oforandrade efter namnbytet. Inga riktiga projekt
+eller avtalsuppgifter andrades och ingen SQL eller app publicerades.
+
 ## Sektionsbyte utan scrollhopp 2026-10-07
 
 - Offert-, avtals-, tillvals- och betalningsplansrader anvander samma

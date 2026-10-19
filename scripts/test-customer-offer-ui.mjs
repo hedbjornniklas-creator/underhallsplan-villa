@@ -345,8 +345,20 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
-    writes.push(path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
+    if (path.endsWith('/name')) {
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
+      const project = projects.cases.find((c) => path === `/api/action-cases/${c.id}/name`)
+      if (!project) { json({ error: 'Projektet saknas.' }, 404); return }
+      const title = typeof body.title === 'string' ? body.title.trim() : ''
+      if (!title || title.length > 250) { json({ error: 'Kontrollera namnet.' }, 400); return }
+      if (project.title !== title && project.title !== body.expectedTitle) { json({ error: 'Projektnamnet har ändrats. Ladda om sidan.' }, 409); return }
+      const evidence = JSON.stringify(state)
+      project.title = title; project.updatedAt = new Date().toISOString()
+      assert.equal(JSON.stringify(state), evidence, 'Name changes cannot modify offers, contracts, planning, pricing or locked PDFs')
+      json({ project: { id: project.id, title, updatedAt: project.updatedAt } }); return
+    }
     if (path.endsWith('/customer-choices')) {
       const shared = state.planning.sharedChoices
       if (!shared) { json({ error: 'Valen visas inte längre för beställaren.' }, 404); return }

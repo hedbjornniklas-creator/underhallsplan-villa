@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PendingLink from '@/components/ui/PendingLink'
-import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, MapPin, WalletCards, Wrench } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, Loader2, MapPin, Pencil, Save, WalletCards, Wrench, X } from 'lucide-react'
+import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCaseWorkspace } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
 import { customerOfferBaseAmount, customerPriceLabel, money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
@@ -26,6 +27,7 @@ const sections = [
 ] as const
 const offerViews: Partial<Record<ProjectView, CustomerEditorView>> = { offer: 'edit', contract: 'contract', choices: 'planning', payments: 'payments', customer: 'customer', review: 'document', offerReview: 'offerDocument' }
 const projectViews: Record<CustomerEditorView, ProjectView> = { edit: 'offer', contract: 'contract', planning: 'choices', payments: 'payments', customer: 'customer', document: 'review', offerDocument: 'offerReview' }
+const nameIconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[#D5DCDD] bg-white disabled:opacity-50'
 
 export default function ActionCaseProject({ caseId, initialWorkspace, initialOffer, initialOfferError, initialView = 'overview', people = [], issuerName, replyEmail, contractorSource }: {
   caseId: string
@@ -39,6 +41,11 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   contractorSource?: Partial<ContractContractor>
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
+  const [renamedTitle, setRenamedTitle] = useState<string | null>(null)
+  const [renameOpen, setRenameOpen] = useState(false), [nameDraft, setNameDraft] = useState('')
+  const [renameBusy, setRenameBusy] = useState(false), [renameError, setRenameError] = useState('')
+  const nameInput = useRef<HTMLInputElement>(null), renameButton = useRef<HTMLButtonElement>(null), renameRunning = useRef(false), wasRenaming = useRef(false)
+  const toast = useToast()
   const [offer, setOffer] = useState(initialOffer)
   const [estimate, setEstimate] = useState<CustomerOfferWorkspace | null>(() => initialOffer ? {
     ...initialOffer, ...initialOffer.offerDraft, offerDraft: undefined,
@@ -58,7 +65,38 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
   const keyboardTabChange = useRef(false)
-  const project = workspace.cases.find((item) => item.id === caseId)!
+  const storedProject = workspace.cases.find((item) => item.id === caseId)!
+  // A late response from an already-running work save cannot restore the old header name.
+  const project = renamedTitle === null ? storedProject : { ...storedProject, title: renamedTitle }
+  const renameDirty = renameOpen && nameDraft.trim() !== project.title
+  useEffect(() => {
+    if (renameOpen) { wasRenaming.current = true; nameInput.current?.focus(); nameInput.current?.select() }
+    else if (wasRenaming.current) { wasRenaming.current = false; renameButton.current?.focus() }
+  }, [renameOpen])
+  useEffect(() => {
+    if (!renameDirty && !renameBusy) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [renameDirty, renameBusy])
+  function closeRename() {
+    if (renameRunning.current) return
+    setRenameOpen(false); setRenameError(''); renameButton.current?.focus()
+  }
+  async function saveName() {
+    if (renameRunning.current || !nameDraft.trim() || nameDraft.trim().length > 250) return
+    renameRunning.current = true; setRenameBusy(true); setRenameError('')
+    try {
+      const response = await fetch(`/api/action-cases/${caseId}/name`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: nameDraft, expectedTitle: project.title }) })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Projektnamnet kunde inte sparas.')
+      if (result.project?.id !== caseId || typeof result.project.title !== 'string') throw new Error('Svaret kunde inte bekräftas. Försök igen.')
+      setRenamedTitle(result.project.title)
+      setWorkspace((current) => ({ ...current, cases: current.cases.map((item) => item.id === caseId ? { ...item, title: result.project.title, updatedAt: result.project.updatedAt } : item) }))
+      setRenameOpen(false); renameButton.current?.focus(); toast.success('Projektnamnet sparades.')
+    } catch (error) { setRenameError(error instanceof Error ? error.message : 'Projektnamnet kunde inte sparas.') }
+    finally { renameRunning.current = false; setRenameBusy(false) }
+  }
   const navigate = useCallback((next: ProjectView) => {
     setView(next)
     if (new URLSearchParams(window.location.search).get('view') !== next) {
@@ -92,9 +130,21 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((offerDirty || estimateDirty || workDirty || scheduleDirty) && !window.confirm(workBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((offerDirty || estimateDirty || workDirty || scheduleDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}>Alla projekt</PendingLink>
-      <div className="gizmo-project-title"><div><p className="gizmo-eyebrow">Gizmo · Projekt</p><h1 ref={heading} tabIndex={-1}>{project.title}</h1><p className="gizmo-address"><MapPin size={16} />{project.propertyAddress}</p></div>
+      <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
+        if (renameOpen) closeRename()
+        else { setNameDraft(project.title); setRenameError(''); setRenameOpen(true) }
+      }}><Pencil size={17} /></button></div>
+        {renameOpen && <form id="project-name-form" className="mt-3 max-w-xl" aria-label="Byt projektnamn" aria-busy={renameBusy} onSubmit={(event) => { event.preventDefault(); void saveName() }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeRename() } }}>
+          <label className="block text-sm" htmlFor="project-name-input">Projektnamn</label>
+          <div className="mt-1 flex flex-wrap gap-2"><input ref={nameInput} id="project-name-input" className="min-h-11 min-w-0 flex-1 rounded-md border border-[#D5DCDD] bg-white px-3 text-base sm:text-sm" maxLength={250} required value={nameDraft} disabled={renameBusy} onChange={(event) => { setNameDraft(event.target.value); setRenameError('') }} />
+            <button type="submit" className="gizmo-button" disabled={renameBusy || !nameDraft.trim() || nameDraft.trim().length > 250}>{renameBusy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Spara</button>
+            <button type="button" className={nameIconButton} aria-label="Avbryt namnbyte" title="Avbryt" disabled={renameBusy} onClick={closeRename}><X size={17} /></button>
+          </div>
+          <div className="mt-1 min-h-5 text-sm">{renameError ? <p role="alert" className="text-rose-700">{renameError}</p> : renameBusy ? <p role="status">Sparar…</p> : null}</div>
+        </form>}
+        <p className="gizmo-address"><MapPin size={16} />{project.propertyAddress}</p></div>
         <button className="gizmo-button" aria-pressed={view === 'customer'} onClick={() => navigate(view === 'customer' ? 'overview' : 'customer')}><Eye size={18} />{view === 'customer' ? 'Till intern vy' : 'Visa som beställare'}</button>
       </div>
     </header>

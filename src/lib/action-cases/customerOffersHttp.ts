@@ -32,6 +32,10 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_NAME_INVALID: [400, 'Ange ett projektnamn med 1–250 tecken på en rad.'],
+    PROJECT_NAME_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],
+    PROJECT_NAME_STALE: [409, 'Projektnamnet har ändrats i en annan flik. Ladda om sidan innan du försöker igen.'],
+    PROJECT_NAME_FAILED: [500, 'Projektnamnet kunde inte sparas. Din text är kvar. Försök igen.'],
     CUSTOMER_SENDER_SCHEMA: [503, 'Avsändarval för avtal behöver aktiveras i databasen. Befintliga avtal är oförändrade.'],
     CUSTOMER_SENDER_INVALID: [400, 'Spara avtalsutkastet och kontrollera valet av avsändarprofil.'],
     CUSTOMER_SENDER_FORBIDDEN: [403, 'Du saknar behörighet till uppdraget eller organisationen.'],
