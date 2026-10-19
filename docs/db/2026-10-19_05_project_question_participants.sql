@@ -98,6 +98,9 @@ create trigger question_message_files_immutable before update or delete on publi
 insert into public.action_case_question_conversations(question_id,owner_id)
   select q.id,e.actor_id from public.action_case_questions q
   join public.action_case_question_events e on e.question_id=q.id and e.operation='create' and e.revision=1;
+do $$begin
+  if exists(select 1 from public.action_case_questions q where not exists(select 1 from public.action_case_question_conversations c where c.question_id=q.id)) then raise exception 'PROJECT_QUESTION_HISTORY_MISSING'; end if;
+end $$;
 insert into public.action_case_question_participants(org_id,action_case_id,question_id,person_kind,person_id,name,email)
   select q.org_id,q.action_case_id,q.id,'profile',c.owner_id,coalesce(nullif(btrim(p.full_name),''),p.email,'Intern användare'),p.email
   from public.action_case_questions q join public.action_case_question_conversations c on c.question_id=q.id join public.profiles p on p.id=c.owner_id;

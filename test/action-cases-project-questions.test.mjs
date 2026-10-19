@@ -58,6 +58,7 @@ before(async()=>{
     insert into action_case_attachments values('${original}','${org}','${caseId}','Ritning.pdf','action-case-files','original.pdf','application/pdf',120,'document');`)
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_01_project_questions.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_03_project_question_customers.sql',import.meta.url),'utf8'))
+  await db.query('select mutate_project_question($1,$2,$3,$4::jsonb)',[org,caseId,actor,JSON.stringify(mutation(id(18),0,'create',{body:{...body(),conclusion:''}}))])
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_04_project_question_dialogue.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_05_project_question_participants.sql',import.meta.url),'utf8'))
   await db.query('select set_project_manager($1,$2,$3,$3,null)',[org,caseId,actor])
@@ -72,6 +73,9 @@ const version=async q=>(await db.query('select version from action_case_question
 const member=async(q,person)=>(await db.query('select * from action_case_question_participants where question_id=$1 and person_id=$2',[q,person])).rows[0]
 const canRead=async(q,user)=>(await db.query('select project_question_internal_participant($1,$2,$3,$4) ok',[org,caseId,q,user])).rows[0].ok
 test('create, assign, answer and close preserve original snapshots; replies do not resolve the question',async()=>{
+  assert.equal(await canRead(id(18),actor),true)
+  assert.equal((await version(id(18))),0)
+  assert.equal('conclusion' in (await row(id(18))).body,false)
   const q=id(21), create=mutation(q,0,'create',{body:body(),fileIds:[original]})
   await write(create);await write(create);assert.equal((await row(q)).revision,1)
   await write(mutation(q,1,'update',{body:{...body(),description:'Förtydligad fråga',assignee:{id:contact,kind:'contact',name:'fake'}}}))
