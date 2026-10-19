@@ -52,17 +52,27 @@ function routeHarness(options: {
   authError?: string
   inspectionFound?: boolean
   approvalBlocked?: boolean
+  editable?: boolean
 } = {}) {
   const queries: Array<{ table: string; filters: Array<[string, unknown]> }> = []
+  const backgroundJobs: unknown[] = []
+  const reportDraft = { sections: [{ key: 'summary', text: 'Besiktningsmannens redigerade slutsats.' }] }
   const tables: Record<string, Record<string, unknown>[]> = {
-    inspection_report_links: options.links ?? [],
-    tu_report_revisions: options.revisions ?? [publishedRevision],
+    inspection_report_links: structuredClone(options.links ?? []),
+    tu_report_revisions: structuredClone(options.revisions ?? [publishedRevision]),
+    technical_investigation_details: [{ org_id: 'org-1', inspection_id: 'inspection-1', report_locked_at: null }],
+    inspections: [{ id: 'inspection-1', locked_at: null }],
   }
   const admin = {
     from(table: string) {
       const query = { table, filters: [] as Array<[string, unknown]> }
       queries.push(query)
       let rows = [...(tables[table] ?? [])]
+      let patch: Record<string, unknown> | null = null
+      const result = () => {
+        if (patch) rows.forEach(row => Object.assign(row, patch))
+        return { data: rows, error: null }
+      }
       const builder = {
         select: () => builder,
         eq(key: string, value: unknown) { query.filters.push([key, value]); rows = rows.filter(row => row[key] === value); return builder },
@@ -73,10 +83,21 @@ function routeHarness(options: {
           return builder
         },
         limit(count: number) { rows = rows.slice(0, count); return builder },
-        maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
-        then(resolve: (value: unknown) => unknown) { return Promise.resolve({ data: rows, error: null }).then(resolve) },
-        insert() { assert.fail('Reading a customer link must not create data') },
-        update() { assert.fail('Reading a customer link must not change data') },
+        maybeSingle: async () => ({ ...result(), data: rows[0] ?? null }),
+        single: async () => ({ ...result(), data: rows[0] ?? null }),
+        then(resolve: (value: unknown) => unknown) { return Promise.resolve(result()).then(resolve) },
+        insert(value: Record<string, unknown>) {
+          assert.ok(options.editable, 'Reading or resending a customer link must not create data')
+          const row = { id: `new-${table}`, created_at: new Date().toISOString(), revoked_at: null, ...value }
+          ;(tables[table] ??= []).push(row)
+          rows = [row]
+          return builder
+        },
+        update(value: Record<string, unknown>) {
+          assert.ok(options.editable, 'Reading or resending a customer link must not change data')
+          patch = value
+          return builder
+        },
         delete() { assert.fail('Reading a customer link must not delete data') },
       }
       return builder
@@ -84,10 +105,13 @@ function routeHarness(options: {
   }
   const unexpected = () => assert.fail('No email, token generation or publication allowed')
   const route = load(routeSource, {
-    'next/server': { NextResponse: { json: Response.json }, after: () => {} },
+    'next/server': { NextResponse: { json: Response.json }, after: (job: unknown) => backgroundJobs.push(job) },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
-    '@/lib/assignments/tokens': { hashAssignmentToken, generateAssignmentToken: unexpected },
-    '@/lib/tu/reportLinkToken': { decryptTuReportLinkToken, encryptTuReportLinkToken: unexpected },
+    '@/lib/assignments/tokens': { hashAssignmentToken, generateAssignmentToken: () => {
+      assert.ok(options.editable)
+      return 'new-finalized-snapshot-token'
+    } },
+    '@/lib/tu/reportLinkToken': { decryptTuReportLinkToken, encryptTuReportLinkToken },
     '@/lib/assignments/mailer': { sendAssignmentEmail: unexpected },
     '@/lib/inspections/reportEmailTemplates': { buildInspectionReportDeliveryEmail: unexpected },
     '@/lib/report/pdfJobs': { runInspectionReportPdfBatch: unexpected },
@@ -98,10 +122,13 @@ function routeHarness(options: {
       },
       getTuInvestigationById: async () => options.inspectionFound === false ? null : ({
         orgId: 'org-1', inspectionId: 'inspection-1', reportTemplateKey: 'standard',
-        reportLockedAt: '2026-10-01', inspection: {}, reportDraft: { sections: [] },
+        reportLockedAt: options.editable ? null : '2026-10-01',
+        inspectorProfileId: 'inspector-1', inspection: { customer_email: 'customer@example.test' }, reportDraft,
       }),
+      requireTuOrganizationProfileCard: async () => {},
+      listTuInvestigationImages: async () => [],
     },
-    '@/lib/tu/reportSnapshot': {},
+    '@/lib/tu/reportSnapshot': { createTuReportSnapshotPayloadV1: () => structuredClone(reportDraft) },
     '@/lib/tu/assignmentWorkflowServer': {
       getTuAssignmentWorkflow: async () => options.approvalBlocked ? { canDeliver: false, reason: 'Inväntar kundens godkännande.' } : null,
       assertTuAssignmentDelivery: async () => { if (options.approvalBlocked) throw new Error('TU_DELIVERY_BLOCKED') },
@@ -109,7 +136,7 @@ function routeHarness(options: {
     '@/lib/tu/assignmentWorkflow': { tuAssignmentWorkflowError: (error: Error) => error.message === 'TU_DELIVERY_BLOCKED' ? [409, 'Uppdraget behöver godkännas och stämmas av.'] : null },
     '@/lib/tu/authoring': { usesTuAiAssistedWorkflow: () => false },
     '@/lib/tu/evidence': { TU_MOISTURE_DAMAGE_TEMPLATE_KEY: 'moisture' },
-    '@/lib/tu/evidenceServer': {},
+    '@/lib/tu/evidenceServer': { listTuObservations: async () => [] },
     '@/lib/tu/workflowProfiles': { TU_POST_DAMAGE_REVIEW_TEMPLATE_KEY: 'post-damage' },
     '@/lib/tu/finalization': { isTuAnalysisStaleForFinalization: () => false },
     '@/lib/tu/reportQuality': {},
@@ -117,12 +144,52 @@ function routeHarness(options: {
   const context = { params: Promise.resolve({ inspectionId: 'inspection-1' }) }
   return {
     queries,
+    tables,
+    backgroundJobs,
+    reportDraft,
     get: () => route.GET(new Request('https://hushub.se/api/tu/investigations/inspection-1/report-delivery?orgId=org-1'), context) as Promise<Response>,
     regenerate: (action = 'regenerate_pdf') => route.POST(new Request('https://hushub.se/api/tu/investigations/inspection-1/report-delivery?orgId=org-1', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
     }), context) as Promise<Response>,
   }
 }
+
+test('an edited published report can be finalized again without sending or changing the old customer version', async () => {
+  await withTokenKey(async ciphertext => {
+    const oldLink = { ...publishedLink, tu_token_ciphertext: ciphertext }
+    const h = routeHarness({ editable: true, links: [oldLink] })
+    const response = await h.regenerate('lock_only')
+    const body = await response.json()
+    assert.equal(response.status, 200, JSON.stringify(body))
+    assert.equal(body.revisionNumber, 2)
+    assert.equal(body.revisionStatus, 'finalized')
+    assert.equal(body.publishedRevisionNumber, 1)
+    assert.ok(body.reportLockedAt)
+    assert.deepEqual(body.sentRecipients, [])
+    assert.deepEqual(body.failedRecipients, [])
+    assert.equal(new URL(body.publicLink).pathname, `/rapport/${token}`)
+    assert.deepEqual(h.tables.inspection_report_links[0], oldLink)
+    assert.deepEqual(h.tables.tu_report_revisions[0], publishedRevision)
+    assert.deepEqual(h.tables.inspection_report_links[1].snapshot_payload, h.reportDraft)
+    assert.equal(h.tables.tu_report_revisions[1].published_link_id, null)
+    assert.equal(h.tables.inspections[0].status, 'completed')
+    assert.equal(h.tables.technical_investigation_details[0].report_locked_at, body.reportLockedAt)
+    assert.equal(h.backgroundJobs.length, 1)
+  })
+})
+
+test('sending a published revision still refuses a missing or revoked customer link without writes', async () => {
+  const frozenLink = { ...publishedLink, id: 'frozen-link', snapshot_payload: { frozen: true } }
+  for (const action of ['resend', 'send_and_lock']) {
+    for (const links of [[frozenLink], [frozenLink, { ...publishedLink, revoked_at: '2026-10-19' }]]) {
+      const h = routeHarness({ links })
+      const response = await h.regenerate(action)
+      assert.equal(response.status, 409)
+      assert.match((await response.json()).error, /Den publicerade länken är inte aktiv/)
+      assert.equal(h.backgroundJobs.length, 0)
+    }
+  }
+})
 
 test('early-start approval gate blocks every delivery action before writes, email or background PDF jobs', async () => {
   for (const action of ['lock_only', 'send_open', 'send_and_lock', 'resend', 'regenerate_pdf']) {

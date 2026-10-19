@@ -1203,7 +1203,7 @@ export async function POST(
     const publishedLink = sendingFinalizedRevision
       ? await getPublishedTuLink(admin, org.orgId, inspectionId, currentRevision)
       : null
-    if (currentRevision?.status === 'published' && (!publishedLink || publishedLink.revoked_at)) {
+    if (sendingFinalizedRevision && currentRevision?.status === 'published' && (!publishedLink || publishedLink.revoked_at)) {
       return jsonError('Den publicerade länken är inte aktiv. Kontakta administratören innan ett nytt utskick.', 409)
     }
     const reusingPublishedLink = Boolean(publishedLink?.tu_token_ciphertext)
