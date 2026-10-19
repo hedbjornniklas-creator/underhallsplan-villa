@@ -39,6 +39,8 @@ function setup({ authorized = true, found = true, offerFails = false, companyFai
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: (path) => { throw new Error('REDIRECT:' + path) } },
     '@/components/tasks/ActionCaseProject': () => {},
     '@/components/tasks/UppdragScope': () => {},
+    '@/lib/auth/returnPath': { authLoginUrl: (path) => `/login?redirect=${encodeURIComponent(path)}` },
+    '@/lib/auth/serverRecovery': { currentAuthReturnPath: async (fallback) => fallback },
     '@/lib/assignments/server': { requireOrgContext: async () => ({ orgId: 'org-a', userId: 'user-a', role: 'admin' }) },
     '@/lib/access/server': { requireModuleAccess: async (scope) => { calls.push(['access', scope]); if (!authorized) throw new Error('DENIED') } },
     '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); return { cases: found ? [{ id: caseId }] : [] } } },
