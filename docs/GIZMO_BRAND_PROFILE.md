@@ -46,6 +46,16 @@ full bredd. Inga nya färgteman, kortlistor eller ändringar av avtalsvyn ingår
 
 ## Listor och dator
 
+- Beslut 2026-10-19: Kalkyl i åtgärdens högerpanel använder en gemensam tabell
+  med Klar, Kalkylrad, Kostnad, Påslag och Kundpris. Samtliga belopp är exklusive
+  moms. En summarad ersätter de dubbla beloppen i sidfoten. Kalkylpanelen får
+  vara högst 1120 px; Omfattning behåller sin tidigare bredd. Pennan öppnar
+  radens detaljer. Massmarkering, arbetsdelar, kostnadsslag, prisunderlag och
+  AI-verktyg ligger under Fler verktyg. Vanlig vy har bara Klar-bocken.
+  Mobilen staplar radnamn och märkta belopp, med minst 48 px pekytor.
+  Ofärdig kalkyl heter Kalkyl pågår, inte Pris behövs när belopp redan finns.
+  En tom Klar-bock ändrar inte kostnad eller kundpris. Offertprissatta rader
+  styrs fortfarande av sitt underlag och material som ingår dubbelräknas inte.
 - Högst 1856 px för listan och 1600 px för projektets meny plus arbetsyta.
 - Den interna avtalssidan har högst 1080 px arbetsbredd, centrerad inom
   projektet. Enkla inmatningsfält är högst 576 px, datum 220 px och längre

@@ -28,6 +28,7 @@ import { handleWorkPartAction } from '@/lib/action-cases/workPartsServer'
 import { handleQuotePackageAction } from '@/lib/action-cases/quotePackagesServer'
 import { revokeRfqDelivery } from '@/lib/action-cases/rfqDeliveryServer'
 import { scopeSavePayload } from '@/lib/action-cases/scopeDraft'
+import { setCostLineComplete } from '@/lib/action-cases/costCompletionServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -166,6 +167,7 @@ export async function POST(request: Request) {
     else if (action === 'create_cost_line') await createActionCaseCostLine(ctx, payload)
     else if (action === 'delete_cost_line') await deleteActionCaseCostLine(ctx, payload)
     else if (action === 'update_cost_line') await updateActionCaseCostLine(ctx, payload)
+    else if (action === 'set_cost_line_complete') await setCostLineComplete(ctx, payload)
     else if (action === 'generate_cost_suggestions') await generateActionCaseCosts(ctx, payload)
     else if (action === 'apply_cost_suggestions') await applyActionCaseCostSuggestions(ctx, payload)
     else if (action === 'work_quote') await handleQuoteAction(ctx, payload)

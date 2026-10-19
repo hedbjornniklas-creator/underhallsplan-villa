@@ -46,7 +46,7 @@ type Props = {
 }
 
 const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
-  scope_needed: 'Omfattning saknas', pricing_needed: 'Pris behövs',
+  scope_needed: 'Omfattning saknas', pricing_needed: 'Kalkyl pågår',
   waiting_subcontractor: 'Väntar på UE', ready_for_quote: 'Klar för offert',
   offered: 'Offererad', approved: 'Godkänd', declined: 'Avböjd', scheduled: 'Planerad',
   in_progress: 'Pågår', ready_for_review: 'Klar för kontroll', completed: 'Slutförd', cancelled: 'Avbruten',
@@ -54,18 +54,18 @@ const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
 
 function nextAction(item: ActionCaseItemView) {
   if (!item.scope?.trim()) return 'Beskriv arbetets omfattning'
-  if (item.lumpSum) return item.lumpSum.customerPrice === null ? 'Ange samlat kundpris' : item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Kontrollera det samlade priset'
+  if (item.lumpSum) return item.lumpSum.customerPrice === null ? 'Ange samlat kundpris' : item.lumpSum.verified ? 'Klar' : 'Markera priset som klart'
   if (item.costLines.length) {
     const coverage = actionCaseCostCoverage(item.costLines)
     if (coverage.missingQuantity) return `Komplettera mängd på ${coverage.missingQuantity} rader`
     if (coverage.missingPrice) return `Inhämta pris för ${coverage.missingPrice} rader`
-    if (coverage.unchecked) return `Kontrollera ${coverage.unchecked} kalkylrader`
+    if (coverage.unchecked) return `${coverage.unchecked} ${coverage.unchecked === 1 ? 'kalkylrad' : 'kalkylrader'} kvar att klarmarkera`
   }
   if (!item.ownLaborReady) return 'Beräkna eget arbete'
   if (!item.materialPriceReady) return 'Kontrollera material och priser'
   if (item.requiresSubcontractor && !item.subcontractorPriceReady) return 'Begär eller registrera UE-pris'
   if (!item.wasteSolutionReady) return 'Välj avfallslösning'
-  return 'Kontrollera kundpriset'
+  return 'Färdigställ kalkylen'
 }
 
 function completion(item: ActionCaseItemView) {
@@ -317,6 +317,7 @@ function CaseDocuments({
 }
 
 function costActionMessage(name: string, payload: Record<string, unknown>) {
+  if (name === 'set_cost_line_complete') return payload.complete ? 'Kalkylraden är klar.' : 'Kalkylraden är återöppnad.'
   if (name === 'revoke_rfq_delivery') return 'Länken till offertunderlaget har återkallats.'
   if (name === 'work_part') return ({ save: 'Arbetsdelen sparades.', delete: 'Arbetsdelen togs bort. Kalkylraderna är kvar.', move_lines: 'Valda rader flyttades.', bulk_update: 'Valda kalkylvärden sparades.' } as Record<string, string>)[String(payload.operation)] ?? 'Kalkylen uppdaterades.'
   if (name === 'work_quote') return payload.operation === 'select' ? 'Offerten används i kalkylen. Ingen beställning har skickats.' : payload.operation === 'save' ? 'Offerten sparades. Välj den för att använda priset i kalkylen.' : 'Prisunderlaget uppdaterades.'
@@ -402,7 +403,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
-      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
+      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'set_cost_line_complete', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
           if (response.ok) { const result = await response.json(); receive(result.workspace) }
         }).catch(() => undefined)

@@ -14,7 +14,7 @@ test('project views are allowlisted and URLs retain the project identity', () =>
 
 test('list attention counts refer to work items, not fictitious project completion', () => {
   const project = { status: 'pricing', items: [{ status: 'scope_needed' }, { status: 'pricing_needed' }, { status: 'waiting_subcontractor' }] }
-  assert.equal(navigation.projectNeeds(project), '1 saknar omfattning · 1 behöver pris · 1 väntar på UE')
+  assert.equal(navigation.projectNeeds(project), '1 saknar omfattning · 1 behöver kalkyl · 1 väntar på UE')
   assert.equal(navigation.projectNeeds({ ...project, status: 'completed' }), 'Slutfört')
   assert.equal(navigation.projectNeeds({ ...project, status: 'cancelled' }), 'Avbrutet')
   assert.equal(navigation.projectNeeds({ status: 'pricing', items: [] }), 'Inget markerat åtgärdsbehov')

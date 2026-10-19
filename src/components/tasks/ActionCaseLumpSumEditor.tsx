@@ -25,7 +25,7 @@ export default function ActionCaseLumpSumEditor({ value, busy, onSave, onDirty }
         <PriceInput label="Intern kostnad exkl. moms (kr, valfri)" value={draft.internalCost === null ? null : Math.round(draft.internalCost * 100)} onChange={(value) => setDraft({ ...draft, internalCost: value === null ? null : value / 100, verified: false })} />
       </div>
       <label className="block text-sm">Moms<select value={draft.vatRate} className="ml-3 min-h-11 rounded-md border border-slate-300 px-3" onChange={(e) => setDraft({ ...draft, vatRate: Number(e.target.value), verified: false })}>{[25, 12, 6, 0].map((v) => <option key={v} value={v}>{v} %</option>)}</select></label>
-      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={draft.customerPrice === null} checked={draft.verified} onChange={(e) => setDraft({ ...draft, verified: e.target.checked })} />Jag har kontrollerat priset mot hela omfattningen</label>
+      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={draft.customerPrice === null} checked={draft.verified} onChange={(e) => setDraft({ ...draft, verified: e.target.checked })} />Klar</label>
     </>}
     {dirty && <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-md bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-40" onClick={() => void onSave(enabled ? draft : null)}><Save size={17} /> Spara prisunderlag</button>}
   </fieldset>

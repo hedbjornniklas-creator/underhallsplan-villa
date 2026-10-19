@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { actionScopeDraft } from '../src/lib/action-cases/scopeDraft.ts'
+import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
 
 const source = readFileSync(new URL('../src/components/tasks/ActionCaseItemSheet.tsx', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, {
@@ -24,17 +25,18 @@ function sheetHarness(overrides = {}) {
     'react-dom': { createPortal: (children) => children },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' },
     'lucide-react': new Proxy({}, { get: (_, key) => `icon:${String(key)}` }),
-    '@/lib/action-cases/domain': { calculateActionCaseCostTotals: () => ({ internalCost: null, customerPrice: null }), actionCaseCostCoverage: () => ({ knownTotals: { internalCost: null } }) },
+    '@/lib/action-cases/domain': { calculateActionCaseCostTotals, actionCaseCostCoverage },
     '@/lib/action-cases/costing': {},
     '@/lib/action-cases/scopeAttachments': { scopeAttachmentIds: () => [] },
     '@/lib/action-cases/scopeDraft': { actionScopeDraft },
-    './actionCaseGroupPricing': {},
+    './actionCaseGroupPricing': { groupPriceForLine: () => null, coveringQuoteForLine: () => null },
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
+    './action-case-costs.css': {},
   }
   for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields']) dependencies[`./${name}`] = { default: name }
-  const module = { exports: {} }
+  const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
-    (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, module, module.exports, { body: {} },
+    (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
     { confirm: () => { confirmations++; return accept } },
   )
   const props = {
@@ -43,7 +45,7 @@ function sheetHarness(overrides = {}) {
     onClose: () => { closes++ }, onScopeFlush: () => { flushes++ },
     ...overrides,
   }
-  const render = () => { cursor = 0; tree = module.exports.default(props) }
+  const render = () => { cursor = 0; tree = mod.exports.default(props) }
   const nodes = () => {
     const result = []
     const visit = (node) => {
@@ -124,6 +126,7 @@ test('pending mutations block backdrop close and switching tabs', () => {
 
 test('backdrop, Escape and close button preserve the unsaved calculation confirmation', () => {
   const h = sheetHarness({ initialCostLineId: 'cost' })
+  h.props.item.lumpSum = {internalCost:1,customerPrice:2,verified:false,vatRate:25}; h.render()
   h.find((node) => node.type === 'ActionCaseLumpSumEditor').props.onDirty(true); h.render()
   assert.equal(h.tab('Omfattning').props.disabled, true)
   h.pointerDown(); h.clickBackdrop()
@@ -132,4 +135,49 @@ test('backdrop, Escape and close button preserve the unsaved calculation confirm
   assert.deepEqual(h.result, { closes: 0, flushes: 0, confirmations: 3 })
   h.allowDiscard(); h.pointerDown(); h.clickBackdrop()
   assert.deepEqual(h.result, { closes: 1, flushes: 0, confirmations: 4 })
+})
+
+const testLine = (patch={}) => ({id:'line',description:'Puts',category:'other',quantity:1,unit:'paket',unitCost:64000,markupPercent:17.16,verified:false,pricingMethod:'direct',quotes:[],...patch})
+const costItem = (lines) => ({id:'item',title:'Invändigt',scope:'Fiktiv omfattning',updatedAt:'2026-10-19T08:00:00.123456Z',status:'pricing_needed',costLines:lines})
+
+test('compact table shows every priced row and one total; completion never changes its customer price', async () => {
+  const calls=[],h=sheetHarness({initialCostLineId:'none',item:costItem([testLine()]),onCostAction:async(...args)=>{calls.push(args);return true}})
+  assert.equal(h.find(n=>n.type==='table').props['aria-label'],'Kalkylrader')
+  assert.equal(h.nodes().filter(n=>n.type==='tfoot').length,1)
+  const prices=()=>h.nodes().filter(n=>n.type==='td' && n.props['data-label']==='Kundpris').map(n=>n.props.children)
+  assert.equal(prices()[0].replaceAll('\u00a0',' '),'74 982,40 kr')
+  const checkbox=h.find(n=>n.props['aria-label']==='Klar: Puts')
+  assert.equal(checkbox.props.disabled,false)
+  checkbox.props.onChange({target:{checked:true}})
+  await new Promise(resolve=>setImmediate(resolve))
+  assert.deepEqual(calls,[['set_cost_line_complete',{costLineId:'line',complete:true,expectedUpdatedAt:h.props.item.updatedAt}]])
+  h.props.item.costLines[0].verified=true; h.render()
+  assert.equal(prices()[0].replaceAll('\u00a0',' '),'74 982,40 kr')
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Puts').props.checked,true)
+})
+
+test('Klar remains separate from bulk selection, actual missing amounts and quote-derived completion', () => {
+  const h=sheetHarness({initialCostLineId:'none',item:costItem([testLine(),testLine({id:'missing',description:'Saknat pris',unitCost:null}),testLine({id:'quote',description:'UE',category:'own_labor',pricingMethod:'quotes'}),testLine({id:'covered',description:'Material i offert',category:'material',coveredByQuoteId:'quote'})])})
+  assert.equal(h.nodes().filter(n=>n.type==='input' && n.props.name==='costLineSelection').length,0)
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Puts').props.disabled,false)
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Saknat pris').props.disabled,true)
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: UE').props.disabled,true)
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Material i offert').props.disabled,true)
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Material i offert').props.checked,true)
+  h.find(n=>n.type==='button' && Array.isArray(n.props.children) && n.props.children.includes('Markera rader')).props.onClick(); h.render()
+  const selection=h.find(n=>n.props['aria-label']==='Markera alla synliga kalkylrader')
+  selection.props.onChange({target:{checked:true}}); h.render()
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Puts').props.checked,false)
+  assert.equal(h.find(n=>n.props['aria-label']==='Markera Puts').props.checked,true)
+})
+
+test('pencil opens details with unsaved protection and blocks concurrent completion', () => {
+  const h=sheetHarness({initialCostLineId:'none',item:costItem([testLine()])})
+  h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick(); h.render()
+  assert.ok(h.find(n=>typeof n.type==='function' && n.type.name==='CostLineForm'))
+  assert.equal(h.find(n=>n.props['aria-label']==='Klar: Puts').props.disabled,true)
+  assert.equal(h.tab('Omfattning').props.disabled,true)
+  h.pointerDown();h.clickBackdrop()
+  assert.equal(h.result.confirmations,1)
+  assert.equal(h.result.closes,0)
 })

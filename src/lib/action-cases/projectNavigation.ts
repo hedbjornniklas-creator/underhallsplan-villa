@@ -22,5 +22,5 @@ export function projectNeeds(actionCase: ActionCaseView) {
   const pricing = actionCase.items.filter((i) => i.status === 'pricing_needed').length
   const ue = actionCase.items.filter((i) => i.status === 'waiting_subcontractor').length
   if (actionCase.status === 'completed' || actionCase.status === 'cancelled') return projectStatus[actionCase.status]
-  return [scope && `${scope} saknar omfattning`, pricing && `${pricing} behöver pris`, ue && `${ue} väntar på UE`].filter(Boolean).join(' · ') || 'Inget markerat åtgärdsbehov'
+  return [scope && `${scope} saknar omfattning`, pricing && `${pricing} behöver kalkyl`, ue && `${ue} väntar på UE`].filter(Boolean).join(' · ') || 'Inget markerat åtgärdsbehov'
 }

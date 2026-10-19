@@ -3,6 +3,53 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-07.
 
+## Beslut 2026-10-19: enkel kalkyllista och Klar
+
+Godkant efter visat layoutforslag: alla kostnadsslag i en gemensam kompakt
+tabell i atgardens sidopanel. Kostnad, paslag och kundpris visas per rad,
+med en gemensam summa exklusive moms. Pennan oppnar mangd, enhetspris,
+priskalla och anteckningar. Panelen far vara bredare. Massmarkering,
+arbetsdelar, kostnadsslag, prisunderlag och AI ligger under Fler verktyg.
+Den vanliga vyn har bara en Klar-bock. Mobilen staplar markta belopp.
+
+- Klar anvander befintligt `is_verified`; inga belopp, omfattningar eller
+  historiska kalkyler skrivs om av layouten. En oklar rad med belopp raknas
+  fortfarande i summan. Endast verkligt saknad mangd/pris ger motsvarande
+  varning. Pris behovs ersatts med Kalkyl pagar for ofardig kalkylstatus.
+- Detaljandringar ateroppnar raden som tidigare. Klar sparas nu separat med
+  `set_action_case_cost_complete`, utan att skicka eller skriva pris/mangd.
+  Organisationsmedlemskap, Uppdrag-atkomst, projektstatus och sparversion
+  kontrolleras. Identiska aterforsok ar ofarliga; en gammal version far inte
+  skriva over ett nyare pris. Markera/ateroppna loggas med aktor och rad-ID.
+- UE-offerter, grupppris och tackta rader behaller sina ursprungs-/lasregler.
+  Klar for offert och befintliga importkrav bevaras. Material som ingar i en
+  vald offert ar skrivskyddat, visas som Ingar och raknas inte dubbelt.
+  Ett dolt arbetsdelsfilter rensas nar verktygsvyn stangs/byts.
+- Avtal, kundoffert, val/tillval och betalplan andras inte automatiskt.
+  Befintliga fiktiva paketpriser och eventuell overlappande puts omfattas
+  inte av nagon beloppsrattning; anvandaren maste avgora omfattningen.
+
+Ny migration: `docs/db/2026-10-19_02_action_case_cost_completion.sql`, efter
+tidigare kalkyl-/offert-/gruppprismigrationer. Endast en service-rolls-RPC
+laggs till; inga befintliga data skrivs om. Anvandaren har bekraftat att SQL
+ar kord och bestallt publicering. Tester och lokal UI-fixtur kor
+med fiktiva data, aldrig Lokevagens verkliga projekt.
+
+Verifierat lokalt: 664 regressionstester passerar, inklusive Klar-RPC:ns
+organisations-/aktorgranser, terminala statusar, identiska aterforsok,
+versionskonflikt, noll kontra saknat pris samt oforandrade belopp/avtal.
+Riktad ESLint och webpack-produktionsbygget inklusive appens TypeScript
+passerar. Den separata repo-omfattande `tsc --noEmit` har kvar TS5097 i fem
+befintliga testfiler med .ts-importer; de ar inte andrade i denna uppgift.
+CUA-klicktest med riktig UI och syntetisk HTTP-backend provar redigering,
+sparfel/aterforsok, Klar-sparning/omladdning, massmarkering samt nollpris och
+saknat pris. Dator, 390 och 344 px mobil ar visuellt kontrollerade, inklusive
+langt radnamn och mobilens detaljfalt. Inga riktiga utskick eller projektdata
+anvands. Produktionskontroll efter anvandarens SQL verifierar att RPC:n finns,
+nekar fel organisations-/projektkontext och inte kan anropas anonymt.
+Kontrollen skriver inga projektdata. Driftsatt version verifieras separat
+efter publicering; Lokevagens priser, omfattningar och avtal ska bevaras.
+
 ## Beslut 2026-10-19: Fragor och beslut i projektet
 
 Godkant: intern fragelogg med tilldelning, svar, bilagor och historik. Fragor

@@ -1,0 +1,60 @@
+.uppdrag-scope .gizmo-cost-sheet { max-width: 1120px; }
+.gizmo-cost-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
+.gizmo-cost-toolbar p { margin: 2px 0 0; color: #596368; font-size: 12px; }
+.gizmo-cost-commands { display: flex; align-items: center; gap: 8px; }
+.gizmo-cost-tools { position: relative; }
+.gizmo-cost-tools > summary { list-style: none; cursor: pointer; }
+.gizmo-cost-tools > summary::-webkit-details-marker { display: none; }
+.gizmo-cost-tools > div { position: absolute; z-index: 5; right: 0; top: calc(100% + 4px); width: 240px; padding: 4px; border: 1px solid #D5DCDD; border-radius: 4px; background: #fff; box-shadow: 0 4px 12px #252a2d14; }
+.gizmo-cost-tools > div button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 10px; text-align: left; font-size: 14px; }
+.gizmo-cost-tools > div button:hover { background: #EDF1F1; }
+.gizmo-cost-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; }
+.gizmo-cost-table col[data-column='select'] { width: 44px; }
+.gizmo-cost-table col[data-column='done'] { width: 64px; }
+.gizmo-cost-table col[data-column='cost'] { width: 170px; }
+.gizmo-cost-table col[data-column='markup'] { width: 88px; }
+.gizmo-cost-table col[data-column='price'] { width: 170px; }
+.gizmo-cost-table col[data-column='edit'] { width: 56px; }
+.gizmo-cost-table th { height: 36px; background: #EDF1F1; font-size: 12px; font-weight: 600; color: #252A2D; }
+.gizmo-cost-table :is(th, td) { padding: 8px 12px; border-bottom: 1px solid #D5DCDD; text-align: left; vertical-align: middle; }
+.gizmo-cost-table [data-number] { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gizmo-cost-table .gizmo-cost-check { padding: 0; text-align: center; }
+.gizmo-cost-check label { display: flex; min-height: 52px; align-items: center; justify-content: center; }
+.gizmo-cost-check input { width: 18px; height: 18px; accent-color: #206961; }
+.gizmo-cost-name { overflow-wrap: anywhere; }
+.gizmo-cost-name strong { font-weight: 600; }
+.gizmo-cost-name small { display: block; font-size: 12px; color: #596368; margin-top: 2px; }
+.gizmo-cost-table tr[data-selected='true'] > td { background: #eef5f3; }
+.gizmo-cost-table tr[data-open='true'] > td { background: #f5f7f7; }
+.gizmo-cost-table .gizmo-cost-detail > td { padding: 16px; background: #fafbfb; }
+.gizmo-cost-detail form { max-width: 832px; }
+.gizmo-cost-detail .gizmo-cost-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.gizmo-cost-table tfoot td { font-weight: 600; background: #EDF1F1; border-top: 2px solid #D5DCDD; }
+.gizmo-cost-empty { padding: 24px 12px; color: #596368; }
+.gizmo-cost-advanced { margin-bottom: 16px; padding-block: 12px; border-block: 1px solid #D5DCDD; }
+.gizmo-cost-readiness { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.gizmo-cost-readiness label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+@media (max-width: 767px) {
+  .uppdrag-scope .gizmo-cost-sheet { max-width: none; }
+  .gizmo-cost-toolbar { align-items: flex-start; }
+  .gizmo-cost-table colgroup, .gizmo-cost-table thead { display: none; }
+  .gizmo-cost-table, .gizmo-cost-table :is(tbody, tfoot) { display: block; }
+  .gizmo-cost-table tr { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; padding-block: 8px; border-bottom: 1px solid #D5DCDD; }
+  .gizmo-cost-table td { min-width: 0; padding: 4px 8px; border: 0; }
+  .gizmo-cost-table .gizmo-cost-name { grid-column: 2; grid-row: 1; align-self: center; }
+  .gizmo-cost-table .gizmo-cost-edit { grid-column: 3; grid-row: 1; padding: 0; }
+  .gizmo-cost-table .gizmo-cost-check { grid-column: 1; grid-row: 1; }
+  .gizmo-cost-check label, .gizmo-cost-tools > div button { min-height: 48px; }
+  .gizmo-cost-table [data-number] { grid-column: 2 / 4; display: flex; justify-content: space-between; gap: 12px; white-space: normal; }
+  .gizmo-cost-table [data-number]::before { content: attr(data-label); color: #596368; font-weight: 400; text-align: left; }
+  .gizmo-cost-table tr[data-select-mode='true'] { grid-template-columns: 48px 48px minmax(0, 1fr) 48px; }
+  .gizmo-cost-table tr[data-select-mode='true'] .gizmo-cost-done { grid-column: 2; }
+  .gizmo-cost-table tr[data-select-mode='true'] .gizmo-cost-name { grid-column: 3; }
+  .gizmo-cost-table tr[data-select-mode='true'] .gizmo-cost-edit { grid-column: 4; }
+  .gizmo-cost-table tr[data-select-mode='true'] [data-number] { grid-column: 3 / 5; }
+  .gizmo-cost-table tr.gizmo-cost-detail { display: block; padding: 0; }
+  .gizmo-cost-table .gizmo-cost-detail > td { display: block; padding: 12px; }
+  .gizmo-cost-table tfoot tr { background: #EDF1F1; grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .gizmo-cost-table tfoot td, .gizmo-cost-table tfoot [data-number] { grid-column: 1; background: transparent; border: 0; }
+  .gizmo-cost-table tfoot .gizmo-cost-total-spacer { display: none; }
+}

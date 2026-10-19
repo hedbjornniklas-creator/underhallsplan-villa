@@ -36,6 +36,9 @@ import { signingDraft } from '../test/fixtures/contract-signing.ts'
 import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 import { emptyQuestion, questionMutation } from '../src/lib/action-cases/projectQuestions.ts'
+import { normalizeCostLine } from '../src/lib/action-cases/costing.ts'
+import { calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
+import { costCompletionPayload } from '../src/lib/action-cases/costCompletion.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -79,7 +82,7 @@ const { css: base } = await postcss([tailwind()]).process(
   await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -143,6 +146,18 @@ function publishChoiceCategories() {
 }
 const writes = []
 const projects = projectFixture(actionCase)
+if (process.argv.includes('--cost-table')) {
+  const item = projects.cases[0].items[0]
+  item.title = 'Invändigt (fiktivt test)'
+  item.scope = 'FIKTIVT TESTUNDERLAG: Innerväggar och puts. Inga verkliga projektuppgifter.'
+  Object.assign(item, { ownLaborReady: true, materialPriceReady: true, wasteSolutionReady: true })
+  item.costLines = [
+    { id: id(970), ...normalizeCostLine({ category: 'own_labor', description: 'Paketpris invändigt', quantity: 1, unit: 'paket', unitCost: 139464.32, markupPercent: 25, verified: true, notes: 'Fiktivt paketpris. Testa att underlaget bevaras.' }), pricingMethod: 'direct', selectedQuoteId: null, coveredByQuoteId: null, workPartId: null, quotes: [] },
+    { id: id(971), ...normalizeCostLine({ category: 'other', description: 'Invändig puts, inklusive underlagsputs i badrum och bastu', quantity: 1, unit: 'paket', unitCost: 64000, markupPercent: 17.16, quantityBasis: 'estimated', verified: false, notes: 'Fiktivt underlag: arbete och material.' }), pricingMethod: 'direct', selectedQuoteId: null, coveredByQuoteId: null, workPartId: null, quotes: [] }
+  ]
+  const total = calculateActionCaseCostTotals(item.costLines)
+  Object.assign(item, { estimatedCost: total.internalCost, customerPrice: total.customerPrice })
+}
 if (process.argv.includes('--contract-pricing')) {
   state.costing = {}
   const moments = [['Mark, grund och dränering',333899],['Stomme och fasad',352645],['Tak',412395],['Invändigt',217913],['VVS och värme',181594],['Ventilation',31633],['Etablering och produktion',500263]]
@@ -277,7 +292,7 @@ const server = createServer(async (req, res) => {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
     const query = new URL(req.url, 'http://localhost').searchParams
-    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions'].includes(query.get('view')) ? query.get('view') : 'contract'}`
+    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions','work'].includes(query.get('view')) ? query.get('view') : 'contract'}`
     res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="${target}"></iframe></body></html>`)
     return
   }
@@ -355,7 +370,7 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && (['save', 'autosave'].includes(body.operation) || body.action === 'save_item_scope' || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    if (slowSave && (['save', 'autosave'].includes(body.operation) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
     if (path.endsWith('/questions')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Din text är kvar.' }, 503); return }
@@ -459,6 +474,28 @@ const server = createServer(async (req, res) => {
         projects.cases[0].attachments.push({ id: randomUUID(), actionCaseItemId: null, type: 'document', title: payload.fileName, fileName: payload.fileName, contentType: 'application/pdf', fileSizeBytes: uploaded.length, grantedParticipantIds: [], createdAt: new Date().toISOString() })
       } else if (process.argv.includes('--choice-files') && body.action === 'abort_upload') {
         choiceUploads.delete(payload.filePath)
+      } else if (process.argv.includes('--cost-table') && ['set_cost_line_complete','create_cost_line','update_cost_line','delete_cost_line'].includes(body.action)) {
+        const evidence = JSON.stringify(state)
+        const c = projects.cases.find(c => c.id === payload.caseId)
+        const item = c?.items.find(i => i.id === payload.itemId)
+        if (!item) { json({ error: 'Åtgärden saknas.' },404); return }
+        const line = item.costLines.find(line => line.id === payload.costLineId)
+        if (body.action === 'set_cost_line_complete') {
+          const validated = costCompletionPayload(payload)
+          if (validated.expectedUpdatedAt !== item.updatedAt) { json({error:'Åtgärden har ändrats. Öppna den igen.'},409); return }
+          if (!line || line.pricingMethod === 'quotes' || line.selectedQuoteId || line.coveredByQuoteId || (validated.complete && (line.quantity === null || line.unitCost === null))) { json({error:'Kontrollera kalkylradens underlag.'},400); return }
+          line.verified = validated.complete
+        } else if (body.action === 'delete_cost_line') item.costLines = item.costLines.filter(row => row.id !== payload.costLineId)
+        else {
+          const normalized = normalizeCostLine(payload)
+          if (body.action === 'update_cost_line') {
+            if (!line) { json({error:'Raden saknas.'},404); return }
+            Object.assign(line, normalized)
+          } else item.costLines.push({ id: payload.costLineId ?? randomUUID(), ...normalized, pricingMethod: payload.pricingMethod ?? 'direct', selectedQuoteId: null, coveredByQuoteId: null, workPartId: null, quotes: [] })
+        }
+        const total = calculateActionCaseCostTotals(item.costLines)
+        Object.assign(item,{estimatedCost:total.internalCost,customerPrice:total.customerPrice,updatedAt:new Date().toISOString(),status:item.costLines.length && item.costLines.every(line => line.verified) ? 'ready_for_quote':'pricing_needed'})
+        assert.equal(JSON.stringify(state),evidence,'Cost edits cannot mutate contracts or customer choices')
       } else if (body.action === 'update_item' || body.action === 'save_item_scope') {
         const item = projects.cases.flatMap((c) => c.items).find((i) => i.id === payload.itemId)
         if (!item) { json({ error: 'Åtgärden saknas.' }, 404); return }

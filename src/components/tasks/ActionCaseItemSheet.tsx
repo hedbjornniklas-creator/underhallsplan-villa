@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Calculator, Check, ClipboardList, Hammer, Loader2, Mail, Package, Pencil, Plus, Save, Sparkles, Trash2, Truck, X } from 'lucide-react'
+import { Calculator, Check, ClipboardList, ListChecks, Loader2, Mail, MoreHorizontal, Pencil, Plus, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseCostSuggestion, ActionCaseItemView, ActionCaseView } from '@/lib/action-cases/contracts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
@@ -10,11 +10,11 @@ import ActionCaseWorkQuotes from './ActionCaseWorkQuotes'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 import ActionCaseLumpSumEditor from './ActionCaseLumpSumEditor'
 import { scopeAttachmentIds } from '@/lib/action-cases/scopeAttachments'
-import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
 import { ActionCaseWorkParts, ActionCaseWorkSelection, getWorkPartId, UNASSIGNED_WORK } from './ActionCaseWorkParts'
 import { coveringQuoteForLine, groupPriceForLine } from './actionCaseGroupPricing'
 import { actionScopeDraft, type ActionScopeDraft } from '@/lib/action-cases/scopeDraft'
 import type { ScopeSaveState } from './useActionScopeAutosave'
+import './action-case-costs.css'
 
 type Props = {
   item: ActionCaseItemView
@@ -45,9 +45,9 @@ const basisLabels = { provided: 'Angiven', calculated: 'Beräknad', estimated: '
 const categoryLabels = { own_labor: 'Eget arbete', material: 'Material', subcontractor: 'Underentreprenör', waste: 'Avfall', transport: 'Transport', other: 'Övrigt' }
 const sourceLabels = { manual: 'Manuellt pris', beijer: 'Beijer', subcontractor: 'UE-offert', price_book: 'Prislista', ai_suggestion: 'AI-förslag', other: 'Annan källa' }
 const groups = [
-  { key: 'own_labor', title: 'Arbete', icon: Hammer, categories: ['own_labor', 'subcontractor'], ready: 'ownLaborReady' },
-  { key: 'material', title: 'Material', icon: Package, categories: ['material'], ready: 'materialPriceReady' },
-  { key: 'other', title: 'Övrigt', icon: Truck, categories: ['waste', 'transport', 'other'], ready: 'wasteSolutionReady' },
+  { key: 'own_labor', title: 'Arbete', categories: ['own_labor', 'subcontractor'], ready: 'ownLaborReady' },
+  { key: 'material', title: 'Material', categories: ['material'], ready: 'materialPriceReady' },
+  { key: 'other', title: 'Övrigt', categories: ['waste', 'transport', 'other'], ready: 'wasteSolutionReady' },
 ] as const
 
 function CostLineForm({ initial, category, busy, onSave, onCancel }: {
@@ -89,7 +89,6 @@ function CostLineForm({ initial, category, busy, onSave, onCancel }: {
       <label className="text-xs font-semibold text-slate-600">Priskälla<select className={inputClass} value={cost.priceSource} onChange={(e) => set('priceSource', e.target.value)}>{Object.entries(sourceLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
       {field('sourceUrl', 'Källänk', 'url')}
       <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Antaganden och underlag<textarea rows={2} className={`${inputClass} py-2`} value={cost.notes} onChange={(e) => set('notes', e.target.value)} /></label>
-      <label className="flex items-center gap-2 text-sm sm:col-span-2"><input type="checkbox" className="h-4 w-4 accent-violet-600" disabled={!cost.quantity.trim() || !cost.unitCost.trim()} checked={cost.verified} onChange={(e) => set('verified', e.target.checked)} />Jag har kontrollerat mängden och priset</label>
       </>}
     </fieldset>
     <div className="flex justify-end gap-2"><button type="button" className={secondary} disabled={busy} onClick={onCancel}>Avbryt</button><button type="submit" className={primary} disabled={busy || !valid}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Spara rad</button></div>
@@ -136,7 +135,9 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   }, [confirmDelete])
   const [quoteLineId, setQuoteLineId] = useState<string | null>(initialCostLineId ?? null)
   const [quoteEditing, setQuoteEditing] = useState(false)
-  const [directDraftLineId, setDirectDraftLineId] = useState<string | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [advanced, setAdvanced] = useState<'parts' | 'categories' | 'pricing' | null>(null)
+  const tools = useRef<HTMLDetailsElement>(null)
   const [partFilter, setPartFilter] = useState('')
   const [partEditing, setPartEditing] = useState(false)
   const [bulkEditing, setBulkEditing] = useState(false)
@@ -148,12 +149,15 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const filterParts = (id: string) => { setPartFilter(id); setQuoteLineId(null) }
   const selectLines = (lineIds: string[], checked: boolean) => setSelectedLineIds((ids) => checked ? [...new Set([...ids, ...lineIds])] : ids.filter((id) => !lineIds.includes(id)))
   const working = busy || pending
-  const costDirty = Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing || bulkEditing || lumpDirty
+  const costDirty = Boolean(editing) || quoteEditing || partEditing || bulkEditing || lumpDirty
   useEffect(() => { onDirtyChange?.(costDirty); return () => onDirtyChange?.(false) }, [costDirty, onDirtyChange])
   const dirty = scopeBlocked
   const totals = item.lumpSum ?? calculateActionCaseCostTotals(item.costLines)
   const coverage = actionCaseCostCoverage(item.costLines)
   const stale = Boolean(item.costSuggestion && item.costSuggestion.sourceUpdatedAt !== item.updatedAt)
+  const visibleLines = item.costLines.filter((line) => !['own_labor', 'subcontractor'].includes(line.category) || !activePartFilter || (activePartFilter === UNASSIGNED_WORK ? !getWorkPartId(line) : getWorkPartId(line) === activePartFilter))
+  const columns = selectMode ? 7 : 6
+  const tool = (action: () => void) => { tools.current?.removeAttribute('open'); action() }
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
     const overflow = document.body.style.overflow
@@ -189,7 +193,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
       backdropPress.current = false
       if (outside) close()
     }}>
-    <div ref={dialog} role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby="action-item-title" className="h-dvh w-full max-w-3xl bg-white text-slate-950 shadow-2xl outline-none" onKeyDown={(event) => {
+    <div ref={dialog} role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby="action-item-title" className={`h-dvh w-full max-w-3xl bg-white text-slate-950 shadow-2xl outline-none ${tab === 'cost' ? 'gizmo-cost-sheet' : ''}`} onKeyDown={(event) => {
       if (event.key === 'Escape') { event.preventDefault(); close() }
       if (event.key !== 'Tab') return
       const controls = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href]') ?? []).filter((node) => node.tabIndex >= 0 && node.getClientRects().length)
@@ -236,52 +240,58 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
             {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => changeScope({ scopeAttachmentIds: selectedFiles.filter((id) => attachments.some((file) => file.id === id)) })}>Ta bort otillgängliga val</button></p> : null}
           </section>
         </fieldset> : <>
-          {item.lumpSumAvailable && <ActionCaseLumpSumEditor key={JSON.stringify(item.lumpSum)} value={item.lumpSum ?? null} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || Boolean(directDraftLineId) || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status)} onDirty={setLumpDirty} onSave={(lumpSum) => run(async () => { const saved = await onSave({ lumpSum }); if (saved) setSelectedLineIds([]); return saved })} />}
+          {item.lumpSumAvailable && (item.lumpSum || advanced === 'pricing') && <ActionCaseLumpSumEditor key={JSON.stringify(item.lumpSum)} value={item.lumpSum ?? null} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status)} onDirty={setLumpDirty} onSave={(lumpSum) => run(async () => { const saved = await onSave({ lumpSum }); if (saved) setSelectedLineIds([]); return saved })} />}
           {!item.lumpSum && <>
-          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Kalkylunderlag</h3><button type="button" className={primary} disabled={working || dirty || !scope.trim() || costDirty} onClick={generate}>{generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}{generating ? 'Skapar förslag…' : item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button></div>
+          <div className="gizmo-cost-toolbar"><div><h3>Kalkyl</h3><p>Exklusive moms</p></div><div className="gizmo-cost-commands">
+            <button type="button" className={primary} disabled={working || dirty || costDirty} onClick={() => { setQuoteLineId(null); setEditing({ category: 'own_labor' }) }}><Plus size={17} />Lägg till rad</button>
+            <details ref={tools} className="gizmo-cost-tools"><summary className={`${secondary} h-11 w-11 px-0`} title="Fler verktyg" aria-label="Fler verktyg"><MoreHorizontal size={20} /></summary><div>
+              <button type="button" disabled={working || dirty || costDirty} onClick={() => tool(() => { setSelectMode(!selectMode); setSelectedLineIds([]) })}><ListChecks size={17} />{selectMode ? 'Avsluta markering' : 'Markera rader'}</button>
+              <button type="button" disabled={working || dirty || costDirty} onClick={() => tool(() => { setAdvanced(advanced === 'parts' ? null : 'parts'); setPartFilter('') })}><Settings2 size={17} />Arbetsdelar</button>
+              <button type="button" disabled={working || dirty || costDirty} onClick={() => tool(() => { setAdvanced(advanced === 'categories' ? null : 'categories'); setPartFilter('') })}><Settings2 size={17} />Kostnadsslag</button>
+              {item.lumpSumAvailable && <button type="button" disabled={working || dirty || costDirty} onClick={() => tool(() => { setAdvanced(advanced === 'pricing' ? null : 'pricing'); setPartFilter('') })}><Calculator size={17} />Prisunderlag</button>}
+              <button type="button" disabled={working || dirty || !scope.trim() || costDirty} onClick={() => tool(generate)}><Sparkles size={17} />{item.costSuggestion ? 'Nytt AI-förslag' : 'Föreslå kalkyl med AI'}</button>
+            </div></details>
+          </div></div>
           {dirty ? <p className="mt-3 text-sm text-slate-600">Kalkylen kan ändras när omfattningen har sparats.</p> : !scope.trim() ? <p className="mt-3 text-sm text-amber-800">Arbetets omfattning saknas.</p> : null}
           {generating ? <p role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-sm text-violet-800"><Loader2 size={16} className="shrink-0 animate-spin" />AI bearbetar omfattningen. Befintliga kalkylrader är oförändrade.</p> : null}
           {item.costSuggestion && !generating ? <Proposal key={item.costSuggestion.id} proposal={item.costSuggestion} stale={stale || dirty} busy={working || costDirty} onApply={(lineIds) => run(() => onCostAction('apply_cost_suggestions', { suggestionId: item.costSuggestion!.id, lineIds }))} /> : null}
-          <div className="mt-5 space-y-6">{groups.map((group) => {
-            const groupLines = item.costLines.filter((line) => (group.categories as readonly string[]).includes(line.category))
-            const lines = group.key === 'own_labor' && activePartFilter ? groupLines.filter((line) => activePartFilter === UNASSIGNED_WORK ? !getWorkPartId(line) : getWorkPartId(line) === activePartFilter) : groupLines
-            const Icon = group.icon
-            const groupTotals = calculateActionCaseCostTotals(groupLines)
-            const isEditing = editing && (group.categories as readonly string[]).includes(editing.category)
-            const noNeed = item[group.ready]
-            const selectedCount = lines.filter((line) => selectedLineIds.includes(line.id)).length
-            const selectAllLabel = group.key === 'own_labor' ? (activePartFilter ? 'Välj alla synliga arbeten' : 'Välj alla arbeten') : group.key === 'material' ? 'Välj allt material' : 'Välj allt övrigt'
-            return <section key={group.key} className="border-t border-slate-200 pt-4">
-              <header className="flex flex-wrap items-center gap-2"><Icon size={18} className="text-slate-500" /><h3 className="mr-auto font-semibold">{group.title} <span className="font-normal text-slate-400">{groupLines.length}</span></h3>
-                {groupLines.length > 0 ? <span className="text-xs text-slate-600">{groupLines.every((line) => line.coveredByQuoteId) ? 'Ingår i offert' : `Kostnad ${amount(groupTotals.internalCost)}`}</span> : <label className="flex min-h-11 items-center gap-2 text-xs text-slate-600"><input type="checkbox" disabled={working || dirty || costDirty} className="h-4 w-4 accent-violet-600" checked={noNeed} onChange={(e) => void run(() => onSave(group.key === 'own_labor' ? { ownLaborReady: e.target.checked, requiresSubcontractor: false } : { [group.ready]: e.target.checked }))} />Ej aktuellt</label>}
-                <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || dirty || costDirty} aria-label={`Lägg till ${group.title.toLowerCase()}`} title={`Lägg till ${group.title.toLowerCase()}`} onClick={() => { filterParts(''); setEditing({ category: group.key }) }}><Plus size={17} /></button>
-              </header>
-              {group.key === 'own_labor' ? <>
-                <ActionCaseWorkParts parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || bulkEditing} filter={activePartFilter} onFilter={filterParts} onEditing={setPartEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} />
-              </> : null}
-              {lines.length > 0 ? <label className="mt-2 flex min-h-11 items-center gap-3 text-sm font-medium text-slate-700"><input type="checkbox" className="h-4 w-4 shrink-0 accent-violet-600" disabled={working || dirty || costDirty} checked={selectedCount === lines.length} ref={(node) => { if (node) node.indeterminate = selectedCount > 0 && selectedCount < lines.length }} onChange={(event) => selectLines(lines.map((line) => line.id), event.target.checked)} />{selectAllLabel}</label> : null}
-              {group.key === 'own_labor' ? <ActionCaseWorkSelection lines={lines} selectedIds={selectedLineIds} parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || Boolean(directDraftLineId) || partEditing} onSelect={(ids) => setSelectedLineIds((current) => [...current.filter((id) => !lines.some((line) => line.id === id)), ...ids])} onEditing={setBulkEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} /> : null}
-              {!lines.length && !isEditing ? <p className="py-3 text-sm text-slate-400">{group.key === 'own_labor' && activePartFilter ? 'Inga arbeten i denna arbetsdel' : noNeed ? 'Ej aktuellt' : 'Inga kalkylrader'}</p> : null}
-              <div className="divide-y divide-slate-100">{lines.map((line) => {
+          {advanced === 'parts' && <div className="gizmo-cost-advanced"><ActionCaseWorkParts parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing} filter={activePartFilter} onFilter={filterParts} onEditing={setPartEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} /></div>}
+          {advanced === 'categories' && <fieldset className="gizmo-cost-advanced gizmo-cost-readiness" disabled={working || dirty || costDirty}><legend>Kostnadsslag</legend>{groups.map((group) => item.costLines.some(line => (group.categories as readonly string[]).includes(line.category)) ? <span key={group.key}>{group.title}: finns i kalkylen</span> : <label key={group.key}><input type="checkbox" checked={item[group.ready]} onChange={(e) => void run(() => onSave(group.key === 'own_labor' ? { ownLaborReady: e.target.checked, requiresSubcontractor: false } : { [group.ready]: e.target.checked }))} />{group.title}: ej aktuellt</label>)}</fieldset>}
+          {selectMode && <ActionCaseWorkSelection lines={visibleLines.filter(line => ['own_labor', 'subcontractor'].includes(line.category))} selectedIds={selectedLineIds} parts={parts} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || partEditing} onSelect={(ids) => setSelectedLineIds(current => [...current.filter(id => !visibleLines.some(line => ['own_labor', 'subcontractor'].includes(line.category) && line.id === id)), ...ids])} onEditing={setBulkEditing} onAction={(payload) => run(() => onCostAction('work_part', payload))} />}
+          <table className="gizmo-cost-table" aria-label="Kalkylrader"><colgroup>{selectMode && <col data-column="select" />}<col data-column="done" /><col /><col data-column="cost" /><col data-column="markup" /><col data-column="price" /><col data-column="edit" /></colgroup>
+            <thead><tr>{selectMode && <th className="gizmo-cost-check"><label><input type="checkbox" aria-label="Markera alla synliga kalkylrader" disabled={working || dirty || costDirty || !visibleLines.length} checked={Boolean(visibleLines.length) && visibleLines.every(line => selectedLineIds.includes(line.id))} ref={node => { if (node) node.indeterminate = visibleLines.some(line => selectedLineIds.includes(line.id)) && !visibleLines.every(line => selectedLineIds.includes(line.id)) }} onChange={e => selectLines(visibleLines.map(line => line.id), e.target.checked)} /></label></th>}<th scope="col" className="gizmo-cost-check">Klar</th><th scope="col">Kalkylrad</th><th scope="col" data-number>Kostnad</th><th scope="col" data-number>Påslag</th><th scope="col" data-number>Kundpris</th><th scope="col"><span className="sr-only">Redigera</span></th></tr></thead>
+            <tbody>{!visibleLines.length && <tr><td colSpan={columns} className="gizmo-cost-empty">Inga kalkylrader.</td></tr>}{visibleLines.map((line) => {
                 const groupQuote = groupPriceForLine(line, item)
                 const coveringQuote = coveringQuoteForLine(line, item)
                 const requestId = (groupQuote ?? coveringQuote)?.requestId
                 const deleteLocked = Boolean(groupQuote || line.coveredByQuoteId || line.quotes?.some((quote) => quote.deliveryStatus !== 'draft'))
-                return <div key={line.id} className="py-3">
-                <div className="flex items-start gap-2"><label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center" title={`Välj ${line.description}`}><input type="checkbox" name="costLineSelection" value={line.id} className="h-4 w-4 accent-violet-600" aria-label={`Välj ${line.description}`} checked={selectedLineIds.includes(line.id)} disabled={working || dirty || costDirty} onChange={(event) => selectLines([line.id], event.target.checked)} /></label><div className="min-w-0 flex-1 break-words"><strong className="text-sm">{line.description}</strong>{group.key === 'own_labor' && parts.length ? <p className="mt-1 text-xs font-semibold text-slate-500">{parts.find((part) => part.id === getWorkPartId(line))?.title ?? 'Utan arbetsdel'}</p> : null}{line.coveredByQuoteId || groupQuote ? <p className="mt-1 text-xs font-semibold text-violet-700">{groupQuote ? 'Ingår i grupppris' : 'Ingår i vald offert'} · {line.coveredByQuoteId ? 'räknas inte separat' : 'gruppens belopp'}</p> : null}<p className="mt-1 text-xs text-slate-500">{line.quantity ?? '?'} {line.unit} × {line.unitCost === null ? 'Pris saknas' : money.format(line.unitCost)} · {line.markupPercent} % påslag</p><p className={`mt-1 text-xs ${line.verified ? 'text-emerald-700' : 'text-amber-800'}`}>{line.verified ? 'Kontrollerad' : 'Ej kontrollerad'} · {basisLabels[line.quantityBasis]} · {sourceLabels[line.priceSource]}</p></div>
-                  <button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || dirty || costDirty || Boolean(line.coveredByQuoteId)} title={groupQuote ? 'Visa grupppris' : line.coveredByQuoteId ? 'Ingår i vald offert' : 'Redigera kalkylrad'} aria-label={groupQuote ? `Visa grupppris för ${line.description}` : `Redigera ${line.description}`} onClick={() => { if (groupQuote || line.pricingMethod === 'quotes') setQuoteLineId(line.id); else { setQuoteLineId(null); setEditing({ category: line.category, line }) } }}>{groupQuote ? <Mail size={16} /> : <Pencil size={16} />}</button>
-                  <button type="button" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40" disabled={working || dirty || costDirty || deleteLocked} title={groupQuote ? 'Ingår i grupppris' : line.coveredByQuoteId ? 'Ingår i vald offert' : line.quotes?.some((q) => q.deliveryStatus !== 'draft') ? 'Har en påbörjad offertförfrågan' : 'Ta bort kalkylrad'} aria-label={`Ta bort ${line.description}`} onClick={() => setDeleting(line.id)}><Trash2 size={16} /></button>
-                </div>
-                {quoteLineId !== line.id && (canEditDirectWork(line) || directDraftLineId === line.id) ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={working || dirty || Boolean(editing) || quoteEditing || partEditing || bulkEditing || Boolean(directDraftLineId && directDraftLineId !== line.id)} onEditing={(value) => setDirectDraftLineId(value ? line.id : null)} onSave={(payload) => run(() => onCostAction('work_part', payload))} /> : null}
-                {groupQuote || line.coveredByQuoteId ? <button type="button" className={`${secondary} mt-3`} disabled={working || costDirty || dirty || !requestId || !onOpenRequest} onClick={() => { if (requestId) onOpenRequest?.(requestId) }}><Mail size={16} />{groupQuote ? 'Öppna grupppris' : 'Öppna offertförfrågan'}</button> : ['own_labor', 'subcontractor'].includes(line.category) ? <button type="button" className={`${secondary} mt-3`} disabled={working || costDirty || dirty} aria-expanded={quoteLineId === line.id} onClick={() => setQuoteLineId(quoteLineId === line.id ? null : line.id)}><Pencil size={16} />{quoteLineId === line.id ? 'Dölj prisunderlag' : 'Prisunderlag för raden'}</button> : null}
-                {quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty || Boolean(editing) || Boolean(directDraftLineId) || partEditing || bulkEditing} onEditing={setQuoteEditing} onRequest={onRequest} onOpenRequest={onOpenRequest} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
-                {line.notes ? <p className="mt-2 break-words text-xs leading-5 text-slate-600">{line.notes}</p> : null}
-                {line.sourceUrl && /^https?:\/\//i.test(line.sourceUrl) ? <a href={line.sourceUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-violet-700 underline">Öppna priskälla</a> : null}
-                {deleting === line.id && !deleteLocked ? <div className="mt-3 flex flex-wrap items-center gap-2 text-sm"><span>Ta bort raden?</span><button type="button" disabled={working} className={secondary} onClick={() => setDeleting(null)}>Avbryt</button><button type="button" disabled={working || dirty || costDirty} className={`${secondary} text-rose-700`} onClick={() => void run(() => onCostAction('delete_cost_line', { costLineId: line.id })).then((saved) => { if (saved) { setDeleting(null); selectLines([line.id], false); if (quoteLineId === line.id) setQuoteLineId(null) } })}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />} Ta bort</button></div> : null}
-              </div>})}</div>
-              {isEditing ? <CostLineForm key={editing.line?.id ?? `new-${editing.category}`} initial={editing.line} category={editing.category} busy={working || dirty} onCancel={() => setEditing(null)} onSave={(payload) => run(async () => { const saved = await onCostAction(editing.line ? 'update_cost_line' : 'create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /> : null}
-            </section>
-          })}</div>
+                const rowTotals = calculateActionCaseCostTotals([line])
+                const open = editing?.line?.id === line.id || quoteLineId === line.id
+                const quotePriced = Boolean(groupQuote || coveringQuote || line.pricingMethod === 'quotes' || line.selectedQuoteId || line.coveredByQuoteId)
+                const completeLocked = working || dirty || costDirty || quotePriced || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status) || (!line.verified && (line.quantity === null || line.unitCost === null))
+                return <Fragment key={line.id}><tr data-select-mode={selectMode} data-open={open} data-selected={selectedLineIds.includes(line.id)}>
+                  {selectMode && <td className="gizmo-cost-check"><label><input type="checkbox" name="costLineSelection" aria-label={`Markera ${line.description}`} checked={selectedLineIds.includes(line.id)} disabled={working || dirty || costDirty} onChange={e => selectLines([line.id], e.target.checked)} /></label></td>}
+                  <td className="gizmo-cost-check gizmo-cost-done"><label title={quotePriced ? 'Styrs av valt offertunderlag' : line.quantity === null || line.unitCost === null ? 'Ange mängd och pris' : 'Klar'}><input type="checkbox" aria-label={`Klar: ${line.description}`} checked={line.verified || Boolean(line.coveredByQuoteId)} disabled={completeLocked} onChange={e => void run(() => onCostAction('set_cost_line_complete', { costLineId: line.id, complete: e.target.checked, expectedUpdatedAt: item.updatedAt }))} /></label></td>
+                  <td className="gizmo-cost-name"><strong>{line.description}</strong>{line.coveredByQuoteId ? <small>Ingår i vald offert</small> : groupQuote ? <small>Grupppris</small> : line.quantity === null ? <small>Mängd saknas</small> : line.unitCost === null ? <small>Pris saknas</small> : null}</td>
+                  <td data-number data-label="Kostnad">{line.coveredByQuoteId ? 'Ingår' : amount(rowTotals.internalCost)}</td>
+                  <td data-number data-label="Påslag">{line.coveredByQuoteId ? 'Ingår' : `${line.markupPercent.toLocaleString('sv-SE')} %`}</td>
+                  <td data-number data-label="Kundpris">{line.coveredByQuoteId ? 'Ingår' : amount(rowTotals.customerPrice)}</td>
+                  <td className="gizmo-cost-edit"><button type="button" className={`${secondary} h-11 w-11 px-0`} disabled={working || dirty || costDirty} title="Redigera kalkylrad" aria-label={`Redigera ${line.description}`} aria-expanded={open} onClick={() => { setDeleting(null); if (groupQuote || coveringQuote || line.pricingMethod === 'quotes') { setEditing(null); setQuoteLineId(quoteLineId === line.id ? null : line.id) } else { setQuoteLineId(null); setEditing({ category: line.category, line }) } }}><Pencil size={16} /></button></td>
+                </tr>{open && <tr className="gizmo-cost-detail"><td colSpan={columns}>
+                  {editing?.line?.id === line.id && <CostLineForm key={line.id} initial={line} category={line.category} busy={working || dirty} onCancel={() => setEditing(null)} onSave={payload => run(() => onCostAction('update_cost_line', payload))} />}
+                  {quoteLineId === line.id && (groupQuote || coveringQuote) ? <button type="button" className={secondary} disabled={working || costDirty || dirty || !requestId || !onOpenRequest} onClick={() => { if (requestId) onOpenRequest?.(requestId) }}><Mail size={16} />Öppna offertförfrågan</button> : quoteLineId === line.id ? <ActionCaseWorkQuotes key={line.id} line={line} item={item} caseId={caseId} attachments={attachments} participants={participants} busy={working || dirty || partEditing || bulkEditing} onEditing={setQuoteEditing} onRequest={onRequest} onOpenRequest={onOpenRequest} onAction={(name, payload) => run(() => onCostAction(name, payload))} /> : null}
+                  <div className="gizmo-cost-detail-actions">
+                    {line.sourceUrl && /^https?:\/\//i.test(line.sourceUrl) && <a className={secondary} href={line.sourceUrl} target="_blank" rel="noreferrer">Öppna priskälla</a>}
+                    {editing?.line?.id === line.id && ['own_labor', 'subcontractor'].includes(line.category) && <button type="button" className={secondary} disabled={working || dirty} onClick={() => { if (window.confirm('Öppna prisunderlaget utan att spara radens ändringar?')) { setEditing(null); setQuoteLineId(line.id) } }}>Prisunderlag</button>}
+                    {quoteLineId === line.id && <button type="button" className={secondary} disabled={working || quoteEditing} onClick={() => setQuoteLineId(null)}>Stäng detaljer</button>}
+                    {!deleteLocked && <button type="button" className={`${secondary} text-rose-700`} disabled={working || dirty || quoteEditing} onClick={() => setDeleting(line.id)}><Trash2 size={16} />Ta bort rad</button>}
+                  </div>
+                  {deleting === line.id && !deleteLocked && <div className="gizmo-cost-detail-actions"><span>Ta bort raden och osparade ändringar?</span><button type="button" disabled={working} className={secondary} onClick={() => setDeleting(null)}>Avbryt</button><button type="button" disabled={working || dirty} className={`${secondary} text-rose-700`} onClick={() => void run(() => onCostAction('delete_cost_line', { costLineId: line.id })).then(saved => { if (saved) { setDeleting(null); setEditing(null); selectLines([line.id], false); setQuoteLineId(null) } })}>Ta bort</button></div>}
+                </td></tr>}</Fragment>
+              })}</tbody>
+            <tfoot><tr><td colSpan={selectMode ? 3 : 2}>{activePartFilter ? 'Summa hela åtgärden' : 'Summa'}</td><td data-number data-label="Kostnad">{amount(totals.internalCost)}</td><td className="gizmo-cost-total-spacer" /><td data-number data-label="Kundpris">{amount(totals.customerPrice)}</td><td className="gizmo-cost-total-spacer" /></tr></tfoot>
+          </table>
+          {editing && !editing.line && <div className="mt-4"><CostLineForm key={`new-${editing.category}`} category={editing.category} busy={working || dirty} onCancel={() => setEditing(null)} onSave={payload => run(async () => { const saved = await onCostAction('create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /></div>}
           </>}
         </>}
       </div>
@@ -290,8 +300,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
           {scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
         </div>
         {tab === 'cost' && <>
-          <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{item.lumpSum && totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>
-          <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Samlat pris kontrollerat' : 'Samlat pris behöver kontrolleras' : coverage.complete ? 'Alla kalkylrader är kontrollerade' : !item.costLines.length ? 'Kalkyl saknas' : `${coverage.missingQuantity} saknar mängd · ${coverage.missingPrice} saknar pris · ${coverage.unchecked} att kontrollera`}</p>
+          {item.lumpSum && <div className="grid grid-cols-2 gap-3"><div><span className="text-xs text-slate-500">Intern kostnad, exkl. moms</span><strong className="block text-lg">{totals.internalCost === null ? 'Ej angiven' : amount(totals.internalCost)}</strong></div><div><span className="text-xs text-slate-500">Kundpris, exkl. moms</span><strong className="block text-lg">{amount(totals.customerPrice)}</strong></div></div>}
+          <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Klar' : item.lumpSum.customerPrice === null ? 'Pris saknas' : 'Inte klar' : !item.costLines.length ? 'Kalkyl saknas' : [`${item.costLines.filter(line => line.verified || line.coveredByQuoteId).length} av ${item.costLines.length} rader klara`, coverage.missingQuantity ? `${coverage.missingQuantity} saknar mängd` : '', coverage.missingPrice ? `${coverage.missingPrice} saknar pris` : ''].filter(Boolean).join(' · ')}</p>
           {!item.lumpSum && totals.internalCost === null && coverage.knownTotals.internalCost !== null ? <p className="mt-1 text-xs text-slate-500">Prissatt del: {money.format(coverage.knownTotals.internalCost)} intern kostnad</p> : null}
           {selectedLines.length > 30 && onRequest ? <p role="status" className="mt-2 text-xs text-amber-800">{selectedLines.length} valda. Välj högst 30 kalkylrader per offertförfrågan.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
