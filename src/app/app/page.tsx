@@ -1,3 +1,6 @@
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
@@ -147,20 +150,12 @@ function EmptyWorkspaceState() {
   )
 }
 
-async function loadAccessibleProducts() {
-  try {
-    return await getCurrentUserAccessibleProducts()
-  } catch (error) {
-    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      redirect('/login')
-    }
-
-    throw error
-  }
-}
-
 export default async function AppEntryPage() {
-  const products = await loadAccessibleProducts()
+  let products: PlatformEntryProduct[]
+  try { products = await getCurrentUserAccessibleProducts() } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/app')))
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={await currentAuthReturnPath('/app')} productLabel="HusHub" />
+  }
 
   if (products.length === 0) {
     return <EmptyWorkspaceState />

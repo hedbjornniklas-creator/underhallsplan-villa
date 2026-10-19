@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import OrganizationSettingsClient from '@/components/organizations/OrganizationSettingsClient'
@@ -16,8 +18,7 @@ export default async function OrganizationSettingsPage({ searchParams }: { searc
   } catch (failure) {
     const code = failure instanceof Error ? failure.message : ''
     if (code === 'UNAUTHORIZED') {
-      const next = typeof query.orgId === 'string' ? `/settings/organisation?orgId=${encodeURIComponent(query.orgId)}` : '/settings/organisation'
-      redirect(`/login?next=${encodeURIComponent(next)}`)
+      redirect(authLoginUrl(await currentAuthReturnPath('/settings/organisation')))
     }
     errorMessage = ['ORG_MEMBERSHIP_REQUIRED', 'ORG_ADMIN_REQUIRED', 'MODULE_ACCESS_REQUIRED'].includes(code)
       ? 'Du saknar ett aktivt medlemskap eller behörighet i den valda organisationen.'

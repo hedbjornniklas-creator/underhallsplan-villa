@@ -1,3 +1,6 @@
+// @ts-expect-error Node's strip-types runner requires the TypeScript extension.
+import { safeAuthReturnPath } from '../auth/returnPath.ts'
+
 export function normalizeBrfOrgNumber(value: string) {
   const digits = value.replace(/\D/g, '')
   return /^\d{10}$/.test(digits) ? `${digits.slice(0, 6)}-${digits.slice(6)}` : value.trim()
@@ -14,10 +17,11 @@ export function getBrfInviteState(invite: {
 }
 
 export function getRenoAppReturnPath(value: string | null) {
-  if (!value || value.includes('\\') || /[\r\n]/.test(value)) return '/renoapp/app'
-  if (value === '/renoapp/app' || value.startsWith('/renoapp/app/')) return value
-  if (/^\/renoapp\/invite\/[A-Za-z0-9_-]+$/.test(value)) return value
-  return '/renoapp/app'
+  // Preserve existing token invitation acceptance; it is not an app recovery
+  // destination and deliberately accepts no query or fragment.
+  if (typeof value === 'string' && /^\/renoapp\/invite\/[A-Za-z0-9_-]+$/.test(value)) return value
+  const destination = safeAuthReturnPath(value, '/renoapp/app')
+  return destination.startsWith('/renoapp/') ? destination : '/renoapp/app'
 }
 
 export function getBrfVisibilityLabel(brf: { isPublicApplyEnabled: boolean; isPublicApplyListed: boolean }) {

@@ -21,11 +21,11 @@ test('product information has separate public routes, without changing app desti
   assert.equal(PUBLIC_PRODUCTS.renoapp.infoHref, '/renoapp')
 })
 
-test('generic login keeps the original destination allowlist and rejects external or unexpected targets', () => {
-  for (const allowed of ['/dashboard-v1', '/renoapp/app', '/mina-uppdrag']) {
+test('generic login preserves protected application destinations and rejects external or public targets', () => {
+  for (const allowed of ['/dashboard-v1', '/renoapp/app', '/mina-uppdrag', '/admin', '/settings/organisation', '/tu/assignments/example?orgId=company']) {
     assert.equal(getPublicLoginDestination(allowed), allowed)
   }
-  for (const rejected of [undefined, null, '', '/admin', '//example.test', 'https://example.test', '/dashboard-v1/other', ['/dashboard-v1']]) {
+  for (const rejected of [undefined, null, '', '//example.test', 'https://example.test', '/dashboard-v1/other', ['/dashboard-v1']]) {
     assert.equal(getPublicLoginDestination(rejected), '/app')
   }
 })
@@ -41,7 +41,7 @@ test('organization invitation login returns only to the exact token-free invitat
 
 test('organization creation login preserves only the exact local creation route', () => {
   assert.equal(getPublicLoginDestination('/settings/organisation/skapa'), '/settings/organisation/skapa')
-  for (const rejected of ['/settings/organisation', '/settings/organisation/skapa/other',
+  for (const rejected of ['/settings/organisation/skapa/other',
     '/settings/organisation/skapa?orgId=other', '/settings/organisation/skapa#token',
     '//hushub.se/settings/organisation/skapa', 'https://hushub.se/settings/organisation/skapa',
     ['/settings/organisation/skapa']]) {

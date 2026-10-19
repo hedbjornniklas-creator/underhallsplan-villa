@@ -55,12 +55,12 @@ byte ska inte aktiveras förrän alla underliggande flöden stöder det.
 
 ## Inloggning efter inaktivitet
 
-`/dashboard-v1` förnyar sessionen i samma skrivbara proxy som
-`/settings/organisation/skapa`. Förnyade cookies skickas både till den efterföljande
+Startsidan och de övriga skyddade modulerna förnyar sessionen i en skrivbar
+proxy. Förnyade cookies skickas både till den efterföljande
 serverrenderingen och till webbläsaren. Sidans produkt-, organisations- och
 modulbehörigheter kontrolleras fortfarande separat; sessionen ger ingen extra
 behörighet. Saknad eller återkallad session skickas till inloggningen med
-startsidan som återgång.
+den öppnade sidan och säkra frågeparametrar som återgång.
 
 Ett tillfälligt fel vid sessionsförnyelsen visar en återhämtningssida med status
 503 och utan cachelagring, i stället för en omdirigeringsloop. Layouten skiljer
@@ -73,6 +73,8 @@ länk till HusHub. Ny inloggning avslutar först den lokala sessionen, endast ef
 knapptryck, så att den befintliga inloggningen inte skickar användaren tillbaka
 till felet. Vid verklig saknad behörighet hänvisas användaren till företagets
 administratör. Tekniska felmeddelanden och kunduppgifter visas inte på felsidan.
+Se [Gemensam återinloggning](session-recovery.md) för modultäckning och säkra
+returadresser.
 
 ## Karttjänster
 

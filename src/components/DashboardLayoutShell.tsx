@@ -4,6 +4,7 @@ import React from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import Topbar from '@/components/Topbar'
 import OrganizationContextProvider from '@/components/organizations/OrganizationContextProvider'
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
 
 export default function DashboardLayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -14,8 +15,10 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
   const isLandingPage = pathname === '/'
   const isUppdrag = pathname === '/uppdrag' || pathname.startsWith('/uppdrag/')
 
-  if (isEmbed || isLandingPage) {
-    return <OrganizationContextProvider><main className="min-h-screen bg-white">{children}</main></OrganizationContextProvider>
+  if (isLandingPage) return <OrganizationContextProvider><main className="min-h-screen bg-white">{children}</main></OrganizationContextProvider>
+
+  if (isEmbed) {
+    return <OrganizationContextProvider><main className="min-h-screen bg-white"><SessionAccessGuard>{children}</SessionAccessGuard></main></OrganizationContextProvider>
   }
 
   return (
@@ -25,7 +28,7 @@ export default function DashboardLayoutShell({ children }: { children: React.Rea
           <Topbar />
         </div>
         <main className="min-h-0 flex-1 overflow-auto print:block print:min-h-0 print:overflow-visible">
-          {children}
+          <SessionAccessGuard>{children}</SessionAccessGuard>
         </main>
       </div>
     </div></OrganizationContextProvider>

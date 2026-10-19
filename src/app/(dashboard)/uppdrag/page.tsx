@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import TaskDashboardClient from '@/components/tasks/TaskDashboardClient'
 import { requireModuleAccess } from '@/lib/access/server'
@@ -38,7 +40,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    if (message === 'UNAUTHORIZED') redirect('/login')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/uppdrag')))
     initialError = message === 'TASKS_SCHEMA_REQUIRED'
       ? 'Uppdrag-modulens databasmigration behöver köras innan sidan kan användas.'
       : 'Kunde inte läsa uppgifterna just nu.'

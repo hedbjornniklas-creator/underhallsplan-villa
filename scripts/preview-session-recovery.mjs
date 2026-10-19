@@ -14,8 +14,10 @@ await new Promise((ok, fail) => webpack({
   output: { path: output, filename: 'view.js', publicPath: '/' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
     '@/lib/supabaseClient': resolve('test/fixtures/session-recovery-client.ts'),
-    'next/link': resolve('test/helpers/dashboard-navigation.tsx'),
-    'next/navigation': resolve('test/helpers/dashboard-navigation.tsx'),
+    '@/components/auth/PasswordAuthPanel': resolve('test/fixtures/session-recovery-password-panel.tsx'),
+    './PublicFrame': resolve('test/fixtures/session-recovery-frame.tsx'),
+    'next/link': resolve('test/helpers/session-recovery-navigation.tsx'),
+    'next/navigation': resolve('test/helpers/session-recovery-navigation.tsx'),
     '@': resolve('src'),
   } },
   module: { rules: [
@@ -30,11 +32,11 @@ const server = createServer(async (request, response) => {
   if (request.method !== 'GET') { response.writeHead(405); response.end('Synthetic preview writes are disabled'); return }
   if (url.pathname === '/favicon.ico') { response.writeHead(204); response.end(); return }
   if (url.pathname === '/view.js') { response.setHeader('Content-Type', 'text/javascript'); response.end(await readFile(resolve(output, 'view.js'))); return }
-  if (url.pathname === '/login') {
-    response.setHeader('Content-Type', 'text/html; charset=utf-8')
-    response.end('<!doctype html><html lang="sv"><body><h1>Inloggning · syntetisk destination</h1></body></html>'); return
-  }
-  if (!['/', '/dashboard-v1', '/auth/session-unavailable'].includes(url.pathname)) { response.writeHead(404); response.end('Synthetic preview only'); return }
+  const fixed = ['/', '/dashboard-v1', '/app', '/auth/session-unavailable', '/login', '/renoapp/login', '/mina-uppdrag/logga-in', '/mina-uppdrag']
+  const modulePath = /^\/(?:ob|eb|tu|fuktsakerhet|uppdrag|properties|inspections|settings|admin)(?:\/[A-Za-z0-9_-]+)*$/.test(url.pathname)
+  const renoPath = /^\/renoapp\/(?:app(?:\/[A-Za-z0-9_-]+)*|review\/[0-9a-f-]{36})$/i.test(url.pathname)
+  const recipientPath = /^\/mina-uppdrag\/uppdrag\/[0-9a-f-]{36}$/i.test(url.pathname)
+  if (!fixed.includes(url.pathname) && !modulePath && !renoPath && !recipientPath) { response.writeHead(404); response.end('Synthetic preview only'); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
   response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>HusHub · åtkomst · testvy</title><style>html{box-sizing:border-box}*,*::before,*::after{box-sizing:inherit}body{margin:0;font-family:Arial,sans-serif;color:#25313b;background:#f4f6f8}button,a{font:inherit}</style></head><body><div id="root"></div><script src="/view.js"></script></body></html>')
 })

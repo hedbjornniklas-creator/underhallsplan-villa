@@ -1,3 +1,6 @@
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import EbInspectionReportView from '@/components/eb/EbInspectionReportView'
 import EbPublicReportSnapshotView from '@/components/eb/EbPublicReportSnapshotView'
@@ -151,9 +154,8 @@ export default async function EbInspectionDigitalReportPage({
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (message === 'UNAUTHORIZED') redirect('/login')
-    if (message === 'ORG_MEMBERSHIP_REQUIRED') redirect('/dashboard')
-    if (message === 'MODULE_ACCESS_REQUIRED') redirect('/dashboard')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/digital`)))
+    if (authRecoveryReason(error) === 'forbidden') return <DashboardAccessRecovery reason="forbidden" returnTo={await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/digital`)} productLabel="Entreprenadbesiktning" />
     throw error
   }
 }

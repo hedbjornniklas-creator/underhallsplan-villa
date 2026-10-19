@@ -6,6 +6,7 @@ import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
+import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
 
 const require = createRequire(import.meta.url)
 const root = resolve(import.meta.dirname, '..')
@@ -59,6 +60,14 @@ function harness(options: { side?: string; locked?: boolean; accessError?: strin
   } }
   const stubs: Record<string, unknown> = {
     'server-only': {},
+    'next/navigation': { redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) } },
+    '@/components/auth/SessionAccessGuard': (props: Row) => props.children,
+    '@/components/auth/DashboardAccessRecovery': (props: Row) => createElement('section', { 'data-recovery-reason': props.reason }, 'Session recovery'),
+    '@/lib/auth/returnPath': { authLoginUrl },
+    '@/lib/auth/serverRecovery': {
+      currentAuthReturnPath: async () => '/utlatande/00000000-0000-4000-8000-000000000001/00000000-0000-4000-8000-000000000002?orgId=org&embed=1',
+      authRecoveryReason: (error: unknown) => error instanceof Error && ['PRODUCT_ACCESS_REQUIRED', 'MODULE_ACCESS_REQUIRED', 'ORG_MEMBERSHIP_REQUIRED'].includes(error.message) ? 'forbidden' : 'unavailable',
+    },
     'next/headers': { cookies: async () => ({ getAll: () => [] }) },
     '../../_components/AutoPrintTrigger': () => null,
     '../../_components/ReportToolbar': (props: Row) => createElement('nav', { 'data-back-href': props.backHref }, 'Report toolbar'),
@@ -184,10 +193,11 @@ test('diagnostics use the verified user when a supporting query fails', async ()
   assert.doesNotMatch(html, /Session bridge/)
 })
 
-for (const accessError of ['UNAUTHORIZED', 'OB_ORGANIZATION_MISMATCH', 'OB_ORGANIZATION_FORBIDDEN']) {
+for (const accessError of ['UNAUTHORIZED', 'OB_ORGANIZATION_MISMATCH', 'OB_ORGANIZATION_FORBIDDEN', 'MODULE_ACCESS_REQUIRED']) {
   test(`preview still fails closed for ${accessError}`, async () => {
     const h = harness({ accessError })
-    await assert.rejects(h.render(), new RegExp(accessError))
+    if (accessError === 'UNAUTHORIZED') await assert.rejects(h.render(), /REDIRECT:\/login\?next=/)
+    else assert.match(await h.render(), /data-recovery-reason="forbidden"/)
     assert.deepEqual(h.queries, [])
     assert.deepEqual(h.clients, [])
     assert.equal(h.rendered, undefined)
@@ -199,4 +209,13 @@ test('a locked preview without its preserved issuer still refuses current profil
   h.rows.inspection_report_links = []
   await assert.rejects(h.render(), /OB_FROZEN_IDENTITY_REQUIRED/)
   assert.equal(h.liveIdentityReads, 0)
+})
+
+test('an unexpected initial preview access failure offers recovery without loading or leaking the report', async () => {
+  const h = harness({ accessError: 'Synthetic private diagnostic' })
+  const html = await h.render()
+  assert.match(html, /data-recovery-reason="unavailable"/)
+  assert.doesNotMatch(html, /Synthetic private diagnostic|Report rendered/)
+  assert.deepEqual(h.queries, [])
+  assert.deepEqual(h.clients, [])
 })

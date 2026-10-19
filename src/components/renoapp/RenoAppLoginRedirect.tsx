@@ -2,16 +2,14 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { authLoginUrl } from '@/lib/auth/returnPath'
 
 export default function RenoAppLoginRedirect() {
   const router = useRouter()
 
   useEffect(() => {
     const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
-    const safeReturnPath =
-      returnPath === '/renoapp/app' || returnPath.startsWith('/renoapp/app/') ? returnPath : '/renoapp/app'
-
-    router.replace(`/renoapp/login?next=${encodeURIComponent(safeReturnPath)}`)
+    router.replace(authLoginUrl(returnPath))
   }, [router])
 
   return (

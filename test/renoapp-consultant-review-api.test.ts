@@ -3,6 +3,8 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import ts from 'typescript'
+import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
+import { createElement, type ReactNode } from 'react'
 import type * as Service from '../src/lib/renoapp/consultantReviewServer'
 import type * as Access from '../src/lib/renoapp/consultantReviewAccess'
 import type * as Api from '../src/app/api/renoapp/app/cases/[id]/consultant-review/route'
@@ -190,6 +192,13 @@ test('review page preserves the login destination, denies non-admins and renders
   let failure: string | null = 'UNAUTHORIZED', reads = 0
   const page = load<typeof import('../src/app/renoapp/review/[id]/page')>('src/app/renoapp/review/[id]/page.tsx', {
     'next/link': () => null,
+    '@/components/auth/SessionAccessGuard': ({ children }: { children: ReactNode }) => children,
+    '@/components/auth/DashboardAccessRecovery': (props: { reason: string }) => createElement('section', { 'data-recovery-reason': props.reason }, 'Session recovery'),
+    '@/lib/auth/returnPath': { authLoginUrl },
+    '@/lib/auth/serverRecovery': {
+      currentAuthReturnPath: async () => `/renoapp/review/${id}?tab=documents`,
+      authRecoveryReason: (error: unknown) => error instanceof Error && ['PRODUCT_ACCESS_REQUIRED', 'MODULE_ACCESS_REQUIRED', 'FORBIDDEN'].includes(error.message) ? 'forbidden' : 'unavailable',
+    },
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) } },
     '@/lib/renoapp/server': { getRenoAppConsultantCaseDetail: async () => {
       if (failure) throw new Error(failure)
@@ -211,11 +220,16 @@ test('review page preserves the login destination, denies non-admins and renders
     } }) },
   })
   const call = () => page.default({ params: Promise.resolve({ id }) })
-  await assert.rejects(call(), new RegExp(`REDIRECT:/login\\?next=${encodeURIComponent(`/renoapp/review/${id}`)}`))
+  await assert.rejects(call(), error => error instanceof Error && error.message === `REDIRECT:${authLoginUrl(`/renoapp/review/${id}?tab=documents`)}`)
   assert.equal(reads, 0)
   failure = 'MODULE_ACCESS_REQUIRED'
   const { renderToStaticMarkup } = require('react-dom/server')
-  assert.match(renderToStaticMarkup(await call()), /Åtkomst nekad/)
+  assert.match(renderToStaticMarkup(await call()), /data-recovery-reason="forbidden"/)
+  assert.equal(reads, 0)
+  failure = 'Synthetic private diagnostic'
+  const unavailable = renderToStaticMarkup(await call())
+  assert.match(unavailable, /data-recovery-reason="unavailable"/)
+  assert.doesNotMatch(unavailable, /Synthetic private diagnostic/)
   assert.equal(reads, 0)
   failure = null
   const html = renderToStaticMarkup(await call())

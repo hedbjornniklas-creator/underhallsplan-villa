@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import ActionCaseProject from '@/components/tasks/ActionCaseProject'
 import UppdragScope from '@/components/tasks/UppdragScope'
@@ -18,8 +20,8 @@ export default async function ProjectPage({ params, searchParams }: {
 }) {
   const { caseId } = await params
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(caseId)) notFound()
-  const org = await requireOrgContext().catch((error: unknown) => {
-    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
+  const org = await requireOrgContext().catch(async (error: unknown) => {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/uppdrag/${encodeURIComponent(caseId)}`)))
     throw error
   })
   await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'tasks', scopeType: 'organization', scopeId: org.orgId })

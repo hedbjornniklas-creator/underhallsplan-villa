@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import EbInspectionMobileRoundClient from '@/components/eb/EbInspectionMobileRoundClient'
 import { requireModuleAccess } from '@/lib/access/server'
@@ -32,7 +34,7 @@ export default async function EbInspectionRoundPage({
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     if (message === 'UNAUTHORIZED') {
-      redirect('/login')
+      redirect(authLoginUrl(await currentAuthReturnPath(`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/round`)))
     }
     if (message === 'EB_PROJECT_NOT_FOUND' || message === 'EB_INSPECTION_NOT_FOUND') {
       notFound()

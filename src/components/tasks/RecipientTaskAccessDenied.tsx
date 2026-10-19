@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { AlertTriangle, ArrowRight, LoaderCircle, LogOut } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { recipientLoginUrl, recipientTaskPath } from '@/lib/tasks/recipientAuthPaths'
+import { safeAuthReturnPath } from '@/lib/auth/returnPath'
 import { SigneMark } from './SigneMark'
 
 type Props = {
@@ -21,14 +22,17 @@ export default function RecipientTaskAccessDenied({ taskId, signedInEmail }: Pro
   const switchAccount = async () => {
     setBusy(true)
     setError(null)
-    const { error: signOutError } = await supabase.auth.signOut()
-    if (signOutError) {
+    try {
+      const returnTo = safeAuthReturnPath(`${window.location.pathname}${window.location.search}${window.location.hash}`, recipientTaskPath(taskId))
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' })
+      if (signOutError) throw signOutError
+      router.replace(recipientLoginUrl(returnTo))
+      router.refresh()
+    } catch {
       setError('Kunde inte logga ut. Försök igen.')
       setBusy(false)
       return
     }
-    router.replace(recipientLoginUrl(recipientTaskPath(taskId)))
-    router.refresh()
   }
 
   return (

@@ -42,6 +42,13 @@ unchanged. The BRF activation page only explains personal email invitations.
 
 ### Recovery rules
 
+Skyddade styrelse- och konsultsidor använder även HusHubs
+[gemensamma återinloggning](session-recovery.md). Utgången session förnyas före
+behörighetskontrollen. Ny inloggning återgår till den öppnade ärende-/BRF-sidan
+med säkra frågeparametrar; inga medlemskap eller andra behörigheter återställs
+automatiskt. Publika ansöknings- och personliga inbjudningslänkar behåller sina
+egna flöden.
+
 - Active legacy memberships with no normalized board grant receive a grant. Inactive memberships lose board grants. Existing disabled or expired grants are not automatically restored.
 - An admin can explicitly restore access for an active member from the BRF detail page. This action is recorded in history.
 - Older invitations have unknown delivery status. Accepted invitations are not reopened. Expired or failed invitations can be replaced using a new link; the previous unused link is revoked.

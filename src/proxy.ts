@@ -1,8 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-
-const creationPath = '/settings/organisation/skapa'
-const dashboardPath = '/dashboard-v1'
+import { authLoginUrl, isProtectedAppPath, safeAuthReturnPath } from '@/lib/auth/returnPath'
 
 function privateResponse(response: NextResponse) {
   response.headers.set('Cache-Control', 'private, no-store, max-age=0')
@@ -11,23 +9,29 @@ function privateResponse(response: NextResponse) {
   return response
 }
 
-// Refresh these exact RSC entries in a writable request/response boundary,
+// Refresh protected app pages in a writable request/response boundary,
 // before each page's independent access checks read the updated cookies.
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
-  if (pathname !== creationPath && pathname !== dashboardPath) return NextResponse.next()
+  if (!isProtectedAppPath(pathname)) return NextResponse.next()
 
-  let response = NextResponse.next({ request })
+  const returnPath = safeAuthReturnPath(`${pathname}${request.nextUrl.search}`, pathname)
+  // Only this boundary supplies the path consumed by server page/layout guards.
+  // An incoming client header must never choose a different login destination.
+  request.headers.set('x-hushub-return-path', returnPath)
+
+  let response = NextResponse.next({ request: { headers: request.headers } })
   const unavailable = () => {
-    const result = pathname === dashboardPath
-      ? NextResponse.rewrite(new URL('/auth/session-unavailable', request.url), { status: 503 })
-      : new NextResponse('Inloggningen kunde inte kontrolleras. Försök igen om en stund.', { status: 503 })
+    const recoveryUrl = new URL('/auth/session-unavailable', request.url)
+    recoveryUrl.searchParams.set('next', returnPath)
+    const result = NextResponse.rewrite(recoveryUrl, {
+      status: 503, request: { headers: request.headers },
+    })
     response.cookies.getAll().forEach(cookie => result.cookies.set(cookie))
     return privateResponse(result)
   }
   const login = () => {
-    const url = new URL('/login', request.url)
-    url.searchParams.set('next', pathname)
+    const url = new URL(authLoginUrl(returnPath), request.url)
     const redirect = NextResponse.redirect(url)
     // A rejected/revoked session can clear cookies before returning an error.
     // Preserve those clears, including their options, on the redirect too.
@@ -46,7 +50,7 @@ export async function proxy(request: NextRequest) {
         setAll(cookies) {
           cookies.forEach(({ name, value }) => request.cookies.set(name, value))
           const previousCookies = response.cookies.getAll()
-          response = NextResponse.next({ request })
+          response = NextResponse.next({ request: { headers: request.headers } })
           previousCookies.forEach(cookie => response.cookies.set(cookie))
           cookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
         },
@@ -67,4 +71,23 @@ export async function proxy(request: NextRequest) {
   }
 }
 
-export const config = { matcher: ['/settings/organisation/skapa', '/dashboard-v1'] }
+export const config = {
+  matcher: [
+    '/dashboard-v1',
+    '/ob/:path*',
+    '/eb/:path*',
+    '/tu/:path*',
+    '/fuktsakerhet/:path*',
+    '/uppdrag/:path*',
+    '/properties/:path*',
+    '/inspections/:path*',
+    '/utlatande/:propertyId/:inspectionId',
+    '/settings/:path*',
+    '/admin/:path*',
+    '/app',
+    '/renoapp/app/:path*',
+    '/renoapp/review/:id',
+    '/mina-uppdrag',
+    '/mina-uppdrag/((?!logga-in(?:/|$)|aktivera(?:/|$)).*)',
+  ],
+}

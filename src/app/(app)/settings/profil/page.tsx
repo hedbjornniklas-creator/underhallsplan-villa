@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getOrganizationWorkspace } from '@/lib/organizations/administration'
@@ -16,7 +18,7 @@ export default async function MemberProfilePage({ searchParams }: { searchParams
     context = await getOrganizationWorkspace(params.orgId)
     workspace = await getOrganizationProfileWorkspace({ orgId: context.organization.id, orgName: context.organization.name, profileId: context.profileId, role: context.role })
   } catch (error) {
-    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/settings/profil')))
   }
   if (!context || !workspace) {
     return <section className="mx-auto max-w-3xl p-8"><h1 className="text-xl font-semibold">Profilen kunde inte öppnas</h1><p className="my-3">Kontrollera att du har ett aktivt medlemskap i den valda organisationen.</p><Link className="underline" href="/settings/organisation">Till organisationsinställningar</Link></section>

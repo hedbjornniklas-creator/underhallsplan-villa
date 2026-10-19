@@ -1,6 +1,10 @@
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
+import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import { redirect } from 'next/navigation'
 import type { ReactNode } from 'react'
 import { requireModuleAccess } from '@/lib/access/server'
-import RenoAppLoginRedirect from '@/components/renoapp/RenoAppLoginRedirect'
 
 export default async function RenoAppAppLayout({ children }: { children: ReactNode }) {
   try {
@@ -9,27 +13,17 @@ export default async function RenoAppAppLayout({ children }: { children: ReactNo
       moduleKey: 'board_portal',
     })
   } catch (error) {
+    const returnTo = await currentAuthReturnPath('/renoapp/app')
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      return <RenoAppLoginRedirect />
+      redirect(authLoginUrl(returnTo))
     }
 
-    return (
-      <main className="mx-auto w-full max-w-5xl px-6 py-12">
-        <section className="rounded-[28px] border border-rose-200 bg-rose-50 p-8 text-rose-900">
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-500">Atkomst</p>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight">Atkomst nekad</h1>
-          <p className="mt-4 max-w-2xl text-sm leading-7">
-            RenoApps styrelseportal kraver egen behorighet. En giltig session, Dashboard-access eller
-            annan produktaccess racker inte i sig for att oppna den har ytan.
-          </p>
-        </section>
-      </main>
-    )
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={returnTo} productLabel="RenoApp" />
   }
 
   return (
-    <div className="min-h-full">
+    <SessionAccessGuard productLabel="RenoApp"><div className="min-h-full">
       <main className="reno-portal-main">{children}</main>
-    </div>
+    </div></SessionAccessGuard>
   )
 }

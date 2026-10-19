@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import { requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -21,7 +23,7 @@ export default async function ObPublishedDigitalReport({ params, searchParams }:
   let access
   try { access = await requireObInspectionReadContext(id, orgId) }
   catch (error) {
-    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect('/login')
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/ob/inspections/${encodeURIComponent(id)}/digital`)))
     if (error instanceof Error && ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED',
       'OB_ORGANIZATION_FORBIDDEN', 'OB_ORGANIZATION_MISMATCH', 'ORG_SELECTION_INVALID',
       'OB_INSPECTION_INVALID', 'OB_ORGANIZATION_UNASSIGNED'].includes(error.message)) notFound()

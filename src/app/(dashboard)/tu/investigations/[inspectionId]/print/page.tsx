@@ -1,3 +1,5 @@
+import { authLoginUrl } from '@/lib/auth/returnPath'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { notFound, redirect } from 'next/navigation'
 import { getTuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflowServer'
 import TuPrintPreviewToolbar from '@/components/tu/TuPrintPreviewToolbar'
@@ -389,7 +391,7 @@ export default async function TuInvestigationPrintPage({
     ])
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Okänt fel.'
-    if (message === 'UNAUTHORIZED') redirect('/login')
+    if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath(`/tu/investigations/${encodeURIComponent(inspectionId)}/print`)))
     if (message === 'TU_INVESTIGATION_NOT_FOUND') notFound()
     throw error
   }

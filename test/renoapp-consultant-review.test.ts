@@ -80,7 +80,8 @@ test('public and authenticated database roles cannot read orders or call paid-ac
 test('login preserves only valid consultant case links, not arbitrary URLs or open redirects', () => {
   const path = `/renoapp/review/${randomUUID()}`
   assert.equal(getPublicLoginDestination(path), path)
-  for (const rejected of [`${path}/../../admin`, `${path}?next=//evil.test`, `//hushub.se${path}`, `https://evil.test${path}`, '/renoapp/review/not-a-uuid']) {
+  assert.equal(getPublicLoginDestination(`${path}?next=//evil.test`), path)
+  for (const rejected of [`${path}/../../admin`, `//hushub.se${path}`, `https://evil.test${path}`, '/renoapp/review/not-a-uuid']) {
     assert.equal(getPublicLoginDestination(rejected), '/app')
   }
 })

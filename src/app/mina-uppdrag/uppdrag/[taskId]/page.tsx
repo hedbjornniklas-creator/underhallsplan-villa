@@ -1,3 +1,5 @@
+import SessionAccessGuard from '@/components/auth/SessionAccessGuard'
+import { currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import { redirect } from 'next/navigation'
 import TaskRecipientClient from '@/components/tasks/TaskRecipientClient'
 import RecipientTaskAccessDenied from '@/components/tasks/RecipientTaskAccessDenied'
@@ -20,20 +22,20 @@ export default async function RecipientPortalTaskPage({
     session = await requireRecipientPortalSession()
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
-      redirect(recipientLoginUrl(recipientTaskPath(taskId)))
+      redirect(recipientLoginUrl(await currentAuthReturnPath(recipientTaskPath(taskId))))
     }
     throw error
   }
   const workspace = await getRecipientPortalTaskWorkspace(session, taskId)
   if (!workspace) {
-    return <RecipientTaskAccessDenied taskId={taskId} signedInEmail={session.email} />
+    return <SessionAccessGuard productLabel="Mina uppdrag"><RecipientTaskAccessDenied taskId={taskId} signedInEmail={session.email} /></SessionAccessGuard>
   }
 
   return (
-    <TaskRecipientClient
+    <SessionAccessGuard productLabel="Mina uppdrag"><TaskRecipientClient
       initialWorkspace={workspace}
       endpoint={`/api/mina-uppdrag/uppdrag/${encodeURIComponent(taskId)}`}
       backHref="/mina-uppdrag"
-    />
+    /></SessionAccessGuard>
   )
 }
