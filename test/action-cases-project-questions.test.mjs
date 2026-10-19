@@ -333,3 +333,27 @@ test('sharing rejects stale recipient details, deduplicates one person and preve
   await db.query('select * from claim_project_question_delivery($1)',[q])
   assert.equal((await db.query('select status from action_case_question_deliveries where id=$1',[claimed.id])).rows[0].status,'cancelled')
 })
+
+test('conclusion cleanup refuses nonempty data before changing it and restores history immutability for empty fields',async()=>{
+  const cleanup=readFileSync(new URL('../docs/db/2026-10-19_04_project_question_dialogue.sql',import.meta.url),'utf8').split('create or replace function')[0]+'commit;'
+  for (const source of ['empty','body','request','operation']) {
+    const isolated=new PGlite()
+    try {
+      await isolated.exec(`create table action_case_questions(body jsonb);create table action_case_question_events(operation text check(operation in ('create','conclusion')),body jsonb,request jsonb);
+        create function immutable() returns trigger language plpgsql as $$begin raise exception 'IMMUTABLE';end$$;
+        create trigger question_events_immutable before update or delete on action_case_question_events for each row execute function immutable();`)
+      const body={title:'Original',conclusion:source==='body'?'Sparad slutsats':''}, request={body:{conclusion:source==='request'?'Sparad slutsats':''}}
+      await isolated.query('insert into action_case_questions values($1)',[body])
+      await isolated.query('insert into action_case_question_events values($1,$2,$3)',[source==='operation'?'conclusion':'create',body,request])
+      if(source!=='empty') {
+        await assert.rejects(isolated.exec(cleanup),/CONCLUSIONS_EXIST/);await isolated.exec('rollback')
+        assert.deepEqual((await isolated.query('select body from action_case_questions')).rows[0].body,body)
+      } else {
+        await isolated.exec(cleanup)
+        assert.equal((await isolated.query('select body from action_case_questions')).rows[0].body.title,'Original')
+        assert.equal('conclusion' in (await isolated.query('select body from action_case_questions')).rows[0].body,false)
+      }
+      await assert.rejects(isolated.exec("update action_case_question_events set body='{}'"),/IMMUTABLE/)
+    } finally { await isolated.close() }
+  }
+})

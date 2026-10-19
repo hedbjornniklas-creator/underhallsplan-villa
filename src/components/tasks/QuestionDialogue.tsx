@@ -53,6 +53,11 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
     selectionDirty.current = true; setConfirmed(false); setNotice('')
     setSelected(current => checked ? [...current, refKey(p)] : current.filter(key => key !== refKey(p)))
   }
+  async function refresh() {
+    if (running.current || (selectionDirty.current && !window.confirm('Hämta sparade deltagare och kasta dina osparade deltagarval?'))) return
+    selectionDirty.current = false; setConfirmed(false)
+    try { await load(); setError('') } catch (e) { setError(e instanceof Error ? e.message : 'Dialogen kunde inte hämtas.') }
+  }
   async function write(operation: 'participants' | 'share' | 'reply') {
     if (running.current || !data) return
     const payload = { operation, version: operation === 'participants' ? selectionVersion : data.version, text, participants: operation === 'participants' ? chosen.map(p => ({ id: p.id, kind: p.kind })) : [], fileIds: operation === 'participants' ? [] : fileIds, confirmed }
@@ -75,7 +80,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
   const btn = 'gizmo-button', closed = data?.status === 'closed'
   const sharedFiles = files.filter(f => !f.isQuoteDocument)
   return <section className="gizmo-question-dialogue" aria-label={mode === 'participants' ? 'Deltagare i frågan' : 'Frågans dialog'}>
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3>{mode === 'participants' ? 'Deltagare' : 'Dialog'}</h3><button type="button" className={`${btn} gizmo-icon-button`} aria-label="Hämta dialog och deltagare" title="Hämta dialog och deltagare" disabled={busy || selectionDirty.current} onClick={() => void load().then(() => setError('')).catch(e => setError(e.message))}><RefreshCw size={16} /></button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3>{mode === 'participants' ? 'Deltagare' : 'Dialog'}</h3><button type="button" className={`${btn} gizmo-icon-button`} aria-label="Hämta dialog och deltagare" title="Hämta dialog och deltagare" disabled={busy} onClick={() => void refresh()}><RefreshCw size={16} /></button></div>
     {error && <p className="gizmo-question-error" role="alert">{error}</p>}{notice && <p className="gizmo-question-notice" role="status">{notice}</p>}
     {!data ? <p>{error ? 'Dialogen är inte tillgänglig.' : 'Hämtar…'}</p> : <>
       {mode === 'participants' ? <>

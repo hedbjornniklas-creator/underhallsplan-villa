@@ -29,6 +29,35 @@ test('a forged personal link is rejected before any database read',async()=>{
   assert.equal(opened,false)
 })
 
+test('a disabled recipient identity or mismatched contact email blocks an otherwise valid personal link',async()=>{
+  for (const changedEmail of [false,true]) {
+    const reads=[],db={from(table){reads.push(table);const q={select(){return q},eq(){return q},gt(){return q},async maybeSingle(){return {data: table==='action_case_question_participants'?{id:id(8),org_id:ctx.orgId,action_case_id:caseId,question_id:questionId,person_kind:'contact',contact_id:id(9),email:'test@example.invalid'}:table==='organization_contacts'?{email:changedEmail?'other@example.invalid':'test@example.invalid',recipient_identity_id:id(10)}:{status:'disabled'}}}};return q}}
+    const server=load('../src/lib/action-cases/questionDialogueServer.ts',{...base,'./questionDialogueLinks':{parseQuestionLink(){return {participantId:id(8),nonce:id(11)}}},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
+    await assert.rejects(server.getPublicQuestionDialogue('signed-token'),/NOT_FOUND/)
+    assert.ok(!reads.includes('action_case_question_messages'))
+  }
+})
+
+test('question notifications reuse the email shell without inventing a deadline; ordinary task mail remains unchanged',()=>{
+  const {buildTaskEmailHtml}=load('../src/lib/tasks/emailTemplates.ts',{'server-only':{}})
+  const input={previewText:'Ny fråga',eyebrow:'Frågor',heading:'Frågan',recipientName:'Test',lead:'Nytt meddelande',taskTitle:'F-001 <test>',dueLabel:'30 oktober'}
+  const ordinary=buildTaskEmailHtml(input)
+  assert.match(ordinary,/Uppdrag/);assert.match(ordinary,/Slutdatum/);assert.match(ordinary,/30 oktober/)
+  const question=buildTaskEmailHtml({...input,itemLabel:'Fråga',dueLabel:null})
+  assert.doesNotMatch(question,/Slutdatum/);assert.match(question,/F-001 &lt;test&gt;/);assert.doesNotMatch(question,/<test>/)
+})
+
+test('public dialogue projects only shared content and names, never internal draft text, email or directory identities',async()=>{
+  const member={id:id(8),org_id:ctx.orgId,action_case_id:caseId,question_id:questionId,person_kind:'contact',person_id:id(9),contact_id:id(9),name:'Testmottagare',email:'private@example.invalid',shared:true}
+  const reads=[],db={from(table){reads.push(table);const q={select(){return q},eq(){return q},gt(){return q},order(){return q},in(key,value){assert.equal(key,'operation');assert.deepEqual(value,['share','reply']);return q},async maybeSingle(){return {data:table==='action_case_question_participants'?member:table==='organization_contacts'?{email:member.email,recipient_identity_id:null}:table==='action_case_questions'?{body:{status:'open',description:'HEMLIG INTERN ÄNDRING'}}:{version:2,shared_body:{title:'Delad fråga',description:'Delat underlag'},shared_at:'2026-10-19T10:00:00Z'}}},async range(){return {data:table==='action_case_question_participants'?[member]:[{id:id(20),participant_id:member.id,actor_name:member.name,actor_method:'personal_link',operation:'reply',message:'Delat svar',created_at:'2026-10-19T10:01:00Z',snapshot:null,files:[]}]}}};return q}}
+  const server=load('../src/lib/action-cases/questionDialogueServer.ts',{...base,'./questionDialogueLinks':{parseQuestionLink(){return {participantId:member.id,nonce:id(11)}}},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
+  const result=await server.getPublicQuestionDialogue('signed-token')
+  assert.equal(result.snapshot.description,'Delat underlag');assert.equal(result.messages[0].text,'Delat svar')
+  assert.equal(result.participants[0].email,null);assert.equal(result.participants[0].personId,'');assert.equal(result.canManage,false)
+  assert.doesNotMatch(JSON.stringify(result),/HEMLIG|private@example|00000000-0000-4000-8000-000000000009/)
+  assert.ok(!reads.includes('action_case_question_events'));assert.ok(!reads.includes('action_case_question_deliveries'))
+})
+
 test('project manager appointment is administrator-only and rechecked atomically, with a retry-safe expected manager',async()=>{
   let admin=false, current=null;const writes=[]
   const db={from(table){const q={select(){return q},eq(){return q},async maybeSingle(){return {data:table==='org_members'?{role:admin?'admin':'inspector'}:{id:caseId,manager_profile_id:current}}}};return q},async rpc(name,args){writes.push({name,args});current=args.p_manager_id;return {data:caseId}}}

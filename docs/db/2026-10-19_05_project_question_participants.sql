@@ -294,7 +294,7 @@ begin
   update public.action_case_question_deliveries d set status='cancelled',claimed_until=null
     where d.status in ('pending','failed','sending') and not exists(
       select 1 from public.action_case_question_participants p where p.id=d.participant_id and p.active and p.shared and p.link_nonce=d.link_nonce and p.email=d.recipient_email
-      and p.link_expires_at>now()
+      and (p.person_kind='profile' or p.link_expires_at>now())
       and ((p.person_kind='profile' and exists(select 1 from public.profiles pr join public.org_members om on om.profile_id=pr.id and om.org_id=p.org_id and om.is_active where pr.id=p.person_id and lower(btrim(pr.email))=lower(btrim(p.email))))
         or (p.person_kind<>'profile' and exists(select 1 from public.organization_contacts oc where oc.id=p.contact_id and oc.org_id=p.org_id and oc.is_active and lower(btrim(oc.email))=lower(p.email))))
     );
