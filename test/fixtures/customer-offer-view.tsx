@@ -67,6 +67,8 @@ async function start() {
           </a>
         </div>
         {projects ? <div className="gizmo-workspace">
+          {params.has('overview-test') && <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/overview-control', { method: 'POST' })}>Simulera nästa frågeläsfel</button><a className="ml-4 underline" target="_blank" rel="noreferrer" href="/__test__/overview-integrity">Visa avtalskontroll</a></div>}
+          <div style={params.has('overview-test') ? { display: 'none' } : undefined}>
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/fail-save', { method: 'POST' })}>Simulera nästa sparfel</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={() => void fetch('/__test__/slow-save', { method: 'POST' })}>Simulera långsam sparning</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={async () => {
@@ -75,6 +77,7 @@ async function start() {
             await start()
           }}>Simulera avbruten redigerare</button></div>
           <div className="px-4 py-2 text-xs"><button onClick={async () => { await fetch('/__test__/accept-contract', { method: 'POST' }); location.reload() }}>Simulera godkänt avtal</button></div>
+          </div>
           {project ? <ActionCaseProject key={editorGeneration} caseId={project.id} initialWorkspace={projectWorkspace} initialOffer={workspace}
             initialView={parseProjectView(params.get('view'))} issuerName="Exempelbygg AB" replyEmail="byggare@example.test" contractorSource={contractorSource} />
             : <main className="gizmo-index-inner"><p className="gizmo-eyebrow">Gizmo</p><h1>Projekt</h1><ActionCaseWorkspace initialWorkspace={projectWorkspace} initialError={null} /></main>}

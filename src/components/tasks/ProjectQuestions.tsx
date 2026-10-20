@@ -14,9 +14,10 @@ const labels: Record<string, string> = { create: 'Fråga registrerad', update: '
 const taskLabels: Record<string, string> = { draft: 'Utkast', assigned: 'Tilldelad', in_progress: 'Pågår', waiting: 'Väntar', ready_for_review: 'Svar inväntar granskning', returned: 'Återlämnad', approved: 'Hantering klar', cancelled: 'Avbruten' }
 const button = 'gizmo-button', field = 'gizmo-question-field'
 const stamp = (value: string) => formatTaskDateTime(value, 'Europe/Stockholm', 'compact')
+export type QuestionOpenRequest = { id: string | null; token: number }
 
-export default function ProjectQuestions({ caseId, active, refreshKey = 0, files, onDirty }: {
-  caseId: string; active: boolean; refreshKey?: number; files: ActionCaseAttachmentView[]; onFiles: (files: ActionCaseAttachmentView[]) => void; onDirty: (dirty: boolean) => void
+export default function ProjectQuestions({ caseId, active, refreshKey = 0, openRequest, files, onDirty }: {
+  caseId: string; active: boolean; refreshKey?: number; openRequest?: QuestionOpenRequest | null; files: ActionCaseAttachmentView[]; onFiles: (files: ActionCaseAttachmentView[]) => void; onDirty: (dirty: boolean) => void
 }) {
   const [data, setData] = useState<QuestionWorkspace | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<string | null>(null), [search, setSearch] = useState(''), [filter, setFilter] = useState('active')
@@ -31,6 +32,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, files
   const titleInput = useRef<HTMLInputElement>(null)
   const headingId = useId(), focusBefore = useRef<HTMLElement | null>(null), initialized = useRef(false)
   const loadedKey = useRef<number | null>(null)
+  const handledOpen = useRef<number | null>(null)
   const question = data?.questions.find(q => q.id === selected)
   const openSaved = useRef<string | null>(null)
   openSaved.current = question?.id || null
@@ -40,6 +42,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, files
     try {
       const r = await fetch(`/api/action-cases/${caseId}/questions`, { signal, cache: 'no-store' }), next = await r.json()
       if (!r.ok) throw new Error(next.error || 'Frågorna kunde inte hämtas.')
+      if (signal?.aborted) return
       if (openSaved.current && !next.questions.some((q: ProjectQuestion) => q.id === openSaved.current)) { setSelected(null); setDraft(emptyQuestion()); setMessage(''); setFileIds([]); setDialogueDirty(false) }
       setData(next); setError(''); initialized.current = true
       return next as QuestionWorkspace
@@ -47,7 +50,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, files
     finally { if (!signal?.aborted) setLoading(false) }
   }, [caseId])
   const dialogueChanged = useCallback(() => { void refresh() }, [refresh])
-  useEffect(() => { if (!active || (initialized.current && loadedKey.current === refreshKey)) return; loadedKey.current = refreshKey; const c = new AbortController(); void refresh(c.signal); return () => c.abort() }, [active, refresh, refreshKey])
+  useEffect(() => { if (!active || (openRequest && handledOpen.current !== openRequest.token) || (initialized.current && loadedKey.current === refreshKey)) return; loadedKey.current = refreshKey; const c = new AbortController(); void refresh(c.signal); return () => c.abort() }, [active, refresh, refreshKey, openRequest])
   useEffect(() => { onDirty(dirty || busy) }, [dirty, busy, onDirty])
   useEffect(() => {
     if (!dirty && !busy) return
@@ -66,6 +69,27 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, files
   useEffect(() => { if (selected && active && !question && !busy) titleInput.current?.focus() }, [selected, active, question, busy])
   function reset(next: QuestionBody) { setDraft(next); setBaseline(JSON.stringify(next)); setFileIds([]); setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); setMode('details'); setDialogueDirty(false); pending.current = null }
   function open(q?: ProjectQuestion) { focusBefore.current = document.activeElement as HTMLElement; reset(q ? structuredClone(q.body) : emptyQuestion()); setSelected(q?.id || crypto.randomUUID()); setNotice(''); setError('') }
+  const openContext = useRef({ open, dirty, busy })
+  openContext.current = { open, dirty, busy }
+  useEffect(() => {
+    if (!active || !openRequest || handledOpen.current === openRequest.token) return
+    if (openContext.current.dirty || openContext.current.busy) {
+      handledOpen.current = openRequest.token
+      setError('Stäng eller spara den öppna frågan innan du öppnar en annan.')
+      return
+    }
+    const controller = new AbortController()
+    // Recheck membership before opening a question reached from the overview.
+    void refresh(controller.signal).then(next => {
+      if (!next || controller.signal.aborted) return
+      handledOpen.current = openRequest.token
+      if (openContext.current.dirty || openContext.current.busy) return
+      const requested = next.questions.find(q => q.id === openRequest.id)
+      if (openRequest.id && !requested) { setError('Frågan är inte längre tillgänglig för dig.'); return }
+      openContext.current.open(requested)
+    })
+    return () => controller.abort()
+  }, [active, openRequest, refresh])
   function close() { if (running.current || busy || (dirty && !window.confirm('Stäng frågan med osparade ändringar?'))) return; setSelected(null); setError('') }
   function patch(value: Partial<QuestionBody>) { setDraft(d => ({ ...d, ...value })) }
   function switchMode(next: string) {

@@ -44,7 +44,7 @@ import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } 
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve('tmp/customer-offer-ui')
+const output = resolve(process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
 await mkdir(output, { recursive: true })
 await writeFile(resolve(output, '.gitignore'), '*\n')
 await new Promise((done, reject) =>
@@ -81,10 +81,10 @@ await new Promise((done, reject) =>
   )
 )
 const { css: base } = await postcss([tailwind()]).process(
-  await readFile('src/app/globals.css', 'utf8'),
+  process.argv.includes('--project-overview') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')) + (await readFile('src/components/tasks/project-overview.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -309,6 +309,23 @@ if (process.argv.includes('--question-dates')) {
   ] })
 }
 const questionRequests = new Map()
+let overviewReadFailure = false
+if (process.argv.includes('--project-overview')) {
+  const date = days => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
+  projects.cases[0].title = 'TEST: Projektöversikt – Nästa steg'
+  projects.cases[0].attachments = []
+  projects.cases[0].items.forEach(item => { item.lumpSum = { internalCost: null, customerPrice: 832000, vatRate: 25, verified: false }; item.customerPrice = 832000 })
+  state.draft.baseAmountOre = 200000000; state.draft.pricingMode = 'total'; delete state.draft.contractPricing
+  state.draft.paymentPlan = { version: 1, installments: [{ id: id(80), title: 'Efter färdig grund', condition: '', plannedDate: '', amountOre: 99000000 }, { id: id(81), title: 'Efter tätt tak', condition: '', plannedDate: '', amountOre: 99000000 }] }
+  state.offers = [published(state.draft)]
+  state.planning.items = [{ id: id(850), title: 'Fönster A', scope: 'Fiktivt underlag', status: 'planned', budgetOre: 10000000, decisionBy: '', optionGroup: 'Fönster' }, { id: id(851), title: 'Fönster B', scope: 'Fiktivt underlag', status: 'planned', budgetOre: 12000000, decisionBy: '', optionGroup: 'Fönster' }]
+  state.planning.categories = [{ id: id(850), title: 'Fönster', specification: 'TEST', optionIds: [id(850), id(851)], decisionBy: date(3) }]
+  state.planning.sharedItems = []; delete state.planning.sharedChoices
+  const body = { ...emptyQuestion(), title: 'Fastställ placering av VVB', description: 'TEST: Kan varmvattenberedaren placeras över badrummet?', assignee: questionData.assignees[1] }
+  questionData.questions.push({ id: id(950), number: 1, revision: 1, body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), participants: [fakeMember(questionData.assignees[0])], events: [], tasks: [{ id: id(960), status: 'assigned', active: true, dueAt: `${date(-1)}T10:00:00Z`, assigneeName: 'VVS Test', events: [], files: [] }] })
+  schedule.rows = [['Projektering', -1, 8, 'in_progress'], ['Mark och grund', 12, 23, 'planned'], ['Stomme', 19, 30, 'planned'], ['Tak', 26, 37, 'planned'], ['Ventilation', null, null, 'planned']].map(([title, from, to, status], index) => ({ id: id(970 + index), title, phase: '', startDate: from === null ? '' : date(from), endDate: to === null ? '' : date(to), status, sourceItemId: null }))
+}
+const overviewContractBaseline = JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions })
 let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
 const sharingRequests = new Map()
 const sharingWorkspace = () => ({ ...customerSharing, canEdit: questionData.managerId === questionData.userId, managerId: questionData.managerId,
@@ -353,7 +370,12 @@ const server = createServer(async (req, res) => {
   if (path.endsWith('/manager') && req.method === 'GET') { json(fakeManager()); return }
   const dialogueId = path.match(/\/questions\/([^/]+)\/dialogue$/)?.[1]
   if (dialogueId && req.method === 'GET') { const q = questionData.questions.find(q => q.id === dialogueId); json(q ? getDialogue(q) : { error: 'Saknas' }, q ? 200 : 404); return }
-  if (path.endsWith('/questions') && req.method === 'GET') { json(questionData); return }
+  if (path.endsWith('/questions') && req.method === 'GET') {
+    if (overviewReadFailure) { overviewReadFailure = false; json({ error: 'Fiktivt läsfel' }, 503); return }
+    json(questionData); return
+  }
+  if (path === '/__test__/overview-control' && req.method === 'POST' && process.argv.includes('--project-overview')) { overviewReadFailure = true; json({ ok: true }); return }
+  if (path === '/__test__/overview-integrity' && req.method === 'GET' && process.argv.includes('--project-overview')) { json({ contractUnchanged: JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions }) === overviewContractBaseline, writes }); return }
   if (path === '/__test__/question-task-response' && req.method === 'POST') {
     const task = questionData.questions.flatMap(q => q.tasks)[0]
     if (!task) { json({ error: 'Skapa en fiktiv uppgift först.' }, 409); return }

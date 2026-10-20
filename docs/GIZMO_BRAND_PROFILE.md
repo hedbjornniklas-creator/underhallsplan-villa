@@ -55,6 +55,11 @@ kompakta rader, synlighetsstatus i ord och ett reglage per kundflik. Bara
 projektansvarig kan ändra; sparning sker automatiskt med fel och återförsök i
 en fast statusyta. Visa som beställare visar faktiskt delat material för vald
 beställare, inte avtalsutkast. Se [Delning](gizmo-customer-sharing.md).
+Beslut 2026-10-20: Översikt använder den godkända varianten Nästa steg med
+oinramade informationsytor, cirkeldiagram, rundade tidsstaplar och diskreta
+datumstatusfärger. Registerflikarna och alla befintliga redigerare behålls.
+Undantaget gäller endast den interna översikten, inte Projektarbetets tabeller,
+avtalet eller kundens sida. Se [Projektöversikt](gizmo-project-overview.md).
 
 ## Listor och dator
 

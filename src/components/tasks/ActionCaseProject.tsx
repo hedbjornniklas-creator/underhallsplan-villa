@@ -6,16 +6,16 @@ import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, Folde
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCaseWorkspace, ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
-import { customerOfferBaseAmount, customerPriceLabel, money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
-import { parseProjectView, projectNeeds, projectStatus, projectUrl, type ProjectView } from '@/lib/action-cases/projectNavigation'
+import type { CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
+import { parseProjectView, projectUrl, type ProjectView } from '@/lib/action-cases/projectNavigation'
 import ActionCaseWorkspaceTools from './ActionCaseWorkspace'
 import CustomerOfferEditor, { type CustomerEditorView } from './CustomerOfferEditor'
 import ProjectScheduleEditor from './ProjectScheduleEditor'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import type { ContractContractor } from '@/lib/action-cases/customerContractParties'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
-import ProjectQuestions from './ProjectQuestions'
-import ProjectManagerField from './ProjectManagerField'
+import ProjectQuestions, { type QuestionOpenRequest } from './ProjectQuestions'
+import ProjectOverview from './ProjectOverview'
 import ProjectCustomerSharing from './ProjectCustomerSharing'
 
 const sections = [
@@ -63,6 +63,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [questionsDirty, setQuestionsDirty] = useState(false)
   const [sharingDirty, setSharingDirty] = useState(false)
   const [questionsRefresh, setQuestionsRefresh] = useState(0)
+  const [questionOpenRequest, setQuestionOpenRequest] = useState<QuestionOpenRequest | null>(null)
   const managerChanged = useCallback(() => setQuestionsRefresh(v => v + 1), [])
   const questionFiles = useCallback((files: ActionCaseAttachmentView[]) => {
     setWorkspace(current => ({ ...current, cases: current.cases.map(c => c.id === caseId ? { ...c, attachments: files } : c) }))
@@ -132,13 +133,13 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const published = offer?.offers.find((item) => item.status === 'published')
   const paper = activeSigningVersion(offer?.signingVersions)
   const contract = accepted ?? published ?? paper
-  const offerLabel = !offer ? 'Kunde inte hämtas' : accepted ? 'Godkänt grundavtal' : published ? published.sentAt ? 'Skickat avtal' : 'Publicerat avtal'
-    : paper?.delivery?.signedCopy ? 'Underskriven kopia registrerad' : paper?.delivery?.sharedAt && !paper.delivery.withdrawnAt ? 'Låst och delat avtal' : paper ? 'Låst avtal · Inte delat' : 'Internt avtalsutkast'
-  const priceDraft = contract?.snapshot ?? offer?.draft
-  const customer = offer?.recipient ?? project.participants.find((item) => item.role === 'customer')
   const currentSection = view === 'review' ? 'contract' : view === 'offerReview' ? 'offer' : view
   const sectionLabel = view === 'customer' ? 'Visa som beställare' : view === 'review' ? 'Granska avtal' : view === 'offerReview' ? 'Granska offert' : sections.find((item) => item.key === view)?.label
   const open = (next: ProjectView, label: string) => <button className="gizmo-text-button" onClick={() => navigate(next)}>{label}<ArrowRight size={17} /></button>
+  function openQuestion(id: string | null) {
+    setQuestionOpenRequest(current => ({ id, token: (current?.token ?? 0) + 1 }))
+    navigate('questions')
+  }
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
@@ -176,18 +177,10 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); navigate(key) } }}><Icon size={18} /><span>{label}</span></a>)}
       </nav>
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
-        <section hidden={view !== 'overview'}>
-          <div className="gizmo-section-heading"><h2>Översikt</h2><span className="gizmo-secondary">{projectStatus[project.status]}</span></div>
-          <ProjectManagerField caseId={caseId} active={view === 'overview'} disabled={questionsDirty || sharingDirty} onChanged={managerChanged} />
-          <dl className="gizmo-overview-facts"><div><dt>Beställare</dt><dd>{customer?.name ?? project.customerName}</dd><dd>{customer?.email ?? project.customerEmail ?? 'E-post saknas'}</dd></div><div><dt>{offerLabel}</dt><dd>{priceDraft ? customerPriceLabel(priceDraft) : 'Belopp saknas'}</dd><dd>{priceDraft?.contractPricing?.mode === 'running' ? 'Enligt avtalets prisgrunder' : priceDraft?.contractPricing?.mode === 'mixed' ? 'Fast del inkl. moms + löpande del' : 'Grundåtagande inkl. moms'}</dd></div><div><dt>Underlag</dt><dd>{project.items.length} åtgärder</dd><dd>{project.attachments.length} bilder och filer</dd></div></dl>
-          <div className="gizmo-overview-row"><div><h3>Projektarbete</h3><p>{projectNeeds(project)}</p></div>{open('work', 'Öppna projektarbete')}</div>
-          <div className="gizmo-overview-row"><div><h3>Offert</h3><p>{estimate ? `${estimate.draft.items.filter((item) => item.kind === 'included').length} arbetsdelar · ${money(customerOfferBaseAmount(estimate.draft))}` : 'Kunde inte hämtas'}</p></div>{open('offer', 'Öppna offert')}</div>
-          <div className="gizmo-overview-row"><div><h3>Avtal</h3><p>{offerLabel}{accepted ? ` · Version ${accepted.version}` : ''}</p></div>{open('contract', 'Öppna avtal')}</div>
-          <div className="gizmo-overview-row"><div><h3>Val och tillval</h3><p>{offer?.planning?.available ? `${offer.planning.items.length} planerade · ${offer.planning.sharedItems.length} delade med beställaren` : 'Ingen tillgänglig planering'}</p></div>{open('choices', 'Öppna val och tillval')}</div>
-          <div className="gizmo-overview-row"><div><h3>Betalning och fakturering</h3><p>{(contract ? contract.snapshot.paymentPlan : offer?.draft.paymentPlan)?.installments.length ?? 0} delbetalningar{contract ? ' · i avtalsversionen' : ' · internt utkast'}</p></div>{open('payments', 'Öppna betalning och fakturering')}</div>
-        </section>
+        <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh}
+          questionsDirty={questionsDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
-        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
+        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
           customerRefresh={customerRefresh}
