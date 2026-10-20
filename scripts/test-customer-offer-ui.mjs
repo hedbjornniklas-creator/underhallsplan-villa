@@ -40,6 +40,7 @@ import { emptyQuestion, questionMutation } from '../src/lib/action-cases/project
 import { normalizeCostLine } from '../src/lib/action-cases/costing.ts'
 import { calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
 import { costCompletionPayload } from '../src/lib/action-cases/costCompletion.ts'
+import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } from '../src/lib/action-cases/customerSharing.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -83,7 +84,7 @@ const { css: base } = await postcss([tailwind()]).process(
   await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -308,13 +309,29 @@ if (process.argv.includes('--question-dates')) {
   ] })
 }
 const questionRequests = new Map()
+let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
+const sharingRequests = new Map()
+const sharingWorkspace = () => ({ ...customerSharing, canEdit: questionData.managerId === questionData.userId, managerId: questionData.managerId,
+  recipients: projects.cases[0].participants.filter(p => p.role === 'customer').map(({id,name,email}) => ({id,name,email})) })
+const externalContracts = () => state.signingVersions?.filter(v => v.delivery?.sharedAt && !v.delivery.withdrawnAt).map(v => ({
+  document: mapCustomerOffer({id:v.id,version:v.version,status:'published',snapshot:v.snapshot,files:v.files,published_at:v.delivery.sharedAt}),
+  createdAt:v.createdAt,releasedAt:v.releasedAt,sharedAt:v.delivery.sharedAt,signedCopyRegisteredAt:v.delivery.signedCopy?.registeredAt??null }))
+function customerPortal(participantId) {
+  const project = projects.cases[0], participant = project.participants.find(p => p.role === 'customer' && p.id === participantId)
+  if (!participant) return null
+  return projectCustomerPortal({ accessState: 'open', participant,
+    actionCase: { id: project.id, title: project.title, propertyAddress: project.propertyAddress, description: null, status: project.status, items: [],
+      attachments: project.attachments.filter(f => f.grantedParticipantIds.includes(participant.id)), schedule: schedule.sharedRows },
+    customerOffers: { enabled: true, offers: state.offers, externalContracts: externalContracts(), plannedItems: state.planning.sharedItems, plannedChoices: state.planning.sharedChoices }
+  }, customerSharing)
+}
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
     const query = new URL(req.url, 'http://localhost').searchParams
-    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions','work'].includes(query.get('view')) ? query.get('view') : 'contract'}`
+    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions','work','sharing','customer','overview'].includes(query.get('view')) ? query.get('view') : 'contract'}`
     res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="${target}"></iframe></body></html>`)
     return
   }
@@ -328,6 +345,11 @@ const server = createServer(async (req, res) => {
     choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
   }
   if (path === '/project-fixture') { json(projects); return }
+  if (path.endsWith('/sharing') && req.method === 'GET') { json(sharingWorkspace()); return }
+  if ((path.endsWith('/sharing/preview') || path === '/__test__/customer-portal') && req.method === 'GET') {
+    const recipient = path.endsWith('/sharing/preview') ? new URL(req.url, 'http://localhost').searchParams.get('participantId') : sharingWorkspace().recipients[0]?.id
+    const portal = customerPortal(recipient); json(portal || { error: 'Beställaren saknas.' }, portal ? 200 : 404); return
+  }
   if (path.endsWith('/manager') && req.method === 'GET') { json(fakeManager()); return }
   const dialogueId = path.match(/\/questions\/([^/]+)\/dialogue$/)?.[1]
   if (dialogueId && req.method === 'GET') { const q = questionData.questions.find(q => q.id === dialogueId); json(q ? getDialogue(q) : { error: 'Saknas' }, q ? 200 : 404); return }
@@ -395,7 +417,21 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
-    if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name') || path.endsWith('/sharing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
+    if (path.endsWith('/sharing')) {
+      const before = JSON.stringify({ state, projects })
+      if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Dina val är kvar.' }, 503); return }
+      const request = visibilityMutation(body), prior = sharingRequests.get(request.requestId)
+      if (questionData.managerId !== questionData.userId) { json({ error: 'Bara projektansvarig kan ändra delning.' }, 403); return }
+      if (prior && prior.request !== JSON.stringify(request)) { json({ error: 'Gammalt försök.' }, 409); return }
+      if (!prior && request.revision !== customerSharing.revision) { json({ error: 'Delningen har ändrats i en annan flik.' }, 409); return }
+      if (!prior) {
+        customerSharing = { ...customerSharing, revision: customerSharing.revision + 1, tabs: { ...customerSharing.tabs, [request.section]: request.visible }, updatedAt: new Date().toISOString(), updatedBy: questionData.userId }
+        sharingRequests.set(request.requestId, { request: JSON.stringify(request), revision: customerSharing.revision })
+      }
+      assert.equal(JSON.stringify({ state, projects }), before)
+      json({ requestId: request.requestId, acknowledgedRevision: sharingRequests.get(request.requestId).revision, workspace: sharingWorkspace() }); return
+    }
     writes.push(path.endsWith('/name') ? 'rename_project' : path.endsWith('/customer-choices') ? 'record_choice' : body.operation ?? body.action ?? `billing_${body.mode}`)
     if (path.endsWith('/manager')) {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel.' }, 503); return }

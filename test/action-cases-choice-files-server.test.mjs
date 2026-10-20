@@ -50,6 +50,7 @@ function harness(options = {}) {
     } } }
   }
   const deps = { 'server-only': {}, 'node:crypto': crypto, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/assignments/tokens': { hashAssignmentToken: token => crypto.createHash('sha256').update(token).digest('hex') }, './customerOffers': domain, './customerPlanning': planning }
+  deps['./customerSharingServer'] = { async requireCustomerSectionForToken() { if (options.hidden) throw Error('CUSTOMER_SHARING_HIDDEN') } }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', code)(name => { assert.ok(name in deps, name); return deps[name] }, mod, mod.exports)
   const share = () => mod.exports.writeCustomerChoiceFiles(ctx, caseId, 'share', { revision: 2, items: [item], optionFiles: [ref], confirmed: true }, [item])
@@ -112,4 +113,10 @@ test('downloads check the link on every access, verify bytes and emit safe nonca
   const revoked = harness({ revoked: true }); await assert.rejects(revoked.customerChoiceFile({ token: 'A'.repeat(43), fileId: id(6) }), /CLOSED/)
   const corrupt = harness({ reuse: true, corruptCopy: true }); await assert.rejects(corrupt.customerChoiceFile({ token: 'A'.repeat(43), fileId: id(6) }), /FILES/)
   const wrong = harness({ wrongCase: true }); await assert.rejects(wrong.customerChoiceFile({ ctx, caseId, fileId: id(6) }), /NOT_FOUND/)
+})
+
+test('hidden choices deny an old direct PDF link before file RPC or storage access', async () => {
+  const h = harness({ hidden: true, reuse: true })
+  await assert.rejects(h.customerChoiceFile({ token: 'A'.repeat(43), fileId: id(6) }), /SHARING_HIDDEN/)
+  assert.deepEqual(h.calls, []); assert.deepEqual(h.reads, [])
 })

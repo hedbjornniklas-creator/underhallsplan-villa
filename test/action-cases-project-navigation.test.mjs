@@ -17,7 +17,7 @@ test('questions follow the schedule in project navigation without changing deep 
   const source = readFileSync(new URL('../src/components/tasks/ActionCaseProject.tsx', import.meta.url), 'utf8')
   const section = source.slice(source.indexOf('const sections = ['), source.indexOf('] as const'))
   const keys = [...section.matchAll(/key: '([^']+)'/g)].map(match => match[1])
-  assert.deepEqual(keys, ['overview', 'work', 'offer', 'contract', 'choices', 'payments', 'schedule', 'questions', 'files'])
+  assert.deepEqual(keys, ['overview', 'work', 'offer', 'contract', 'choices', 'payments', 'schedule', 'questions', 'files', 'sharing'])
   assert.equal(navigation.projectUrl('project-a', 'questions'), '/uppdrag/project-a?view=questions')
 })
 

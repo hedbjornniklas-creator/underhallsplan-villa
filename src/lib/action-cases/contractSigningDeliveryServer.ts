@@ -1,4 +1,5 @@
 import 'server-only'
+import { requireCustomerSection } from './customerSharingServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
@@ -142,6 +143,7 @@ export async function downloadSharedSigningFile(token: string, id: string, fileI
   const recipient = await db.from('action_case_participants').select('id').eq('org_id', a.org_id).eq('action_case_id', a.action_case_id).eq('id', a.participant_id).eq('role', 'customer').maybeSingle()
   checked(recipient.error)
   if (!recipient.data) throw new Error('CUSTOMER_OFFER_NOT_FOUND')
+  await requireCustomerSection(a.org_id, a.action_case_id, 'contract')
   const grant = await delivery(ctx, a.action_case_id, offerId(id))
   if (!grant?.shared_at || grant.withdrawn_at || grant.participant_id !== a.participant_id) throw new Error('CUSTOMER_OFFER_NOT_FOUND')
   if (fileId !== 'pdf') return downloadContractSigningFile(ctx, a.action_case_id, id, offerId(fileId))

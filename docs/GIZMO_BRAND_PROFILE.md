@@ -33,7 +33,7 @@ separata tvärgående vyer. Länkar till en specifik befintlig uppgift öppnar f
 uppgiften i Aktuellt; uppgifter och projekt slås inte ihop i databasen.
 
 Projektnavigering: Översikt, Projektarbete, Offert, Avtal, Val och tillval,
-Betalning och fakturering, Tidsplan, Frågor och beslut, Bilder och filer. Registerflikarna ligger
+Betalning och fakturering, Tidsplan, Frågor och beslut, Bilder och filer, Delning. Registerflikarna ligger
 över arbetsytan på både dator och mobil. Visa som beställare är en avskild
 förhandsgranskningshandling i projekthuvudet. Kundens sida har inte intern meny.
 Granska grundavtal hör till Avtal, inte till ytterligare en projektnivå.
@@ -50,6 +50,11 @@ nästa öppnar ett tomt formulär först efter bekräftad sparning. Se
 Beslut 2026-10-19: Projektansvarig ligger under Översikt. Frågans deltagare och
 delade dialog visas i samma högerpanel, med Intern anteckning och Intern
 historik separerade från kunddialogen. Se [Frågedialog och deltagare](gizmo-question-dialogue.md).
+Beslut 2026-10-20: Delning ligger sist och använder Tydlig tabell med fem
+kompakta rader, synlighetsstatus i ord och ett reglage per kundflik. Bara
+projektansvarig kan ändra; sparning sker automatiskt med fel och återförsök i
+en fast statusyta. Visa som beställare visar faktiskt delat material för vald
+beställare, inte avtalsutkast. Se [Delning](gizmo-customer-sharing.md).
 
 ## Listor och dator
 

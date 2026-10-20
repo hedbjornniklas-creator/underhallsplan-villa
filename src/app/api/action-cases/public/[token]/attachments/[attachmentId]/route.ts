@@ -6,8 +6,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(_request: Request, context: { params: Promise<{ token: string; attachmentId: string }> }) {
   try {
     const { token, attachmentId } = await context.params
-    return NextResponse.redirect(await createActionCasePortalAttachmentUrl(token, attachmentId))
+    return NextResponse.redirect(await createActionCasePortalAttachmentUrl(token, attachmentId), { headers: { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } })
   } catch {
-    return NextResponse.json({ error: 'Filen finns inte eller länken saknar åtkomst.' }, { status: 404 })
+    return NextResponse.json({ error: 'Filen finns inte eller länken saknar åtkomst.' }, { status: 404, headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } })
   }
 }

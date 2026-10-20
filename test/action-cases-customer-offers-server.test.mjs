@@ -236,6 +236,7 @@ function harness(options = {}) {
     }
   }
   const deps = {
+    './customerSharingServer': { async requireCustomerSection() { if(options.hidden) throw Error('CUSTOMER_SHARING_HIDDEN') }, async requireCustomerSectionForToken() { if(options.hidden) throw Error('CUSTOMER_SHARING_HIDDEN') } },
     './contractSigningServer': { async getContractSigningVersions() { return { signingAvailable: true, signingVersions: [] } } },
     './contractSigningDeliveryServer': { async getSharedSigningContracts() { return [] } },
     'server-only': {},
@@ -377,6 +378,15 @@ test('public customer choice fails closed for stale, hidden and unavailable sche
   await assert.rejects(harness({ choiceError: { message: 'CUSTOMER_CHOICE_STALE' } }).api.recordCustomerChoice(token, payload), /CUSTOMER_CHOICE_STALE/)
   await assert.rejects(harness({ choiceError: { code: 'PGRST202' } }).api.recordCustomerChoice(token, payload), /CUSTOMER_CHOICE_SCHEMA/)
   await assert.rejects(harness().api.recordCustomerChoice(token, { ...payload, revision: -1 }), /INVALID/)
+})
+
+test('hidden customer sections reject reads, choices and contract responses before RPC, signing or email', async () => {
+  const h = harness({ hidden: true, sharedChoices: choiceFixture() })
+  await assert.rejects(h.api.readCustomerChoices(token), /SHARING_HIDDEN/)
+  await assert.rejects(h.api.recordCustomerChoice(token, { categoryId: id(810), categoryVersion: id(820), optionId: id(800), revision: 0 }), /SHARING_HIDDEN/)
+  await assert.rejects(h.api.respondCustomerOffer(token, id(30), { operation: 'accept' }, 'https://example.test'), /SHARING_HIDDEN/)
+  await assert.rejects(h.api.customerOfferFileUrl({ token, offerId: id(30), fileId: id(4) }), /SHARING_HIDDEN/)
+  assert.deepEqual(h.calls, []); assert.deepEqual(h.sent, []); assert.deepEqual(h.signed, [])
 })
 
 const senderSnapshot = () => ({ version: 1, organizationId: id(90), profileId: id(75), profileVersion: 3, legalNameVersion: 2,

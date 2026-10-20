@@ -31,6 +31,7 @@ import { CustomerPlannedItems } from './CustomerPlanningEditor'
 import CustomerChoiceCategories from './CustomerChoiceCategories'
 import { choiceDecisionDates } from '@/lib/action-cases/customerPlanning'
 import { PaymentPlanDocument } from './CustomerPaymentPlan'
+import { customerSections, defaultCustomerVisibility } from '@/lib/action-cases/customerSharing'
 
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
@@ -46,6 +47,9 @@ export default function ActionCaseCustomerPortal({
   previewCaseId?: string
 }) {
   const [view, setView] = useState<'offer' | 'planning' | 'payments' | 'schedule' | 'files'>('offer')
+  const visibility = portal.sharing?.tabs ?? defaultCustomerVisibility()
+  const availableViews = customerSections.filter(s => visibility[s.key]).map(s => s.view)
+  const activeView = availableViews.includes(view) ? view : availableViews[0]
   const externalContracts = portal.customerOffers?.externalContracts ?? []
   const [offers, setOffers] = useState(() => [
     ...(portal.customerOffers?.offers ?? []),
@@ -72,6 +76,9 @@ export default function ActionCaseCustomerPortal({
   const decisionDates = choiceDecisionDates(plannedItems, plannedChoices)
   const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
   const contract = latestExternal && !latestExternal.releasedAt ? latest : accepted ?? offers.find((o) => o.status === 'published')
+  const payment = portal.sharing ? portal.sharedPayment : contract ? { version: contract.version, stage: latestExternal ? latestExternal.signedCopyRegisteredAt ? 'signed' : 'shared' : accepted ? 'accepted' : 'proposed', plan: contract.snapshot.paymentPlan, terms: contract.snapshot.paymentTerms, conditions: contract.snapshot.paymentConditions } : undefined
+  const contractTiming = portal.sharing ? portal.sharedContractSchedule : contract?.snapshot.schedule ? { version: contract.version, accepted: Boolean(accepted), text: contract.snapshot.schedule } : undefined
+  const contact = portal.customerContact ?? (latest ? { issuerName: latest.snapshot.issuerName, replyEmail: latest.snapshot.replyEmail } : undefined)
   const sharedFiles = c.attachments.filter(
     (f) => !latest?.files.some((copy) => copy.id === f.id)
   )
@@ -81,6 +88,7 @@ export default function ActionCaseCustomerPortal({
     latest.snapshot.validUntil >=
       new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
   function navigate(next: typeof view) {
+    if (!availableViews.includes(next)) return
     setView(next)
     requestAnimationFrame(() => {
       heading.current?.focus()
@@ -172,17 +180,18 @@ export default function ActionCaseCustomerPortal({
           ['payments', 'Betalningsplan', WalletCards],
           ['schedule', 'Tidsplan', CalendarClock],
           ['files', 'Bilder och filer', FolderOpen]
-        ] as const).map(([key, label, Icon]) => <button key={key}
-          aria-pressed={view === key} onClick={() => navigate(key)}
-          className={`${button} min-w-0 border-transparent ${view === key ? 'bg-violet-50 text-violet-800' : 'hover:bg-white'}`}>
+        ] as const).filter(([key]) => availableViews.includes(key)).map(([key, label, Icon]) => <button key={key}
+          aria-pressed={activeView === key} onClick={() => navigate(key)}
+          className={`${button} min-w-0 border-transparent ${activeView === key ? 'bg-violet-50 text-violet-800' : 'hover:bg-white'}`}>
           <Icon size={18} className="shrink-0" />{label}
         </button>)}
       </nav>
-      {view === 'offer' && !offer && <section className="py-8">
+      {!availableViews.length && <p className="py-8 text-sm text-slate-600">Inga delar av projektet är tillgängliga.</p>}
+      {activeView === 'offer' && !offer && <section className="py-8">
         <h2 className="text-xl">Avtal</h2>
         <p className="mt-3 text-sm text-slate-600">Grundavtalet förbereds. Inget avtal finns att godkänna ännu.</p>
       </section>}
-      {view === 'offer' && offer && (
+      {activeView === 'offer' && offer && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3 py-5">
             <div>
@@ -337,7 +346,7 @@ export default function ActionCaseCustomerPortal({
           </div>
         </>
       )}
-      {view === 'planning' && <div className="bg-white px-5 sm:px-8">
+      {activeView === 'planning' && <div className="bg-white px-5 sm:px-8">
         <p className="border-b border-slate-200 py-5 text-sm text-slate-600">
           {accepted
             ? 'Grundavtalet är godkänt. Val och tillval nedan är ännu inte beställda och ändrar inte avtalssumman.'
@@ -355,21 +364,21 @@ export default function ActionCaseCustomerPortal({
           <button className={`${button} mt-4`} onClick={() => { setOfferId(latest.id); navigate('offer') }}>Visa avtalsversion</button>
         </details>}
       </div>}
-      {view === 'payments' && <section className="py-6">
+      {activeView === 'payments' && <section className="py-6">
         <h2 className="text-xl">Betalningsplan</h2>
-        {contract ? <>
-          <p className="mt-3 text-sm font-medium">{latestExternal && contract.id === latestExternal.document.id ? latestExternal.signedCopyRegisteredAt ? 'Betalningsplan · Underskriven kopia registrerad' : 'Delad betalningsplan · Väntar på underskrift' : accepted ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {contract.version}</p>
+        {payment ? <>
+          <p className="mt-3 text-sm font-medium">{payment.stage === 'signed' ? 'Betalningsplan · Underskriven kopia registrerad' : payment.stage === 'shared' ? 'Delad betalningsplan · Väntar på underskrift' : payment.stage === 'accepted' ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {payment.version}</p>
           <p className="mt-2 text-sm text-slate-600">Grundavtalet · Inklusive moms. Detta är en betalningsplan, inte fakturor eller betalningskvitton.</p>
-          <PaymentPlanDocument plan={contract.snapshot.paymentPlan} paymentTerms={contract.snapshot.paymentTerms} conditions={contract.snapshot.paymentConditions} />
+          <PaymentPlanDocument plan={payment.plan} paymentTerms={payment.terms} conditions={payment.conditions} />
         </> : <p className="mt-3 text-sm text-slate-600">Ingen betalningsplan har delats ännu.</p>}
       </section>}
-      {view === 'schedule' && <section className="py-6">
+      {activeView === 'schedule' && <section className="py-6">
         <h2 className="text-xl">Tidsplan</h2>
         {portal.actionCase.schedule?.length ? <ProjectScheduleDocument rows={portal.actionCase.schedule} /> : null}
-        {contract?.snapshot.schedule ? <>
-          <p className="mt-3 text-sm font-medium">{accepted ? 'Avtalade tider' : 'Föreslagna tider · Avtalet är inte godkänt'}</p>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{contract.snapshot.schedule}</p>
-          <p className="mt-4 text-sm text-slate-500">Avtalsversion {contract.version}</p>
+        {contractTiming ? <>
+          <p className="mt-3 text-sm font-medium">{contractTiming.accepted ? 'Avtalade tider' : 'Föreslagna tider · Avtalet är inte godkänt'}</p>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{contractTiming.text}</p>
+          <p className="mt-4 text-sm text-slate-500">Avtalsversion {contractTiming.version}</p>
         </> : <p className="mt-3 text-sm text-slate-600">Inga avtalstider har delats ännu.</p>}
         {decisionDates.length > 0 && <div className="mt-6 border-t border-slate-200 pt-5">
           <h3 className="font-semibold">Önskade beslutsdatum</h3>
@@ -379,7 +388,7 @@ export default function ActionCaseCustomerPortal({
             </div>)}
         </div>}
       </section>}
-      {view === 'files' && (
+      {activeView === 'files' && (
         <section>
           <h2 className="pt-6 text-xl">Bilder och filer</h2>
           {latest?.files.length ? (
@@ -437,11 +446,11 @@ export default function ActionCaseCustomerPortal({
           )}
         </section>
       )}
-      {latest && <footer className="mt-8 border-t border-slate-200 py-5 print:hidden">
+      {contact && <footer className="mt-8 border-t border-slate-200 py-5 print:hidden">
         <h2 className="text-sm font-semibold">Din kontakt</h2>
-        <p className="mt-2 text-sm">{latest.snapshot.issuerName}</p>
-        <a href={`mailto:${latest.snapshot.replyEmail}`} className="mt-2 inline-flex items-center gap-2 break-all text-sm text-violet-700">
-          <Mail size={17} className="shrink-0" />{latest.snapshot.replyEmail}
+        <p className="mt-2 text-sm">{contact.issuerName}</p>
+        <a href={`mailto:${contact.replyEmail}`} className="mt-2 inline-flex items-center gap-2 break-all text-sm text-violet-700">
+          <Mail size={17} className="shrink-0" />{contact.replyEmail}
         </a>
       </footer>}
     </Container>

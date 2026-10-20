@@ -32,7 +32,7 @@ async function start() {
   }
   if (params.has('expired') && workspace.offers[0])
     workspace.offers[0].snapshot.validUntil = '2020-01-01'
-  const portal = {
+  let portal = {
     accessState: 'open' as const,
     participant: customer,
     customerOffers: { enabled: true, offers: workspace.offers, externalContracts: workspace.externalContracts, plannedItems: workspace.planning?.sharedItems, plannedChoices: workspace.planning?.sharedChoices },
@@ -46,6 +46,7 @@ async function start() {
     }
   }
   const external = location.pathname === '/kund' || location.pathname.startsWith('/atgardsarende/')
+  if (external) portal = await (await fetch('/__test__/customer-portal')).json()
   const projects = location.pathname.startsWith('/uppdrag')
   const projectWorkspace = projects ? await (await fetch('/project-fixture')).json() : null
   const project = projectWorkspace?.cases.find((item: { id: string }) => location.pathname === `/uppdrag/${item.id}`)

@@ -1,4 +1,5 @@
 import 'server-only'
+import { requireCustomerSection, requireCustomerSectionForToken } from './customerSharingServer'
 import { randomInt, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import {
@@ -637,6 +638,7 @@ async function getSharedCustomerChoices(orgId: string, caseId: string, participa
 
 export async function readCustomerChoices(token: string): Promise<SharedCustomerChoices> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('CUSTOMER_CHOICE_CLOSED')
+  await requireCustomerSectionForToken(token, 'choices')
   const result = await createSupabaseAdminClient().rpc('read_customer_choices', { p_token_hash: hashAssignmentToken(token) })
   if (schemaMissing(result.error?.code)) throw new Error('CUSTOMER_CHOICE_SCHEMA')
   checked(result.error)
@@ -646,6 +648,7 @@ export async function readCustomerChoices(token: string): Promise<SharedCustomer
 
 export async function recordCustomerChoice(token: string, payload: Payload): Promise<SharedCustomerChoices> {
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('CUSTOMER_CHOICE_CLOSED')
+  await requireCustomerSectionForToken(token, 'choices')
   const categoryId = offerId(payload.categoryId), version = offerId(payload.categoryVersion)
   const optionId = payload.optionId === null ? null : offerId(payload.optionId)
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0) throw new Error('CUSTOMER_CHOICE_INVALID')
@@ -680,6 +683,7 @@ async function resolveOffer(token: string, id: string) {
   checked(participant.error)
   if (participant.data?.role !== 'customer')
     throw new Error('CUSTOMER_OFFER_NOT_FOUND')
+  await requireCustomerSection(l.org_id, l.action_case_id, 'contract')
   const row = await db
     .from('action_case_customer_offers')
     .select(`${CUSTOMER_OFFER_COLUMNS},org_id,action_case_id,participant_id`)

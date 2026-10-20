@@ -51,7 +51,7 @@ function harness(options = {}) {
       return options.uncertain ? { error: { message:'network timeout' } } : { data:{ id:documentId } }
     },
   }
-  const deps = { 'server-only':{}, 'node:crypto':crypto, '@/lib/supabase/admin':{createSupabaseAdminClient:()=>admin},
+  const deps = { './customerSharingServer': { async requireCustomerSection() { if(options.hidden) throw Error('CUSTOMER_SHARING_HIDDEN') } }, 'server-only':{}, 'node:crypto':crypto, '@/lib/supabase/admin':{createSupabaseAdminClient:()=>admin},
     '@/lib/assignments/tokens':{generateAssignmentToken:()=> 'a'.repeat(48), hashAssignmentToken:(t)=>crypto.createHash('sha256').update(t).digest('hex')},
     './customerOffers':domain, './customerContractParties':parties,
     './contractSigningServer':{async downloadContractSigningFile(...args){calls.push({attachment:args});return {bytes:Buffer.alloc(100),contentType:'application/pdf',fileName:'Bilaga.pdf'}}},
@@ -101,6 +101,14 @@ test('sharing protects stale recipient/revision, requires confirmation and never
   const h=harness();await share(h);h.row.snapshot.title='Changed live data'
   await h.downloadSharedSigningFile('a'.repeat(48),documentId,'pdf');assert.equal(h.renders.length,1)
   h.row.released_at='2026-10-11';await assert.rejects(share(h),/STALE/)
+})
+
+test('hiding the contract blocks its old public PDF URL without altering the stored document or internal access',async()=>{
+  const h=harness({hidden:true});await share(h)
+  const before=JSON.stringify(h.row),downloads=h.downloads.length,calls=h.calls.length
+  await assert.rejects(h.downloadSharedSigningFile('a'.repeat(48),documentId,'pdf'),/SHARING_HIDDEN/)
+  assert.equal(h.downloads.length,downloads);assert.equal(h.calls.length,calls);assert.equal(JSON.stringify(h.row),before)
+  assert.match((await h.downloadCustomerSigningPdf(ctx,caseId,documentId)).bytes.toString(),/^%PDF/)
 })
 test('signed receipt is private, exact-version scoped, immutable, validated and retained on uncertain outcomes',async()=>{
   const h=harness();await upload(h);assert.equal(h.entries[0].shared_at,null)

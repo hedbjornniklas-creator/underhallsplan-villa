@@ -1,0 +1,24 @@
+.gizmo-sharing{max-width:960px;min-width:0}
+.gizmo-sharing-commands{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.gizmo-sharing-table{width:100%;border-bottom:1px solid #d5dcdd}
+.gizmo-sharing-table-head,.gizmo-sharing-row{display:grid;grid-template-columns:minmax(0,1fr) 180px;align-items:center;gap:16px;padding:0 16px}
+.gizmo-sharing-table-head{min-height:36px;background:#edf1f1;color:#596368;font-size:12px;font-weight:600}
+.gizmo-sharing-row{min-height:60px;border-top:1px solid #d5dcdd;font-size:14px}
+.gizmo-sharing-row>[role=cell]{display:flex;align-items:center;gap:12px;min-width:0}
+.gizmo-sharing-row>[role=cell]:last-child{justify-content:space-between}
+.gizmo-sharing-row strong{font-weight:600;overflow-wrap:anywhere}
+.gizmo-sharing-visibility{display:flex;align-items:center;gap:8px;color:#596368;font-size:13px;white-space:nowrap}
+.gizmo-sharing-switch{display:grid;place-items:center;flex:0 0 48px;width:48px;height:44px;border:0;background:transparent;cursor:pointer}
+.gizmo-sharing-switch>span{position:relative;display:block;width:36px;height:20px;border:1px solid #899498;border-radius:999px;background:#edf1f1}
+.gizmo-sharing-switch i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#596368}
+.gizmo-sharing-switch[aria-checked=true]>span{background:#252a2d;border-color:#252a2d}
+.gizmo-sharing-switch[aria-checked=true] i{left:18px;background:white}
+.gizmo-sharing-switch:focus-visible{outline:2px solid #206961;outline-offset:2px;border-radius:4px}
+.gizmo-sharing-switch:disabled{cursor:default;opacity:.5}
+.gizmo-sharing-status{min-height:40px;padding:10px 0;color:#596368;font-size:13px}
+.gizmo-sharing-status>span,.gizmo-sharing-error{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.gizmo-sharing-error{color:#9f1239;font-size:14px;overflow-wrap:anywhere}
+.gizmo-sharing-recipient{display:grid;gap:6px;max-width:440px;margin:12px 0 20px;font-size:14px}
+.gizmo-sharing-recipient select{min-width:0;max-width:100%;min-height:44px;padding:8px 12px;border:1px solid #d5dcdd;border-radius:6px;background:white;font:inherit}
+.gizmo-sharing-legacy>div,.gizmo-sharing-legacy>a{display:block;padding:12px 0;border-bottom:1px solid #d5dcdd}
+@media(max-width:639px){.gizmo-sharing-table-head,.gizmo-sharing-row{grid-template-columns:minmax(0,1fr) 116px;gap:8px;padding:0 10px}.gizmo-sharing-row{min-height:64px}.gizmo-sharing-row>[role=cell]{gap:8px}.gizmo-sharing-switch{height:48px}.gizmo-sharing-recipient select{font-size:16px;min-height:48px}.gizmo-sharing-commands .gizmo-button{min-height:48px}.gizmo-sharing-visibility{gap:4px;font-size:12px}}

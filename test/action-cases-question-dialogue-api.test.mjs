@@ -73,7 +73,7 @@ test('project manager appointment is administrator-only and rechecked atomically
 
 test('private question uploads cannot be requested, completed, granted or opened as public project files',async()=>{
   const signed=[],db={from(table){const q={select(){return q},eq(){return q},async maybeSingle(){return {data:table==='action_cases'?{id:caseId}:{question_id:questionId}}}};return q},async rpc(){return {data:false}},storage:{from(){return {async createSignedUploadUrl(){signed.push('upload')},async createSignedUrl(){signed.push('download')}}}}}
-  const deps=Object.fromEntries(['server-only','@/lib/assignments/tokens','./scopeAttachments','./projectScheduleServer','./lumpSum','./domain','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer','./customerOffersServer'].map(name=>[name,{}]))
+  const deps=Object.fromEntries(['server-only','@/lib/assignments/tokens','./scopeAttachments','./projectScheduleServer','./lumpSum','./domain','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer','./customerOffersServer','./customerSharing','./customerSharingServer'].map(name=>[name,{}]))
   const server=load('../src/lib/action-cases/server.ts',{...deps,'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
   const filePath=`${ctx.orgId}/${caseId}/questions/${questionId}/test.pdf`,payload={caseId,questionId,fileName:'Test.pdf',contentType:'application/pdf',fileSize:100,filePath}
   await assert.rejects(server.createActionCaseSignedUpload(ctx,payload),/NOT_FOUND/)

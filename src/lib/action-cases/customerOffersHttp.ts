@@ -32,6 +32,13 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_SHARING_INVALID: [400, 'Kontrollera vald flik och dess synlighet.'],
+    CUSTOMER_SHARING_FORBIDDEN: [403, 'Endast projektansvarig kan ändra beställarens flikar.'],
+    CUSTOMER_SHARING_NOT_FOUND: [404, 'Projektet eller beställaren kunde inte hittas.'],
+    CUSTOMER_SHARING_HIDDEN: [404, 'Denna del av projektet visas inte för beställaren.'],
+    CUSTOMER_SHARING_STALE: [409, 'Delningen har ändrats i en annan flik. Dina val är kvar. Hämta sparade inställningar innan du fortsätter.'],
+    CUSTOMER_SHARING_SCHEMA: [503, 'Delning behöver aktiveras i databasen. Övriga projektet påverkas inte.'],
+    CUSTOMER_SHARING_FAILED: [500, 'Delningen kunde inte bekräftas. Dina val är kvar.'],
     PROJECT_MANAGER_INVALID: [400, 'Välj en aktiv intern medarbetare med åtkomst till Uppdrag.'],
     PROJECT_MANAGER_FORBIDDEN: [403, 'Endast en organisationsadministratör kan utse projektansvarig.'],
     PROJECT_MANAGER_NOT_FOUND: [404, 'Projektet kunde inte hittas.'],

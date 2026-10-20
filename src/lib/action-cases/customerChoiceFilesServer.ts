@@ -1,4 +1,5 @@
 import 'server-only'
+import { requireCustomerSectionForToken } from './customerSharingServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { hashAssignmentToken } from '@/lib/assignments/tokens'
@@ -107,6 +108,7 @@ export async function customerChoiceFile(input: { token?: string; ctx?: Context;
   let orgId: string, caseId: string, file: Manifest | undefined
   if (input.token) {
     if (!/^[A-Za-z0-9_-]{43}$/.test(input.token)) throw new Error('CUSTOMER_CHOICE_CLOSED')
+    await requireCustomerSectionForToken(input.token, 'choices')
     const result = await db.rpc('read_customer_choice_file', { p_token_hash: hashAssignmentToken(input.token), p_file_id: id })
     checked(result.error)
     orgId = result.data?.orgId; caseId = result.data?.caseId; file = result.data?.file

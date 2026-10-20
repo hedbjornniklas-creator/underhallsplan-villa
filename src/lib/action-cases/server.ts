@@ -16,6 +16,8 @@ import { mapRfqDelivery, RFQ_DELIVERY_COLUMNS } from './rfqDelivery'
 import { calculateActionCaseCostTotals } from './domain'
 import { createQuoteWorkLine } from './quotesServer'
 import { getSharedCustomerOffers } from './customerOffersServer'
+import { projectCustomerPortal } from './customerSharing'
+import { readCustomerVisibility, requireCustomerSection } from './customerSharingServer'
 
 type Context = { orgId: string; userId: string }
 
@@ -665,6 +667,16 @@ async function resolveActionCaseAccess(token: string) {
 export async function getActionCasePortal(token: string): Promise<ActionCasePortal | null> {
   const access = await resolveActionCaseAccess(token)
   if (!access) return null
+  return buildActionCasePortal(access)
+}
+export async function getActionCaseCustomerPreview(context: Context, caseId: string, participantId: string) {
+  await requireCase(context, caseId)
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(participantId)) throw new Error('CUSTOMER_SHARING_INVALID')
+  const portal = await buildActionCasePortal({ org_id: context.orgId, action_case_id: caseId, participant_id: participantId, expires_at: '9999-12-31T00:00:00Z', revoked_at: null }, true)
+  if (!portal) throw new Error('CUSTOMER_SHARING_NOT_FOUND')
+  return portal
+}
+async function buildActionCasePortal(access: { id?: string; org_id: string; action_case_id: string; participant_id: string; expires_at: string; revoked_at: string | null }, preview = false): Promise<ActionCasePortal | null> {
   const now = Date.now()
   const accessState: ActionCasePortal['accessState'] = access.revoked_at
     ? 'revoked'
@@ -676,7 +688,9 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
     admin.from('action_case_items').select('id,title,scope,status,sort_order').eq('action_case_id', access.action_case_id).eq('org_id', access.org_id).order('sort_order'),
   ])
   if (!participant || !actionCase) return null
+  if (preview && participant.role !== 'customer') throw new Error('CUSTOMER_SHARING_NOT_FOUND')
   if (accessState !== 'open') return { accessState, participant: { id: participant.id, role: participant.role, name: '', companyName: null, email: null, phone: null }, actionCase: { id: actionCase.id, title: '', propertyAddress: '', description: null, status: actionCase.status, items: [], attachments: [] } }
+  const visibility = participant.role === 'customer' ? await readCustomerVisibility(access.org_id, actionCase.id) : null
   const customerOffers = participant.role === 'customer'
     ? await getSharedCustomerOffers(access.org_id, access.action_case_id, participant.id)
     : undefined
@@ -685,7 +699,7 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
   const { data: attachments } = attachmentIds.length
     ? await admin.from('action_case_attachments').select('id,action_case_item_id,attachment_type,title,file_name,content_type,file_size_bytes,created_at').eq('action_case_id', access.action_case_id).eq('org_id', access.org_id).in('id', attachmentIds).order('created_at', { ascending: false })
     : { data: [] }
-  if (accessState === 'open') await admin.from('action_case_access_links').update({ last_opened_at: new Date().toISOString() }).eq('id', access.id)
+  if (accessState === 'open' && !preview && access.id) await admin.from('action_case_access_links').update({ last_opened_at: new Date().toISOString() }).eq('id', access.id)
   const mappedAttachments: ActionCaseAttachmentView[] = (attachments ?? []).map((attachment) => ({
     id: attachment.id,
     actionCaseItemId: attachment.action_case_item_id,
@@ -706,7 +720,7 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
     ...(customerOffers?.offers ?? []).map((offer) => ({ date: offer.publishedAt, snapshot: offer.snapshot })),
     ...(customerOffers?.externalContracts ?? []).map((entry) => ({ date: entry.sharedAt, snapshot: entry.document.snapshot })),
   ].sort((a, b) => b.date.localeCompare(a.date))[0]?.snapshot
-  return {
+  const portal: ActionCasePortal = {
     accessState,
     customerOffers,
     participant: { id: participant.id, role: participant.role, name: participant.name, companyName: participant.company_name, email: participant.email, phone: participant.phone },
@@ -721,12 +735,16 @@ export async function getActionCasePortal(token: string): Promise<ActionCasePort
       schedule: participant.role === 'customer' ? await getSharedProjectSchedule(access.org_id, actionCase.id) : undefined,
     },
   }
+  return visibility ? projectCustomerPortal(portal, await readCustomerVisibility(access.org_id, actionCase.id)) : portal
 }
 
 export async function createActionCasePortalAttachmentUrl(token: string, attachmentId: string) {
   const access = await resolveActionCaseAccess(token)
   if (!access || access.revoked_at || new Date(access.expires_at).getTime() <= Date.now()) throw new Error('ACTION_CASE_ACCESS_CLOSED')
   const admin = createSupabaseAdminClient()
+  const person = await admin.from('action_case_participants').select('role').eq('org_id', access.org_id).eq('action_case_id', access.action_case_id).eq('id', access.participant_id).maybeSingle()
+  if (person.error || !person.data) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
+  if (person.data.role === 'customer') await requireCustomerSection(access.org_id, access.action_case_id, 'files')
   const { data: grant } = await admin.from('action_case_attachment_grants').select('attachment_id').eq('attachment_id', attachmentId).eq('participant_id', access.participant_id).maybeSingle()
   if (!grant) throw new Error('ACTION_CASE_FILE_NOT_FOUND')
   const { data: attachment } = await admin.from('action_case_attachments').select('storage_bucket,file_path,file_name,content_type').eq('id', attachmentId).eq('action_case_id', access.action_case_id).eq('org_id', access.org_id).maybeSingle()

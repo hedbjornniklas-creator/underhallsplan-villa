@@ -217,6 +217,10 @@ export type ActionCaseWorkspace = {
 }
 
 export type ActionCasePortal = {
+  sharing?: Pick<import('./customerSharing').CustomerSharing, 'revision' | 'tabs'>
+  customerContact?: { issuerName: string; replyEmail: string }
+  sharedPayment?: { version: number; stage: 'signed' | 'shared' | 'accepted' | 'proposed'; plan: import('./customerOffers').CustomerOffer['snapshot']['paymentPlan']; terms: string; conditions: import('./customerOffers').CustomerOffer['snapshot']['paymentConditions'] }
+  sharedContractSchedule?: { version: number; accepted: boolean; text: string }
   customerOffers?: { enabled: boolean; offers: import('./customerOffers').CustomerOffer[]; externalContracts?: import('./customerOffers').SharedSigningContract[]; plannedItems?: import('./customerPlanning').CustomerPlannedItem[]; plannedChoices?: import('./customerPlanning').SharedCustomerChoices }
   accessState: 'open' | 'expired' | 'revoked'
   participant: ActionCaseParticipantView
