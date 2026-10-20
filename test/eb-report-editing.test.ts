@@ -82,6 +82,8 @@ function fixture() {
   } as unknown as EbInspectionReport
   let stored: EbReportDraft
   let writes = 0
+  const writeVersions: Array<string | null> = []
+  let concurrentEdit: ((draft: EbReportDraft) => EbReportDraft) | null = null
   const input = { orgId: 'org', projectId: 'project', inspectionId: 'inspection', requestedByUserId: 'inspector' }
   const build = (draft: EbReportDraft, round = live) => api.buildEbReportDraft({
     round, participants: round.participants, attachments: round.projectAttachments,
@@ -97,7 +99,18 @@ function fixture() {
     getEbInspectionRound: async () => live,
     listParticipantsForInspection: async () => live.participants,
     listEbInspectionDocuments: async () => live.inspectionDocuments,
+    loadEbInspectorReportSource: async () => ({ inspectorText: 'Namn: Besiktningsmannen', branding: {
+      inspectorLogoUrl: null, inspectorAvatarUrl: null, inspectorSignatureUrl: null,
+      besiktAppLogoUrl: '/test-logo.svg', footer: { companyLines: [], contactLines: [] }, signature: null,
+    } }),
     writeEbReportDraft: async (_input: unknown, draft: EbReportDraft, options: { expectedUpdatedAt: string | null; preserveProjectSourceRefreshBase?: boolean }) => {
+      writeVersions.push(options.expectedUpdatedAt)
+      if (concurrentEdit) {
+        const edit = concurrentEdit
+        concurrentEdit = null
+        stored = structuredClone(edit(stored))
+        throw new Error('EB_REPORT_DRAFT_CONFLICT')
+      }
       assert.equal(options.expectedUpdatedAt, stored.updatedAt)
       writes += 1
       stored = structuredClone({ ...draft, projectSourceRefreshBaseUpdatedAt: options.preserveProjectSourceRefreshBase
@@ -118,6 +131,9 @@ function fixture() {
   return {
     api, input, live, report, section,
     persisted: () => structuredClone(stored),
+    replacePersisted: (draft: EbReportDraft) => { stored = structuredClone(draft) },
+    concurrentEditOnNextWrite: (edit: (draft: EbReportDraft) => EbReportDraft) => { concurrentEdit = edit },
+    writeVersions: () => [...writeVersions],
     writes: () => writes,
     save: async (key: string, text: string) => api.saveEbReportDraft({ ...input, expectedUpdatedAt: stored.updatedAt,
       sections: [{ ...section(key), text }] }),
@@ -228,6 +244,187 @@ test('a locked historical report keeps its stored section mode and text without 
   const report = await f.api.getEbInspectionReport(f.input)
   assert.deepEqual(report.reportDraft.sections.find(row => row.key === 'summons'), original)
   assert.equal(f.writes(), 0)
+})
+
+// This is the actual nine-section seed written by the new-final-inspection
+// copy flow, not an arbitrary short template selected by an inspector.
+const reusedTextSectionKeys = new Set([
+  'scope', 'conflict_of_interest', 'not_accessible', 'documentation_only',
+  'inspection_cost_distribution', 'other_notes', 'marker_legend', 'defects_appendices', 'testing_documentation',
+])
+
+function reusedReviewFixture(initialized: boolean, withNotes = true) {
+  const f = fixture()
+  f.live.inspection.parentInspectionId = 'previous-final-inspection'
+  f.live.inspection.sequenceNo = 2
+  f.live.inspection.previousInspections = [{ key: 'inspection:previous-final-inspection',
+    label: 'Slutbesiktning 1 – ej godkänd', status: 'performed', date: '2026-08-03' }]
+  f.live.disciplines = [{ id: 'building', key: 'bygg', label: 'Bygg', littera: 'SLB2', sortOrder: 100,
+    isActive: true }] as EbInspectionReport['disciplines']
+  const firstNote = {
+    id: 'copied-note-one', projectId: 'project', inspectionId: 'inspection', disciplineId: 'building',
+    noteNumber: 1, location: 'Bygg', room: 'Kök', placeDetail: 'Fönster', markerKey: 'E', statusKey: 'open',
+    noteText: 'Spricka vid köksfönstret', remediationAssigneeId: null, remediationAssigneeName: null,
+    responsibleParty: null, tradeGroup: null, investigationResponsibleParty: null, investigationResponsibleNote: null,
+    investigationCostParty: null, investigationDueDate: null, deductionAmount: null, sortOrder: 100,
+    createdAt: '2026-09-07T10:00:00.000Z', updatedAt: '2026-09-07T10:00:00.000Z',
+    disciplineLabel: 'Bygg', disciplineLittera: 'SLB2', markerLabel: 'Entreprenadfel', statusLabel: 'Öppen',
+    reusedFrom: { inspectionId: 'previous-final-inspection', inspectionDate: '2026-08-03', variant: 'SLB' as const,
+      sequenceNo: 1, noteId: 'original-note-one', noteNumber: 1 },
+  }
+  f.live.notes = withNotes ? [firstNote, { ...firstNote, id: 'copied-note-two', noteNumber: 2, sortOrder: 200,
+    noteText: 'Dörren till hallen kärvar', reusedFrom: { ...firstNote.reusedFrom, noteId: 'original-note-two', noteNumber: 2 } }] : []
+  f.live.images = withNotes ? [{ id: 'copied-photo', noteId: firstNote.id, inspectionId: 'inspection',
+    sourceAttachmentId: null, filePath: 'inspection/eb-notes/copied-photo.jpg', thumbnailFilePath: null,
+    label: 'Sprickan vid fönstret', sortOrder: 100, publicUrl: '/test-photo.jpg', thumbnailUrl: null,
+    createdAt: '2026-09-07T10:00:00.000Z', reusedFrom: { ...firstNote.reusedFrom, imageId: 'original-photo' } }] : []
+  const fullDraft = f.persisted()
+  const seed: EbReportDraft = {
+    ...fullDraft,
+    initializedAt: initialized ? fullDraft.initializedAt : null,
+    sourceSnapshot: initialized ? fullDraft.sourceSnapshot : null,
+    sections: fullDraft.sections.filter(section => reusedTextSectionKeys.has(section.key) &&
+      (withNotes || !['marker_legend', 'defects_appendices'].includes(section.key)))
+      .map(section => section.key === 'scope' ? { ...section, text: 'Egen avgränsning från det tidigare utlåtandet.',
+        status: 'not_applicable' as const, isRelevant: false, relevanceOverridden: true }
+        : section.key === 'other_notes' ? { ...section, text: '' } : section),
+    noteHeadings: withNotes ? [{ id: 'copied-heading', title: 'Kontroller i köket', beforeNoteId: firstNote.id,
+      sortOrder: 100, updatedAt: '2026-09-07T10:00:00.000Z' }] : [],
+  }
+  f.replacePersisted(seed)
+  return { ...f, seed, expectedSectionKeys: fullDraft.sections.map(section => section.key) }
+}
+
+for (const initialized of [false, true]) {
+  test(`${initialized ? 'already-opened broken' : 'first-open'} copied report gets a complete review template without changing its working material`, async () => {
+    const f = reusedReviewFixture(initialized)
+    const originalNotes = structuredClone(f.live.notes)
+    const originalImages = structuredClone(f.live.images)
+    const report = await f.api.getEbInspectionReport(f.input)
+    assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.expectedSectionKeys)
+    for (const key of ['notes', 'participants', 'inspection_time', 'approval_decision', 'distribution_list']) {
+      assert.ok(report.reportDraft.sections.some(section => section.key === key), key)
+    }
+    for (const previous of f.seed.sections) {
+      assert.deepEqual(report.reportDraft.sections.find(section => section.key === previous.key), previous,
+        `Copied ${previous.key} prose, status and inclusion choices must survive completion`)
+    }
+    assert.deepEqual(report.reportDraft.noteHeadings, f.seed.noteHeadings)
+    assert.deepEqual(report.notes, originalNotes)
+    assert.deepEqual(report.images, originalImages)
+    assert.equal(report.reportDraft.sections.find(section => section.key === 'notes')?.isRelevant, true)
+    assert.match(report.reportDraft.sections.find(section => section.key === 'notes')?.text ?? '', /2 noteringar/)
+    assert.equal(f.writes(), 1)
+    assert.deepEqual(f.writeVersions(), [f.seed.updatedAt])
+    assert.deepEqual(f.persisted().sections, report.reportDraft.sections)
+    assert.ok(f.persisted().initializedAt)
+    assert.ok(f.persisted().sourceSnapshot)
+    await f.api.getEbInspectionReport(f.input)
+    assert.equal(f.writes(), 1, 'Template completion must persist once, not on every report read')
+    const html = renderMainReview(report)
+    const notesStart = html.indexOf('id="eb-review-notes"')
+    assert.notEqual(notesStart, -1, 'Granska must mount the actual notes editor')
+    const notesEnd = html.indexOf('id="eb-review-special_investigation"', notesStart)
+    const notesEditor = html.slice(notesStart, notesEnd === -1 ? undefined : notesEnd)
+    for (const note of originalNotes) assert.ok(notesEditor.includes(note.noteText), `Missing review note ${note.id}`)
+    assert.ok(notesEditor.includes('Kontroller i köket'))
+  })
+}
+
+test('an already-initialized reused report copied without old notes is repaired using its exact previous-inspection history', async () => {
+  const f = reusedReviewFixture(true, false)
+  const report = await f.api.getEbInspectionReport(f.input)
+  assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.expectedSectionKeys)
+  assert.deepEqual(report.notes, [])
+  assert.deepEqual(report.images, [])
+  assert.deepEqual(report.reportDraft.noteHeadings, [])
+  assert.equal(f.writes(), 1)
+})
+
+test('repairing a copied report in read-only mode materializes review sections without writing storage', async () => {
+  const f = reusedReviewFixture(true)
+  const report = await f.api.getEbInspectionReport({ ...f.input, readOnly: true })
+  assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.expectedSectionKeys)
+  assert.deepEqual(f.persisted(), f.seed)
+  assert.equal(f.writes(), 0)
+})
+
+test('a locked copied report keeps its frozen partial template and performs no repair write', async () => {
+  const f = reusedReviewFixture(true)
+  f.live.inspection.reportLockedAt = '2026-09-08T12:00:00Z'
+  const report = await f.api.getEbInspectionReport(f.input)
+  assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.seed.sections.map(section => section.key))
+  for (const section of f.seed.sections) {
+    assert.equal(report.reportDraft.sections.find(row => row.key === section.key)?.text, section.text)
+  }
+  assert.deepEqual(report.reportDraft.noteHeadings, f.seed.noteHeadings)
+  assert.deepEqual(f.persisted(), f.seed)
+  assert.equal(f.writes(), 0)
+})
+
+test('an intentionally short initialized template is not expanded merely because it has a previous inspection', async () => {
+  const f = reusedReviewFixture(true)
+  f.live.inspection.previousInspections = [{ key: 'manual-history', label: 'Tidigare slutbesiktning',
+    status: 'performed', date: '2026-08-03' }]
+  f.live.notes = f.live.notes.map(note => ({ ...note, reusedFrom: null }))
+  const report = await f.api.getEbInspectionReport(f.input)
+  assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.seed.sections.map(section => section.key))
+  assert.equal(f.writes(), 0)
+})
+
+test('copied-template repair retries an optimistic conflict and preserves the concurrent inspector edit', async () => {
+  const f = reusedReviewFixture(true)
+  const concurrentVersion = '2026-09-07T10:01:00.000Z'
+  f.concurrentEditOnNextWrite(draft => ({ ...draft, updatedAt: concurrentVersion,
+    sections: draft.sections.map(section => section.key === 'scope'
+      ? { ...section, text: 'Samtidigt sparad avgränsning.', updatedAt: concurrentVersion } : section) }))
+  const report = await f.api.getEbInspectionReport(f.input)
+  assert.deepEqual(report.reportDraft.sections.map(section => section.key), f.expectedSectionKeys)
+  assert.equal(report.reportDraft.sections.find(section => section.key === 'scope')?.text, 'Samtidigt sparad avgränsning.')
+  assert.deepEqual(f.writeVersions(), [f.seed.updatedAt, concurrentVersion])
+  assert.equal(f.writes(), 1)
+})
+
+test('a normal uninitialized legacy report upgrades field-driven prose on first opening and persists the upgrade once', async () => {
+  const f = fixture()
+  f.legacySection('summons', true)
+  f.replacePersisted({ ...f.persisted(), initializedAt: null, sourceSnapshot: null })
+  const report = await f.api.getEbInspectionReport(f.input)
+  assert.equal(report.reportDraft.sections.find(section => section.key === 'summons')?.contentMode, 'editable')
+  assert.equal(f.persisted().sections.find(section => section.key === 'summons')?.contentMode, 'editable')
+  assert.equal(f.writes(), 1)
+  const reloaded = await f.api.getEbInspectionReport(f.input)
+  assert.equal(reloaded.reportDraft.sections.find(section => section.key === 'summons')?.contentMode, 'editable')
+  assert.equal(f.writes(), 1)
+})
+
+test('copied legacy prose is editable immediately and remains verbatim after the repaired draft is reopened', async () => {
+  const f = reusedReviewFixture(false)
+  f.replacePersisted({ ...f.persisted(), sections: f.persisted().sections.map(section => section.key === 'scope'
+    ? { ...section, contentMode: 'structured' } : section) })
+  const expectedText = f.seed.sections.find(section => section.key === 'scope')?.text
+  for (let readCount = 0; readCount < 2; readCount += 1) {
+    const report = await f.api.getEbInspectionReport(f.input)
+    const scope = report.reportDraft.sections.find(section => section.key === 'scope')
+    assert.equal(scope?.contentMode, 'editable')
+    assert.equal(scope?.text, expectedText)
+    assert.equal(scope?.isRelevant, false)
+    assert.equal(scope?.relevanceOverridden, true)
+  }
+  assert.equal(f.writes(), 1)
+})
+
+test('the first autosave can use the version immediately preceding a template repair but cannot overwrite a later edit', async () => {
+  const f = reusedReviewFixture(true)
+  const before = f.persisted()
+  await f.api.getEbInspectionReport(f.input)
+  await f.api.saveEbReportDraft({ ...f.input, expectedUpdatedAt: before.updatedAt,
+    sections: [{ ...f.section('scope'), text: 'Uppdaterad avgränsning efter kompletteringen.' }] })
+  assert.equal(f.section('scope').text, 'Uppdaterad avgränsning efter kompletteringen.')
+  assert.equal(f.persisted().projectSourceRefreshBaseUpdatedAt, null)
+  await assert.rejects(f.api.saveEbReportDraft({ ...f.input, expectedUpdatedAt: before.updatedAt,
+    sections: [{ ...f.section('scope'), text: 'Skrivning från en äldre flik.' }] }), /EB_REPORT_DRAFT_CONFLICT/)
+  assert.equal(f.section('scope').text, 'Uppdaterad avgränsning efter kompletteringen.')
 })
 
 type SectionRenderer = ComponentType<{ report: EbInspectionReport; section: EbReportDraftSection }>

@@ -3650,6 +3650,36 @@ async function loadEbInspectorReportSource(input: {
   }
 }
 
+function isIncompleteEbReusedReportDraft(
+  round: EbInspectionRound,
+  storedDraft: EbReportDraft
+) {
+  const parentInspectionId = round.inspection.parentInspectionId
+  if (
+    round.inspection.reportLockedAt ||
+    round.inspection.variant !== 'SLB' ||
+    !parentInspectionId ||
+    storedDraft.sections.length === 0
+  ) return false
+
+  // Earlier reuse stored only these prose sections. Its first opening then
+  // mistook that partial seed for a complete template. Match that exact shape,
+  // plus evidence of reuse, rather than extending every initialized template.
+  const reusedSectionKeys = new Set([
+    'scope', 'conflict_of_interest', 'not_accessible', 'documentation_only',
+    'inspection_cost_distribution', 'other_notes', 'marker_legend',
+    'defects_appendices', 'testing_documentation',
+  ])
+  if (!storedDraft.sections.every((section) => reusedSectionKeys.has(section.key))) return false
+
+  return round.notes.some((note) => note.reusedFrom?.inspectionId === parentInspectionId) ||
+    round.inspection.previousInspections.some((previous) =>
+      previous.key === `inspection:${parentInspectionId}` &&
+      previous.status === 'performed' &&
+      previous.label.endsWith('– ej godkänd')
+    )
+}
+
 export async function getEbInspectionReport(input: {
   orgId: string
   requestedByUserId: string
@@ -3715,6 +3745,13 @@ export async function getEbInspectionReport(input: {
   const project = applyEbReportProjectSnapshot(liveRound.project, resolvedSourceSnapshot.project)
   const round: EbInspectionRound = { ...liveRound, project }
   const resolvedParticipants = enrichParticipantsForReport(project, participants)
+  // Decide from the persisted draft, before adding the initialization metadata
+  // below. A reused prose seed is not yet a complete, frozen template copy.
+  const needsInitializationWrite =
+    !storedDraft.initializedAt ||
+    !storedDraft.sourceSnapshot ||
+    storedDraft.sections.length === 0
+  const needsReusedTemplateRepair = isIncompleteEbReusedReportDraft(round, storedDraft)
   const initializedDraft: EbReportDraft = {
     ...storedDraft,
     schemaVersion: EB_REPORT_DRAFT_SCHEMA_VERSION,
@@ -3733,22 +3770,24 @@ export async function getEbInspectionReport(input: {
     inspectionDocuments,
     inspectorText: resolvedSourceSnapshot.inspectorText,
     storedDraft: initializedDraft,
+    materializeMissingSections: liveRound.inspection.reportLockedAt
+      ? undefined
+      : needsReusedTemplateRepair
+        ? 'reuse'
+        : needsInitializationWrite ? 'initialize' : undefined,
   })
 
   const storedSectionsByKey = new Map(
     storedDraft.sections.map((section) => [section.key, section])
   )
-  const needsInitializationWrite =
-    !storedDraft.initializedAt ||
-    !storedDraft.sourceSnapshot ||
-    storedSectionsByKey.size === 0
   const needsContentModeWrite = reportDraft.sections.some((section) => {
     const stored = storedSectionsByKey.get(section.key)
     return stored && stored.contentMode !== section.contentMode
   })
-  const canRebaseAcrossDraftRefresh = projectSourceNeedsRefresh || needsContentModeWrite
+  const canRebaseAcrossDraftRefresh =
+    projectSourceNeedsRefresh || needsContentModeWrite || needsReusedTemplateRepair
   const needsDraftWrite =
-    needsInitializationWrite || projectSourceNeedsRefresh || needsContentModeWrite
+    needsInitializationWrite || projectSourceNeedsRefresh || needsContentModeWrite || needsReusedTemplateRepair
   let resolvedReportDraft = reportDraft
   if (needsDraftWrite && !liveRound.inspection.reportLockedAt && !input.readOnly) {
     try {
@@ -3756,9 +3795,11 @@ export async function getEbInspectionReport(input: {
         input,
         {
           ...reportDraft,
-          projectSourceRefreshBaseUpdatedAt: canRebaseAcrossDraftRefresh
-            ? reportDraft.projectSourceRefreshBaseUpdatedAt ?? storedDraft.updatedAt
-            : reportDraft.projectSourceRefreshBaseUpdatedAt,
+          projectSourceRefreshBaseUpdatedAt: needsReusedTemplateRepair
+            ? storedDraft.updatedAt
+            : canRebaseAcrossDraftRefresh
+              ? reportDraft.projectSourceRefreshBaseUpdatedAt ?? storedDraft.updatedAt
+              : reportDraft.projectSourceRefreshBaseUpdatedAt,
           updatedAt: projectSourceNeedsRefresh
             ? sourceRefreshAt
             : nextEbReportDraftUpdatedAt(storedDraft.updatedAt),
@@ -6407,6 +6448,7 @@ function buildEbReportDraft(input: {
   inspectionDocuments: EbInspectionDocument[]
   inspectorText: string
   storedDraft: EbReportDraft
+  materializeMissingSections?: 'initialize' | 'reuse'
 }): EbReportDraft {
   const { round, participants, attachments, inspectionDocuments, inspectorText, storedDraft } = input
   const now = new Date().toISOString()
@@ -6943,9 +6985,27 @@ function buildEbReportDraft(input: {
     sourceSnapshot: storedDraft.sourceSnapshot,
     projectSourceRefreshBaseUpdatedAt: storedDraft.projectSourceRefreshBaseUpdatedAt,
     updatedAt: storedDraft.updatedAt,
-    sections: templateAlreadyCopied
-      ? copiedTemplateSections
-      : [...initializedSections, ...additionalStoredSections],
+    sections: input.materializeMissingSections === 'reuse'
+      // Existing reused prose, inclusion choices and intentionally empty text
+      // belong to this inspection and must not be reset during completion.
+      ? [
+          ...defaultsWithModes.map((section) => {
+            const existing = existingByKey.get(section.key)
+            if (!existing) return section
+            // A frozen legacy source can still have a historical field-driven
+            // mode. Make its inherited prose editable now, without allowing a
+            // later generic mode migration to replace the copied narrative.
+            return existing.contentMode === section.contentMode
+              ? existing
+              : { ...existing, contentMode: section.contentMode }
+          }),
+          ...additionalStoredSections,
+        ]
+      : input.materializeMissingSections === 'initialize'
+        ? [...initializedSections, ...additionalStoredSections]
+        : templateAlreadyCopied
+        ? copiedTemplateSections
+        : [...initializedSections, ...additionalStoredSections],
     noteHeadings: reconcileEbReportNoteHeadings(storedDraft.noteHeadings, round.notes),
   }
 }

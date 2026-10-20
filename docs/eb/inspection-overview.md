@@ -86,6 +86,13 @@ Det är inte en upplåsning eller rättelse av det gamla utlåtandet.
 - Noteringar, bildkopplingar och rubrikhänvisningar får nya identiteter. Det gamla
   utlåtandet, dess bilder och publika länkar ändras inte när den nya besiktningen
   skapas eller redigeras. Kopieringsfel ska rulla tillbaka den nya kopian.
+- Kopian får en komplett arbetsmall för Granska vid första öppningen. De
+  återanvända textavsnitten läggs över den nya mallen; de ersätter inte resten av
+  mallen. Noteringarna ska därför visas både under Runda och i Granska.
+- En redan skapad, olåst kopia med det tidigare felet (enbart återanvända
+  textavsnitt och saknade sakavsnitt) kompletteras vid öppning. Endast saknade
+  avsnitt läggs till. Befintliga texter, val, noteringar, rubriker och bilder
+  behålls. Låsta utlåtanden och vanliga fullständiga arbetsmallar ändras inte.
 
 Kör även `docs/db/2026-10-19_01_eb_inspection_reuse.sql` före användning av
 återanvändningsfunktionen. Den lägger till ursprungsinformation för kopierade
