@@ -34,6 +34,7 @@ import { useEbNoteImageUploadQueue } from '@/hooks/useEbNoteImageUploadQueue'
 import type { EbNoteImageUploadItem } from '@/lib/eb/noteImageUploadQueue'
 import type { EbInspectionRound, EbNote, EbNoteImage, EbProjectAttachment } from '@/lib/eb/server'
 import { ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
+import { ebReportNoteDisplayIndex, sortEbReportNotes } from '@/lib/eb/reportNoteDisplay'
 
 type EbInspectionMobileRoundClientProps = {
   initialRound: EbInspectionRound
@@ -239,17 +240,17 @@ function formFromNote(note: EbNote): NoteFormState {
   }
 }
 
-function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber: number) {
-  return `${round.project.notePrefix} ${note?.noteNumber ?? nextNumber}`
+function getNoteLabel(
+  round: EbInspectionRound,
+  note: EbNote | null,
+  nextNumber: number,
+  displayNumberByNoteId: ReadonlyMap<string, number>
+) {
+  return `${round.project.notePrefix} ${note ? displayNumberByNoteId.get(note.id) ?? '-' : nextNumber}`
 }
 
 function sortNotes(notes: EbNote[]) {
-  return [...notes].sort((left, right) => {
-    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-    }
-    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-  })
+  return sortEbReportNotes(notes)
 }
 
 function sortImages(images: EbNoteImage[]) {
@@ -549,10 +550,11 @@ export default function EbInspectionMobileRoundClient({
         : [],
     [activeDisciplineId, round.notes]
   )
-  const nextNoteNumber = useMemo(
-    () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
-    [round.notes]
+  const displayNumberByNoteId = useMemo(
+    () => ebReportNoteDisplayIndex({ notes: round.notes, project: round.project, checkpoints: round.checkpoints }),
+    [round.notes, round.project, round.checkpoints]
   )
+  const nextNoteNumber = round.notes.length + 1
   const showInvestigationFields = form.markerKey === 'S'
   const showDeductionFields = form.markerKey === 'N'
   const showReportFields = showInvestigationFields || showDeductionFields
@@ -1242,7 +1244,7 @@ export default function EbInspectionMobileRoundClient({
       showError('Vänta tills pågående bilduppladdning är klar innan noteringen raderas.')
       return
     }
-    const confirmed = window.confirm(`Radera ${round.project.notePrefix} ${note.noteNumber}?`)
+    const confirmed = window.confirm(`Radera ${getNoteLabel(round, note, nextNoteNumber, displayNumberByNoteId)}?`)
     if (!confirmed) return
 
     try {
@@ -1486,7 +1488,7 @@ export default function EbInspectionMobileRoundClient({
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex rounded-full bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white">
-                            {round.project.notePrefix} {note.noteNumber}
+                            {getNoteLabel(round, note, nextNoteNumber, displayNumberByNoteId)}
                           </span>
                           {note.markerKey ? (
                             <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
@@ -1573,7 +1575,7 @@ export default function EbInspectionMobileRoundClient({
                     {editingNote ? 'Redigera' : 'Ny notering'}
                   </p>
                   <h2 className="text-base font-semibold text-gray-950">
-                    {getNoteLabel(round, editingNote, nextNoteNumber)}
+                    {getNoteLabel(round, editingNote, nextNoteNumber, displayNumberByNoteId)}
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">

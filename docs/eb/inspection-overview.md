@@ -105,12 +105,32 @@ Ett hårt processavbrott kan inte köra denna städning. Det finns ännu inget
 beständigt bakgrundsjobb eller en begärandenyckel som gör en ny begäran efter
 ett förlorat svar idempotent; kontrollera då listan innan en ny kopia skapas.
 
+## Noteringarnas nummer i arbetsvyerna
+
+Granska och mobil Runda använder samma aktuella visningsnummer som utlåtandet.
+Numret räknas från hela besiktningens ordning, före eventuell filtrering på fack.
+Lista, redigeringsrubrik och raderingsfråga ska därför visa samma nummer även
+direkt efter att en notering raderas eller flyttas. Noteringens sparade identitet,
+äldre lagrade nummer och historiska bildmärkning ändras inte av visningen.
+
+Befintliga noteringar i Granskas redigeringsruta autosparas efter en kort paus.
+Spara och stäng sparar dessutom direkt och stänger redigeringen; Spara och skapa
+ny sparar och öppnar en ny punkt. Krysset, klick utanför rutan och byte till en
+annan punkt ska också slutföra sparningen innan redigeringen lämnas. En äldre
+pågående autosparning ska slutföras före den senaste textens slutliga sparning.
+Om sparningen misslyckas behålls rutan och texten så att användaren kan försöka
+igen. En orörd tom ny notering kan stängas utan att skapa någon databaspost.
+Stängning av hela webbläsaren kan inte invänta nätverket; varningen för osparat
+innehåll är ett skydd, inte en garanti för att en sådan stängning sparar.
+
 ## Verifiering
 
 ```powershell
 node --experimental-strip-types --test test/eb-overview.test.ts test/eb-overview-theme.test.ts test/eb-inspection-lifecycle.test.ts test/eb-inspection-lifecycle-sql.test.ts test/dashboard-model.test.ts test/dashboard-server.test.ts
 node scripts/preview-eb-overview.mjs --test
 node --experimental-strip-types --test test/eb-inspection-reuse.test.ts test/eb-inspection-reuse-sql.test.ts test/eb-inspection-reuse-display.test.ts test/eb-report-editing.test.ts
+node --experimental-strip-types --test test/eb-note-editor-numbering.test.ts test/eb-note-editor-saving.test.ts
+node scripts/test-eb-note-editor.mjs
 node scripts/test-eb-inspection-reuse-display.mjs
 ```
 

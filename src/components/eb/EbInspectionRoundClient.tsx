@@ -69,6 +69,7 @@ import type {
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { ebReviewChildSectionKeys, ebReviewSectionKeys } from '@/lib/eb/reviewSections'
 import { ebImageDisplayCaption, ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
+import { ebReportNoteDisplayIndex, sortEbReportNotes } from '@/lib/eb/reportNoteDisplay'
 
 type EbInspectionRoundClientProps = {
   initialRound: EbInspectionReport
@@ -133,6 +134,7 @@ type NoteAutosavePayload = {
   noteId: string
   disciplineId: string | null
   form: NoteFormState
+  remediationAssigneeCommit?: boolean
 }
 
 type InspectionAutosavePayload = { form: InspectionDetailsFormState }
@@ -603,20 +605,17 @@ function participantsFingerprint(participants: EditableParticipant[]) {
   return JSON.stringify(participantPayload(participants))
 }
 
-function getNoteLabel(round: EbInspectionRound, note: EbNote | null, nextNumber: number) {
-  return `${round.project.notePrefix} ${note?.noteNumber ?? nextNumber}`
+function getNoteLabel(
+  round: EbInspectionRound,
+  note: EbNote | null,
+  nextNumber: number,
+  displayNumberByNoteId: ReadonlyMap<string, number>
+) {
+  return `${round.project.notePrefix} ${note ? displayNumberByNoteId.get(note.id) ?? '-' : nextNumber}`
 }
 
 function sortNotes(notes: EbNote[]) {
-  return [...notes].sort((left, right) => {
-    if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
-      return (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-    }
-    if ((left.noteNumber ?? 0) !== (right.noteNumber ?? 0)) {
-      return (left.noteNumber ?? 0) - (right.noteNumber ?? 0)
-    }
-    return String(left.createdAt ?? '').localeCompare(String(right.createdAt ?? ''))
-  })
+  return sortEbReportNotes(notes)
 }
 
 function sortImages(images: EbNoteImage[]) {
@@ -2215,7 +2214,7 @@ function ReportNoteHeadingRow({
             const place = [note.room, note.location, note.placeDetail].filter(Boolean).join(' · ')
             return (
               <option key={note.id} value={note.id}>
-                Före notering {displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? '-'}
+                Före notering {displayNumberByNoteId.get(note.id) ?? '-'}
                 {place ? ` – ${place}` : ''}
               </option>
             )
@@ -2294,7 +2293,15 @@ export default function EbInspectionRoundClient({
   const [editorOpen, setEditorOpen] = useState(false)
   const [form, setForm] = useState<NoteFormState>(() => createInitialForm(initialRound))
   const [editingNote, setEditingNote] = useState<EbNote | null>(null)
+  const latestNoteFormRef = useRef(form)
+  const editingNoteRef = useRef<EbNote | null>(null)
+  const editorOpenRef = useRef(false)
+  const editorSessionRef = useRef(0)
+  const initialNoteFormFingerprintRef = useRef(noteFormFingerprint(form))
+  const editorTransitionPromiseRef = useRef<Promise<void> | null>(null)
   const [saving, setSaving] = useState(false)
+  const [noteEditorTransitionPending, setNoteEditorTransitionPending] = useState(false)
+  const [noteEditorError, setNoteEditorError] = useState<string | null>(null)
   const [uploadingCheckpointImageId, setUploadingCheckpointImageId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const deletingNoteRef = useRef(false)
@@ -2383,6 +2390,18 @@ export default function EbInspectionRoundClient({
     [reportSections, round.inspection.variant, round.project.projectTemplateKey]
   )
   const lockedMessage = 'Utlåtandet är låst och kan inte ändras.'
+  const replaceNoteForm = (next: NoteFormState) => {
+    latestNoteFormRef.current = next
+    setForm(next)
+  }
+  const replaceEditingNote = (next: EbNote | null) => {
+    editingNoteRef.current = next
+    setEditingNote(next)
+  }
+  const clearNoteAutosaveTimer = () => {
+    if (noteAutosaveTimerRef.current) clearTimeout(noteAutosaveTimerRef.current)
+    noteAutosaveTimerRef.current = null
+  }
 
   const handleQueuedImageUploaded = useCallback((image: EbNoteImage) => {
     setRound((current) => ({
@@ -2503,13 +2522,10 @@ export default function EbInspectionRoundClient({
     editingNoteIndex >= 0 && editingNoteIndex < orderedNotes.length - 1
       ? orderedNotes[editingNoteIndex + 1]
       : null
-  const displayNumberByNoteId = useMemo(() => {
-    const map = new Map<string, number>()
-    orderedNotes.forEach((note, index) => {
-      map.set(note.id, index + 1)
-    })
-    return map
-  }, [orderedNotes])
+  const displayNumberByNoteId = useMemo(
+    () => ebReportNoteDisplayIndex({ notes: round.notes, project: round.project, checkpoints }),
+    [round.notes, round.project, checkpoints]
+  )
   const imageBankPreviewItems = useMemo<ImageBankPreviewItem[]>(() => {
     const projectItems = availableProjectImageAttachments.flatMap((attachment) => {
       if (!attachment.signedUrl) return []
@@ -2519,7 +2535,7 @@ export default function EbInspectionRoundClient({
     const inspectionItems = imageBankImages.map((image) => {
       const note = image.noteId ? round.notes.find((item) => item.id === image.noteId) ?? null : null
       const referenceLabel = note
-        ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}`.trim()
+        ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? '-'}`.trim()
         : 'Okopplad besiktningsbild'
       return {
         key: `inspection:${image.id}`,
@@ -2531,10 +2547,7 @@ export default function EbInspectionRoundClient({
     })
     return [...projectItems, ...inspectionItems]
   }, [availableProjectImageAttachments, displayNumberByNoteId, imageBankImages, round.notes, round.project.notePrefix])
-  const nextNoteNumber = useMemo(
-    () => round.notes.reduce((max, note) => Math.max(max, note.noteNumber ?? 0), 0) + 1,
-    [round.notes]
-  )
+  const nextNoteNumber = round.notes.length + 1
   const showInvestigationFields = form.markerKey === 'S'
   const showDeductionFields = form.markerKey === 'N'
   const showReportFields = showInvestigationFields || showDeductionFields
@@ -2562,9 +2575,12 @@ export default function EbInspectionRoundClient({
   }, [form.noteText, suggestionCandidates])
 
   useEffect(() => {
-    if (editingNote) return
-    setForm(createInitialForm(round))
-  }, [activeDisciplineId, editingNote, round])
+    if (editingNote || editorOpen || editorOpenRef.current) return
+    const next = createInitialForm(round)
+    latestNoteFormRef.current = next
+    initialNoteFormFingerprintRef.current = noteFormFingerprint(next)
+    setForm(next)
+  }, [activeDisciplineId, editingNote, editorOpen, round])
 
   const notesBasePath = `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}/notes`
   const inspectionBasePath = `/api/eb/projects/${round.project.id}/inspections/${round.inspection.inspectionId}`
@@ -2710,21 +2726,23 @@ export default function EbInspectionRoundClient({
   }
 
   const selectDiscipline = (disciplineId: string) => {
+    if (editorOpenRef.current || editorTransitionPromiseRef.current) return
     setActiveDisciplineId(disciplineId)
-    setEditingNote(null)
+    replaceEditingNote(null)
     router.replace(`${pathname}?disciplineId=${disciplineId}`, { scroll: false })
   }
 
   const showAllDisciplines = () => {
+    if (editorOpenRef.current || editorTransitionPromiseRef.current) return
     setActiveDisciplineId(null)
-    setEditingNote(null)
+    replaceEditingNote(null)
     router.replace(pathname, { scroll: false })
   }
 
   const updateField = <K extends keyof NoteFormState>(field: K, value: NoteFormState[K]) => {
-    setForm((current) => {
-      if (field === 'markerKey') {
-        return {
+    const current = latestNoteFormRef.current
+    const next = field === 'markerKey'
+      ? {
           ...current,
           [field]: value,
           investigationResponsibleParty: value === 'S' ? current.investigationResponsibleParty : '',
@@ -2733,10 +2751,9 @@ export default function EbInspectionRoundClient({
           investigationDueDate: value === 'S' ? current.investigationDueDate : '',
           deductionAmount: value === 'N' ? current.deductionAmount : '',
         }
-      }
-
-      return { ...current, [field]: value }
-    })
+      : { ...current, [field]: value }
+    replaceNoteForm(next)
+    setNoteEditorError(null)
   }
 
   const updateInspectionField = <K extends keyof InspectionDetailsFormState>(
@@ -2757,11 +2774,12 @@ export default function EbInspectionRoundClient({
         assignee.isActive &&
         assignee.name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('sv-SE') === normalized
     )
-    setForm((current) => ({
-      ...current,
+    replaceNoteForm({
+      ...latestNoteFormRef.current,
       remediationAssigneeName: name,
       remediationAssigneeId: match?.id ?? '',
-    }))
+    })
+    setNoteEditorError(null)
   }
 
   const updateParticipant = <K extends keyof EditableParticipant>(
@@ -3524,14 +3542,39 @@ export default function EbInspectionRoundClient({
   }
 
   const resetForm = () => {
-    setEditingNote(null)
+    clearNoteAutosaveTimer()
+    editorSessionRef.current += 1
+    replaceEditingNote(null)
     lastAutosavedNoteFormRef.current = null
-    setForm(createInitialForm(round))
+    const next = createInitialForm(round)
+    initialNoteFormFingerprintRef.current = noteFormFingerprint(next)
+    replaceNoteForm(next)
+    setNoteEditorError(null)
   }
 
-  const closeEditor = () => {
+  const dismissEditor = () => {
     resetForm()
+    editorOpenRef.current = false
     setEditorOpen(false)
+  }
+
+  const openNoteEditor = (note: EbNote | null) => {
+    clearNoteAutosaveTimer()
+    editorSessionRef.current += 1
+    replaceEditingNote(note)
+    const next = note ? formFromNote(note) : createInitialForm(round)
+    initialNoteFormFingerprintRef.current = noteFormFingerprint(next)
+    lastAutosavedNoteFormRef.current = note ? noteFormFingerprint(next) : null
+    replaceNoteForm(next)
+    setNoteEditorError(null)
+    if (note) {
+      setActiveDisciplineId(note.disciplineId)
+      if (note.disciplineId) router.replace(`${pathname}?disciplineId=${note.disciplineId}`, { scroll: false })
+    } else {
+      setActiveDisciplineId((current) => current ?? round.disciplines[0]?.id ?? null)
+    }
+    editorOpenRef.current = true
+    setEditorOpen(true)
   }
 
   const upsertNoteInState = (note: EbNote) => {
@@ -3613,7 +3656,7 @@ export default function EbInspectionRoundClient({
         body: JSON.stringify({
           ...payload.form,
           disciplineId: payload.disciplineId,
-          remediationAssigneeCommit: false,
+          remediationAssigneeCommit: payload.remediationAssigneeCommit === true,
         }),
       })
       const body = (await response.json().catch(() => ({}))) as NoteResponse
@@ -3627,15 +3670,28 @@ export default function EbInspectionRoundClient({
 
   const noteAutosave = useAutosaveQueue<NoteAutosavePayload, NoteResponse>({
     save: saveNotePatch,
-    mergePayload: (_previous, next) => next,
-    onSaved: (payload) => {
+    mergePayload: (previous, next) => ({
+      ...next,
+      remediationAssigneeCommit: next.remediationAssigneeCommit === true ||
+        (previous.noteId === next.noteId && previous.remediationAssigneeCommit === true),
+    }),
+    onSaved: (payload, request) => {
       const savedNote = payload.note
       if (!savedNote) return
       upsertNoteInState(savedNote)
-      setEditingNote((current) => (current?.id === savedNote.id ? savedNote : current))
+      if (editingNoteRef.current?.id === savedNote.id) {
+        if (noteFormFingerprint(latestNoteFormRef.current) === noteFormFingerprint(request.form)) {
+          lastAutosavedNoteFormRef.current = noteFormFingerprint(latestNoteFormRef.current)
+          setNoteEditorError(null)
+        }
+        replaceEditingNote(savedNote)
+      }
     },
-    onError: (autosaveError) => {
-      showError(autosaveError, 'Kunde inte autospara noteringen.')
+    onError: (autosaveError, request) => {
+      if (editingNoteRef.current?.id === request.noteId) {
+        setNoteEditorError(autosaveError instanceof Error ? autosaveError.message : 'Kunde inte spara noteringen.')
+      }
+      if (!request.remediationAssigneeCommit) showError(autosaveError, 'Kunde inte autospara noteringen.')
     },
   })
   const {
@@ -3652,19 +3708,22 @@ export default function EbInspectionRoundClient({
       noteAutosaveTimerRef.current = null
     }
 
-    if (!editingNote || isLocked) return
+    if (!editingNote || isLocked || saving || noteEditorTransitionPending || noteSavePromiseRef.current) return
 
     const fingerprint = noteFormFingerprint(form)
     if (fingerprint === lastAutosavedNoteFormRef.current) return
 
+    const session = editorSessionRef.current
     noteAutosaveTimerRef.current = setTimeout(() => {
-      lastAutosavedNoteFormRef.current = fingerprint
+      if (session !== editorSessionRef.current || editingNoteRef.current?.id !== editingNote.id ||
+        !editorOpenRef.current || editorTransitionPromiseRef.current || noteSavePromiseRef.current ||
+        deletingNoteRef.current) return
       resetNoteAutosaveError()
       void enqueueNoteAutosave({
         noteId: editingNote.id,
         disciplineId: editingNote.disciplineId ?? activeDisciplineId,
-        form,
-      })
+        form: { ...latestNoteFormRef.current },
+      }).catch(() => undefined)
     }, 700)
 
     return () => {
@@ -3673,67 +3732,131 @@ export default function EbInspectionRoundClient({
         noteAutosaveTimerRef.current = null
       }
     }
-  }, [activeDisciplineId, editingNote, enqueueNoteAutosave, form, isLocked, resetNoteAutosaveError])
+  }, [activeDisciplineId, editingNote, enqueueNoteAutosave, form, isLocked, noteEditorTransitionPending, resetNoteAutosaveError, saving])
 
-  const saveCurrentNote = async () => {
+  useEffect(() => {
+    if (!editorOpen || isLocked) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      const fingerprint = noteFormFingerprint(latestNoteFormRef.current)
+      const dirty = editingNoteRef.current
+        ? fingerprint !== lastAutosavedNoteFormRef.current
+        : fingerprint !== initialNoteFormFingerprintRef.current
+      if (!dirty && !noteSavePromiseRef.current && !editorTransitionPromiseRef.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [editorOpen, isLocked])
+
+  const saveCurrentNote = async (): Promise<EbNote | null> => {
     if (isLocked) {
       throw new Error(lockedMessage)
     }
-    if (noteSavePromiseRef.current) return noteSavePromiseRef.current
+    if (deletingNoteRef.current) throw new Error('Vänta tills noteringen har raderats.')
+    clearNoteAutosaveTimer()
+    const session = editorSessionRef.current
+    if (noteSavePromiseRef.current) {
+      const saved = await noteSavePromiseRef.current
+      if (session !== editorSessionRef.current || !saved) return saved
+      return noteFormFingerprint(latestNoteFormRef.current) === noteFormFingerprint(formFromNote(saved))
+        ? saved
+        : saveCurrentNote()
+    }
 
+    const noteToSave = editingNoteRef.current
+    const formToSave = { ...latestNoteFormRef.current }
     const disciplineId =
-      editingNote?.disciplineId ?? activeDisciplineId ?? round.disciplines[0]?.id ?? null
-    if (!disciplineId) return null
+      noteToSave?.disciplineId ?? activeDisciplineId ?? round.disciplines[0]?.id ?? null
+    if (!disciplineId) throw new Error('Välj fack innan noteringen sparas.')
+    if (!noteToSave && !formToSave.noteText.trim()) throw new Error('Skriv en noteringstext innan du sparar. Dina uppgifter finns kvar här.')
 
     setSaving(true)
-    const noteToSave = editingNote
-    const formToSave = form
+    setNoteEditorError(null)
+    resetNoteAutosaveError()
     const requestPromise = (async () => {
-      const response = await fetch(noteToSave ? `${notesBasePath}/${noteToSave.id}` : notesBasePath, {
-        method: noteToSave ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formToSave,
-          disciplineId,
-          remediationAssigneeCommit: true,
-        }),
-      })
-      const payload = (await response.json().catch(() => ({}))) as NoteResponse
-      if (!response.ok || !payload.note) {
-        throw new Error(payload.error ?? 'Kunde inte spara noteringen.')
+      let payload: NoteResponse | null
+      if (noteToSave) {
+        // The final snapshot joins the same queue as debounced writes. Older
+        // requests finish first and cannot overwrite this explicit commit.
+        payload = await enqueueNoteAutosave({ noteId: noteToSave.id, disciplineId,
+          form: formToSave, remediationAssigneeCommit: true })
+      } else {
+        const response = await fetch(notesBasePath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...formToSave, disciplineId, remediationAssigneeCommit: true }),
+        })
+        payload = (await response.json().catch(() => ({}))) as NoteResponse
+        if (!response.ok) throw new Error(payload?.error ?? 'Kunde inte spara noteringen.')
       }
+      if (!payload?.note) throw new Error(payload?.error ?? 'Kunde inte spara noteringen.')
 
       upsertNoteInState(payload.note)
-      setEditingNote(payload.note)
-      const savedForm = formFromNote(payload.note)
-      lastAutosavedNoteFormRef.current = noteFormFingerprint(savedForm)
-      setForm(savedForm)
+      if (session === editorSessionRef.current &&
+        (editingNoteRef.current?.id ?? null) === (noteToSave?.id ?? null)) {
+        replaceEditingNote(payload.note)
+        if (noteFormFingerprint(latestNoteFormRef.current) === noteFormFingerprint(formToSave)) {
+          const savedForm = formFromNote(payload.note)
+          lastAutosavedNoteFormRef.current = noteFormFingerprint(savedForm)
+          replaceNoteForm(savedForm)
+          setNoteEditorError(null)
+        }
+      }
       return payload.note
     })()
     noteSavePromiseRef.current = requestPromise
 
+    let saved: EbNote
     try {
-      return await requestPromise
+      saved = await requestPromise
     } finally {
       if (noteSavePromiseRef.current === requestPromise) {
         noteSavePromiseRef.current = null
         setSaving(false)
       }
     }
+    // A blur/image save can have started before the closing click. If text
+    // changed meanwhile, finish the latest version on the now-known note ID.
+    return session === editorSessionRef.current &&
+      noteFormFingerprint(latestNoteFormRef.current) !== noteFormFingerprint(formFromNote(saved))
+      ? saveCurrentNote()
+      : saved
   }
+
+  const finishEditorTransition = async (action: () => void, allowUntouchedEmpty = true): Promise<void> => {
+    if (deletingNoteRef.current) return
+    if (editorTransitionPromiseRef.current) return editorTransitionPromiseRef.current
+    const session = editorSessionRef.current
+    clearNoteAutosaveTimer()
+    setNoteEditorTransitionPending(true)
+    setNoteEditorError(null)
+    const transition = (async () => {
+      try {
+        const untouchedEmpty = !editingNoteRef.current &&
+          !latestNoteFormRef.current.noteText.trim() &&
+          noteFormFingerprint(latestNoteFormRef.current) === initialNoteFormFingerprintRef.current
+        if (!isLocked && (noteSavePromiseRef.current || !(allowUntouchedEmpty && untouchedEmpty))) await saveCurrentNote()
+        if (session === editorSessionRef.current) action()
+      } catch (submitError) {
+        setNoteEditorError(submitError instanceof Error ? submitError.message : 'Kunde inte spara noteringen. Försök igen.')
+        showError(submitError, 'Kunde inte spara noteringen.')
+      }
+    })()
+    editorTransitionPromiseRef.current = transition
+    try {
+      await transition
+    } finally {
+      if (editorTransitionPromiseRef.current === transition) editorTransitionPromiseRef.current = null
+      setNoteEditorTransitionPending(false)
+    }
+  }
+
+  const closeEditor = () => finishEditorTransition(dismissEditor)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (saving) return
-
-    try {
-      await saveCurrentNote()
-      closeEditor()
-    } catch (submitError) {
-      showError(submitError, 'Kunde inte spara noteringen.')
-    } finally {
-      setSaving(false)
-    }
+    await finishEditorTransition(dismissEditor, false)
   }
 
   const handleSaveAndNew = async () => {
@@ -3741,43 +3864,24 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (saving || round.disciplines.length === 0) return
-
-    try {
-      const savedNote = await saveCurrentNote()
-      if (!savedNote) return
-      resetForm()
-      setEditorOpen(true)
-    } catch (submitError) {
-      showError(submitError, 'Kunde inte spara noteringen.')
-    } finally {
-      setSaving(false)
-    }
+    if (round.disciplines.length === 0) return
+    await finishEditorTransition(() => openNoteEditor(null), false)
   }
 
-  const handleEdit = (note: EbNote) => {
-    if (saving) return
-    const nextForm = formFromNote(note)
-    setEditingNote(note)
-    setEditorOpen(true)
-    setActiveDisciplineId(note.disciplineId)
-    if (note.disciplineId) {
-      router.replace(`${pathname}?disciplineId=${note.disciplineId}`, { scroll: false })
-    }
-    lastAutosavedNoteFormRef.current = noteFormFingerprint(nextForm)
-    setForm(nextForm)
+  const handleEdit = async (note: EbNote) => {
+    if (deletingNoteRef.current || editorTransitionPromiseRef.current || editingNoteRef.current?.id === note.id) return
+    if (editorOpenRef.current) await finishEditorTransition(() => openNoteEditor(note))
+    else openNoteEditor(note)
   }
 
-  const handleNewNote = () => {
+  const handleNewNote = async () => {
     if (isLocked) {
       showError(lockedMessage)
       return
     }
-    setEditingNote(null)
-    lastAutosavedNoteFormRef.current = null
-    setActiveDisciplineId((current) => current ?? round.disciplines[0]?.id ?? null)
-    setForm(createInitialForm(round))
-    setEditorOpen(true)
+    if (deletingNoteRef.current || editorTransitionPromiseRef.current) return
+    if (editorOpenRef.current) await finishEditorTransition(() => openNoteEditor(null))
+    else openNoteEditor(null)
   }
 
   const handleMoveNote = (note: EbNote, direction: 'up' | 'down') => {
@@ -4377,7 +4481,6 @@ export default function EbInspectionRoundClient({
     } catch (attachError) {
       showError(attachError, 'Kunde inte koppla bilden.')
     } finally {
-      setSaving(false)
       setMovingImageId(null)
     }
   }
@@ -4471,9 +4574,11 @@ export default function EbInspectionRoundClient({
       showError(lockedMessage)
       return
     }
-    if (deletingId || deletingNoteRef.current) return
-    const confirmed = window.confirm(`Radera ${round.project.notePrefix} ${note.noteNumber}?`)
+    if (deletingId || deletingNoteRef.current || editorTransitionPromiseRef.current ||
+      noteSavePromiseRef.current || noteAutosaveStatus === 'saving') return
+    const confirmed = window.confirm(`Radera ${getNoteLabel(round, note, nextNoteNumber, displayNumberByNoteId)}?`)
     if (!confirmed) return
+    clearNoteAutosaveTimer()
 
     try {
       deletingNoteRef.current = true
@@ -5512,9 +5617,10 @@ export default function EbInspectionRoundClient({
         ) : null}
 
         {editorOpen ? (
-          <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={closeEditor}>
+          <div className="fixed inset-0 z-[100] flex justify-end bg-slate-950/25" onClick={() => void closeEditor()}>
             <aside
               className="flex h-full w-full max-w-7xl flex-col bg-white shadow-2xl"
+              aria-busy={noteEditorTransitionPending || saving || Boolean(deletingId)}
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
@@ -5523,11 +5629,11 @@ export default function EbInspectionRoundClient({
                     {editingNote ? 'Redigera' : 'Ny notering'}
                   </p>
                   <h2 className="text-lg font-semibold text-gray-950">
-                    {getNoteLabel(round, editingNote, nextNoteNumber)}
+                    {getNoteLabel(round, editingNote, nextNoteNumber, displayNumberByNoteId)}
                   </h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  {noteAutosaveStatusText ? (
+                  {noteEditorTransitionPending || noteAutosaveStatusText ? (
                     <span
                       title={noteAutosaveError ?? undefined}
                       className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold ${
@@ -5536,16 +5642,16 @@ export default function EbInspectionRoundClient({
                           : 'bg-emerald-50 text-emerald-800'
                       }`}
                     >
-                      {noteAutosaveStatus === 'saving' ? <Loader2 size={13} className="animate-spin" /> : null}
-                      {noteAutosaveStatusText}
+                      {noteEditorTransitionPending || noteAutosaveStatus === 'saving' ? <Loader2 size={13} className="animate-spin" /> : null}
+                      {noteEditorTransitionPending ? 'Sparar...' : noteAutosaveStatusText}
                     </span>
                   ) : null}
                   <button
                     type="button"
                     onClick={() => {
-                      if (previousEditingNote) handleEdit(previousEditingNote)
+                      if (previousEditingNote) void handleEdit(previousEditingNote)
                     }}
-                  disabled={isLocked || !previousEditingNote}
+                  disabled={isLocked || noteEditorTransitionPending || Boolean(deletingId) || !previousEditingNote}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Föregående notering"
                     title="Föregående notering"
@@ -5555,9 +5661,9 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => {
-                      if (nextEditingNote) handleEdit(nextEditingNote)
+                      if (nextEditingNote) void handleEdit(nextEditingNote)
                     }}
-                  disabled={isLocked || !nextEditingNote}
+                  disabled={isLocked || noteEditorTransitionPending || Boolean(deletingId) || !nextEditingNote}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-base font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-300"
                     aria-label="Nästa notering"
                     title="Nästa notering"
@@ -5566,18 +5672,21 @@ export default function EbInspectionRoundClient({
                   </button>
                 <button
                     type="button"
-                    onClick={closeEditor}
+                    onClick={() => void closeEditor()}
+                    disabled={noteEditorTransitionPending || Boolean(deletingId)}
+                    aria-busy={noteEditorTransitionPending}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50"
                     aria-label="Stäng"
                     title="Stäng"
                   >
-                    <X size={16} />
+                    {noteEditorTransitionPending ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
                   </button>
                 </div>
               </div>
 
               <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_32rem]">
               <form onSubmit={(event) => void handleSubmit(event)} className="min-h-0 space-y-3 overflow-y-auto p-4">
+                <fieldset disabled={isLocked || noteEditorTransitionPending || Boolean(deletingId)} className="contents">
                 <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(event) => void handleImageSelected(event)} className="hidden" />
                 <input ref={galleryInputRef} type="file" accept="image/*" multiple onChange={(event) => void handleImageSelected(event)} className="hidden" />
 
@@ -5883,9 +5992,9 @@ export default function EbInspectionRoundClient({
                 </section>
                 ) : null}
 
-                {noteAutosaveStatus === 'error' && noteAutosaveError ? (
-                  <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                    {noteAutosaveError}
+                {noteEditorError || (noteAutosaveStatus === 'error' && noteAutosaveError) ? (
+                  <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                    {noteEditorError ?? noteAutosaveError}
                   </div>
                 ) : null}
 
@@ -5893,7 +6002,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => void handleDelete(editingNote)}
-                    disabled={isLocked || deletingId === editingNote.id}
+                    disabled={isLocked || deletingId === editingNote.id || noteAutosaveStatus === 'saving'}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-rose-200 bg-white px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {deletingId === editingNote.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -5905,7 +6014,7 @@ export default function EbInspectionRoundClient({
                   <button
                     type="button"
                     onClick={() => void handleSaveAndNew()}
-                    disabled={isLocked || saving || round.disciplines.length === 0}
+                    disabled={isLocked || noteEditorTransitionPending || round.disciplines.length === 0}
                     className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-emerald-200 bg-white px-4 py-2.5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                     aria-label="Spara och skapa ny notering"
                     title="Spara och skapa ny notering"
@@ -5915,7 +6024,7 @@ export default function EbInspectionRoundClient({
                   </button>
                   <button
                     type="submit"
-                    disabled={isLocked || saving || round.disciplines.length === 0}
+                    disabled={isLocked || noteEditorTransitionPending || round.disciplines.length === 0}
                     className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     aria-label="Spara och stäng noteringen"
                     title="Spara och stäng noteringen"
@@ -5924,6 +6033,7 @@ export default function EbInspectionRoundClient({
                     {saving ? 'Sparar...' : 'Spara och stäng'}
                   </button>
                 </div>
+                </fieldset>
               </form>
               <aside className="min-h-0 border-l border-emerald-100 bg-emerald-50/20 p-4">
                 <div className="flex h-full min-h-0 flex-col gap-4">
@@ -6089,7 +6199,7 @@ export default function EbInspectionRoundClient({
                                   imagesByNoteId.get(editingNote.id)?.some((linkedImage) => linkedImage.id === image.id)
                               )
                               const referenceLabel = note
-                                ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? note.noteNumber ?? ''}`.trim()
+                                ? `${round.project.notePrefix} ${displayNumberByNoteId.get(note.id) ?? '-'}`.trim()
                                 : 'Okopplad'
                               return (
                                 <InspectionImageBankCard
