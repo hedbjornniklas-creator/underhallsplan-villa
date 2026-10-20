@@ -43,6 +43,7 @@ import type {
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { ebReportCheckpointDisplayIndex, sortEbReportNotes as sortNotes } from '@/lib/eb/reportNoteDisplay'
+import { ebImageDisplayCaption, ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
 
 type EbInspectionReportViewProps = {
   report: EbInspectionReport
@@ -1572,7 +1573,8 @@ function PhotoAppendixSectionBlock({
         : null}
       <div className="eb-report-photo-grid grid grid-cols-2 gap-x-6 gap-y-5">
         {photos.map((photo) => {
-          const imageLabel = photo.image.label?.trim()
+          const imageLabel = ebImageDisplayCaption(photo.image)
+          const originLabel = ebImageOriginLabel(photo.image)
           return (
             <figure
               key={photo.id}
@@ -1584,6 +1586,7 @@ function PhotoAppendixSectionBlock({
                   {photo.location !== '-' ? ` · ${photo.location}` : ''}
                 </p>
                 <p>Bild {photo.imageNumber} av {photo.totalImages}</p>
+                {originLabel ? <p className="font-semibold">{originLabel}</p> : null}
                 {imageLabel ? (
                   <p className="whitespace-pre-wrap break-words">{imageLabel}</p>
                 ) : null}

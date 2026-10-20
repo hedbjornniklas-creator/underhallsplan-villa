@@ -4,6 +4,7 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { parseEbInspectionReuseSource } from '@/lib/eb/inspectionReuse'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,10 +22,12 @@ type InspectionImageRow = {
   label: string | null
   sort_order: number | null
   created_at: string | null
+  reuse_source?: unknown
 }
 
-const IMAGE_SELECT =
-  'id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at'
+// mapImage is an explicit response whitelist. Reading the row keeps optional
+// provenance through mutations and also works before its additive migration.
+const IMAGE_SELECT = '*'
 const FALLBACK_IMAGE_SELECT = 'id,inspection_id,eb_note_id,file_path,label,sort_order,created_at'
 
 function jsonError(message: string, status: number) {
@@ -63,6 +66,7 @@ function mapImage(row: InspectionImageRow) {
       ? storage.getPublicUrl(row.thumbnail_file_path).data.publicUrl
       : null,
     createdAt: row.created_at ?? null,
+    reusedFrom: parseEbInspectionReuseSource(row.reuse_source),
   }
 }
 

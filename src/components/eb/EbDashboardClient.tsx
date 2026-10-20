@@ -1,13 +1,13 @@
 'use client'
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Building2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, FileText, LockOpen, Plus, RefreshCw, Search, Send, Settings, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, Building2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, CopyPlus, FileText, LockOpen, Plus, RefreshCw, Search, Send, Settings, TriangleAlert, X } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
 import GettingStarted from '@/components/besiktapp/GettingStarted'
-import EbNewInspectionDialog from '@/components/eb/EbNewInspectionDialog'
+import EbNewInspectionDialog, { canReusePreviousFinalInspection } from '@/components/eb/EbNewInspectionDialog'
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
 import type { EbInspectionSummary, EbProjectListItem } from '@/lib/eb/server'
 import { buildEbOverviewItems, selectEbOverviewPage, type EbOverviewItem, type EbOverviewFilter, type EbOverviewSort } from '@/lib/eb/overview'
@@ -26,7 +26,7 @@ function dateLabel(value: string | null) {
   return Number.isNaN(date.getTime()) ? 'Datum saknas' : date.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
 }
 
-function InspectionRow({ item, onDelivery }: { item: EbOverviewItem; onDelivery: (target: DeliveryTarget) => void }) {
+function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; onDelivery: (target: DeliveryTarget) => void; onReuse: (projectId: string, inspectionId: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   const detailsId = useId()
   const { project, inspection, lifecycle } = item
@@ -34,11 +34,13 @@ function InspectionRow({ item, onDelivery }: { item: EbOverviewItem; onDelivery:
   const reportHref = `${base}/inspections/${encodeURIComponent(item.id)}/report`
   const performHref = `${base}/inspections/${encodeURIComponent(item.id)}/perform`
   const marker = lifecycle.needsAttention ? 'attention' : lifecycle.isOpen ? 'active' : 'closed'
+  const canReuse = canReusePreviousFinalInspection(inspection) && getEbInspectionLifecycle({ status: 'draft' }, project.status).isOpen
   return <>
     <tr data-row-id={item.id} data-marker={marker}>
       <td className="obo-date"><time dateTime={inspection.date || undefined}>{dateLabel(inspection.date)}</time>{inspection.inspectionTime && <span className="obo-meta eb-time">kl. {inspection.inspectionTime.slice(0, 5)}</span>}</td>
       <td className="obo-identity"><span className="obo-address obo-cell-text" title={item.title}>{item.title}</span><span className="obo-cell-text obo-meta" title={item.address}>{item.address}</span>
-        <span className="obo-mobile-only">{project.title} · {item.customer}</span>{lifecycle.deliveryAction && <span className="obo-attention obo-mobile-only">{lifecycle.deliveryAction}</span>}</td>
+        <span className="obo-mobile-only">{project.title} · {item.customer}</span>{lifecycle.deliveryAction && <span className="obo-attention obo-mobile-only">{lifecycle.deliveryAction}</span>}
+        {canReuse && <button type="button" onClick={() => onReuse(project.id, inspection.inspectionId)} className="mt-1 inline-flex min-h-11 items-center gap-2 whitespace-normal text-left text-sm font-semibold text-blue-700" aria-label={`Ny slutbesiktning från tidigare: ${item.title}, ${project.title}`}><CopyPlus size={16} className="shrink-0" aria-hidden /><span>Ny slutbesiktning från tidigare</span></button>}</td>
       <td className="obo-desktop-only"><span className="obo-cell-text" title={project.title}>{project.title}</span><span className="obo-cell-text obo-meta">{project.propertyDesignation || project.city || '–'}</span></td>
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Utlåtande</span><span className="obo-cell-text" title={lifecycle.deliveryLabel}>{lifecycle.deliveryLabel}</span></td>
@@ -74,6 +76,7 @@ export default function EbDashboardClient({ initialProjects, initialError }: Pro
   const [loading, setLoading] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createProjectId, setCreateProjectId] = useState<string | null>(null)
+  const [createSourceInspectionId, setCreateSourceInspectionId] = useState<string | null>(null)
   const [deliveryTarget, setDeliveryTarget] = useState<DeliveryTarget | null>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<EbOverviewFilter>('active')
@@ -118,6 +121,11 @@ export default function EbDashboardClient({ initialProjects, initialError }: Pro
     setProjects(current => [project, ...current.filter(item => item.id !== project.id)])
   }, [])
   const resetFilters = () => { setSearch(''); setFilter('active'); setAttentionOnly(false); setPage(1) }
+  const reuseInspection = (projectId: string, inspectionId: string) => {
+    setCreateProjectId(projectId)
+    setCreateSourceInspectionId(inspectionId)
+    setCreateOpen(true)
+  }
 
   return <Protected><main className="obo-home eb-home min-h-screen"><div className="obo-home-inner mx-auto w-full p-4 md:p-6">
     <GettingStarted module="eb" onStart={() => setCreateOpen(true)} heading={<>
@@ -137,12 +145,12 @@ export default function EbDashboardClient({ initialProjects, initialError }: Pro
       </div>
       {error && <div className="obo-error" role="alert"><p>{error}</p><button type="button" onClick={() => void refresh()} disabled={loading}>Försök igen</button></div>}{loading && <p className="obo-empty" role="status">Uppdaterar besiktningslistan…</p>}
       {!result.items.length && !loading && !error && <div className="obo-empty" role="status"><p>{filtered ? 'Inga besiktningar matchar dina val.' : items.length ? 'Inga pågående besiktningar eller leveransuppgifter.' : 'Inga besiktningar ännu.'}</p>{filtered ? <button type="button" onClick={resetFilters}>Rensa filter</button> : items.length ? <button type="button" onClick={() => setFilter('closed')}>Visa klara besiktningar</button> : <button type="button" onClick={() => setCreateOpen(true)}>Skapa din första besiktning</button>}</div>}
-      {result.items.length > 0 && <table className="obo-table"><caption className="obo-sr">Besiktningar med separata statusar för arbete och utlåtandets leverans</caption><thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Besiktning / adress</th><th scope="col">Entreprenad</th><th scope="col">Beställare</th><th scope="col">Utlåtande</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead><tbody>{result.items.map(item => <InspectionRow key={item.id} item={item} onDelivery={setDeliveryTarget} />)}</tbody></table>}
+      {result.items.length > 0 && <table className="obo-table"><caption className="obo-sr">Besiktningar med separata statusar för arbete och utlåtandets leverans</caption><thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Besiktning / adress</th><th scope="col">Entreprenad</th><th scope="col">Beställare</th><th scope="col">Utlåtande</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead><tbody>{result.items.map(item => <InspectionRow key={item.id} item={item} onDelivery={setDeliveryTarget} onReuse={reuseInspection} />)}</tbody></table>}
       <div className="obo-pagination"><span role="status" aria-live="polite">{result.total ? `${result.start + 1}–${result.start + result.items.length} av ${result.total} besiktningar` : '0 besiktningar'}</span><nav aria-label="Sidbläddring besiktningar"><button type="button" className="obo-icon" aria-label="Föregående sida" disabled={result.page === 1} onClick={() => setPage(result.page - 1)}><ChevronLeft size={20} aria-hidden /></button><span>{result.page} / {result.pages}</span><button type="button" className="obo-icon" aria-label="Nästa sida" disabled={result.page >= result.pages} onClick={() => setPage(result.page + 1)}><ChevronRight size={20} aria-hidden /></button></nav></div>
       </div>
     </section>
     {emptyProjects.length > 0 && <details className="eb-empty-projects"><summary>Entreprenader utan besiktning ({emptyProjects.length})</summary><ul>{emptyProjects.map(project => <li key={project.id}><Link href={`/eb/projects/${encodeURIComponent(project.id)}`}>{project.title}</Link><button type="button" onClick={() => { setCreateProjectId(project.id); setCreateOpen(true) }}>Lägg till besiktning</button></li>)}</ul></details>}
-    <EbNewInspectionDialog open={createOpen} projects={selectableProjects} initialProjectId={createProjectId || undefined} onClose={() => { setCreateOpen(false); setCreateProjectId(null) }} onCreated={(project, inspectionId) => {
+    <EbNewInspectionDialog open={createOpen} projects={selectableProjects} initialProjectId={createProjectId || undefined} initialSourceInspectionId={createSourceInspectionId || undefined} onClose={() => { setCreateOpen(false); setCreateProjectId(null); setCreateSourceInspectionId(null) }} onCreated={(project, inspectionId) => {
       updateProject(project)
       if (inspectionId) router.push(`/eb/projects/${encodeURIComponent(project.id)}/inspections/${encodeURIComponent(inspectionId)}/perform`)
     }} onProjectCreated={updateProject} />

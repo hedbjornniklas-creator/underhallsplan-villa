@@ -53,11 +53,12 @@ export function ebOverviewDemo(): EbProjectListItem[] {
   const sent = { reportDeliveryStatus: 'sent' as const, reportLastSentAt: '2026-10-13T08:05:00Z' }
   return [
     ebOverviewProject({ inspections: [
-      ebOverviewInspection(),
+      ebOverviewInspection({ approvalStatus: 'not_approved' }),
       ebOverviewInspection({ inspectionId: 'inspection-after', variant: 'EB', variantLabel: 'Efterbesiktning',
         sequenceNo: 2, parentInspectionId: 'inspection-closed', date: '2026-10-21', assignmentNumber: 'EB 2026-1021-01' }),
-      ebOverviewInspection({ ...locked, inspectionId: 'inspection-delivery', date: '2026-10-19', assignmentNumber: 'EB 2026-1019-01' }),
-      ebOverviewInspection({ ...locked, ...sent, inspectionId: 'inspection-closed', date: '2026-10-10', assignmentNumber: 'EB 2026-1010-01' }),
+      ebOverviewInspection({ ...locked, inspectionId: 'inspection-delivery', date: '2026-10-19', assignmentNumber: 'EB 2026-1019-01', approvalStatus: 'approved' }),
+      ebOverviewInspection({ ...locked, ...sent, inspectionId: 'inspection-closed', date: '2026-10-10', assignmentNumber: 'EB 2026-1010-01', approvalStatus: 'not_approved',
+        meetingPlace: 'Tidigare entrén', startMeetingTime: '09:30', finalMeetingTime: '15:00' }),
     ] }),
     ...Array.from({ length: 12 }, (_, index) => {
       const projectId = `project-${index}`

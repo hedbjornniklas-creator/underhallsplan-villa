@@ -32,7 +32,7 @@ const registry = load<Record<string, unknown>>('src/content/standardtexts/regist
 const standardTexts = load<Record<string, unknown>>('src/content/standardtexts/loadStandardText.ts', {
   'server-only': {}, './registry': registry,
 })
-const pureDependencies = Object.fromEntries(['reportSectionRules', 'reportText', 'vocabulary', 'approvalStatus', 'reviewSections', 'reportNoteDisplay'].map(name => [
+const pureDependencies = Object.fromEntries(['reportSectionRules', 'reportText', 'vocabulary', 'approvalStatus', 'reviewSections', 'reportNoteDisplay', 'inspectionReuseDisplay'].map(name => [
   `@/lib/eb/${name}`, load<Record<string, unknown>>(`src/lib/eb/${name}.ts`, {}),
 ]))
 

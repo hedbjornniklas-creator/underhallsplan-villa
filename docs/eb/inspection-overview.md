@@ -51,11 +51,53 @@ som låset tas bort och historiken skrivs. Äldre upplåsta EB-besiktningar rät
 endast när upplåsningshistorik finns. Publicerade länkar och befintliga
 funktionsbehörigheter bevaras. Kör inte äldre upplåsnings-SQL efter denna fil.
 
+## Ny slutbesiktning från tidigare
+
+Beslut 2026-10-19: efter en ej godkänd slutbesiktning ska besiktningsmannen
+kunna skapa en separat ny slutbesiktning med den tidigare som arbetsmall.
+Det är inte en upplåsning eller rättelse av det gamla utlåtandet.
+
+- Välj **Ny slutbesiktning från tidigare** i den tidigare besiktningens rad
+  eller i entreprenadens besiktningslista. Källan ska vara en låst, ej godkänd
+  slutbesiktning i samma entreprenad och organisation. Det går även att välja
+  återanvändning i dialogen för ny slutbesiktning.
+- Objekt, avtal, beställare, entreprenörer och projektbilagor finns kvar i samma
+  entreprenad. Besiktningens egna kontaktpersoner, relevanta redigerbara
+  utlåtandetexter, fack och dokumentunderlag förs över till nya poster.
+- **Ta med tidigare noteringar och bilder** är ett separat val. Punkterna blir
+  vanliga redigerbara noteringar att gå igenom; ingen ny kontrollstatus eller
+  särskild bekräftelse per punkt införs. De är en arbetsmall, inte ett automatiskt
+  beslut om den nya besiktningen.
+- Den nya besiktningen börjar som utkast och får egna datum/tider, faktisk
+  närvaro, kallelse, beslut, tidsfrister, underskrift och publicering. Gamla
+  godkännanden, utskicksstatusar, accepterade uppdragsbekräftelser och köpt
+  åtgärdsuppföljning blir inte nya godkännanden eller beställningar.
+- Bilder får egna filer och en bestående märkning om vilken tidigare besiktning
+  de kommer från. Märkningen finns i redigeringsvyerna, digitalt utlåtande och
+  PDF även om bildtexten ändras. Upprepad återanvändning behåller bildens
+  ursprungliga källa.
+- Noteringar, bildkopplingar och rubrikhänvisningar får nya identiteter. Det gamla
+  utlåtandet, dess bilder och publika länkar ändras inte när den nya besiktningen
+  skapas eller redigeras. Kopieringsfel ska rulla tillbaka den nya kopian.
+
+Kör även `docs/db/2026-10-19_01_eb_inspection_reuse.sql` före användning av
+återanvändningsfunktionen. Den lägger till ursprungsinformation för kopierade
+noteringar och bilder; den ändrar inte gamla bedömningar eller utlåtanden.
+
+Teknisk avgränsning: kopieringen sker i skapandebegäran med högst fyra
+filkopieringar samtidigt och 300 sekunders tillåten körtid. Vanliga fel städar
+målbesiktningen och dess filer efter att pågående filkopieringar har avslutats.
+Ett hårt processavbrott kan inte köra denna städning. Det finns ännu inget
+beständigt bakgrundsjobb eller en begärandenyckel som gör en ny begäran efter
+ett förlorat svar idempotent; kontrollera då listan innan en ny kopia skapas.
+
 ## Verifiering
 
 ```powershell
 node --experimental-strip-types --test test/eb-overview.test.ts test/eb-inspection-lifecycle.test.ts test/eb-inspection-lifecycle-sql.test.ts test/dashboard-model.test.ts test/dashboard-server.test.ts
 node scripts/preview-eb-overview.mjs --test
+node --experimental-strip-types --test test/eb-inspection-reuse.test.ts test/eb-inspection-reuse-sql.test.ts test/eb-inspection-reuse-display.test.ts test/eb-report-editing.test.ts
+node scripts/test-eb-inspection-reuse-display.mjs
 ```
 
 Förhandsvisningen använder syntetiska uppgifter och lokala API-svar. Den skickar

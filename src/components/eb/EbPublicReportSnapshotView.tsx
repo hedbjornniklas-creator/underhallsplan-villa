@@ -43,6 +43,7 @@ import type {
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { ebReportCheckpointDisplayIndex, sortEbReportNotes as sortNotes } from '@/lib/eb/reportNoteDisplay'
+import { ebImageDisplayCaption, ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
 
 export type EbPublicDeliveryDocumentLink = {
   id: string
@@ -76,6 +77,7 @@ type PublicImage = {
   reference: string
   location: string | null
   label: string | null
+  originLabel: string | null
   noteText: string | null
 }
 
@@ -1135,6 +1137,7 @@ function ImageLightbox({
       </div>
       <div className="shrink-0 border-t border-white/10 px-4 py-4 sm:px-6" onClick={(event) => event.stopPropagation()}>
         <p className="font-semibold">{image.reference}{image.location ? ` · ${image.location}` : ''}</p>
+        {image.originLabel ? <p className="mt-1 text-sm font-semibold text-amber-200">{image.originLabel}</p> : null}
         {image.label ? <p className="mt-1 text-sm text-slate-200">{image.label}</p> : null}
         {image.noteText ? <p className="mt-1 text-sm text-slate-300">Notering: {image.noteText}</p> : null}
       </div>
@@ -1188,6 +1191,7 @@ function PhotoAppendix({
                       <span className="block text-xs font-semibold uppercase tracking-[0.11em] text-slate-500">
                         Bild {imageIndex + 1} av {group.images.length}
                       </span>
+                      {image.originLabel ? <span className="mt-1 block text-sm font-semibold text-slate-700">{image.originLabel}</span> : null}
                       {image.label ? <span className="mt-1 block text-sm leading-6 text-slate-700">{image.label}</span> : null}
                       {imageIndex === 0 && image.noteText ? (
                         <span className="mt-1 block text-sm leading-6 text-slate-600">Notering: {image.noteText}</span>
@@ -1423,7 +1427,8 @@ function ReportSnapshotView({
           alt: `${reference}, bild ${imageIndex + 1} av ${noteImages.length}`,
           reference,
           location: noteLocation(note),
-          label: image.label?.trim() || null,
+          label: ebImageDisplayCaption(image),
+          originLabel: ebImageOriginLabel(image),
           noteText: note.noteText?.trim() || null,
         }
         group.images.push(publicImage)

@@ -1,5 +1,7 @@
 import { createRoot } from 'react-dom/client'
+import { useState } from 'react'
 import EbDashboardClient from '../../src/components/eb/EbDashboardClient'
+import EbNewInspectionDialog from '../../src/components/eb/EbNewInspectionDialog'
 import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
 import { ebOverviewDemo, ebOverviewInspection, ebOverviewProject } from './eb-overview-data'
 
@@ -8,7 +10,7 @@ declare global {
     __ebOverviewTest: {
       fail: boolean; failStatus: number; empty: boolean; delay: number; reads: string[];
       writes: { url: string; body: Record<string, unknown> }[];
-      navigations: string[]; refreshes: number; createInspectionFailures: number;
+      navigations: string[]; refreshes: number; createInspectionFailures: number; sourceUnlocked: boolean;
     }
   }
 }
@@ -17,7 +19,7 @@ const mode = new URLSearchParams(location.search).get('state')
 const savedProjects = new Map<string, ReturnType<typeof ebOverviewProject>>()
 window.__ebOverviewTest = {
   fail: mode === 'error', failStatus: 503, empty: mode === 'empty', delay: 0, reads: [], writes: [],
-  navigations: [], refreshes: 0, createInspectionFailures: 0,
+  navigations: [], refreshes: 0, createInspectionFailures: 0, sourceUnlocked: false,
 }
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
@@ -29,7 +31,14 @@ window.fetch = async (input, init) => {
   if (method === 'GET') {
     state.reads.push(url.pathname + url.search)
     if (snapshot.fail) return Response.json({ error: 'Kunde inte hämta besiktningarna.' }, { status: snapshot.failStatus })
-    if (url.pathname === '/api/eb/projects') return Response.json({ projects: snapshot.empty ? [] : ebOverviewDemo() })
+    if (url.pathname === '/api/eb/projects') {
+      const projects = snapshot.empty ? [] : ebOverviewDemo()
+      if (snapshot.sourceUnlocked) {
+        const source = projects[0]?.inspections.find(item => item.inspectionId === 'inspection-closed')
+        if (source) { source.reportLockedAt = null; source.reportLockedBy = null }
+      }
+      return Response.json({ projects })
+    }
     const delivery = url.pathname.match(/^\/api\/eb\/projects\/([^/]+)\/inspections\/([^/]+)\/report-delivery$/)
     if (delivery) {
       const project = ebOverviewDemo().find(item => item.id === delivery[1])
@@ -73,11 +82,20 @@ window.fetch = async (input, init) => {
   throw Error(`Blocked preview mutation: ${url.pathname}`)
 }
 
+function ProjectInspectionPreview() {
+  const [open, setOpen] = useState(true)
+  const project = ebOverviewDemo()[0]
+  return <EbNewInspectionDialog open={open} projects={[project]} initialProjectId={project.id} initialSourceInspectionId="inspection-closed"
+    allowProjectSelection={false} onClose={() => setOpen(false)} onCreated={(_project, inspectionId) => {
+      window.__ebOverviewTest.navigations.push(`/eb/projects/${project.id}/inspections/${inspectionId}/perform`)
+    }} />
+}
+
 createRoot(document.getElementById('root')!).render(<AppToastProvider>
   <div className="preview-notice">Förhandsvisning med testdata · Inte publicerad</div>
   <header className="preview-header">
     {/* eslint-disable-next-line @next/next/no-img-element */}
     <img src="/report-assets/BesiktApp.png" alt="BesiktApp" /><span>Entreprenadbesiktningar</span>
   </header>
-  <EbDashboardClient initialProjects={mode ? [] : ebOverviewDemo()} initialError={mode === 'error' ? 'Kunde inte hämta besiktningarna.' : null} />
+  {mode === 'project-dialog' ? <ProjectInspectionPreview /> : <EbDashboardClient initialProjects={mode ? [] : ebOverviewDemo()} initialError={mode === 'error' ? 'Kunde inte hämta besiktningarna.' : null} />}
 </AppToastProvider>)

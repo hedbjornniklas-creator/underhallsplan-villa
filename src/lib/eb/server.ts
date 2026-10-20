@@ -1,5 +1,7 @@
 import 'server-only'
 
+import { randomUUID } from 'node:crypto'
+
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import type { StandardTextId } from '@/content/standardtexts/registry'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
@@ -17,6 +19,16 @@ import {
   type EbApprovalStatus,
 } from '@/lib/eb/approvalStatus'
 import { classifyEbAgreement, resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import {
+  applyEbInspectionReusePlan,
+  assertEbInspectionReuseEligible,
+  assertEbInspectionReuseReport,
+  buildEbInspectionReusePlan,
+  parseEbInspectionReuseSource,
+  type EbInspectionReusePlan,
+  type EbInspectionReuseSource,
+} from '@/lib/eb/inspectionReuse'
+import { getEbInspectionReportFromSnapshot } from '@/lib/eb/reportSnapshot'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 
 export type EbInspectionVariant = 'SLB' | 'FB' | 'EB' | 'GB' | 'KSB' | 'SAB'
@@ -251,6 +263,7 @@ export type EbNote = {
   disciplineLittera: string | null
   markerLabel: string | null
   statusLabel: string | null
+  reusedFrom?: EbInspectionReuseSource | null
 }
 
 export type EbNoteImage = {
@@ -265,6 +278,7 @@ export type EbNoteImage = {
   publicUrl: string
   thumbnailUrl: string | null
   createdAt: string | null
+  reusedFrom?: EbInspectionReuseSource | null
 }
 
 export type EbNoteSuggestion = {
@@ -900,6 +914,7 @@ type EbNoteRow = {
   sort_order: number | null
   created_at: string | null
   updated_at: string | null
+  reuse_source?: unknown
 }
 
 type EbMarkerRow = {
@@ -931,6 +946,7 @@ type EbNoteImageRow = {
   label: string | null
   sort_order: number | null
   created_at: string | null
+  reuse_source?: unknown
 }
 
 type EbNoteImageLinkRow = {
@@ -1128,6 +1144,8 @@ export type CreateEbInspectionInput = {
   meetingPlace?: string | null
   startMeetingTime?: string | null
   finalMeetingTime?: string | null
+  reusePreviousInspection?: boolean
+  includePreviousNotes?: boolean
 }
 
 export type UpdateEbInspectionInput = {
@@ -2930,6 +2948,7 @@ function mapNote(
     disciplineLittera: discipline?.littera ?? null,
     markerLabel: marker?.label ?? null,
     statusLabel: status?.label ?? null,
+    reusedFrom: parseEbInspectionReuseSource(row.reuse_source),
   }
 }
 
@@ -2969,6 +2988,7 @@ function mapNoteImage(row: EbNoteImageRow, publicUrl: string, thumbnailUrl: stri
     publicUrl,
     thumbnailUrl,
     createdAt: row.created_at ?? null,
+    reusedFrom: parseEbInspectionReuseSource(row.reuse_source),
   }
 }
 
@@ -3128,8 +3148,8 @@ async function listEbNotes(input: {
   const baseSelect =
     'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,responsible_party,trade_group,sort_order,created_at,updated_at'
   const withReportMetadataSelect =
-    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,remediation_assignee_id,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at'
-  const { data, error } = await admin
+    'id,eb_project_id,inspection_id,discipline_id,note_number,location,room,place_detail,marker_key,status_key,note_text,remediation_assignee_id,responsible_party,trade_group,investigation_responsible_party,investigation_responsible_note,investigation_cost_party,investigation_due_date,deduction_amount,sort_order,created_at,updated_at,reuse_source'
+  let { data, error } = await admin
     .from('eb_notes')
     .select(withReportMetadataSelect)
     .eq('org_id', input.orgId)
@@ -3138,6 +3158,18 @@ async function listEbNotes(input: {
     .order('sort_order', { ascending: true, nullsFirst: false })
     .order('note_number', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
+
+  if (error && isMissingColumnError(error)) {
+    // Deploying the new app must not discard existing rich metadata while its
+    // additive provenance migration is still waiting to be run.
+    const previousSchema = await admin.from('eb_notes')
+      .select(withReportMetadataSelect.replace(',reuse_source', ''))
+      .eq('org_id', input.orgId).eq('eb_project_id', input.projectId).eq('inspection_id', input.inspectionId)
+      .order('sort_order', { ascending: true, nullsFirst: false })
+      .order('note_number', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true })
+    data = previousSchema.data as typeof data
+    error = previousSchema.error
+  }
 
   if (error) {
     if (isMissingColumnError(error)) {
@@ -3255,13 +3287,22 @@ async function listEbNoteImagesWithoutSourceAttachment(input: { inspectionId: st
 
 async function listEbNoteImages(input: { inspectionId: string }) {
   const admin = createSupabaseAdminClient()
-  const { data, error } = await admin
+  let { data, error } = await admin
     .from('inspection_images')
-    .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+    .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at,reuse_source')
     .eq('inspection_id', input.inspectionId)
     .like('file_path', `${input.inspectionId}/eb-notes/%`)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
+
+  if (error && isMissingColumnError(error)) {
+    const previousSchema = await admin.from('inspection_images')
+      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .eq('inspection_id', input.inspectionId).like('file_path', `${input.inspectionId}/eb-notes/%`)
+      .order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+    data = previousSchema.data as typeof data
+    error = previousSchema.error
+  }
 
   if (error) {
     if (isMissingColumnError(error)) return listEbNoteImagesWithoutSourceAttachment(input)
@@ -3418,6 +3459,7 @@ async function listEbInspectionCheckpoints(input: {
   requestedByUserId: string
   project: EbProjectListItem
   inspection: EbInspectionSummary
+  readOnly?: boolean
 }) {
   const admin = createSupabaseAdminClient()
   const selectColumns =
@@ -3442,7 +3484,7 @@ async function listEbInspectionCheckpoints(input: {
   }
 
   let rows = await fetchRows()
-  if (rows.length === 0 && shouldUseEbTemplateCheckpoints(input.project) && !input.inspection.reportLockedAt) {
+  if (rows.length === 0 && shouldUseEbTemplateCheckpoints(input.project) && !input.inspection.reportLockedAt && !input.readOnly) {
     await seedEbInspectionCheckpoints(input)
     rows = await fetchRows()
   }
@@ -3455,6 +3497,7 @@ export async function getEbInspectionRound(input: {
   requestedByUserId: string
   projectId: string
   inspectionId: string
+  readOnly?: boolean
 }): Promise<EbInspectionRound> {
   const { project, inspection } = await getEbInspectionRoundBase(input)
   const [disciplines, markers, statuses, remediationAssignees, suggestions, checkpoints] = await Promise.all([
@@ -3468,6 +3511,7 @@ export async function getEbInspectionRound(input: {
       requestedByUserId: input.requestedByUserId,
       project,
       inspection,
+      readOnly: input.readOnly,
     }),
   ])
   const [notes, images, projectAttachments] = await Promise.all([
@@ -3611,6 +3655,7 @@ export async function getEbInspectionReport(input: {
   requestedByUserId: string
   projectId: string
   inspectionId: string
+  readOnly?: boolean
 }, conflictRetryCount = 0): Promise<EbInspectionReport> {
   // Read the persisted source first, then the live project. This makes an
   // intervening project save resolve forward to the newest project data.
@@ -3705,7 +3750,7 @@ export async function getEbInspectionReport(input: {
   const needsDraftWrite =
     needsInitializationWrite || projectSourceNeedsRefresh || needsContentModeWrite
   let resolvedReportDraft = reportDraft
-  if (needsDraftWrite && !liveRound.inspection.reportLockedAt) {
+  if (needsDraftWrite && !liveRound.inspection.reportLockedAt && !input.readOnly) {
     try {
       resolvedReportDraft = await writeEbReportDraft(
         input,
@@ -4699,6 +4744,91 @@ async function resolveProjectPropertyId(project: EbProjectListItem) {
   return typeof data?.property_id === 'string' ? data.property_id : null
 }
 
+async function loadEbInspectionReuseSource(input: CreateEbInspectionInput, project: EbProjectListItem) {
+  const sourceId = normalizeText(input.parentInspectionId)
+  const inspection = project.inspections.find(item => item.inspectionId === sourceId)
+  assertEbInspectionReuseEligible({ projectId: project.id, targetVariant: input.variant,
+    sourceInspectionId: sourceId, source: inspection })
+  if (!inspection) throw new Error('EB_REUSE_SOURCE_NOT_FOUND')
+  const admin = createSupabaseAdminClient()
+  const scope = { orgId: input.orgId, projectId: project.id, inspectionId: inspection.inspectionId,
+    requestedByUserId: input.requestedByUserId }
+  const { data: publication, error: publicationError } = await admin.from('inspection_report_links')
+    .select('snapshot_payload,created_at').eq('org_id', input.orgId).eq('inspection_id', inspection.inspectionId)
+    .is('revoked_at', null).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (publicationError) throw new Error(publicationError.message ?? 'EB_REUSE_SOURCE_READ_FAILED')
+  let currentPublication = publication
+  let publicationOriginDate = Number.NaN
+  if (publication) {
+    const { data: unlock, error: unlockError } = await admin.from('inspection_lock_events')
+      .select('performed_at').eq('org_id', input.orgId).eq('inspection_id', inspection.inspectionId)
+      .eq('action', 'unlock').order('performed_at', { ascending: false }).limit(1).maybeSingle()
+    if (unlockError) throw new Error(unlockError.message ?? 'EB_REUSE_SOURCE_READ_FAILED')
+    const payloadDate = typeof publication.snapshot_payload?.createdAt === 'string'
+      ? Date.parse(publication.snapshot_payload.createdAt) : Number.NaN
+    const linkDate = Date.parse(publication.created_at)
+    const originDate = Number.isFinite(payloadDate) ? Math.min(payloadDate, linkDate) : linkDate
+    publicationOriginDate = originDate
+    // Unlock keeps the old public link alive, but an old lock cycle is not the
+    // current finalized source. A later re-send date cannot revive that cycle.
+    if (unlock?.performed_at && Number.isFinite(originDate) && Date.parse(unlock.performed_at) >= originDate) {
+      currentPublication = null
+    }
+  }
+  // A locked authoring source is supported before its first publication. Once a
+  // frozen publication exists it is authoritative: never silently replace it
+  // with today's data if the old snapshot is missing or malformed.
+  let report = currentPublication
+    ? getEbInspectionReportFromSnapshot(currentPublication.snapshot_payload)
+    : await getEbInspectionReport({ ...scope, readOnly: true })
+  if (!report) throw new Error('EB_REUSE_SOURCE_SNAPSHOT_INVALID')
+  if (currentPublication && !report.inspection?.reportLockedAt) {
+    // Early frozen exports predated the lock timestamp. Infer it only for a
+    // proven same-cycle copy, without writing back into that old publication.
+    if (!Number.isFinite(publicationOriginDate) || publicationOriginDate > Date.parse(inspection.reportLockedAt!)) {
+      throw new Error('EB_REUSE_SOURCE_SNAPSHOT_INVALID')
+    }
+    report = { ...report, inspection: { ...report.inspection, reportLockedAt: inspection.reportLockedAt } }
+  }
+  assertEbInspectionReuseReport({ orgId: input.orgId, projectId: project.id, source: inspection, report })
+  const [participantResult, noteResult, imageSchema] = await Promise.all([
+    admin.from('eb_participants')
+      .select('id,role_label,company_name,org_no,party_key,person_name,email,phone,receives_invitation,attended,receives_report,represents_party_key,can_represent_party,sort_order')
+      .eq('org_id', input.orgId).eq('eb_project_id', project.id).eq('inspection_id', inspection.inspectionId)
+      .order('sort_order', { ascending: true }),
+    admin.from('eb_notes').select('id,source_system,source_record_id,reuse_source')
+      .eq('org_id', input.orgId).eq('eb_project_id', project.id).eq('inspection_id', inspection.inspectionId),
+    admin.from('inspection_images').select('reuse_source').eq('inspection_id', inspection.inspectionId).limit(1),
+  ])
+  if ((noteResult.error && isMissingColumnError(noteResult.error)) ||
+      (imageSchema.error && isMissingColumnError(imageSchema.error))) {
+    throw new Error('EB_REUSE_MIGRATION_REQUIRED')
+  }
+  const error = participantResult.error ?? noteResult.error ?? imageSchema.error
+  if (error) throw new Error(error.message ?? 'EB_REUSE_SOURCE_READ_FAILED')
+  const rawParticipants = (participantResult.data ?? []) as Array<EbParticipantRow & {
+    org_no?: string | null; party_key?: string | null
+  }>
+  const privateById = new Map(rawParticipants.map(row => [row.id, row]))
+  // The signed participants define the copied roster, augmented only with their
+  // private contact fields. Generated project parties are retained as well.
+  const participants = report.participants.map(participant => {
+    const row = participant.id ? privateById.get(participant.id) : null
+    const privateParticipant = row ? mapParticipant(row) : participant
+    const projectParty = participant.representsPartyKey === 'client'
+      ? { email: project.clientEmail, phone: project.clientPhone }
+      : participant.representsPartyKey === 'contractor'
+        ? { email: project.contractorEmail, phone: project.contractorPhone } : null
+    return { ...participant, email: privateParticipant.email ?? projectParty?.email ?? null,
+      phone: privateParticipant.phone ?? projectParty?.phone ?? null,
+      orgNo: row?.org_no ?? null, partyKey: row?.party_key ?? participant.representsPartyKey }
+  })
+  const noteSources = new Map(((noteResult.data ?? []) as Array<{
+    id: string; source_system: string | null; source_record_id: string | null
+  }>).map(row => [row.id, { sourceSystem: row.source_system, sourceRecordId: row.source_record_id }]))
+  return { report, inspection, participants, noteSources }
+}
+
 export async function createEbInspectionForProject(
   input: CreateEbInspectionInput
 ): Promise<EbProjectListItem> {
@@ -4720,7 +4850,14 @@ export async function createEbInspectionForProject(
     throw new Error('EB_PROJECT_PROPERTY_MISSING')
   }
 
+  const reuse = input.reusePreviousInspection ? await loadEbInspectionReuseSource(input, project) : null
+  const explicitParentId = normalizeText(input.parentInspectionId)
+  if (explicitParentId && !project.inspections.some(item => item.inspectionId === explicitParentId)) {
+    throw new Error('EB_REUSE_SOURCE_NOT_FOUND')
+  }
+
   let inspectionId: string | null = null
+  let reusePlan: EbInspectionReusePlan | null = null
   const sequenceNo =
     project.inspections.reduce((max, inspection) => Math.max(max, inspection.sequenceNo), 0) + 1
   const parentInspectionId =
@@ -4757,7 +4894,7 @@ export async function createEbInspectionForProject(
       parent_inspection_id: parentInspectionId,
       inspection_variant: input.variant,
       sequence_no: sequenceNo,
-      meeting_place: normalizeText(input.meetingPlace),
+      meeting_place: normalizeText(input.meetingPlace) ?? reuse?.inspection.meetingPlace ?? null,
       start_meeting_time: normalizeTime(input.startMeetingTime),
       final_meeting_time: normalizeTime(input.finalMeetingTime),
       invoice_recipient_matches_client: project.invoiceRecipientMatchesClient,
@@ -4777,23 +4914,66 @@ export async function createEbInspectionForProject(
       throw new Error(detailError.message ?? 'Kunde inte koppla besiktningen till EB-projektet.')
     }
 
-    await seedDisciplinesForInspection({
-      orgId: input.orgId,
-      projectId: project.id,
-      inspectionId,
-      variant: input.variant,
-      sequenceNo,
-    })
+    if (reuse) {
+      reusePlan = buildEbInspectionReusePlan({ orgId: input.orgId, projectId: project.id,
+        userId: input.requestedByUserId, targetInspectionId: inspectionId, targetSequenceNo: sequenceNo,
+        source: reuse.report, privateInspection: reuse.inspection, participants: reuse.participants,
+        noteSources: reuse.noteSources, includePreviousNotes: input.includePreviousNotes === true,
+        now: new Date().toISOString(), newId: randomUUID })
+      const targetId = inspectionId
+      await applyEbInspectionReusePlan(reusePlan, {
+        copyFile: async (from, to) => {
+          const { error } = await admin.storage.from(EB_NOTE_IMAGE_BUCKET).copy(from, to)
+          if (error) throw new Error(error.message ?? 'EB_REUSE_IMAGE_COPY_FAILED')
+        },
+        insertRows: async (table, rows) => {
+          const { error } = await admin.from(table).insert(rows)
+          if (error) throw new Error(error.message ?? 'EB_REUSE_COPY_FAILED')
+        },
+        updateDetails: async patch => {
+          const { error } = await admin.from('eb_inspection_details').update(patch)
+            .eq('org_id', input.orgId).eq('eb_project_id', project.id).eq('inspection_id', targetId)
+          if (error) throw new Error(error.message ?? 'EB_REUSE_COPY_FAILED')
+        },
+        finishDraft: async () => {
+          // Shared meaningful-content triggers may call this ongoing. It remains
+          // an unlocked work draft, never a completed/approved old inspection.
+          const { error } = await admin.from('inspections').update({ locked_at: null, locked_by: null })
+            .eq('id', targetId).eq('property_id', propertyId)
+          if (error) throw new Error(error.message ?? 'EB_REUSE_COPY_FAILED')
+        },
+      })
+    } else {
+      await seedDisciplinesForInspection({
+        orgId: input.orgId, projectId: project.id, inspectionId, variant: input.variant, sequenceNo,
+      })
+    }
 
     const updated = await getEbProjectById({ orgId: input.orgId, projectId: project.id })
     if (!updated) {
       throw new Error('Besiktningen skapades men projektet kunde inte läsas tillbaka.')
     }
+    if (reuse) {
+      const currentSource = updated.inspections.find(item => item.inspectionId === reuse.inspection.inspectionId)
+      assertEbInspectionReuseEligible({ projectId: project.id, targetVariant: input.variant,
+        sourceInspectionId: reuse.inspection.inspectionId, source: currentSource })
+      if (Date.parse(currentSource!.reportLockedAt!) !== Date.parse(reuse.inspection.reportLockedAt!)) {
+        throw new Error('EB_REUSE_SOURCE_NOT_ELIGIBLE')
+      }
+    }
 
     return updated
   } catch (error) {
     if (inspectionId) {
-      await admin.from('inspections').delete().eq('id', inspectionId)
+      // Only the freshly created target is compensatable. Source rows, source
+      // files, project registries, mail and old report links are never touched.
+      const rollback = await admin.from('inspections').delete().eq('id', inspectionId).eq('property_id', propertyId)
+      const files = reusePlan?.fileCopies.map(file => file.to) ?? []
+      const cleanup = files.length ? await admin.storage.from(EB_NOTE_IMAGE_BUCKET).remove(files) : null
+      if (rollback.error || cleanup?.error) {
+        console.error('EB inspection reuse rollback failed', { inspectionId, database: Boolean(rollback.error), storage: Boolean(cleanup?.error) })
+        throw new Error('EB_REUSE_ROLLBACK_FAILED')
+      }
     }
     throw error
   }

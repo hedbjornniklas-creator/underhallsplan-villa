@@ -5,6 +5,7 @@ import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
 import { assertEbInspectionEditable, EB_NOTE_IMAGE_BUCKET, EB_PROJECT_ATTACHMENTS_BUCKET } from '@/lib/eb/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
+import { parseEbInspectionReuseSource } from '@/lib/eb/inspectionReuse'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -36,10 +37,12 @@ type InspectionImageRow = {
   label: string | null
   sort_order: number | null
   created_at: string | null
+  reuse_source?: unknown
 }
 
-const IMAGE_SELECT =
-  'id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at'
+// The explicit mapImage response whitelist includes optional provenance while
+// old schemas need no new-column select and lose no existing image metadata.
+const IMAGE_SELECT = '*'
 const FALLBACK_IMAGE_SELECT = 'id,inspection_id,eb_note_id,file_path,label,sort_order,created_at'
 
 function jsonError(message: string, status: number) {
@@ -86,6 +89,7 @@ function mapImage(row: InspectionImageRow) {
     publicUrl,
     thumbnailUrl,
     createdAt: row.created_at ?? null,
+    reusedFrom: parseEbInspectionReuseSource(row.reuse_source),
   }
 }
 
@@ -657,8 +661,7 @@ export async function PATCH(
 
         if (!attachmentRow?.id) return jsonError('Entreprenadbilden hittades inte.', 404)
 
-        const imageSelect =
-          'id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at'
+        const imageSelect = IMAGE_SELECT
         const existingImageResult = await admin
           .from('inspection_images')
           .select(imageSelect)
@@ -872,7 +875,7 @@ export async function PATCH(
 
     const { data: imageRow, error: imageError } = await admin
       .from('inspection_images')
-      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select(IMAGE_SELECT)
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
       .like('file_path', `${inspectionId}/eb-notes/%`)
@@ -939,7 +942,7 @@ export async function PATCH(
       .update({ eb_note_id: nextNoteId })
       .eq('id', imageId)
       .eq('inspection_id', inspectionId)
-      .select('id,inspection_id,eb_note_id,source_attachment_id,file_path,thumbnail_file_path,label,sort_order,created_at')
+      .select(IMAGE_SELECT)
       .single()
 
     if (updateError || !updatedImage) {
