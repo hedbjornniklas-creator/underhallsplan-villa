@@ -11,11 +11,18 @@ samlar avtal, parter och historik; fastighetskopplingen finns kvar. Denna etapp
   leveransuppgifter. Klara visar avslutade besiktningar utan leveransproblem;
   Alla visar båda. Arkiverat/avbokat visas endast när det väljs uttryckligen.
 - Sökning, sortering och sidbläddring följer ÖB/TU:s tabell- och mobillayout.
+- EB behåller sin gröna accentfärg i knappar, länkar, filter, fokusmarkeringar
+  och aktiva rader. Den gemensamma layouten ska inte ge EB ÖB:s blå färg.
 - Ny besiktning läggs i befintlig entreprenad eller en ny. En sparad entreprenad
   återanvänds om skapandet av besiktningen behöver försökas igen.
 - Entreprenader utan besiktning kan återupptas från en separat hopfälld lista.
 - Länkar öppnar besiktning, utlåtande eller entreprenadens avtal/historik.
   Leveransdialogen hanterar klarmarkering, leverans och upplåsning.
+- Beslut 2026-10-20: besiktningens namn är en direktlänk till besiktningen
+  (arbetsvy när den är öppen, utlåtande när den är låst). Entreprenadens namn
+  är en separat direktlänk till entreprenadsidan med avtal, parter och historik.
+  Båda länkarna visas direkt även på mobil; projektvägen ska inte kräva att
+  detaljraden först öppnas. Befintliga handlingsknappar finns kvar.
 
 ## Gemensamma regler
 
@@ -94,7 +101,7 @@ ett förlorat svar idempotent; kontrollera då listan innan en ny kopia skapas.
 ## Verifiering
 
 ```powershell
-node --experimental-strip-types --test test/eb-overview.test.ts test/eb-inspection-lifecycle.test.ts test/eb-inspection-lifecycle-sql.test.ts test/dashboard-model.test.ts test/dashboard-server.test.ts
+node --experimental-strip-types --test test/eb-overview.test.ts test/eb-overview-theme.test.ts test/eb-inspection-lifecycle.test.ts test/eb-inspection-lifecycle-sql.test.ts test/dashboard-model.test.ts test/dashboard-server.test.ts
 node scripts/preview-eb-overview.mjs --test
 node --experimental-strip-types --test test/eb-inspection-reuse.test.ts test/eb-inspection-reuse-sql.test.ts test/eb-inspection-reuse-display.test.ts test/eb-report-editing.test.ts
 node scripts/test-eb-inspection-reuse-display.mjs

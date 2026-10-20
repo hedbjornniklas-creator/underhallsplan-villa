@@ -44,6 +44,116 @@ export async function testEbOverview(base, output) {
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.obo button, .obo select, .obo input:not([type=checkbox]), .obo a, .obh-actions button, .obh-actions a')]
       .filter(node => node.checkVisibility() && node.getBoundingClientRect().height < 44).map(node => node.outerHTML)), [], `${label}: touch targets`)
   }
+  async function greenTheme(width) {
+    await page.mouse.move(0, 0)
+    await page.evaluate(async () => {
+      document.activeElement.blur()
+      const names = [...document.querySelectorAll('.eb-name-link')]
+      names.forEach(node => { void getComputedStyle(node).color })
+      await Promise.allSettled(names.flatMap(node => node.getAnimations().map(animation => animation.finished)))
+    })
+    const theme = await page.evaluate(() => {
+      const home = document.querySelector('.eb-home')
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--eb-accent)'
+      home.append(probe)
+      const accent = getComputedStyle(probe).color
+      probe.remove()
+      const style = selector => getComputedStyle(document.querySelector(selector))
+      const names = [...document.querySelectorAll('.eb-name-link')].filter(node => node.checkVisibility())
+      const active = document.querySelector('tr[data-marker=active]')
+      const attention = document.querySelector('tr[data-marker=attention]')
+      return {
+        accent,
+        token: getComputedStyle(home).getPropertyValue('--eb-accent').trim(),
+        primary: style('.eb-primary').backgroundColor,
+        selected: style('.obo-filter-buttons button[aria-pressed=true]').color,
+        selectedBorder: style('.obo-filter-buttons button[aria-pressed=true]').borderBottomColor,
+        guide: style('.obo-guide-trigger').color,
+        checkbox: style('.obo-check input').accentColor,
+        names: names.map(node => getComputedStyle(node).color),
+        actions: [...document.querySelectorAll('.obo-action-links a, .eb-delivery-action')]
+          .filter(node => node.checkVisibility()).map(node => getComputedStyle(node).color),
+        activeMarker: active && (innerWidth < 960 ? getComputedStyle(active).borderLeftColor : getComputedStyle(active.firstElementChild).boxShadow),
+        attentionMarker: attention && (innerWidth < 960 ? getComputedStyle(attention).borderLeftColor : getComputedStyle(attention.firstElementChild).boxShadow),
+        reuse: document.querySelector('.eb-reuse-action') && style('.eb-reuse-action').color,
+        nestedAnchors: document.querySelectorAll('.eb-home a a').length,
+      }
+    })
+    assert.ok(theme.token, `${width}: EB accent token is defined`)
+    for (const key of ['primary', 'selected', 'selectedBorder', 'guide', 'checkbox']) {
+      assert.equal(theme[key], theme.accent, `${width}: ${key} uses the EB green accent`)
+    }
+    assert.ok(theme.names.length > 0)
+    assert.ok(theme.names.every(color => color === theme.accent), `${width}: visible inspection and project names are green`)
+    assert.ok(theme.actions.every(color => color === theme.accent), `${width}: inspection and delivery actions are green`)
+    if (theme.activeMarker) assert.ok(theme.activeMarker.includes(theme.accent), `${width}: active inspection marker is green`)
+    if (theme.attentionMarker) assert.equal(theme.attentionMarker.includes(theme.accent), false, `${width}: warning marker remains distinct from active green`)
+    if (theme.reuse) assert.equal(theme.reuse, theme.accent, `${width}: reuse action is green, not a blue utility`)
+    assert.equal(theme.nestedAnchors, 0, `${width}: the two destinations never nest anchors`)
+    const selector = '.eb-inspection-name'
+    await page.hover(selector)
+    const hovered = await page.$eval(selector, node => ({
+      color: getComputedStyle(node).color,
+      underline: getComputedStyle(node).textDecorationLine,
+    }))
+    assert.match(hovered.underline, /underline/, `${width}: inspection names visibly behave like links on hover`)
+    assert.notEqual(hovered.color, 'rgb(29, 72, 144)', `${width}: hover does not restore OB blue`)
+    await page.keyboard.press('Tab')
+    await page.focus(selector)
+    await page.waitForFunction((selector, accent) => {
+      const node = document.querySelector(selector)
+      return node.matches(':focus-visible') && getComputedStyle(node).outlineColor === accent
+    }, {}, selector, theme.accent)
+    const focused = await page.$eval(selector, node => ({
+      outline: getComputedStyle(node).outlineColor,
+      outlineWidth: parseFloat(getComputedStyle(node).outlineWidth),
+      underline: getComputedStyle(node).textDecorationLine,
+    }))
+    assert.equal(focused.outline, theme.accent, `${width}: keyboard outline uses EB green`)
+    assert.ok(focused.outlineWidth >= 2, `${width}: keyboard outline remains visible`)
+    assert.match(focused.underline, /underline/, `${width}: keyboard focus underlines the name`)
+    await page.evaluate(() => document.activeElement.blur())
+    await page.mouse.move(0, 0)
+  }
+  async function nameNavigation(width) {
+    for (const { closed, target, keyboard } of [
+      { closed: false, target: 'inspection', keyboard: false },
+      { closed: false, target: 'project', keyboard: true },
+      { closed: true, target: 'inspection', keyboard: true },
+      { closed: true, target: 'project', keyboard: false },
+    ]) {
+      await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
+      await ready()
+      if (closed) await chooseFilter('closed', width)
+      const row = `tr[data-row-id="${closed ? 'inspection-closed' : 'inspection-slab'}"]`
+      const selector = target === 'inspection' ? `${row} .eb-inspection-name`
+        : `${row} ${width < 960 ? '.obo-mobile-only' : '.obo-desktop-only'} .eb-project-name`
+      const expected = target === 'inspection'
+        ? `/eb/projects/project-alpha/inspections/${closed ? 'inspection-closed/report' : 'inspection-slab/perform'}`
+        : '/eb/projects/project-alpha'
+      assert.equal(await page.$eval(selector, node => node.getAttribute('href')), expected)
+      assert.match(await page.$eval(selector, node => node.getAttribute('aria-label')), target === 'inspection' ? /^Öppna besiktning:/ : /^Öppna entreprenad:/)
+      if (target === 'inspection') assert.equal(await page.$eval(`${row} .obo-inspection-link`, node => node.getAttribute('href')), expected,
+        'The title and existing open action use the same lifecycle destination')
+      assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0)
+      if (keyboard) {
+        let reached = false
+        for (let tab = 0; tab < 100 && !reached; tab++) {
+          await page.keyboard.press('Tab')
+          reached = await page.$eval(selector, node => document.activeElement === node)
+        }
+        assert.ok(reached, `${width}: ${target} name is reachable by keyboard`)
+      }
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+        keyboard ? page.keyboard.press('Enter') : page.click(selector),
+      ])
+      assert.equal(new URL(page.url()).pathname, expected, `${width}: ${keyboard ? 'keyboard' : 'pointer'} opens ${target}, not the other destination`)
+    }
+    await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
+    await ready()
+  }
   async function openNew() {
     await clickText('Ny besiktning')
     await page.waitForSelector('dialog[open]')
@@ -79,6 +189,8 @@ export async function testEbOverview(base, output) {
       assert.ok((await rows()).includes('inspection-after'), 'Both inspections in one project have their own row')
       assert.ok((await rows()).includes('inspection-delivery'), 'Unsent completed inspection stays in worklist')
       assert.equal(await page.$eval('.obo-pagination', node => node.textContent.includes('1–10 av 13')), true)
+      await greenTheme(width)
+      await nameNavigation(width)
       await page.screenshot({ path: resolve(output, `eb-home-${width}.png`), fullPage: width >= 960 })
 
       await chooseFilter('closed', width)
@@ -88,6 +200,7 @@ export async function testEbOverview(base, output) {
       await layout(`${width}: completed row with reuse action`)
       assert.equal(await page.$$eval('button[aria-label^="Ny slutbesiktning från tidigare:"]', nodes => nodes.length), 1,
         'Only a locked, not-approved final inspection offers the dedicated reuse action')
+      await greenTheme(width)
       await openReuse()
       if (width === 390) await page.setViewport({ width, height: 844 })
       assert.equal(await page.$$eval('dialog[open] select, dialog[open] input[type=radio]', nodes => nodes.length), 0, 'Dedicated reuse has no redundant project or inspection selectors')

@@ -33,15 +33,19 @@ function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; on
   const base = `/eb/projects/${encodeURIComponent(project.id)}`
   const reportHref = `${base}/inspections/${encodeURIComponent(item.id)}/report`
   const performHref = `${base}/inspections/${encodeURIComponent(item.id)}/perform`
+  const inspectionHref = lifecycle.isOpen ? performHref : reportHref
   const marker = lifecycle.needsAttention ? 'attention' : lifecycle.isOpen ? 'active' : 'closed'
   const canReuse = canReusePreviousFinalInspection(inspection) && getEbInspectionLifecycle({ status: 'draft' }, project.status).isOpen
   return <>
     <tr data-row-id={item.id} data-marker={marker}>
       <td className="obo-date"><time dateTime={inspection.date || undefined}>{dateLabel(inspection.date)}</time>{inspection.inspectionTime && <span className="obo-meta eb-time">kl. {inspection.inspectionTime.slice(0, 5)}</span>}</td>
-      <td className="obo-identity"><span className="obo-address obo-cell-text" title={item.title}>{item.title}</span><span className="obo-cell-text obo-meta" title={item.address}>{item.address}</span>
-        <span className="obo-mobile-only">{project.title} · {item.customer}</span>{lifecycle.deliveryAction && <span className="obo-attention obo-mobile-only">{lifecycle.deliveryAction}</span>}
-        {canReuse && <button type="button" onClick={() => onReuse(project.id, inspection.inspectionId)} className="mt-1 inline-flex min-h-11 items-center gap-2 whitespace-normal text-left text-sm font-semibold text-blue-700" aria-label={`Ny slutbesiktning från tidigare: ${item.title}, ${project.title}`}><CopyPlus size={16} className="shrink-0" aria-hidden /><span>Ny slutbesiktning från tidigare</span></button>}</td>
-      <td className="obo-desktop-only"><span className="obo-cell-text" title={project.title}>{project.title}</span><span className="obo-cell-text obo-meta">{project.propertyDesignation || project.city || '–'}</span></td>
+      <td className="obo-identity"><PendingLink href={inspectionHref} className="obo-address obo-cell-text eb-name-link eb-inspection-name" prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
+        aria-label={`Öppna besiktning: ${item.title}, ${project.title}`} title={`Öppna besiktning: ${item.title}`}>{item.title}</PendingLink><span className="obo-cell-text obo-meta" title={item.address}>{item.address}</span>
+        <span className="obo-mobile-only"><PendingLink href={base} className="eb-name-link eb-project-name" prefetch={false} autoPending pendingLabel="Öppnar entreprenad…"
+          aria-label={`Öppna entreprenad: ${project.title}`} title={`Öppna entreprenad: ${project.title}`}>{project.title}</PendingLink><span className="obo-meta">{item.customer}</span></span>{lifecycle.deliveryAction && <span className="obo-attention obo-mobile-only">{lifecycle.deliveryAction}</span>}
+        {canReuse && <button type="button" onClick={() => onReuse(project.id, inspection.inspectionId)} className="eb-reuse-action mt-1 inline-flex min-h-11 items-center gap-2 whitespace-normal text-left text-sm font-semibold" aria-label={`Ny slutbesiktning från tidigare: ${item.title}, ${project.title}`}><CopyPlus size={16} className="shrink-0" aria-hidden /><span>Ny slutbesiktning från tidigare</span></button>}</td>
+      <td className="obo-desktop-only"><PendingLink href={base} className="obo-cell-text eb-name-link eb-project-name" prefetch={false} autoPending pendingLabel="Öppnar entreprenad…"
+        aria-label={`Öppna entreprenad: ${project.title}`} title={`Öppna entreprenad: ${project.title}`}>{project.title}</PendingLink><span className="obo-cell-text obo-meta">{project.propertyDesignation || project.city || '–'}</span></td>
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Utlåtande</span><span className="obo-cell-text" title={lifecycle.deliveryLabel}>{lifecycle.deliveryLabel}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Besiktning</span><span className="obo-cell-text" title={lifecycle.workLabel}>{lifecycle.workLabel}</span></td>
@@ -49,7 +53,7 @@ function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; on
         aria-label={`${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.title}, ${project.title}`} aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
         onClick={() => setExpanded(value => !value)}>{lifecycle.needsAttention ? <TriangleAlert size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}</button></td>
       <td className="obo-actions"><div className="obo-action-links">
-        <PendingLink href={lifecycle.isOpen ? performHref : reportHref} className="obo-inspection-link" prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
+        <PendingLink href={inspectionHref} className="obo-inspection-link" prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
           aria-label={`Öppna besiktning: ${item.title}, ${project.title}`} title="Öppna besiktning" icon={<ClipboardList size={18} aria-hidden />}>Öppna besiktning</PendingLink>
         <PendingLink href={reportHref} className="obo-confirmation-link" prefetch={false} autoPending pendingLabel="Öppnar utlåtande…"
           aria-label={`Visa utlåtande: ${item.title}, ${project.title}`} title="Visa utlåtande" icon={<FileText size={18} aria-hidden />}>Utlåtande</PendingLink>
@@ -65,7 +69,7 @@ function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; on
       <div className="eb-detail-actions"><PendingLink href={base} prefetch={false} autoPending pendingLabel="Öppnar entreprenad…" icon={<Building2 size={16} aria-hidden />}>Entreprenad, avtal och historik</PendingLink>
         {inspection.reportLockedAt && <button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button>}</div>
     </div></td></tr>}
-    <tr className="eb-mobile-context"><td colSpan={8}><Link href={base}>Entreprenad och historik</Link>{inspection.reportLockedAt && <button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button>}</td></tr>
+    {inspection.reportLockedAt && <tr className="eb-mobile-context"><td colSpan={8}><button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button></td></tr>}
   </>
 }
 
