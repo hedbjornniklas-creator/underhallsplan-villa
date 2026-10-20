@@ -33,6 +33,7 @@ import { useAutosaveQueue } from '@/hooks/useAutosaveQueue'
 import { useEbNoteImageUploadQueue } from '@/hooks/useEbNoteImageUploadQueue'
 import type { EbNoteImageUploadItem } from '@/lib/eb/noteImageUploadQueue'
 import type { EbInspectionRound, EbNote, EbNoteImage, EbProjectAttachment } from '@/lib/eb/server'
+import { ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
 
 type EbInspectionMobileRoundClientProps = {
   initialRound: EbInspectionRound
@@ -1535,6 +1536,7 @@ export default function EbInspectionMobileRoundClient({
                           key={image.id}
                           src={image.thumbnailUrl ?? image.publicUrl}
                           alt={image.label ?? 'Bild'}
+                          title={ebImageOriginLabel(image) ?? undefined}
                           loading="lazy"
                           decoding="async"
                           className="h-14 w-14 shrink-0 rounded-md border border-emerald-100 object-cover"
@@ -1960,6 +1962,11 @@ export default function EbInspectionMobileRoundClient({
                                 decoding="async"
                                 className="aspect-square w-full object-cover"
                               />
+                              {ebImageOriginLabel(image) ? (
+                                <p className="border-t border-emerald-100 px-2 py-1 text-xs leading-snug text-slate-600">
+                                  {ebImageOriginLabel(image)}
+                                </p>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => void deleteImage(image)}

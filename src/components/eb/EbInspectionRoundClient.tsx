@@ -68,6 +68,7 @@ import type {
 } from '@/lib/eb/server'
 import { resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
 import { ebReviewChildSectionKeys, ebReviewSectionKeys } from '@/lib/eb/reviewSections'
+import { ebImageDisplayCaption, ebImageOriginLabel } from '@/lib/eb/inspectionReuseDisplay'
 
 type EbInspectionRoundClientProps = {
   initialRound: EbInspectionReport
@@ -190,6 +191,7 @@ type ImageBankPreviewItem = {
   src: string
   alt: string
   label: string
+  originLabel?: string | null
 }
 
 type ReorderResponse = {
@@ -961,6 +963,11 @@ function InspectionImageBankCard({
           </button>
         ) : null}
       </div>
+      {ebImageOriginLabel(image) ? (
+        <p className="border-t border-emerald-100 px-2 py-1 text-[11px] leading-snug text-slate-600">
+          {ebImageOriginLabel(image)}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -1032,6 +1039,7 @@ function ImageBankPreviewDialog({
         <div className="mb-3 flex items-center justify-between gap-3 text-white">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{currentItem.label}</p>
+            {currentItem.originLabel ? <p className="mt-1 text-xs text-amber-200">{currentItem.originLabel}</p> : null}
             <p className="text-xs text-white/70">
               {canNavigate ? `${currentIndex + 1} / ${items.length}` : ''}
             </p>
@@ -2517,7 +2525,8 @@ export default function EbInspectionRoundClient({
         key: `inspection:${image.id}`,
         src: image.publicUrl,
         alt: image.label ?? referenceLabel,
-        label: image.label ?? referenceLabel,
+        label: ebImageDisplayCaption(image) ?? referenceLabel,
+        originLabel: ebImageOriginLabel(image),
       }
     })
     return [...projectItems, ...inspectionItems]

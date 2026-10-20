@@ -9,6 +9,8 @@ import {
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+// Reusing a report may copy its photo files, as independent target-owned files.
+export const maxDuration = 300
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status })
@@ -44,6 +46,18 @@ function mapError(error: unknown, fallback: string) {
   if (message === 'EB_PROJECT_PROPERTY_MISSING') {
     return jsonError('Entreprenaden saknar fastighetskoppling.', 409)
   }
+  if (message === 'EB_REUSE_SOURCE_NOT_FOUND') {
+    return jsonError('Den tidigare besiktningen hittades inte i denna entreprenad.', 404)
+  }
+  if (message === 'EB_REUSE_SOURCE_NOT_ELIGIBLE' || message === 'EB_REUSE_SOURCE_SNAPSHOT_INVALID') {
+    return jsonError('Välj en fastställd, ej godkänd slutbesiktning som underlag. Uppdatera sidan om uppgifterna har ändrats.', 409)
+  }
+  if (message === 'EB_REUSE_MIGRATION_REQUIRED') {
+    return jsonError('Funktionen för att återanvända en besiktning behöver aktiveras av administratören.', 503)
+  }
+  if (message === 'EB_REUSE_ROLLBACK_FAILED') {
+    return jsonError('Besiktningen kunde inte skapas färdigt. Kontakta administratören innan du försöker igen.', 500)
+  }
   return jsonError(fallback, 500)
 }
 
@@ -55,6 +69,10 @@ export async function POST(
     const { projectId } = await context.params
     const org = await requireEbContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (['reusePreviousInspection', 'includePreviousNotes'].some(key =>
+      body[key] !== undefined && typeof body[key] !== 'boolean')) {
+      return jsonError('Valen för tidigare besiktning måste vara ja eller nej.', 400)
+    }
     const rawVariant = toText(body.variant).toUpperCase()
     const variant: EbInspectionVariant = isEbInspectionVariant(rawVariant)
       ? rawVariant
@@ -71,6 +89,8 @@ export async function POST(
       meetingPlace: toText(body.meetingPlace) || null,
       startMeetingTime: toText(body.startMeetingTime) || null,
       finalMeetingTime: toText(body.finalMeetingTime) || null,
+      reusePreviousInspection: body.reusePreviousInspection === true,
+      includePreviousNotes: body.includePreviousNotes === true,
     })
 
     return NextResponse.json({ project }, { status: 201 })

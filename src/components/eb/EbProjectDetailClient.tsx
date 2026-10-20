@@ -11,6 +11,7 @@ import {
   CircleDashed,
   ClipboardCheck,
   Clock3,
+  CopyPlus,
   FileCheck2,
   FileText,
   ListChecks,
@@ -31,6 +32,7 @@ import EbAgreementDocumentField from '@/components/eb/EbAgreementDocumentField'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
+import EbNewInspectionDialog, { canReusePreviousFinalInspection } from '@/components/eb/EbNewInspectionDialog'
 import { getEbInspectionLifecycle } from '@/lib/eb/inspectionLifecycle'
 import { useEbToast } from '@/components/eb/EbToastProvider'
 import EbProjectForm, {
@@ -48,7 +50,6 @@ import type {
   EbProjectAttachment,
   EbInspectionDocument,
   EbInspectionSummary,
-  EbInspectionVariant,
   EbInvitationContext,
   EbInvitationParticipant,
   EbPreviousInspectionItem,
@@ -66,21 +67,6 @@ type EbProjectDetailClientProps = {
   project: EbProjectListItem
   attachments: EbProjectAttachment[]
   assignmentConfirmations: EbAssignmentConfirmationSummary[]
-}
-
-type InspectionFormState = {
-  variant: EbInspectionVariant
-  parentInspectionId: string
-  inspectionDate: string
-  inspectionTime: string
-  meetingPlace: string
-  startMeetingTime: string
-  finalMeetingTime: string
-}
-
-type CreateInspectionResponse = {
-  project?: EbProjectListItem
-  error?: string
 }
 
 type UpdateInspectionResponse = {
@@ -196,28 +182,6 @@ const INSPECTION_DETAILS_TABS: Array<{
   { key: 'participants', label: 'Närvarande', icon: UserPlus },
   { key: 'billing', label: 'Fakturering', icon: FileCheck2 },
 ]
-
-const VARIANT_OPTIONS: Array<{ value: EbInspectionVariant; label: string }> = [
-  { value: 'SLB', label: 'Slutbesiktning' },
-  { value: 'EB', label: 'Efterbesiktning' },
-  { value: 'FB', label: 'Förbesiktning' },
-  { value: 'GB', label: 'Garantibesiktning' },
-  { value: 'KSB', label: 'Kompletterande slutbesiktning' },
-  { value: 'SAB', label: 'Särskild besiktning' },
-]
-
-function buildInitialInspectionForm(project: EbProjectListItem): InspectionFormState {
-  const latestInspection = project.inspections.at(-1)
-  return {
-    variant: project.inspections.length === 0 ? 'SLB' : 'EB',
-    parentInspectionId: latestInspection?.inspectionId ?? '',
-    inspectionDate: '',
-    inspectionTime: '',
-    meetingPlace: '',
-    startMeetingTime: '',
-    finalMeetingTime: '',
-  }
-}
 
 const INVITATION_METHOD_OPTIONS = [
   'E-post',
@@ -1029,181 +993,6 @@ function inspectionTitle(inspection: EbInspectionSummary) {
   return `${inspection.sequenceNo}. ${inspection.variantLabel}`
 }
 
-function CreateInspectionDialog({
-  open,
-  project,
-  onClose,
-  onCreated,
-}: {
-  open: boolean
-  project: EbProjectListItem
-  onClose: () => void
-  onCreated: (project: EbProjectListItem) => void
-}) {
-  const { showError } = useEbToast()
-  const [form, setForm] = useState<InspectionFormState>(() => buildInitialInspectionForm(project))
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    setForm(buildInitialInspectionForm(project))
-  }, [open, project])
-
-  if (!open) return null
-
-  const updateField = <K extends keyof InspectionFormState>(
-    field: K,
-    value: InspectionFormState[K]
-  ) => {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (submitting) return
-
-    try {
-      setSubmitting(true)
-      const response = await fetch(`/api/eb/projects/${project.id}/inspections`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      const payload = (await response.json().catch(() => ({}))) as CreateInspectionResponse
-
-      if (!response.ok || !payload.project) {
-        throw new Error(payload.error ?? 'Kunde inte skapa besiktning.')
-      }
-
-      onCreated(payload.project)
-      onClose()
-    } catch (submitError) {
-      showError(submitError, 'Kunde inte skapa besiktning.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">EB</p>
-            <h2 className="text-lg font-semibold text-gray-950">Ny besiktning</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={submitting}
-            aria-label="Stäng"
-            title="Stäng"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={(event) => void handleSubmit(event)} className="p-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {fieldLabel(
-              'Typ',
-              <select
-                value={form.variant}
-                onChange={(event) => updateField('variant', event.target.value as EbInspectionVariant)}
-                className={inputClassName()}
-              >
-                {VARIANT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            )}
-            {fieldLabel(
-              'Kopplas till',
-              <select
-                value={form.parentInspectionId}
-                onChange={(event) => updateField('parentInspectionId', event.target.value)}
-                className={inputClassName()}
-              >
-                <option value="">Ingen</option>
-                {project.inspections.map((inspection) => (
-                  <option key={inspection.inspectionId} value={inspection.inspectionId}>
-                    {inspectionTitle(inspection)}
-                  </option>
-                ))}
-              </select>
-            )}
-            {fieldLabel(
-              'Datum',
-              <input
-                type="date"
-                value={form.inspectionDate}
-                onChange={(event) => updateField('inspectionDate', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Tid',
-              <input
-                type="time"
-                value={form.inspectionTime}
-                onChange={(event) => updateField('inspectionTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Samlingsplats',
-              <input
-                value={form.meetingPlace}
-                onChange={(event) => updateField('meetingPlace', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Startmöte',
-              <input
-                type="time"
-                value={form.startMeetingTime}
-                onChange={(event) => updateField('startMeetingTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-            {fieldLabel(
-              'Slutmöte',
-              <input
-                type="time"
-                value={form.finalMeetingTime}
-                onChange={(event) => updateField('finalMeetingTime', event.target.value)}
-                className={inputClassName()}
-              />
-            )}
-          </div>
-
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Avbryt
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
-            >
-              {submitting ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {submitting ? 'Skapar...' : 'Skapa'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
 
 function InspectionDetailsDialog({
   open,
@@ -2810,6 +2599,7 @@ export default function EbProjectDetailClient({
   const [currentProject, setCurrentProject] = useState(project)
   const [currentAttachments, setCurrentAttachments] = useState(attachments)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [sourceInspectionId, setSourceInspectionId] = useState<string | undefined>()
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
@@ -3018,8 +2808,9 @@ export default function EbProjectDetailClient({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDialogOpen(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+                  onClick={() => { setSourceInspectionId(undefined); setDialogOpen(true) }}
+                  disabled={!getEbInspectionLifecycle({ status: 'draft' }, currentProject.status).isOpen}
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus size={16} />
                   Ny besiktning
@@ -3162,6 +2953,17 @@ export default function EbProjectDetailClient({
                                   ? `Följer på: ${parentInspection.variantLabel}`
                                   : 'Grundbesiktning'}
                               </p>
+                              {canReusePreviousFinalInspection(inspection) && getEbInspectionLifecycle({ status: 'draft' }, currentProject.status).isOpen ? (
+                                <button
+                                  type="button"
+                                  disabled={navigationInProgress || actionInProgress}
+                                  onClick={() => { setSourceInspectionId(inspection.inspectionId); setDialogOpen(true) }}
+                                  className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-md border border-emerald-200 bg-white px-3 py-2 text-left text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:opacity-50"
+                                >
+                                  <CopyPlus size={16} className="shrink-0" aria-hidden="true" />
+                                  Ny slutbesiktning från tidigare
+                                </button>
+                              ) : null}
                               <div className="mt-3 rounded-md border border-gray-100 bg-gray-50/70 px-2.5 py-2 text-xs leading-5 text-gray-600">
                                 <span className="font-semibold text-gray-800">Fakturering:</span>{' '}
                                 {inspection.invoiceName || 'Mottagare ej satt'}
@@ -3368,11 +3170,17 @@ export default function EbProjectDetailClient({
           </section>
         </div>
 
-        <CreateInspectionDialog
+        <EbNewInspectionDialog
           open={dialogOpen}
-          project={currentProject}
-          onClose={() => setDialogOpen(false)}
-          onCreated={handleCreated}
+          projects={[currentProject]}
+          initialProjectId={currentProject.id}
+          initialSourceInspectionId={sourceInspectionId}
+          allowProjectSelection={false}
+          onClose={() => { setDialogOpen(false); setSourceInspectionId(undefined) }}
+          onCreated={(updatedProject, inspectionId) => {
+            handleCreated(updatedProject)
+            if (inspectionId) router.push(`/eb/projects/${encodeURIComponent(updatedProject.id)}/inspections/${encodeURIComponent(inspectionId)}/perform`)
+          }}
         />
         <EditProjectDialog
           open={editDialogOpen}

@@ -25,7 +25,7 @@ export async function testEbOverview(base, output) {
     const id = `eb-preview-${Math.random().toString(16).slice(2)}`
     const found = await page.evaluate((text, tag, scope, id) => {
       const root = document.querySelector(scope)
-      const label = [...root.querySelectorAll('label')].find(node => node.textContent.trim().startsWith(text))
+      const label = [...root.querySelectorAll('label')].find(node => node.textContent.trim().startsWith(text) && node.querySelector(tag))
       const field = label?.querySelector(tag)
       if (field) field.id = id
       return Boolean(field)
@@ -49,6 +49,24 @@ export async function testEbOverview(base, output) {
     await page.waitForSelector('dialog[open]')
     assert.match(await page.$eval('dialog[open] h2', node => node.textContent), /Ny besiktning/)
   }
+  async function openReuse() {
+    await page.click('tr[data-row-id="inspection-closed"] button[aria-label^="Ny slutbesiktning från tidigare:"]')
+    await page.waitForSelector('dialog[open]')
+    await page.waitForFunction(() => document.querySelector('dialog[open] h2')?.textContent === 'Ny slutbesiktning från tidigare')
+    await page.waitForSelector('dialog[open] [data-source-inspection-id="inspection-closed"]')
+  }
+  async function openGenericReuse() {
+    await openNew()
+    await page.select(await labelSelector('Välj entreprenad'), 'project-alpha')
+    await page.select(await labelSelector('Typ av besiktning'), 'SLB')
+    await page.select(await labelSelector('Tidigare besiktning'), 'inspection-closed')
+    await page.click(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'))
+  }
+  async function showMeetingDetails() {
+    await page.focus('dialog[open] details summary')
+    if (!await page.$eval('dialog[open] details', node => node.open)) await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.querySelector('dialog[open] details').open)
+  }
   try {
     for (const width of [390, 1440]) {
       await page.setViewport({ width, height: 1000 })
@@ -67,6 +85,35 @@ export async function testEbOverview(base, output) {
       assert.equal((await rows()).length, 3)
       assert.ok((await rows()).includes('inspection-closed'))
       assert.equal((await rows()).includes('inspection-delivery'), false)
+      await layout(`${width}: completed row with reuse action`)
+      assert.equal(await page.$$eval('button[aria-label^="Ny slutbesiktning från tidigare:"]', nodes => nodes.length), 1,
+        'Only a locked, not-approved final inspection offers the dedicated reuse action')
+      await openReuse()
+      if (width === 390) await page.setViewport({ width, height: 844 })
+      assert.equal(await page.$$eval('dialog[open] select, dialog[open] input[type=radio]', nodes => nodes.length), 0, 'Dedicated reuse has no redundant project or inspection selectors')
+      assert.match(await page.$eval('dialog[open] [data-source-inspection-id]', node => node.textContent), /Slutbesiktning 1 · 2026-10-10 · Ej godkänd/)
+      assert.match(await page.$eval('dialog[open]', node => node.textContent), /Renovering Testvillan/)
+      assert.equal(await page.$eval(await labelSelector('Datum', 'input'), node => node.value), '', 'The old inspection date is never prefilled')
+      assert.equal(await page.$eval(await labelSelector('Ta med tidigare noteringar och bilder', 'input'), node => node.checked), true)
+      assert.match(await page.$eval('dialog[open]', node => node.textContent), /Originalet lämnas oförändrat/)
+      assert.equal(await page.$eval(await labelSelector('Ta med tidigare noteringar och bilder', 'input'), node => {
+        const checkbox = node.getBoundingClientRect()
+        const footer = document.querySelector('dialog[open] footer').getBoundingClientRect()
+        return checkbox.top >= 0 && checkbox.bottom < footer.top && checkbox.bottom < innerHeight
+      }), true, `${width}: optional note choice is visible above the create footer without scrolling`)
+      assert.equal(await page.$eval(await labelSelector('Datum', 'input'), node => node.getBoundingClientRect().bottom < document.querySelector('dialog[open] footer').getBoundingClientRect().top), true,
+        `${width}: new date is visible above the footer without scrolling`)
+      assert.equal(await page.$eval('dialog[open]', node => node.scrollWidth > node.clientWidth + 1), false, `${width}: reuse dialog overflow`)
+      await page.screenshot({ path: resolve(output, `eb-new-from-previous-${width}.png`) })
+      await showMeetingDetails()
+      assert.equal(await page.$eval(await labelSelector('Samlingsplats', 'input'), node => node.value), 'Tidigare entrén', 'The location is reusable base data')
+      assert.equal(await page.$eval(await labelSelector('Tid', 'input'), node => node.value), '', 'The previous inspection time is not inherited')
+      assert.equal(await page.$eval(await labelSelector('Startmöte', 'input'), node => node.value), '', 'The previous start time is not inherited')
+      assert.equal(await page.$eval(await labelSelector('Slutmöte', 'input'), node => node.value), '', 'The previous end time is not inherited')
+      await page.keyboard.press('Escape')
+      await page.waitForSelector('dialog[open]', { hidden: true })
+      if (width === 390) await page.setViewport({ width, height: 1000 })
+      assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0, 'Opening or cancelling reuse changes nothing')
       await chooseFilter('all', width)
       await page.select('.obo-page-size select', '25')
       assert.equal((await rows()).length, 16)
@@ -108,6 +155,102 @@ export async function testEbOverview(base, output) {
     await page.setViewport({ width: 1440, height: 1000 })
     await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
     await ready()
+    await chooseFilter('closed', 1440)
+    await openGenericReuse()
+    await page.click(await labelSelector('Ta med tidigare noteringar och bilder', 'input'))
+    await page.select(await labelSelector('Typ av besiktning'), 'EB')
+    assert.equal(await page.$$eval('dialog[open] input[type=checkbox]', nodes => nodes.length), 0, 'Changing type removes stale reuse settings')
+    await page.select(await labelSelector('Typ av besiktning'), 'SLB')
+    assert.equal(await page.$eval(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'), node => node.checked), false,
+      'Returning to SLB does not silently restore reuse')
+    await showMeetingDetails()
+    assert.equal(await page.$eval(await labelSelector('Samlingsplats', 'input'), node => node.value), '', 'Changing type clears only the inherited location')
+    await page.click(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'))
+    assert.equal(await page.$eval(await labelSelector('Samlingsplats', 'input'), node => node.value), 'Tidigare entrén', 'Generic reuse fills an empty location')
+    await page.select(await labelSelector('Tidigare besiktning'), 'inspection-slab')
+    assert.equal(await page.$$eval('dialog[open] input[type=checkbox]', nodes => nodes.length), 0, 'A draft source is not eligible')
+    assert.equal(await page.$eval(await labelSelector('Samlingsplats', 'input'), node => node.value), '', 'A different source does not retain an auto-copied location')
+    await page.select(await labelSelector('Tidigare besiktning'), 'inspection-closed')
+    assert.equal(await page.$eval(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'), node => node.checked), false,
+      'Changing source clears reuse')
+    await page.type(await labelSelector('Samlingsplats', 'input'), 'Egen vald plats')
+    await page.click(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'))
+    assert.equal(await page.$eval(await labelSelector('Samlingsplats', 'input'), node => node.value), 'Egen vald plats', 'Generic reuse never overwrites a typed location')
+    await page.click('dialog[open] input[type=radio][value=new]')
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('dialog[open] label')].some(node => node.textContent.includes('Utgå från den tidigare slutbesiktningen'))), false)
+    await page.click('dialog[open] input[type=radio][value=existing]')
+    assert.equal(await page.$eval(await labelSelector('Typ av besiktning'), node => node.value), 'EB', 'Existing mode keeps the established EB default')
+    await page.select(await labelSelector('Typ av besiktning'), 'SLB')
+    await page.select(await labelSelector('Tidigare besiktning'), 'inspection-closed')
+    assert.equal(await page.$eval(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'), node => node.checked), false)
+    await page.click(await labelSelector('Utgå från den tidigare slutbesiktningen', 'input'))
+    await page.select(await labelSelector('Välj entreprenad'), 'project-without-inspections')
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('dialog[open] label')].some(node => node.textContent.includes('Utgå från den tidigare slutbesiktningen'))), false,
+      'Changing project clears the source and reuse options')
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0)
+
+    await page.evaluate(() => { window.__ebOverviewTest.delay = 1200 })
+    await page.click('button[aria-label="Uppdatera besiktningslistan"]')
+    await openReuse()
+    await page.click(await labelSelector('Ta med tidigare noteringar och bilder', 'input'))
+    await showMeetingDetails()
+    const meetingPlace = await labelSelector('Samlingsplats', 'input')
+    await page.focus(meetingPlace)
+    await page.keyboard.down('Control')
+    await page.keyboard.press('A')
+    await page.keyboard.up('Control')
+    await page.type(meetingPlace, 'Nya entrén')
+    await ready()
+    assert.equal(await page.$eval(meetingPlace, node => node.value), 'Nya entrén', 'A parent list refresh keeps the new inspection draft')
+    assert.equal(await page.$eval(meetingPlace, node => document.activeElement === node), true, 'Parent list refresh does not move editing focus')
+    assert.equal(await page.$eval(await labelSelector('Ta med tidigare noteringar och bilder', 'input'), node => node.checked), false,
+      'Parent rerender does not reset the optional notes choice')
+    await page.evaluate(() => { window.__ebOverviewTest.delay = 0 })
+    await clickText('Skapa besiktning', 'dialog[open]')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.deepEqual(await page.evaluate(() => window.__ebOverviewTest.writes.map(item => ({
+      url: item.url, variant: item.body.variant, parentInspectionId: item.body.parentInspectionId,
+      reusePreviousInspection: item.body.reusePreviousInspection, includePreviousNotes: item.body.includePreviousNotes,
+      inspectionTime: item.body.inspectionTime, meetingPlace: item.body.meetingPlace,
+    }))), [{
+      url: '/api/eb/projects/project-alpha/inspections', variant: 'SLB', parentInspectionId: 'inspection-closed',
+      reusePreviousInspection: true, includePreviousNotes: false, inspectionTime: '', meetingPlace: 'Nya entrén',
+    }], 'A separate new inspection is created from the explicit source, with old notes optional and no inherited meeting time')
+    assert.ok(await page.evaluate(() => window.__ebOverviewTest.navigations.some(url => url.includes('synthetic-created-inspection'))))
+    await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
+    await ready()
+    await chooseFilter('closed', 1440)
+    await openReuse()
+    await clickText('Skapa besiktning', 'dialog[open]')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.deepEqual(await page.evaluate(() => window.__ebOverviewTest.writes.map(item => ({
+      url: item.url, parentInspectionId: item.body.parentInspectionId,
+      reusePreviousInspection: item.body.reusePreviousInspection, includePreviousNotes: item.body.includePreviousNotes,
+      inspectionDate: item.body.inspectionDate,
+    }))), [{
+      url: '/api/eb/projects/project-alpha/inspections', parentInspectionId: 'inspection-closed',
+      reusePreviousInspection: true, includePreviousNotes: true, inspectionDate: '',
+    }], 'The default carries previous notes and pictures only into the new inspection, never its old date')
+    await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
+    await ready()
+    await chooseFilter('closed', 1440)
+    await page.evaluate(() => { window.__ebOverviewTest.delay = 800; window.__ebOverviewTest.sourceUnlocked = true })
+    await page.click('button[aria-label="Uppdatera besiktningslistan"]')
+    await openReuse()
+    await ready()
+    await clickText('Skapa besiktning', 'dialog[open]')
+    await page.waitForSelector('dialog[open] [role=alert]')
+    assert.match(await page.$eval('dialog[open] [role=alert]', node => node.textContent), /kan inte längre användas som underlag/)
+    assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0,
+      'A source unlocked elsewhere cannot silently turn a requested copy into an empty generic inspection')
+    await page.keyboard.press('Escape')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    console.log('EB overview: source reuse is explicit, optional notes payload and project/mode/type/source resets passed.')
+
+    await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
+    await ready()
     await page.click('tr[data-row-id="inspection-delivery"] .eb-delivery-action')
     await page.waitForSelector('[role=dialog] #eb-delivery-customer:not([disabled])')
     await page.waitForFunction(() => document.querySelector('#eb-delivery-customer').value === 'anna@example.invalid')
@@ -147,6 +290,9 @@ export async function testEbOverview(base, output) {
     await clickText('Skapa besiktning', 'dialog[open]')
     await page.waitForSelector('dialog[open]', { hidden: true })
     assert.deepEqual(await page.evaluate(() => window.__ebOverviewTest.writes.map(item => item.url)), ['/api/eb/projects/project-alpha/inspections'])
+    assert.deepEqual(await page.evaluate(() => window.__ebOverviewTest.writes.map(item => ({
+      reuse: item.body.reusePreviousInspection, notes: item.body.includePreviousNotes,
+    }))), [{ reuse: false, notes: false }], 'Generic creation does not silently copy a prior inspection')
     assert.ok(await page.evaluate(() => window.__ebOverviewTest.navigations.some(url => url.includes('synthetic-created-inspection'))))
 
     await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
@@ -186,6 +332,18 @@ export async function testEbOverview(base, output) {
     await page.waitForSelector('dialog[open]', { hidden: true })
     assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.filter(item => item.url === '/api/eb/projects').length), 1, 'Closing and resuming reuses the saved project')
     console.log('EB overview: existing creation and new project retry/resume passed.')
+
+    await page.goto(`${base}/eb?state=project-dialog`, { waitUntil: 'networkidle0' })
+    await page.waitForSelector('dialog[open]')
+    assert.equal(await page.$$eval('dialog[open] input[type=radio]', nodes => nodes.length), 0,
+      'The project-detail entry cannot create or switch to a different project')
+    assert.equal(await page.$$eval('dialog[open] select', nodes => nodes.length), 0, 'The dedicated entry shows a compact fixed source rather than redundant selectors')
+    assert.equal(await page.$eval('dialog[open] [data-source-inspection-id]', node => node.dataset.sourceInspectionId), 'inspection-closed')
+    assert.match(await page.$eval('dialog[open]', node => node.textContent), /Renovering Testvillan/)
+    await clickText('Skapa besiktning', 'dialog[open]')
+    await page.waitForSelector('dialog[open]', { hidden: true })
+    assert.deepEqual(await page.evaluate(() => window.__ebOverviewTest.writes.map(item => item.url)), ['/api/eb/projects/project-alpha/inspections'])
+    console.log('EB overview: shared project-detail dialog keeps the existing project fixed.')
 
     await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
     await ready()
