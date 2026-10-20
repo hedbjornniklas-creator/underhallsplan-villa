@@ -63,6 +63,11 @@ avtalet eller kundens sida. Se [Projektöversikt](gizmo-project-overview.md).
 
 ## Listor och dator
 
+- Beslut 2026-10-20: Kalkylens frågeteckenikon bredvid Lägg till rad öppnar en
+  läsbar manual utan att stänga pågående redigering. Ofullständiga kalkyler visar
+  en tydligt märkt Preliminär summa och varning. Prispåslag skiljs från moms och
+  kostnadsfält och summor märks exklusive moms. Avtal och betalningsplan ändras
+  inte. Se [Kalkylhjälp](gizmo-project-costing-help.md).
 - Beslut 2026-10-19: Kalkyl i åtgärdens högerpanel använder en gemensam tabell
   med Klar, Kalkylrad, Kostnad, Påslag och Kundpris. Samtliga belopp är exklusive
   moms. En summarad ersätter de dubbla beloppen i sidfoten. Kalkylpanelen får

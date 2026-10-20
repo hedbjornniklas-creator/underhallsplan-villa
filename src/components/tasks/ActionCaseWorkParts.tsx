@@ -87,7 +87,7 @@ export function ActionCaseWorkSelection({ lines, selectedIds, parts, expectedUpd
         <button className={iconButton} type="submit" disabled={busy || !validBatch || !moveDraft} title="Flytta valda arbeten" aria-label="Flytta valda arbeten"><FolderInput size={16} /></button>
       </form> : null}
       <form className="flex min-w-0 flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); if (!busy && eligible && rateDraft && rateValid) void save({ operation: 'bulk_update', unitCost: Number(rateDraft.value), expectedUpdatedAt: rateDraft.expectedUpdatedAt }) }}>
-        <label className="min-w-0 flex-1 text-xs font-semibold text-slate-600">Timkostnad för valda, kr<input className={input} disabled={busy || !eligible || !validBatch || Boolean(moveDraft)} type="number" min="0" max="999999999999.99" step="any" value={rateDraft?.value ?? ''} onChange={(event) => {
+        <label className="min-w-0 flex-1 text-xs font-semibold text-slate-600">Timkostnad för valda exkl. moms (kr)<input className={input} disabled={busy || !eligible || !validBatch || Boolean(moveDraft)} type="number" min="0" max="999999999999.99" step="any" value={rateDraft?.value ?? ''} onChange={(event) => {
           setRateDraft(event.target.value ? { value: event.target.value, expectedUpdatedAt: rateDraft?.expectedUpdatedAt ?? expectedUpdatedAt } : null); onEditing(Boolean(event.target.value))
         }} /></label>
         <button className={iconButton} type="submit" disabled={busy || !eligible || !validBatch || !rateValid || Boolean(moveDraft)} title="Spara timkostnad för valda arbeten" aria-label="Spara timkostnad för valda arbeten"><Save size={16} /></button>

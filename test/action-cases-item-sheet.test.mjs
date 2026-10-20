@@ -33,7 +33,7 @@ function sheetHarness(overrides = {}) {
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},
   }
-  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields']) dependencies[`./${name}`] = { default: name }
+  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
     (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
@@ -144,7 +144,7 @@ test('compact table shows every priced row and one total; completion never chang
   const calls=[],h=sheetHarness({initialCostLineId:'none',item:costItem([testLine()]),onCostAction:async(...args)=>{calls.push(args);return true}})
   assert.equal(h.find(n=>n.type==='table').props['aria-label'],'Kalkylrader')
   assert.equal(h.nodes().filter(n=>n.type==='tfoot').length,1)
-  const prices=()=>h.nodes().filter(n=>n.type==='td' && n.props['data-label']==='Kundpris').map(n=>n.props.children)
+  const prices=()=>h.nodes().filter(n=>n.type==='td' && n.props['data-label']==='Kundpris exkl. moms').map(n=>n.props.children.props.children)
   assert.equal(prices()[0].replaceAll('\u00a0',' '),'74 982,40 kr')
   const checkbox=h.find(n=>n.props['aria-label']==='Klar: Puts')
   assert.equal(checkbox.props.disabled,false)
@@ -180,4 +180,41 @@ test('pencil opens details with unsaved protection and blocks concurrent complet
   h.pointerDown();h.clickBackdrop()
   assert.equal(h.result.confirmations,1)
   assert.equal(h.result.closes,0)
+})
+
+test('incomplete rows retain a preliminary cost and customer sum, including genuine zero-priced products', () => {
+  const h = sheetHarness({ initialCostLineId: 'none', item: costItem([
+    testLine({ quantity: 10, unitCost: 500, markupPercent: 20 }),
+    testLine({ id: 'free', description: 'Gratis material', quantity: 1, unitCost: 0 }),
+    testLine({ id: 'unknown', quantity: null, unitCost: 0 }),
+  ]) })
+  const footer = h.find(n => n.type === 'tfoot')
+  assert.equal(footer.props.children.props.children[0].props.children, 'Preliminär summa')
+  assert.equal(footer.props.children.props.children[1].props.children.props.children.replaceAll('\u00a0', ' '), '5 000,00 kr')
+  assert.equal(footer.props.children.props.children[3].props.children.props.children.replaceAll('\u00a0', ' '), '6 000,00 kr')
+  assert.equal(h.find(n => n.type === 'table').props['aria-describedby'], 'sheet-cost-warning')
+  const warning = h.find(n => n.props.id === 'sheet-cost-warning')
+  assert.ok(warning.props.children.includes('1 rad saknar mängd'))
+  assert.equal(h.find(n => n.props['aria-label'] === 'Klar: Gratis material').props.disabled, false)
+  assert.equal(h.props.item.costLines[2].quantity, null, 'Display never fills in a missing quantity')
+  h.props.item.costLines[2].quantity = 1
+  h.render()
+  assert.equal(h.find(n => n.type === 'tfoot').props.children.props.children[0].props.children, 'Summa')
+  assert.equal(h.nodes().some(n => n.props.id === 'sheet-cost-warning'), false)
+})
+
+test('an entirely unknown calculation explicitly labels its zero display as preliminary', () => {
+  const h = sheetHarness({ initialCostLineId: 'none', item: costItem([testLine({ quantity: null, unitCost: null })]) })
+  assert.equal(h.find(n => n.type === 'tfoot').props.children.props.children[1].props.children.props.children, '0,00\u00a0kr')
+  assert.ok(h.find(n => n.props.id === 'sheet-cost-warning').props.children.includes('Inga rader kan räknas ut ännu.'))
+})
+
+test('successful transition away from a lump sum leaves Add row enabled', async () => {
+  let h
+  h = sheetHarness({ initialCostLineId: 'none', item: { ...costItem([testLine()]), lumpSumAvailable: true, lumpSum: { customerPrice: 5000, internalCost: null, vatRate: 25, verified: false } }, onSave: async payload => { h.props.item.lumpSum = payload.lumpSum; return true } })
+  h.find(n => n.type === 'ActionCaseLumpSumEditor').props.onDirty(true)
+  h.render()
+  await h.find(n => n.type === 'ActionCaseLumpSumEditor').props.onSave(null)
+  h.render()
+  assert.equal(h.find(n => n.type === 'button' && n.props.children?.includes?.('Lägg till rad')).props.disabled, false)
 })

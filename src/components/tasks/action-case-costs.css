@@ -1,5 +1,5 @@
 .uppdrag-scope .gizmo-cost-sheet { max-width: 1120px; }
-.gizmo-cost-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
+.gizmo-cost-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 16px; }
 .gizmo-cost-toolbar p { margin: 2px 0 0; color: #596368; font-size: 12px; }
 .gizmo-cost-commands { display: flex; align-items: center; gap: 8px; }
 .gizmo-cost-tools { position: relative; }
@@ -18,6 +18,8 @@
 .gizmo-cost-table th { height: 36px; background: #EDF1F1; font-size: 12px; font-weight: 600; color: #252A2D; }
 .gizmo-cost-table :is(th, td) { padding: 8px 12px; border-bottom: 1px solid #D5DCDD; text-align: left; vertical-align: middle; }
 .gizmo-cost-table [data-number] { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gizmo-cost-table th[data-number] { white-space: normal; }
+.gizmo-cost-table [data-number] > span { white-space: nowrap; }
 .gizmo-cost-table .gizmo-cost-check { padding: 0; text-align: center; }
 .gizmo-cost-check label { display: flex; min-height: 52px; align-items: center; justify-content: center; }
 .gizmo-cost-check input { width: 18px; height: 18px; accent-color: #206961; }
@@ -34,9 +36,36 @@
 .gizmo-cost-advanced { margin-bottom: 16px; padding-block: 12px; border-block: 1px solid #D5DCDD; }
 .gizmo-cost-readiness { display: flex; flex-wrap: wrap; gap: 8px 24px; }
 .gizmo-cost-readiness label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+.uppdrag-scope .gizmo-cost-help-icon { display: inline-flex; flex: 0 0 44px; align-items: center; justify-content: center; width: 44px; height: 44px; min-height: 44px; padding: 0; border: 1px solid #D5DCDD; border-radius: 6px; color: #252A2D; background: #fff; }
+.uppdrag-scope .gizmo-cost-help-icon:hover { background: #EDF1F1; }
+.uppdrag-scope .gizmo-cost-help-icon:focus-visible, .uppdrag-scope .gizmo-cost-help-body a:focus-visible { outline: 2px solid #206961; outline-offset: 2px; }
+.uppdrag-scope .gizmo-cost-help-dialog { width: min(760px, calc(100% - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid #D5DCDD; border-radius: 8px; color: #252A2D; background: #fff; font-size: 14px; line-height: 1.6; letter-spacing: 0; }
+.uppdrag-scope .gizmo-cost-help-dialog[open] { display: flex; flex-direction: column; }
+.gizmo-cost-help-dialog::backdrop { background: #252a2d80; }
+.uppdrag-scope .gizmo-cost-help-dialog > header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: 1px solid #D5DCDD; }
+.gizmo-cost-help-dialog header p { margin: 0; color: #596368; font-size: 12px; }
+.uppdrag-scope .gizmo-cost-help-dialog h2 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; outline: none; }
+.gizmo-cost-help-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px; }
+.gizmo-cost-help-body nav { padding-bottom: 16px; border-bottom: 1px solid #D5DCDD; }
+.gizmo-cost-help-body nav ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; padding-left: 20px; }
+.gizmo-cost-help-body a { display: inline-flex; align-items: center; min-height: 44px; color: #206961; text-decoration: underline; text-underline-offset: 3px; }
+.gizmo-cost-help-body section { padding-top: 24px; }
+.uppdrag-scope .gizmo-cost-help-body h3 { margin: 0 0 8px; font-size: 16px; line-height: 24px; font-weight: 600; scroll-margin-top: 20px; }
+.uppdrag-scope .gizmo-cost-help-body p { margin: 0 0 12px; color: #252A2D; font-size: inherit; line-height: inherit; }
+.gizmo-cost-help-body section ol { padding-left: 22px; }
+.gizmo-cost-help-body li { padding-left: 2px; margin-bottom: 4px; }
+.gizmo-cost-help-body ol { list-style: decimal; }
+.gizmo-cost-warning { margin-top: 12px; padding: 10px 12px; border-left: 3px solid #B78120; background: #fff9e6; font-size: 14px; line-height: 1.5; }
 @media (max-width: 767px) {
   .uppdrag-scope .gizmo-cost-sheet { max-width: none; }
   .gizmo-cost-toolbar { align-items: flex-start; }
+  .uppdrag-scope .gizmo-cost-help-icon { flex-basis: 48px; width: 48px; height: 48px; min-height: 48px; }
+  .uppdrag-scope .gizmo-cost-help-dialog { width: calc(100% - 16px); max-height: calc(100dvh - 16px); font-size: 16px; }
+  .uppdrag-scope .gizmo-cost-help-dialog > header { padding: 12px 16px; }
+  .gizmo-cost-help-body { padding: 16px; }
+  .gizmo-cost-help-body nav ol { grid-template-columns: minmax(0, 1fr); }
+  .gizmo-cost-help-body a { min-height: 48px; }
+  .gizmo-cost-warning { font-size: 16px; }
   .gizmo-cost-table colgroup, .gizmo-cost-table thead { display: none; }
   .gizmo-cost-table, .gizmo-cost-table :is(tbody, tfoot) { display: block; }
   .gizmo-cost-table tr { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px; padding-block: 8px; border-bottom: 1px solid #D5DCDD; }
@@ -47,6 +76,7 @@
   .gizmo-cost-check label, .gizmo-cost-tools > div button { min-height: 48px; }
   .gizmo-cost-table [data-number] { grid-column: 2 / 4; display: flex; justify-content: space-between; gap: 12px; white-space: normal; }
   .gizmo-cost-table [data-number]::before { content: attr(data-label); color: #596368; font-weight: 400; text-align: left; }
+  .gizmo-cost-table [data-number]::before { max-width: 48%; }
   .gizmo-cost-table tr[data-select-mode='true'] { grid-template-columns: 48px 48px minmax(0, 1fr) 48px; }
   .gizmo-cost-table tr[data-select-mode='true'] .gizmo-cost-done { grid-column: 2; }
   .gizmo-cost-table tr[data-select-mode='true'] .gizmo-cost-name { grid-column: 3; }

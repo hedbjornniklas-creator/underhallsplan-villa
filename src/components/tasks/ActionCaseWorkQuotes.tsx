@@ -103,7 +103,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
     const priceStatus = groupQuote ? groupPriceUsability(groupQuote, item) : null
     return <section className="mt-3 space-y-3 border-y border-violet-200 py-4" aria-label={`Prisunderlag för ${line.description}`}>
       <p role="status" className={`text-sm font-semibold ${priceStatus && !priceStatus.usable ? 'text-amber-800' : 'text-violet-700'}`}>{groupQuote ? 'Ingår i grupppris' : 'Ingår i vald offert'}{priceStatus ? ` · ${priceStatus.label}` : ''}{line.coveredByQuoteId ? ' · räknas inte separat' : ''}</p>
-      {groupQuote ? <p className="break-words text-sm text-slate-600">{groupQuote.supplierName}{groupQuote.amount === null ? '' : ` · Grupppris ${money(groupQuote.amount)}`}</p> : null}
+      {groupQuote ? <p className="break-words text-sm text-slate-600">{groupQuote.supplierName}{groupQuote.amount === null ? '' : ` · Grupppris ${money(groupQuote.amount)} exkl. moms`}</p> : null}
       {groupQuote ? <div className="space-y-2">
         <p className="whitespace-pre-wrap break-words text-sm text-slate-600"><strong>Offertens omfattning:</strong> {groupQuote.offeredScope || 'Omfattning saknas'}</p>
         {groupQuote.exclusions ? <p className="whitespace-pre-wrap break-words text-sm text-amber-800"><strong>Undantag:</strong> {groupQuote.exclusions}</p> : null}
@@ -129,7 +129,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
           const stale = quoteIsStale(q, item.scope, line.description), selected = line.selectedQuoteId === q.id
           const grouped = q.packageGroupKey != null
           return <li className="space-y-2 py-4" key={q.id}>
-            <div className="flex flex-wrap items-baseline justify-between gap-2"><strong className="min-w-0 break-words text-sm">{q.supplierName}</strong><span className="text-sm font-semibold">{q.amount === null ? 'Inväntar pris' : money(q.amount)}</span></div>
+            <div className="flex flex-wrap items-baseline justify-between gap-2"><strong className="min-w-0 break-words text-sm">{q.supplierName}</strong><span className="text-sm font-semibold">{q.amount === null ? 'Inväntar pris' : `${money(q.amount)} exkl. moms`}</span></div>
             <p className={`text-xs ${stale ? 'text-amber-800' : selected ? 'text-emerald-700' : 'text-slate-500'}`}>{grouped ? 'Grupppris · ' : ''}{stale ? 'Behöver ny offert: ändrad omfattning eller utgången giltighet' : selected ? 'Vald i kalkylen' : q.checked ? 'Kontrollerad offert' : 'Ej kontrollerad'} · {deliveryLabels[q.deliveryStatus]}</p>
             {q.offeredScope ? <p className="whitespace-pre-wrap break-words text-sm text-slate-600">{q.offeredScope}</p> : null}
             {q.exclusions ? <p className="whitespace-pre-wrap break-words text-sm text-amber-800">Undantag: {q.exclusions}</p> : null}
@@ -160,7 +160,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
         {line.pricingMethod === 'quotes' ? <form className="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4" onSubmit={(event) => {
           event.preventDefault()
           if (!busy && markupDraft && markupValid) void action('markup', { markupPercent: markup, expectedLineUpdatedAt: markupDraft.expectedLineUpdatedAt }).then((saved) => { if (saved) { setMarkupDraft(null); onEditing(false) } })
-        }}><label className="min-w-0 text-xs font-semibold text-slate-600">Påslag, %<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="-100" max="1000" value={markup} disabled={busy} onChange={(event) => {
+        }}><label className="min-w-0 text-xs font-semibold text-slate-600">Prispåslag, % (inte moms)<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="-100" max="1000" value={markup} disabled={busy} onChange={(event) => {
           const changed = !event.target.value.trim() || Number(event.target.value) !== line.markupPercent
           setMarkupDraft(changed ? { value: event.target.value, expectedLineUpdatedAt: markupDraft?.expectedLineUpdatedAt ?? line.updatedAt } : null); onEditing(changed)
         }} /></label><button className={button} type="submit" disabled={busy || !markupValid || !markupDraft}><Save size={16} />Spara påslag</button>{markupDraft ? <button type="button" className={button} disabled={busy} title="Återställ påslag" aria-label="Återställ påslag" onClick={() => { setMarkupDraft(null); onEditing(false) }}><RotateCcw size={16} /></button> : null}</form> : null}
