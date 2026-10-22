@@ -32,7 +32,12 @@
 .uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-icon { width:44px; flex-shrink:0; padding:0; }
 .uppdrag-scope .gizmo-purchase-dialog > footer { flex-shrink:0; padding:12px 20px; border-top:1px solid #c6cecc; }
 .uppdrag-scope .gizmo-purchase-footer-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
-.uppdrag-scope .gizmo-purchase-close-message { margin:0 0 10px; font-size:14px; }
+.uppdrag-scope .gizmo-purchase-confirm-overlay { position:absolute; inset:0; display:grid; place-items:center; overflow:auto; padding:20px; background:rgb(37 42 45 / 28%); }
+.uppdrag-scope .gizmo-purchase-confirm { width:min(440px,100%); padding:24px; border:1px solid #bdc8c5; border-top:4px solid #f2d76a; border-radius:6px; background:#fff; box-shadow:0 12px 36px rgb(37 42 45 / 20%); }
+.uppdrag-scope .gizmo-purchase-confirm h3 { margin:0; font-size:20px; line-height:1.4; font-weight:700; }
+.uppdrag-scope .gizmo-purchase-confirm p { margin:12px 0 20px; font-size:14px; line-height:1.5; }
+.uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-discard { color:#9e382b; border-color:#b54836; }
+.uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-discard:hover { background:#fdf0ed; }
 .uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-print { color:#fff; border-color:#206961; background:#206961; }
 .uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-print:hover { background:#17534d; }
 .uppdrag-scope .gizmo-purchase-warning { margin:12px 0 0; padding:10px 12px; border-left:3px solid #d2b13d; background:#fff9dc; font-size:13px; }
@@ -53,4 +58,7 @@
   .uppdrag-scope .gizmo-purchase-table td:last-child::before { display:none; }
   .uppdrag-scope .gizmo-purchase-product > div { grid-template-columns:1fr; }
   .uppdrag-scope .gizmo-purchase-dialog > footer { padding:10px 14px; }
+  .uppdrag-scope .gizmo-purchase-confirm-overlay { padding:12px; }
+  .uppdrag-scope .gizmo-purchase-confirm { padding:20px; }
+  .uppdrag-scope .gizmo-purchase-confirm .gizmo-purchase-footer-actions { flex-direction:column; }
 }

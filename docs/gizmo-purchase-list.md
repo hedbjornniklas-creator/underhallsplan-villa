@@ -25,6 +25,11 @@ Ett angivet nollpris ar kant och visas. Ogiltiga tal, tom produkt eller tom
 enhet maste korrigeras fore utskrift. Andrade listuppgifter kraver bekraftelse
 innan listan stangs och kastas.
 
+Bekraftelsen visas centrerad ovanpa listan, aven nar produktlistan ar
+lang eller skrollad. Bakomliggande falt och knappar ar inaktiva tills man
+valjer Fortsatt redigera eller Stang listan. Escape atergar till redigering
+utan att kasta andringarna, och fokus atergar till kontrollen som anvandes.
+
 ## Avgransning
 
 Listan skapas som en tillfallig, fristaende kopia i klienten. Komponenten far

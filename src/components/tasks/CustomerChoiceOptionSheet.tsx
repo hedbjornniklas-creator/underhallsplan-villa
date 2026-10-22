@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, ExternalLink, HelpCircle, Trash2, Upload, X } from 'lucide-react'
+import { Banknote, Calculator, ClipboardList, Download, ExternalLink, HelpCircle, Trash2, Upload, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import type { CustomerChoiceCategory, CustomerChoiceFileRef, CustomerPlannedItem } from '@/lib/action-cases/customerPlanning'
@@ -99,8 +99,18 @@ export default function CustomerChoiceOptionSheet({ caseId, revision, offerAvail
       else if (!e.shiftKey && document.activeElement === controls.at(-1)) { e.preventDefault(); controls[0]?.focus() }
     }}>
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[#D5DCDD] px-4 py-4 sm:px-6"><div className="min-w-0"><p className="text-xs text-[#596368]">{category?.title || 'Alternativ'}</p><h2 id={titleId} className="mt-1 break-words text-xl font-semibold">{option.title || 'Nytt alternativ'}</h2></div><button type="button" className={`${button} h-11 w-11 shrink-0 px-0`} disabled={working} aria-label="Stäng alternativ" title="Stäng" onClick={onClose}><X size={19} /></button></header>
-      {offerAvailable && <nav className="flex shrink-0 border-b border-[#D5DCDD] px-4 sm:px-6" aria-label="Alternativets delar">{([['scope', 'Omfattning'], ['cost', 'Kalkyl'], ['price', 'Pris och tid']] as const).map(([id, title]) => <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} className={`min-h-12 min-w-0 flex-1 border-b-2 px-2 py-2 text-sm font-semibold ${tab === id ? 'border-[#206961] bg-[#EDF1F1]' : 'border-transparent'}`} disabled={working} onClick={() => setTab(id)}>{title}</button>)}</nav>}
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      {offerAvailable && <div role="tablist" className="gizmo-register-tabs gizmo-choice-tabs" aria-label="Alternativets delar" onKeyDown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+        event.preventDefault()
+        const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
+        if (!tabs.length) return
+        const index = tabs.indexOf(document.activeElement as HTMLButtonElement)
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length
+        tabs[next]?.focus(); tabs[next]?.click()
+      }}>
+        {([['scope', 'Omfattning', ClipboardList], ['cost', 'Kalkyl', Calculator], ['price', 'Pris och tid', Banknote]] as const).map(([id, title, Icon]) => <button type="button" role="tab" key={id} id={`${titleId}-${id}`} aria-controls={`${titleId}-panel`} aria-selected={tab === id} tabIndex={tab === id ? 0 : -1} className="gizmo-register-tab" disabled={working} onClick={() => setTab(id)}><Icon size={17} aria-hidden="true" />{title}</button>)}
+      </div>}
+      <div role={offerAvailable ? 'tabpanel' : undefined} id={offerAvailable ? `${titleId}-panel` : undefined} aria-labelledby={offerAvailable ? `${titleId}-${tab}` : undefined} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {error && <p role="alert" className="mb-4 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm">{error}</p>}
         {offerAvailable && <details className="mb-4 border-b border-[#D5DCDD] pb-3 text-sm"><summary className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-[#206961]" title="Hjälp om kalkylpris och kundpris"><HelpCircle size={18} />Kalkylpris och kundpris</summary><div className="max-w-3xl space-y-2 pb-2 leading-6 text-[#596368]"><p>Kalkylen är intern och visar kostnader och prispåslag exklusive moms. Kalkylpriset är en beräkning, inte i sig en överenskommelse med beställaren.</p><p>Under Pris och tid anger du kundens prisvillkor. Välj ett eget fast kundpris eller Beräkna från kalkylen. Bara det senare valet kopplar kundens fasta pris till kalkylraderna. Timpriser och ungefärliga priser på löpande räkning är inte fasta totalsummor.</p><p>PDF-underlaget innehåller omfattning, kundens prisvillkor, tidspåverkan och bilageförteckning. Inköpskostnader och interna kalkylpåslag visas inte. Befintliga leverantörsofferter kan innehålla priser; granska bilagorna innan du mejlar dem. Grundavtalet och betalningsplanen ändras inte.</p></div></details>}
         <fieldset disabled={working} className="grid min-w-0 gap-4">

@@ -5,6 +5,8 @@ Beslut 2026-10-22. Galler Uppdrag, inte RenoApp.
 ## Beslutad omfattning
 
 - Varje alternativ har Omfattning, Kalkyl samt Pris och tid i samma sidopanel.
+- Sidopanelens flikar foljer Projektarbetes registerflikar med samma form,
+  farger, ikoner och tangentbordsnavigering. Smala vyer kan skrolla flikraden.
 - Omfattning innehaller specifikation, forutsattningar, undantag och befintliga PDF-bilagor.
 - Interna kalkylrader har mangd, enhet, enhetskostnad, kostnadsslag, egna paslag och Klar.
   Kostnader och kalkylraders kundpriser anges exklusive moms. Moms adderas en gang.

@@ -1,4 +1,5 @@
 .uppdrag-scope .gizmo-choice-sheet { max-width: 1120px; }
+.uppdrag-scope .gizmo-choice-tabs[role='tablist'] { overflow-x: auto; overflow-y: hidden; }
 .gizmo-choice-costs { min-width: 0; border-block: 1px solid #D5DCDD; padding-block: 16px; }
 .gizmo-choice-price-mode { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-bottom: 12px; }
 .gizmo-choice-price-mode legend { font-size: 14px; font-weight: 600; }

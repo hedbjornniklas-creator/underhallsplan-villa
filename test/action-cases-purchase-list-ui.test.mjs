@@ -19,7 +19,7 @@ function harness() {
     './action-case-purchase-list.css': {},
   }
   const mod = { exports: {} }
-  new Function('require', 'module', 'exports', compiled)(name => dependencies[name], mod, mod.exports)
+  new Function('require', 'module', 'exports', 'document', compiled)(name => dependencies[name], mod, mod.exports, { activeElement: null })
   const render = () => { cursor = 0; tree = mod.exports.default({ lines, workTitle: 'Grund', onClose: () => closed++ }) }
   const nodes = () => { const result = []; const visit = n => { if (Array.isArray(n)) return n.forEach(visit); if (!n || typeof n !== 'object') return; result.push(n); visit(n.props?.children) }; visit(tree); return result }
   const find = predicate => { const n = nodes().find(predicate); assert.ok(n); return n }
@@ -65,6 +65,46 @@ test('cancel and Escape preserve modified list unless explicitly discarded', () 
   h.tree.props.onCancel(event); h.render()
   h.find(n => n.type === 'button' && n.props.children === 'Stäng listan').props.onClick()
   assert.equal(h.closed, 1)
+})
+
+test('upper-right close button closes an unchanged list immediately', () => {
+  const h = harness()
+  h.field('Stäng beställningslista').props.onClick(); h.render()
+  assert.equal(h.closed, 1)
+  assert.equal(h.tree.props.role, undefined)
+})
+
+test('upper-right close button shows a separate, blocking confirmation after edits', () => {
+  const h = harness(), before = structuredClone(h.lines)
+  h.change('Mängd, rad 1', '30')
+  h.field('Stäng beställningslista').props.onClick(); h.render()
+  assert.equal(h.closed, 0)
+  assert.equal(h.tree.props.role, 'alertdialog')
+  assert.equal(h.tree.props['aria-labelledby'], 'list-close-heading')
+  assert.equal(h.tree.props['aria-describedby'], 'list-close-description')
+  const overlay = h.find(n => n.props.className === 'gizmo-purchase-confirm-overlay')
+  assert.ok(h.tree.props.children.includes(overlay), 'Confirmation is outside the scrollable form')
+  assert.equal(h.find(n => n.props.id === 'list-close-heading').props.children, 'Stäng och kasta ändringarna?')
+  for (const node of h.nodes().filter(n => n.type === 'header' || n.type === 'footer' || n.props.className === 'gizmo-purchase-body')) {
+    assert.equal(node.props.inert, true)
+    assert.equal(node.props['aria-hidden'], true)
+  }
+  assert.equal(h.print().props.disabled, true)
+  h.print().props.onClick()
+  assert.equal(h.printed, 0)
+  h.find(n => n.type === 'button' && n.props.children === 'Fortsätt redigera').props.onClick(); h.render()
+  assert.equal(h.tree.props.role, undefined)
+  assert.equal(h.field('Mängd, rad 1').props.value, '30')
+  assert.equal(h.print().props.disabled, false)
+  assert.equal(h.find(n => n.props.className === 'gizmo-purchase-body').props.inert, false)
+  h.field('Stäng beställningslista').props.onClick(); h.render()
+  h.tree.props.onCancel({ preventDefault() {}, stopPropagation() {} }); h.render()
+  assert.equal(h.closed, 0)
+  assert.equal(h.field('Mängd, rad 1').props.value, '30')
+  h.field('Stäng beställningslista').props.onClick(); h.render()
+  h.find(n => n.type === 'button' && n.props.children === 'Stäng listan').props.onClick()
+  assert.equal(h.closed, 1)
+  assert.deepEqual(h.lines, before)
 })
 
 test('print errors leave the form editable and retryable without duplicate writes', async () => {
