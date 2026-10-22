@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Calculator, Check, ClipboardList, ListChecks, Loader2, Mail, MoreHorizontal, Pencil, Plus, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import { Calculator, Check, ClipboardList, ListChecks, Loader2, Mail, MoreHorizontal, Pencil, Plus, Printer, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseCostSuggestion, ActionCaseItemView, ActionCaseView } from '@/lib/action-cases/contracts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
@@ -15,11 +15,14 @@ import { coveringQuoteForLine, groupPriceForLine } from './actionCaseGroupPricin
 import { actionScopeDraft, type ActionScopeDraft } from '@/lib/action-cases/scopeDraft'
 import type { ScopeSaveState } from './useActionScopeAutosave'
 import ActionCaseCostHelp from './ActionCaseCostHelp'
+import ActionCasePurchaseList from './ActionCasePurchaseList'
 import './action-case-costs.css'
 
 type Props = {
   item: ActionCaseItemView
   caseId?: string
+  projectTitle?: string
+  deliveryAddress?: string
   attachments?: ActionCaseView['attachments']
   participants?: ActionCaseView['participants']
   initialCostLineId?: string
@@ -117,7 +120,7 @@ function Proposal({ proposal, stale, busy, onApply }: {
   </section>
 }
 
-export default function ActionCaseItemSheet({ item, caseId, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
+export default function ActionCaseItemSheet({ item, caseId, projectTitle, deliveryAddress, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
   const backdropPress = useRef(false)
   const tabId = useId()
@@ -146,6 +149,8 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
   const [lumpDirty, setLumpDirty] = useState(false)
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>([])
   const selectedLines = item.costLines.filter((line) => selectedLineIds.includes(line.id))
+  const selectedProducts = selectedLines.filter(line => line.category === 'material')
+  const [purchaseListOpen, setPurchaseListOpen] = useState(false)
   const parts = [...(item.workParts ?? [])].sort((a, b) => a.sortOrder - b.sortOrder || a.title.localeCompare(b.title, 'sv'))
   const activePartFilter = partFilter === UNASSIGNED_WORK || parts.some((part) => part.id === partFilter) ? partFilter : ''
   const filterParts = (id: string) => { setPartFilter(id); setQuoteLineId(null) }
@@ -311,6 +316,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
           <p role="status" className="mt-1 text-xs text-slate-600">{item.lumpSum ? item.lumpSum.verified ? 'Klar' : item.lumpSum.customerPrice === null ? 'Pris saknas' : 'Inte klar' : !item.costLines.length ? 'Kalkyl saknas' : [`${item.costLines.filter(line => line.verified || line.coveredByQuoteId).length} av ${item.costLines.length} rader klara`, coverage.missingQuantity ? `${coverage.missingQuantity} saknar mängd` : '', coverage.missingPrice ? `${coverage.missingPrice} saknar pris` : ''].filter(Boolean).join(' · ')}</p>
           {selectedLines.length > 30 && onRequest ? <p role="status" className="mt-2 text-xs text-amber-800">{selectedLines.length} valda. Välj högst 30 kalkylrader per offertförfrågan.</p> : null}
           <div className="mt-3 flex flex-wrap items-center gap-2">
+            {selectMode && !item.lumpSum && <button type="button" className={secondary} disabled={working || dirty || costDirty || !selectedProducts.length} onClick={() => { if (!working && !dirty && !costDirty && selectedProducts.length) setPurchaseListOpen(true) }}><Printer size={17} />Beställningslista ({selectedProducts.length})</button>}
             {selectedLines.length > 0 && onRequest ? <>
               <button type="button" className={`${primary} min-w-0 flex-1 py-2`} disabled={working || dirty || costDirty || selectedLines.length > 30} onClick={() => { if (!working && !dirty && !costDirty && selectedLines.length <= 30) onRequest(selectedLines.map((line) => line.id)) }}><Mail size={17} className="shrink-0" /><span>Begär offert för valda ({selectedLines.length})</span></button>
               <button type="button" className={`${secondary} h-11 w-11 px-0`} title="Rensa val" aria-label="Rensa valda kalkylrader" disabled={working || dirty || costDirty} onClick={() => setSelectedLineIds([])}><X size={17} /></button>
@@ -320,6 +326,7 @@ export default function ActionCaseItemSheet({ item, caseId, attachments = [], pa
         </>}
       </footer>
     </div>
+    {purchaseListOpen && <ActionCasePurchaseList lines={selectedProducts} projectTitle={projectTitle} workTitle={item.title} deliveryAddress={deliveryAddress} onClose={() => setPurchaseListOpen(false)} />}
     </div>
   </div>, document.body)
 }

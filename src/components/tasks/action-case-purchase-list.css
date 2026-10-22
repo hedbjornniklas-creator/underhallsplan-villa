@@ -1,0 +1,56 @@
+.uppdrag-scope .gizmo-purchase-dialog { width:min(1040px,calc(100% - 32px)); max-height:calc(100dvh - 40px); margin:auto; padding:0; border:1px solid #bdc8c5; border-radius:8px; color:#252a2d; background:#fff; font-family:inherit; font-size:14px; letter-spacing:0; }
+.uppdrag-scope .gizmo-purchase-dialog[open] { display:flex; flex-direction:column; }
+.uppdrag-scope .gizmo-purchase-dialog::backdrop { background:rgb(37 42 45 / 48%); }
+.uppdrag-scope .gizmo-purchase-dialog > header { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:16px 20px; border-bottom:3px solid #f2d76a; }
+.uppdrag-scope .gizmo-purchase-dialog h2 { margin:0; font-size:20px; line-height:1.4; font-weight:700; outline:none; }
+.uppdrag-scope .gizmo-purchase-dialog header p { margin:4px 0 0; color:#58635f; font-size:13px; overflow-wrap:anywhere; }
+.uppdrag-scope .gizmo-purchase-body { min-height:0; overflow:auto; padding:20px; }
+.uppdrag-scope .gizmo-purchase-dialog fieldset { min-width:0; border:0; padding:0; margin:0; }
+.uppdrag-scope .gizmo-purchase-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px 20px; }
+.uppdrag-scope .gizmo-purchase-dialog label { min-width:0; display:block; font-size:13px; font-weight:600; }
+.uppdrag-scope .gizmo-purchase-dialog input:not([type=checkbox]), .uppdrag-scope .gizmo-purchase-dialog textarea { width:100%; min-width:0; min-height:44px; margin:4px 0 0; padding:8px 10px; border:1px solid #a8b4b1; border-radius:4px; background:#fff; color:#252a2d; font:inherit; font-weight:400; }
+.uppdrag-scope .gizmo-purchase-dialog textarea { resize:vertical; }
+.uppdrag-scope .gizmo-purchase-dialog :is(input,textarea,button):focus-visible { outline:2px solid #206961; outline-offset:2px; }
+.uppdrag-scope .gizmo-purchase-message { margin-top:12px; }
+.uppdrag-scope .gizmo-purchase-options { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin:24px 0 10px; }
+.uppdrag-scope .gizmo-purchase-options h3 { margin:0; font-size:16px; font-weight:700; }
+.uppdrag-scope .gizmo-purchase-options h3 span { margin-left:8px; font-size:14px; color:#58635f; font-weight:400; }
+.uppdrag-scope .gizmo-purchase-options label { display:flex; align-items:center; min-height:44px; gap:8px; font-weight:400; }
+.uppdrag-scope .gizmo-purchase-options input { width:17px; height:17px; accent-color:#206961; }
+.uppdrag-scope .gizmo-purchase-table { width:100%; table-layout:fixed; border-collapse:collapse; }
+.uppdrag-scope .gizmo-purchase-table th { text-align:left; padding:9px 8px; background:#edf1f0; font-size:12px; font-weight:600; }
+.uppdrag-scope .gizmo-purchase-table th:nth-child(2) { width:100px; }
+.uppdrag-scope .gizmo-purchase-table th:nth-child(3) { width:100px; }
+.uppdrag-scope .gizmo-purchase-table th:nth-child(4):not(:last-child) { width:150px; }
+.uppdrag-scope .gizmo-purchase-table th:last-child { width:56px; }
+.uppdrag-scope .gizmo-purchase-table td { padding:8px; border-bottom:1px solid #c6cecc; vertical-align:top; }
+.uppdrag-scope .gizmo-purchase-table input:not([type=checkbox]) { margin:0; }
+.uppdrag-scope .gizmo-purchase-product > div { display:grid; grid-template-columns:1fr 2fr; gap:8px; margin-top:8px; }
+.uppdrag-scope .gizmo-purchase-dialog button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:8px 14px; border:1px solid #a8b4b1; border-radius:4px; font:inherit; font-weight:600; color:#252a2d; background:white; cursor:pointer; }
+.uppdrag-scope .gizmo-purchase-dialog button:hover { background:#edf1f0; }
+.uppdrag-scope .gizmo-purchase-dialog button:disabled { opacity:.45; cursor:default; }
+.uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-icon { width:44px; flex-shrink:0; padding:0; }
+.uppdrag-scope .gizmo-purchase-dialog > footer { flex-shrink:0; padding:12px 20px; border-top:1px solid #c6cecc; }
+.uppdrag-scope .gizmo-purchase-footer-actions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; }
+.uppdrag-scope .gizmo-purchase-close-message { margin:0 0 10px; font-size:14px; }
+.uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-print { color:#fff; border-color:#206961; background:#206961; }
+.uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-print:hover { background:#17534d; }
+.uppdrag-scope .gizmo-purchase-warning { margin:12px 0 0; padding:10px 12px; border-left:3px solid #d2b13d; background:#fff9dc; font-size:13px; }
+.uppdrag-scope .gizmo-purchase-warning p { margin:0; }
+@media(max-width:640px) {
+  .uppdrag-scope .gizmo-purchase-dialog { width:calc(100% - 16px); max-height:calc(100dvh - 16px); font-size:16px; }
+  .uppdrag-scope .gizmo-purchase-dialog > header, .uppdrag-scope .gizmo-purchase-body { padding:14px; }
+  .uppdrag-scope .gizmo-purchase-fields { grid-template-columns:1fr; gap:10px; }
+  .uppdrag-scope .gizmo-purchase-dialog input:not([type=checkbox]), .uppdrag-scope .gizmo-purchase-dialog textarea, .uppdrag-scope .gizmo-purchase-dialog button { min-height:48px; font-size:16px; }
+  .uppdrag-scope .gizmo-purchase-dialog .gizmo-purchase-icon { width:48px; }
+  .uppdrag-scope .gizmo-purchase-table, .uppdrag-scope .gizmo-purchase-table tbody { display:block; }
+  .uppdrag-scope .gizmo-purchase-table thead { display:none; }
+  .uppdrag-scope .gizmo-purchase-table tr { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:14px 0; border-top:1px solid #a8b4b1; }
+  .uppdrag-scope .gizmo-purchase-table td { display:block; padding:0; border:0; min-width:0; }
+  .uppdrag-scope .gizmo-purchase-table td::before { content:attr(data-label); display:block; margin-bottom:4px; font-size:13px; font-weight:600; }
+  .uppdrag-scope .gizmo-purchase-table td:first-child { grid-column:1 / -1; }
+  .uppdrag-scope .gizmo-purchase-table td:last-child { justify-self:end; align-self:end; grid-column:2; }
+  .uppdrag-scope .gizmo-purchase-table td:last-child::before { display:none; }
+  .uppdrag-scope .gizmo-purchase-product > div { grid-template-columns:1fr; }
+  .uppdrag-scope .gizmo-purchase-dialog > footer { padding:10px 14px; }
+}

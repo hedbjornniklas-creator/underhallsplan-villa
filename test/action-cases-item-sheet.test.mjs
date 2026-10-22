@@ -33,7 +33,7 @@ function sheetHarness(overrides = {}) {
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},
   }
-  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp']) dependencies[`./${name}`] = { default: name }
+  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
     (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
@@ -217,4 +217,39 @@ test('successful transition away from a lump sum leaves Add row enabled', async 
   await h.find(n => n.type === 'ActionCaseLumpSumEditor').props.onSave(null)
   h.render()
   assert.equal(h.find(n => n.type === 'button' && n.props.children?.includes?.('Lägg till rad')).props.disabled, false)
+})
+
+test('purchase list receives only selected products and no mutation callbacks', () => {
+  const calls = [], h = sheetHarness({ initialCostLineId: 'none', projectTitle: 'Testprojekt', deliveryAddress: 'Testgatan 1',
+    item: costItem([testLine({ category: 'material', description: 'Isolering' }), testLine({ id: 'work', category: 'own_labor', description: 'Montering' })]),
+    onCostAction: (...args) => calls.push(args), onSave: (...args) => calls.push(args),
+  })
+  assert.equal(h.nodes().some(n => n.type === 'ActionCasePurchaseList'), false)
+  h.find(n => n.type === 'button' && n.props.children?.includes?.('Markera rader')).props.onClick(); h.render()
+  const printButton = () => h.find(n => n.type === 'button' && n.props.children?.includes?.('Beställningslista ('))
+  assert.equal(printButton().props.disabled, true)
+  h.find(n => n.props['aria-label'] === 'Markera Montering').props.onChange({ target: { checked: true } }); h.render()
+  assert.equal(printButton().props.disabled, true, 'Work alone cannot create a material list')
+  h.find(n => n.props['aria-label'] === 'Markera Isolering').props.onChange({ target: { checked: true } }); h.render()
+  assert.equal(printButton().props.disabled, false)
+  printButton().props.onClick(); h.render()
+  const list = h.find(n => n.type === 'ActionCasePurchaseList')
+  assert.deepEqual(list.props.lines.map(line => line.id), ['line'])
+  assert.equal(list.props.projectTitle, 'Testprojekt')
+  assert.equal(list.props.deliveryAddress, 'Testgatan 1')
+  assert.deepEqual(Object.keys(list.props).sort(), ['lines', 'projectTitle', 'workTitle', 'deliveryAddress', 'onClose'].sort())
+  list.props.onClose(); h.render()
+  assert.equal(h.nodes().some(n => n.type === 'ActionCasePurchaseList'), false)
+  assert.deepEqual(calls, [])
+})
+
+test('purchase action cannot bypass a pending row edit', () => {
+  const h = sheetHarness({ initialCostLineId: 'none', item: costItem([testLine({ category: 'material' })]) })
+  h.find(n => n.type === 'button' && n.props.children?.includes?.('Markera rader')).props.onClick(); h.render()
+  h.find(n => n.props['aria-label'] === 'Markera Puts').props.onChange({ target: { checked: true } }); h.render()
+  h.find(n => n.props['aria-label'] === 'Redigera Puts').props.onClick(); h.render()
+  const button = h.find(n => n.type === 'button' && n.props.children?.includes?.('Beställningslista ('))
+  assert.equal(button.props.disabled, true)
+  button.props.onClick(); h.render()
+  assert.equal(h.nodes().some(n => n.type === 'ActionCasePurchaseList'), false)
 })

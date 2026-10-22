@@ -459,6 +459,8 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       key={`${selectedItem.id}:${initialCostLineId ?? ''}`}
       item={selectedItem}
       caseId={selectedCase.id}
+      projectTitle={selectedCase.title}
+      deliveryAddress={selectedCase.propertyAddress ?? undefined}
       attachments={selectedCase.attachments}
       participants={selectedCase.participants}
       initialCostLineId={initialCostLineId}

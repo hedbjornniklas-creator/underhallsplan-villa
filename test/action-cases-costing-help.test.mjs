@@ -11,7 +11,7 @@ const help = read('src/components/tasks/ActionCaseCostHelp.tsx')
 const line = (patch = {}) => ({ quantity: 10, unitCost: 500, markupPercent: 20, verified: false, ...patch })
 
 test('manual covers the existing calculator with unique navigable chapters and useful content', () => {
-  assert.equal(costingHelpTopics.length, 12)
+  assert.equal(costingHelpTopics.length, 13)
   assert.equal(new Set(costingHelpTopics.map(topic => topic.id)).size, costingHelpTopics.length)
   for (const topic of costingHelpTopics) {
     assert.match(topic.id, /^[a-z]+$/)
@@ -20,7 +20,7 @@ test('manual covers the existing calculator with unique navigable chapters and u
   }
   assert.equal(costingHelpTopics[0].steps.length, 4)
   const content = costingHelpTopics.flatMap(topic => topic.paragraphs).join(' ')
-  for (const term of ['exklusive moms', 'inte samma sak som marginal', 'Spara rad', 'Klar', 'Markera rader', 'Priskälla', 'Samlat pris', 'Preliminär summa', 'inte en beställning', 'låsta avtalsversioner']) assert.ok(content.includes(term), term)
+  for (const term of ['exklusive moms', 'inte samma sak som marginal', 'Spara rad', 'Klar', 'Markera rader', 'Priskälla', 'Samlat pris', 'Preliminär summa', 'inte en beställning', 'låsta avtalsversioner', 'Beställningslista', 'Listan sparas inte']) assert.ok(content.includes(term), term)
 })
 
 test('the manual arithmetic agrees with calculation and a free product is not an unknown price', () => {

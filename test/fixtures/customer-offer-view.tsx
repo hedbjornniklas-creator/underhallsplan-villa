@@ -18,6 +18,26 @@ let editorGeneration = 0
 async function start() {
   const workspace = await (await fetch('/fixture')).json()
   const params = new URLSearchParams(location.search)
+  if (params.has('purchase-print-test')) {
+    // Exercise the real print document without opening an OS printer dialog in UI tests.
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.addedNodes) {
+        if (!(node instanceof HTMLIFrameElement) || !node.dataset.gizmoPurchasePrint || !node.contentWindow) continue
+        node.contentWindow.print = () => {
+          const dialog = document.querySelector<HTMLDialogElement>('.gizmo-purchase-dialog[open]')
+          dialog?.close()
+          node.dataset.testPrintInvoked = 'true'
+          node.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;border:0;z-index:99999;background:white'
+          node.removeAttribute('aria-hidden')
+          const close = document.createElement('button')
+          close.textContent = 'Stäng testutskrift'
+          close.style.cssText = 'position:fixed;right:16px;top:16px;z-index:100000;background:#fff;border:1px solid #aaa;padding:12px'
+          close.onclick = () => { node.remove(); close.remove(); dialog?.showModal() }
+          document.body.appendChild(close)
+        }
+      }
+    }).observe(document.body, { childList: true })
+  }
   const editorCase = params.has('no-email')
     ? {
         ...actionCase,

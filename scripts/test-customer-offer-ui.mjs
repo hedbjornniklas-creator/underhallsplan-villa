@@ -44,7 +44,7 @@ import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } 
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve(process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
+const output = resolve(process.argv.includes('--purchase-list') ? 'tmp/purchase-list-ui' : process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
 await mkdir(output, { recursive: true })
 await writeFile(resolve(output, '.gitignore'), '*\n')
 await new Promise((done, reject) =>
@@ -84,7 +84,7 @@ const { css: base } = await postcss([tailwind()]).process(
   process.argv.includes('--project-overview') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')) + (await readFile('src/components/tasks/project-overview.css', 'utf8')),
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/action-case-purchase-list.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')) + (await readFile('src/components/tasks/project-overview.css', 'utf8')),
   js = await readFile(resolve(output, 'view.js')),
   img = await readFile('public/landing/besiktning-editorial-v2.png')
 let state = process.argv.includes('--itemized') ? itemizedWorkspace() : structuredClone(workspace),
@@ -324,6 +324,20 @@ if (process.argv.includes('--project-overview')) {
   const body = { ...emptyQuestion(), title: 'Fastställ placering av VVB', description: 'TEST: Kan varmvattenberedaren placeras över badrummet?', assignee: questionData.assignees[1] }
   questionData.questions.push({ id: id(950), number: 1, revision: 1, body, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), participants: [fakeMember(questionData.assignees[0])], events: [], tasks: [{ id: id(960), status: 'assigned', active: true, dueAt: `${date(-1)}T10:00:00Z`, assigneeName: 'VVS Test', events: [], files: [] }] })
   schedule.rows = [['Projektering', -1, 8, 'in_progress'], ['Mark och grund', 12, 23, 'planned'], ['Stomme', 19, 30, 'planned'], ['Tak', 26, 37, 'planned'], ['Ventilation', null, null, 'planned']].map(([title, from, to, status], index) => ({ id: id(970 + index), title, phase: '', startDate: from === null ? '' : date(from), endDate: to === null ? '' : date(to), status, sourceItemId: null }))
+}
+if (process.argv.includes('--purchase-list')) {
+  projects.cases[0].title = 'TEST: Materialbeställning'
+  projects.cases[0].propertyAddress = 'Testgatan 12, Teststad'
+  const item = projects.cases[0].items[0]
+  item.title = 'Mark och grund (fiktivt test)'
+  item.scope = 'Fiktivt test av materiallista. Ingen riktig beställning.'
+  item.lumpSum = null
+  item.costLines = [
+    { description: 'Isolerskiva EPS S100, 100 mm', quantity: 24, unit: 'm²', unitCost: 89 },
+    { description: 'Kantlist, återbruk', quantity: 8, unit: 'st', unitCost: 0 },
+    { description: 'Dräneringsrör 110 mm', quantity: null, unit: 'm', unitCost: null },
+    { description: 'Montering (ska inte skrivas ut)', category: 'own_labor', quantity: 10, unit: 'tim', unitCost: 500 },
+  ].map((line, index) => ({ id: id(990 + index), ...normalizeCostLine({ category: 'material', markupPercent: 25, ...line }), coveredByQuoteId: null }))
 }
 const overviewContractBaseline = JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions })
 let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
