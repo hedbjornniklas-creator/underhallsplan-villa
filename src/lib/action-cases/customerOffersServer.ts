@@ -10,6 +10,7 @@ import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { quoteRequestHtml } from './quotes'
 import { normalizeCustomerOfferCosting } from './customerOfferCosting'
 import { guardChoiceCostingDowngrade, normalizeCustomerChoiceCosting, synchronizeChoicePrices } from './customerChoiceCosting'
+import { synchronizeChoiceOffers } from './choiceOffer'
 import { getCustomerChoiceFiles, writeCustomerChoiceFiles } from './customerChoiceFilesServer'
 import { getSharedSigningContracts } from './contractSigningDeliveryServer'
 import { legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItems, normalizeSharedChoices, type CustomerPlanning, type CustomerPlannedItem, type SharedCustomerChoices } from './customerPlanning'
@@ -576,7 +577,10 @@ export async function getCustomerPlanning(ctx: Context, caseId: string): Promise
   const items = normalizePlannedItems(saved?.items ?? [])
   const categories = saved?.categories == null ? legacyChoiceCategories(items) : normalizeChoiceCategories(saved.categories, items)
   const sharedChoices = categoriesAvailable && saved?.participant_id ? await getSharedCustomerChoices(ctx.orgId, caseId, saved.participant_id) : undefined
+  const capability = await db.rpc('customer_choice_offer_schema')
+  if (capability.error && !schemaMissing(capability.error.code)) checked(capability.error)
   return { available: true, revision: saved?.revision ?? 0, costingAvailable, rowCostingAvailable: costingAvailable, categoriesAvailable, categoriesStored: saved?.categories != null, categories,
+    offerAvailable: !capability.error && capability.data === 1,
     ...await getCustomerChoiceFiles(ctx.orgId, caseId, items),
     ...(sharedChoices ? { sharedChoices } : {}),
     costing: normalizeCustomerChoiceCosting(saved?.internal_costing, items),
@@ -596,7 +600,7 @@ export async function writeCustomerPlanning(ctx: Context, caseId: string, payloa
     if (stored.error && !['42703', 'PGRST204'].includes(stored.error.code) && !schemaMissing(stored.error.code)) checked(stored.error)
     const previous = normalizeCustomerChoiceCosting(stored.data?.internal_costing, items)
     if (costing) guardChoiceCostingDowngrade(previous, costing)
-    items = synchronizeChoicePrices(items, costing ?? previous)
+    items = synchronizeChoiceOffers(synchronizeChoicePrices(items, costing ?? previous), costing ?? previous)
   }
   const categories = payload.categories === undefined || payload.operation === 'unshare' ? undefined : normalizeChoiceCategories(payload.categories, items, payload.operation === 'share')
   if (categories) {

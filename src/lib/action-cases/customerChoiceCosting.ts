@@ -8,9 +8,14 @@ export type CustomerChoiceCostRow = {
   markupBasisPoints: number | null
   fixedMarkupOre: number | null
   complete: boolean
+  quantity?: number | null
+  unit?: string
+  unitCostOre?: number | null
+  category?: 'own_labor' | 'material' | 'subcontractor' | 'other'
+  chargeType?: 'fixed' | 'running'
 }
 export type CustomerChoiceCalculation = {
-  version: 2
+  version: 2 | 3
   priceMode: 'calculated' | 'manual'
   rows: CustomerChoiceCostRow[]
 }
@@ -23,19 +28,29 @@ function amount(value: unknown, max = maximum): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= max ? value : fail()
 }
 export function isChoiceCalculation(value: CustomerChoiceCosting[string]): value is CustomerChoiceCalculation {
-  return 'version' in value && value.version === 2
+  return 'version' in value && (value.version === 2 || value.version === 3)
+}
+export function choiceRowCost(row: CustomerChoiceCostRow): number | null {
+  if (row.quantity === undefined && row.unitCostOre === undefined) return row.costOre
+  if (row.quantity == null || row.unitCostOre == null) return null
+  if (!Number.isSafeInteger(row.unitCostOre) || row.unitCostOre < 0 || row.unitCostOre > maximum || row.quantity > 1_000_000_000) return fail()
+  const millis = Math.round(row.quantity * 1000)
+  if (!Number.isSafeInteger(millis) || millis < 0 || Math.abs(millis / 1000 - row.quantity) > 0.0000001) return fail()
+  const total = (BigInt(millis) * BigInt(row.unitCostOre) + BigInt(500)) / BigInt(1000)
+  return total > BigInt(maximum) ? fail() : Number(total)
 }
 export function choiceRowPrice(row: CustomerChoiceCostRow): number | null {
-  if (row.costOre === null) return null
-  const cost = BigInt(row.costOre)
+  const rowCost = choiceRowCost(row)
+  if (rowCost === null) return null
+  const cost = BigInt(rowCost)
   const markup = (cost * BigInt(row.markupBasisPoints ?? 0) + BigInt(5_000)) / BigInt(10_000)
   const result = cost + markup + BigInt(row.fixedMarkupOre ?? 0)
   if (result > BigInt(maximum)) return fail()
   return Number(result)
 }
 export function choiceCalculatedPrice(rows: readonly CustomerChoiceCostRow[]) {
-  if (!rows.length || rows.some(row => row.costOre === null || !row.title.trim())) return null
-  const cost = rows.reduce((sum, row) => sum + BigInt(row.costOre!), BigInt(0))
+  if (!rows.length || rows.some(row => choiceRowCost(row) === null || !row.title.trim())) return null
+  const cost = rows.reduce((sum, row) => sum + BigInt(choiceRowCost(row)!), BigInt(0))
   const net = rows.reduce((sum, row) => sum + BigInt(choiceRowPrice(row)!), BigInt(0))
   const vat = (net * BigInt(25) + BigInt(50)) / BigInt(100)
   if (net + vat > BigInt(maximum) || cost > BigInt(maximum)) return fail()
@@ -65,19 +80,25 @@ export function normalizeCustomerChoiceCosting(value: unknown, items: readonly {
     if (!validIds.has(id)) return []
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail()
     if (!('version' in raw)) return [[id, normalizeCustomerOfferCosting({ [id]: raw }, items)[id]]]
-    if (raw.version !== 2 || !('priceMode' in raw) || !['calculated', 'manual'].includes(String(raw.priceMode)) || !('rows' in raw) || !Array.isArray(raw.rows) || raw.rows.length > 50) return fail()
+    if ((raw.version !== 2 && raw.version !== 3) || !('priceMode' in raw) || !['calculated', 'manual'].includes(String(raw.priceMode)) || !('rows' in raw) || !Array.isArray(raw.rows) || raw.rows.length > 50) return fail()
     const seen = new Set<string>()
     const rows = raw.rows.map((row: Record<string, unknown>): CustomerChoiceCostRow => {
       if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.id !== 'string' || !uuid.test(row.id) || seen.has(row.id) ||
         typeof row.title !== 'string' || row.title.length > 200 || typeof row.complete !== 'boolean') return fail()
       seen.add(row.id)
-      const safe = { id: row.id, title: row.title.trim(), costOre: amount(row.costOre), markupBasisPoints: amount(row.markupBasisPoints, 100_000), fixedMarkupOre: amount(row.fixedMarkupOre), complete: row.complete }
+      const safe: CustomerChoiceCostRow = { id: row.id, title: row.title.trim(), costOre: amount(row.costOre), markupBasisPoints: amount(row.markupBasisPoints, 100_000), fixedMarkupOre: amount(row.fixedMarkupOre), complete: row.complete }
+      if (raw.version === 3) {
+        if ((row.quantity !== null && (typeof row.quantity !== 'number' || !Number.isFinite(row.quantity) || row.quantity < 0 || row.quantity > 1_000_000_000)) ||
+          typeof row.unit !== 'string' || !row.unit.trim() || row.unit.length > 30 || !['own_labor', 'material', 'subcontractor', 'other'].includes(String(row.category)) || !['fixed', 'running'].includes(String(row.chargeType))) return fail()
+        Object.assign(safe, { quantity: row.quantity, unit: row.unit.trim(), unitCostOre: amount(row.unitCostOre), category: row.category, chargeType: row.chargeType })
+        if (safe.costOre !== choiceRowCost(safe)) return fail()
+      }
       if (safe.complete && (safe.costOre === null || !safe.title)) return fail()
       choiceRowPrice(safe)
       return safe
     })
     choiceCalculatedPrice(rows)
-    return [[id, { version: 2, priceMode: raw.priceMode, rows }]]
+    return [[id, { version: raw.version as 2 | 3, priceMode: raw.priceMode, rows }]]
   }))
 }
 
@@ -92,6 +113,6 @@ export function synchronizeChoicePrices<T extends { id: string; budgetOre: numbe
 
 export function guardChoiceCostingDowngrade(stored: CustomerChoiceCosting, next: CustomerChoiceCosting) {
   for (const [id, previous] of Object.entries(stored)) {
-    if (isChoiceCalculation(previous) && (!next[id] || !isChoiceCalculation(next[id]))) throw new Error('CUSTOMER_CHOICE_COSTING_STALE')
+    if (isChoiceCalculation(previous) && (!next[id] || !isChoiceCalculation(next[id]) || (previous.version === 3 && 'version' in next[id] && next[id].version !== 3))) throw new Error('CUSTOMER_CHOICE_COSTING_STALE')
   }
 }

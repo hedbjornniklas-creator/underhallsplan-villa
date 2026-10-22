@@ -1,4 +1,6 @@
 import type { CustomerChoiceCosting } from './customerChoiceCosting'
+// @ts-expect-error Explicit extensions support the shared Node test runner.
+import { normalizeChoiceOffer, type ChoiceOffer } from './choiceOffer.ts'
 
 export const planningStatuses = {
   planned: 'Planerat',
@@ -14,6 +16,7 @@ export type CustomerPlannedItem = {
   budgetOre: number | null
   decisionBy: string
   optionGroup?: string
+  offer?: ChoiceOffer
 }
 export type CustomerPlanning = {
   revision: number
@@ -30,6 +33,7 @@ export type CustomerPlanning = {
   filesAvailable?: boolean
   optionFiles?: CustomerChoiceFileRef[]
   sharedFileRefs?: CustomerChoiceFileRef[]
+  offerAvailable?: boolean
 }
 
 export type CustomerChoiceFileRef = { optionId: string; fileId: string }
@@ -203,7 +207,8 @@ export function normalizePlannedItems(
       status: item.status as CustomerPlannedItem['status'],
       budgetOre: item.budgetOre as number | null,
       decisionBy,
-      ...(item.optionGroup !== undefined ? { optionGroup: text(item.optionGroup, 100) } : {})
+      ...(item.optionGroup !== undefined ? { optionGroup: text(item.optionGroup, 100) } : {}),
+      ...(item.offer !== undefined ? { offer: normalizeChoiceOffer(item.offer) } : {})
     }
   })
   if (new Set(items.map((i) => i.id)).size !== items.length) fail()

@@ -7,6 +7,7 @@ import { categoryOptions, currentCategoryChoice, legacyChoiceCategories, type Cu
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import { money } from '@/lib/action-cases/customerOffers'
 import { choiceCalculatedPrice, type CustomerChoiceCosting } from '@/lib/action-cases/customerChoiceCosting'
+import { choiceOfferBudget, choiceOfferForEditing, choicePriceLabel, synchronizeChoiceOffers } from '@/lib/action-cases/choiceOffer'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import CustomerChoiceOptionSheet from './CustomerChoiceOptionSheet'
 import ProjectEditorRow from './ProjectEditorRow'
@@ -69,7 +70,10 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
   function changeItems(next: CustomerPlannedItem[]) { setItems(next); setConfirmed(false) }
   function changeCategories(next: CustomerChoiceCategory[]) { setCategories(next); setConfirmed(false) }
   function patchCategory(id: string, patch: Partial<CustomerChoiceCategory>) { changeCategories(categories.map((c) => c.id === id ? { ...c, ...patch } : c)) }
-  function patchOption(id: string, patch: Partial<CustomerPlannedItem>) { changeItems(items.map((i) => i.id === id ? { ...i, ...patch } : i)) }
+  function patchOption(id: string, patch: Partial<CustomerPlannedItem>) {
+    const next = items.map((i) => i.id === id ? { ...i, ...patch } : i)
+    try { changeItems(synchronizeChoiceOffers(next, costing)) } catch { changeItems(next) }
+  }
   function addOption(category: CustomerChoiceCategory) {
     const id = crypto.randomUUID()
     changeItems([...items, { id, title: '', scope: '', status: 'planned', budgetOre: null, decisionBy: '' }])
@@ -179,7 +183,7 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
           <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">Prisunderlag inkl. moms</span></div>
           <div className="divide-y divide-[#D5DCDD]">
             {options.map((option) => <h4 key={option.id}><button type="button" className="flex min-h-12 w-full items-center gap-3 px-3 py-3 text-left text-sm hover:bg-[#F4F6F6]" aria-haspopup="dialog" aria-label={`Redigera ${option.title || 'Nytt alternativ'}`} onClick={() => setExpandedOption(option.id)}>
-              <span className="min-w-0 flex-1 break-words font-semibold">{option.title || 'Nytt alternativ'}</span>{optionFiles.some((r) => r.optionId === option.id) && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-[#596368]"><Paperclip size={14} /><span>{optionFiles.filter((r) => r.optionId === option.id).length} PDF</span></span>}<span className="shrink-0 text-right tabular-nums">{option.budgetOre === null ? 'Pris ej fastställt' : money(option.budgetOre)}</span><ChevronRight size={17} className="shrink-0" /></button></h4>)}
+              <span className="min-w-0 flex-1 break-words font-semibold">{option.title || 'Nytt alternativ'}</span>{optionFiles.some((r) => r.optionId === option.id) && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-[#596368]"><Paperclip size={14} /><span>{optionFiles.filter((r) => r.optionId === option.id).length} PDF</span></span>}<span className="max-w-[45%] break-words text-right tabular-nums">{choicePriceLabel(option, money)}</span><ChevronRight size={17} className="shrink-0" /></button></h4>)}
           </div>
           <button type="button" className={`${button} mt-3`} disabled={items.length >= 200} onClick={() => addOption(category)}><Plus size={16} /> Lägg till alternativ</button>
           {chosen && <p className="mt-3 text-sm text-[#596368]">Registrerat i delad version: {chosen.title}</p>}
@@ -201,11 +205,18 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
         {saved.sharedItems.length > 0 && <button type="button" className={button} disabled={!ready || Boolean(busy) || saving || saveError} onClick={() => void action('unshare')}>{busy === 'unshare' ? <Loader2 size={17} className="animate-spin" /> : <EyeOff size={17} />} Dölj val och tillval</button>}
       </div>
     </section>
-    {items.filter((i) => i.id === expandedOption).map((option) => <CustomerChoiceOptionSheet key={option.id} caseId={caseId} option={option} categories={categories} files={projectFiles} references={optionFiles} filesAvailable={saved.filesAvailable === true} costing={costing[option.id]} costingAvailable={saved.costingAvailable === true} rowCostingAvailable={saved.rowCostingAvailable === true} busy={Boolean(busy)} saving={saving} saveError={saveError} onRetry={() => void autosave.retry()}
+    {items.filter((i) => i.id === expandedOption).map((option) => <CustomerChoiceOptionSheet key={option.id} caseId={caseId} revision={saved.revision} offerAvailable={saved.offerAvailable === true} option={option} categories={categories} files={projectFiles} references={optionFiles} filesAvailable={saved.filesAvailable === true} costing={costing[option.id]} costingAvailable={saved.costingAvailable === true} rowCostingAvailable={saved.rowCostingAvailable === true} busy={Boolean(busy)} saving={saving} saveError={saveError} onRetry={() => void autosave.retry()}
       onChange={(patch) => patchOption(option.id, patch)} onMove={(id) => moveOption(option.id, id)} onFiles={setProjectFiles}
       onReferences={(refs) => { setOptionFiles(refs); setConfirmed(false) }} onCosting={(value) => {
         setCosting({ ...costing, [option.id]: value }); setConfirmed(false)
-        if (value.priceMode === 'calculated') {
+        if (option.offer || saved.offerAvailable) {
+          const offer = option.offer ?? { ...choiceOfferForEditing(option), priceSource: value.priceMode === 'calculated' ? 'calculation' as const : 'manual' as const }
+          let next = { ...option, offer }
+          try { next = synchronizeChoiceOffers([next], { ...costing, [option.id]: value })[0] } catch { next = { ...next, budgetOre: offer.priceNeutral ? 0 : null } }
+          // Manual customer prices stay independent from internal calculation edits.
+          if (offer.priceSource === 'manual') next.budgetOre = choiceOfferBudget(offer)
+          changeItems(items.map(item => item.id === option.id ? next : item))
+        } else if (value.priceMode === 'calculated') {
           let budgetOre: number | null = null
           try { budgetOre = choiceCalculatedPrice(value.rows)?.grossOre ?? null } catch { /* Keep invalid draft editable; saving validates it. */ }
           patchOption(option.id, { budgetOre })

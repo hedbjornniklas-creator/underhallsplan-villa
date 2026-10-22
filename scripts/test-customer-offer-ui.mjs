@@ -24,6 +24,8 @@ import {
 } from '../src/lib/action-cases/customerOffers.ts'
 import { normalizeCustomerOfferCosting } from '../src/lib/action-cases/customerOfferCosting.ts'
 import { normalizeCustomerChoiceCosting, synchronizeChoicePrices } from '../src/lib/action-cases/customerChoiceCosting.ts'
+import { synchronizeChoiceOffers } from '../src/lib/action-cases/choiceOffer.ts'
+import { renderChoiceOfferPdf } from '../src/lib/action-cases/choiceOfferPdf.ts'
 import { categoryOptions, legacyChoiceCategories, normalizeChoiceCategories, normalizeChoiceFileRefs, normalizePlannedItems } from '../src/lib/action-cases/customerPlanning.ts'
 import { projectFixture } from '../test/fixtures/project-workspace-data.ts'
 import { normalizeScheduleRows } from '../src/lib/action-cases/projectSchedule.ts'
@@ -44,7 +46,7 @@ import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } 
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve(process.argv.includes('--purchase-list') ? 'tmp/purchase-list-ui' : process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
+const output = resolve(process.argv.includes('--choice-offers') ? 'tmp/choice-offers-ui' : process.argv.includes('--purchase-list') ? 'tmp/purchase-list-ui' : process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
 await mkdir(output, { recursive: true })
 await writeFile(resolve(output, '.gitignore'), '*\n')
 await new Promise((done, reject) =>
@@ -96,6 +98,7 @@ if (process.argv.includes('--legacy-controls')) {
   state.draft.contractDetails.controlParticipants = { controlOfficer: '', customerInspector: '', previousDetails: state.draft.contractDetails.fields.controls }
 }
 state.planning = { available: true, revision: 0, items: [], sharedItems: [], costingAvailable: true, rowCostingAvailable: true, costing: {}, categoriesAvailable: true, categoriesStored: false, categories: [] }
+if (process.argv.includes('--choice-offers')) state.planning.offerAvailable = true
 function separateChoices() {
   const choices = state.draft.items.filter((i) => i.kind === 'option')
   state.planning.items.push(...choices.map((i) => ({ id: i.id, title: i.title, scope: i.scope,
@@ -700,7 +703,7 @@ const server = createServer(async (req, res) => {
           if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
           state.planning.items = normalizePlannedItems(body.items)
           state.planning.costing = normalizeCustomerChoiceCosting(body.costing, state.planning.items)
-          state.planning.items = synchronizeChoicePrices(state.planning.items, state.planning.costing)
+          state.planning.items = synchronizeChoiceOffers(synchronizeChoicePrices(state.planning.items, state.planning.costing), state.planning.costing)
           state.planning.categories = normalizeChoiceCategories(body.categories ?? legacyChoiceCategories(state.planning.items), state.planning.items)
           state.planning.categoriesStored = true
           if (state.planning.filesAvailable) state.planning.optionFiles = normalizeChoiceFileRefs(body.optionFiles ?? [], state.planning.items)
@@ -824,6 +827,13 @@ const server = createServer(async (req, res) => {
     json(independentContract && new URL(req.url, 'http://localhost').searchParams.get('draftTarget') === 'offer'
       ? { ...state, ...estimateState, offerDraft: undefined } : {...state,externalContracts})
     return
+  }
+  if (process.argv.includes('--choice-offers') && /\/customer-planning\/[^/]+\/pdf$/.test(path)) {
+    const option = state.planning.items.find(item => path.endsWith(`/${item.id}/pdf`))
+    if (!option || Number(new URL(req.url, 'http://localhost').searchParams.get('revision')) !== state.planning.revision) { json({ error: 'Underlaget har ändrats.' }, 409); return }
+    const category = state.planning.categories.find(c => c.optionIds.includes(option.id))
+    const bytes = await renderChoiceOfferPdf({ item: option, category: category?.title ?? '', specification: category?.specification ?? '', propertyAddress: 'Testgatan 1', issuer: 'Exempelbygg AB', reference: `TEST-v${state.planning.revision}`, date: '2026-10-22', files: [] })
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Fiktivt-tillval.pdf"' }); res.end(bytes); return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }
   if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`) || (process.argv.includes('--choice-files') && path.endsWith(`/attachments/${id(4)}`))) {

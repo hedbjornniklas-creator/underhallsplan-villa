@@ -7,6 +7,7 @@ import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as quotes from '../src/lib/action-cases/quotes.ts'
 import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
 import * as choiceCostingDomain from '../src/lib/action-cases/customerChoiceCosting.ts'
+import * as choiceOfferDomain from '../src/lib/action-cases/choiceOffer.ts'
 import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
@@ -171,6 +172,7 @@ function harness(options = {}) {
       }
     },
     async rpc(name, args) {
+      if (name === 'customer_choice_offer_schema') return { data: 1 }
       calls.push({ name, ...args })
       if (['customer_choices_snapshot', 'read_customer_choices', 'record_customer_choice'].includes(name))
         return options.choiceError ? { error: options.choiceError } : { data: options.sharedChoices ?? null }
@@ -245,6 +247,7 @@ function harness(options = {}) {
     './customerOffers': domain,
     './customerOfferCosting': costingDomain,
     './customerChoiceCosting': choiceCostingDomain,
+    './choiceOffer': choiceOfferDomain,
     './customerPlanning': planningDomain,
     './customerChoiceFilesServer': { async getCustomerChoiceFiles() { return { filesAvailable: false } } },
     './standardContractTerms': { ...standardTerms, withStandardContractTerms: options.standardTerms ? standardTerms.withStandardContractTerms : (draft) => draft },

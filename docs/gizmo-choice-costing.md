@@ -39,6 +39,10 @@ alternativrad far fortfarande rensa sin egen privata kalkyl.
 
 ## Beslutslogg
 
+- 2026-10-22: Utokningen med mangd/enhet, separat kundpris, prisform, tid och PDF
+  beskrivs i [Val och tillval: pris, tid och PDF](gizmo-choice-offers.md).
+  Den utokningen kraver en ny SQL-migrering; tidigare radkalkyl gjorde det inte.
+
 - 2026-10-19: Anvandaren godkanner samma radbaserade arbetssatt som i Projektarbete,
   automatiskt kundpris utan Anvand kundpris och ett fortsatt helt separat avtal.
   Sidopanelen far vara bredare. Publicering ar godkand nar verifieringen ar klar.
