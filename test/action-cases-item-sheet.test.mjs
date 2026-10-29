@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { actionScopeDraft } from '../src/lib/action-cases/scopeDraft.ts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
+import { contractWorkFields } from '../src/lib/action-cases/contractWork.ts'
 
 const source = readFileSync(new URL('../src/components/tasks/ActionCaseItemSheet.tsx', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, {
@@ -29,11 +30,12 @@ function sheetHarness(overrides = {}) {
     '@/lib/action-cases/costing': {},
     '@/lib/action-cases/scopeAttachments': { scopeAttachmentIds: () => [] },
     '@/lib/action-cases/scopeDraft': { actionScopeDraft },
+    '@/lib/action-cases/contractWork': { contractWorkFields },
     './actionCaseGroupPricing': { groupPriceForLine: () => null, coveringQuoteForLine: () => null },
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},
   }
-  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList']) dependencies[`./${name}`] = { default: name }
+  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
     (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
@@ -252,4 +254,27 @@ test('purchase action cannot bypass a pending row edit', () => {
   assert.equal(button.props.disabled, true)
   button.props.onClick(); h.render()
   assert.equal(h.nodes().some(n => n.type === 'ActionCasePurchaseList'), false)
+})
+
+test('locked contract moments are read-only but keep help, material selection and purchase printing available',async()=>{
+  const calls=[], changes=[]
+  const h=sheetHarness({item:{...costItem([testLine({category:'material'})]),contractWork:{revision:3,locked:true,version:1,differences:['scopeExclusions'],price:{editable:true,split:'combined',amountOre:10000,labourOre:null,materialOre:null}}},
+    onDelete:async()=>{calls.push('delete');return true},onScopeChange:draft=>changes.push(draft),onCostAction:async(...args)=>{calls.push(args);return true}})
+  assert.equal(h.find(n=>n.type==='fieldset').props.disabled,true)
+  h.find(n=>n.type==='textarea').props.onChange({target:{value:'Unsafe'}})
+  assert.deepEqual(changes,[])
+  assert.equal(h.find(n=>n.props['aria-label']==='Ta bort åtgärd').props.disabled,true)
+  h.tab('Kalkyl').props.onClick();h.render()
+  assert.equal(h.find(n=>n.props['aria-label']==='Redigera Puts').props.disabled,true)
+  const done=h.find(n=>n.props['aria-label']==='Klar: Puts');assert.equal(done.props.disabled,true)
+  done.props.onChange({target:{checked:true}})
+  assert.equal(h.find(n=>n.type==='button'&&n.props.children?.includes?.('Lägg till rad')).props.disabled,true)
+  assert.ok(h.find(n=>n.type==='ActionCaseCostHelp'))
+  h.find(n=>n.type==='button'&&n.props.children?.includes?.('Markera rader')).props.onClick();h.render()
+  h.find(n=>n.props['aria-label']==='Markera Puts').props.onChange({target:{checked:true}});h.render()
+  const print=h.find(n=>n.type==='button'&&n.props.children?.includes?.('Beställningslista ('))
+  assert.equal(print.props.disabled,false);print.props.onClick();h.render()
+  assert.ok(h.find(n=>n.type==='ActionCasePurchaseList'))
+  await new Promise(resolve=>setImmediate(resolve))
+  assert.deepEqual(calls,[])
 })

@@ -58,6 +58,7 @@ async function workspace({ legacy = false, packageState = 'active', stalePart = 
     return chain
   } }
   const server = compile('server', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './quotes': quotes,
+    './contractWorkServer': { getContractWorkLinks: async () => ({}) },
     './quoteRequests': requests, './quotePackages': packages, './domain': domain, './rfqDelivery': rfq, './lumpSum': lumpSum })
   const data = await server.getActionCaseWorkspace({ orgId: id(9), userId: id(10) })
   return { data, reads, maxConcurrentReads }

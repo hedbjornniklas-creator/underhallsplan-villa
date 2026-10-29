@@ -43,7 +43,7 @@ function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (schemaMissing(error.code)) throw new Error('CUSTOMER_OFFER_SCHEMA')
   throw new Error(
-    error.message?.match(/CUSTOMER_(?:OFFER|CHOICE|SENDER)_[A-Z_]+/)?.[0] ??
+    error.message?.match(/(?:CUSTOMER_(?:OFFER|CHOICE|SENDER)_[A-Z_]+|ACTION_CASE_CONTRACT_LOCKED)/)?.[0] ??
       'CUSTOMER_OFFER_FAILED'
   )
 }

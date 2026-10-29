@@ -251,7 +251,7 @@ function CaseDocuments({
                 <button type="button" disabled={busy || uploading.length > 0} onClick={() => fileInput.current?.click()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"><Upload size={17} /> Ladda upp</button>
                 <input ref={fileInput} type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.doc,.docx,.xls,.xlsx,.txt" className="hidden" onChange={(event) => void uploadFiles(Array.from(event.target.files ?? []))} />
               </div>
-              <label className="mt-4 block text-xs font-semibold uppercase text-slate-500">Koppla till åtgärd<select value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)} className="mt-2 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal normal-case text-slate-800"><option value="">Hela ärendet</option>{actionCase.items.map((item, index) => <option key={item.id} value={item.id}>{index + 1}. {item.title}</option>)}</select></label>
+              <label className="mt-4 block text-xs font-semibold uppercase text-slate-500">Koppla till åtgärd<select value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)} className="mt-2 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal normal-case text-slate-800"><option value="">Hela ärendet</option>{actionCase.items.map((item, index) => <option key={item.id} value={item.id} disabled={item.contractWork?.locked}>{index + 1}. {item.title}{item.contractWork?.locked ? ' · Låst' : ''}</option>)}</select></label>
               <fieldset className="mt-4 border-y border-slate-200 py-3">
                 <legend className="px-1 text-xs font-semibold uppercase text-slate-500">Dela nya filer med</legend>
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -351,8 +351,10 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     onSaved: (result) => { if (workspaceRef.current) receive(mergeScopeSave(workspaceRef.current, result)) },
     onError: (message) => toast.error(message),
   })
+  const forgetSavedScope = useRef(scopeAutosave.forgetSaved)
+  forgetSavedScope.current = scopeAutosave.forgetSaved
   useEffect(() => {
-    if (!customerRefresh) return
+    if (!customerRefresh || scopeAutosave.hasUnsaved || itemDirty || uploading || running.current) return
     const controller = new AbortController()
     running.current = true
     setBusy(true)
@@ -360,18 +362,19 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       try {
         const response = await fetch('/api/action-cases', { signal: controller.signal, cache: 'no-store' })
         const result = await response.json()
-        if (!response.ok) throw new Error(result.error || 'Projektet kunde inte uppdateras efter kundbytet.')
+        if (!response.ok) throw new Error(result.error || 'Projektets avtalskoppling kunde inte uppdateras.')
         if (!controller.signal.aborted) {
           workspaceRef.current = result.workspace
+          forgetSavedScope.current()
           setWorkspace(result.workspace)
           onWorkspaceChange?.(result.workspace)
         }
       } catch (error) {
-        if (!controller.signal.aborted) toast.error(error, 'Projektet kunde inte uppdateras efter kundbytet. Ladda om sidan.')
+        if (!controller.signal.aborted) toast.error(error, 'Projektets avtalskoppling kunde inte uppdateras. Ladda om sidan.')
       } finally { if (!controller.signal.aborted) { running.current = false; setBusy(false) } }
     })()
     return () => { controller.abort(); running.current = false }
-  }, [customerRefresh, onWorkspaceChange, toast])
+  }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, itemDirty, uploading])
   const guarded = busy || uploading || scopeAutosave.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
   useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving) }, [busy, uploading, scopeAutosave.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
@@ -403,7 +406,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       return result as ActionResult
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
-      if (['send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'set_cost_line_complete', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
+      if (['update_contract_work_price', 'send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'set_cost_line_complete', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
         await fetch('/api/action-cases').then(async (response) => {
           if (response.ok) { const result = await response.json(); receive(result.workspace) }
         }).catch(() => undefined)
@@ -438,7 +441,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         const save = scopeAutosave.states[item.id]
         const saveIssue = save?.status === 'error' ? 'Kunde inte spara' : save && !save.draft.title.trim() ? 'Rubrik saknas' : null
         return <li key={item.id}><button type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItemId === item.id}>
-          <strong>{item.title}</strong><span>{saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{saveIssue ?? ITEM_STATUS[item.status]}</span><ChevronRight size={18} aria-hidden="true" />
+          <strong>{item.title}</strong><span>{item.contractWork?.locked ? item.contractWork.differences.length ? 'Befintlig skillnad mot avtalet' : 'Ingår i låst avtal' : saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{item.contractWork?.locked ? 'Låst' : saveIssue ?? ITEM_STATUS[item.status]}</span><ChevronRight size={18} aria-hidden="true" />
         </button></li>
       })}</ul>
       {!selectedCase.items.length && <p className="gizmo-empty">Inga åtgärder ännu.</p>}

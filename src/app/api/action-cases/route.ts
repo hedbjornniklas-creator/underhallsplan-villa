@@ -29,6 +29,7 @@ import { handleQuotePackageAction } from '@/lib/action-cases/quotePackagesServer
 import { revokeRfqDelivery } from '@/lib/action-cases/rfqDeliveryServer'
 import { scopeSavePayload } from '@/lib/action-cases/scopeDraft'
 import { setCostLineComplete } from '@/lib/action-cases/costCompletionServer'
+import { assertContractWorkMutation, writeContractWorkPrice } from '@/lib/action-cases/contractWorkServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -55,6 +56,15 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_CONTRACT_LOCKED: [409, 'Momentet ingår i ett låst avtal. Omfattning, pris och kalkyl kan inte ändras.'],
+    ACTION_CASE_CONTRACT_SCHEMA: [503, 'Databasmigrationen för kopplingen mellan Projektarbete och Avtal behöver köras.'],
+    ACTION_CASE_CONTRACT_READ_FAILED: [503, 'Avtalslåsningen kunde inte kontrolleras. Försök igen.'],
+    CONTRACT_WORK_INVALID: [400, 'Ange ett belopp eller lämna priset tomt.'],
+    CUSTOMER_OFFER_INVALID: [400, 'Priset kan inte ändras på detta sätt. Kontrollera prisformen i Avtal.'],
+    CUSTOMER_OFFER_NOT_FOUND: [404, 'Avtalsmomentet kunde inte hittas.'],
+    CUSTOMER_OFFER_STALE: [409, 'Avtalet har ändrats. Ladda om underlaget innan du försöker igen.'],
+    CUSTOMER_OFFER_LOCKED: [409, 'Avtalet är låst för signering.'],
+    CUSTOMER_OFFER_LINK_CONFLICT: [409, 'Momentet har motstridiga rubriker i avtalet. Ändra en rubrik i taget.'],
     ACTION_CASE_ITEM_DELETE_LOCKED: [409, 'Åtgärden är offererad eller har gått vidare till utförande och kan inte tas bort.'],
     ACTION_CASE_ITEM_DELETE_QUOTES: [409, 'Åtgärden används i en UE-offert eller offertförfrågan. Ta bort kopplingen i oskickade utkast först. Skickade underlag bevaras.'],
     ACTION_CASE_ITEM_DELETE_OFFER: [409, 'Åtgärden finns i ett kundavtal eller offertutkast. Ta bort arbetsdelen ur oskickade utkast först. Skickade avtal bevaras.'],
@@ -148,12 +158,14 @@ export async function POST(request: Request) {
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object' ? body.payload as Record<string, unknown> : {}
     const ctx = await context()
+    await assertContractWorkMutation(ctx, action, payload)
     if (action === 'save_item_scope') return NextResponse.json(await saveActionCaseScope(ctx, scopeSavePayload(payload)))
     let accessUrl: string | undefined
     let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined
     let caseId: string | undefined
     if (action === 'create_case') caseId = await createActionCase(ctx, payload)
+    else if (action === 'update_contract_work_price') await writeContractWorkPrice(ctx, payload)
     else if (action === 'update_item') await updateActionCaseItem(ctx, payload)
     else if (action === 'delete_item') await deleteActionCaseItem(ctx, payload)
     else if (action === 'add_item') itemId = await addActionCaseItem(ctx, payload)

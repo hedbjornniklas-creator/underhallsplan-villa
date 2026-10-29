@@ -56,6 +56,13 @@ export function projectOverview(project: ActionCaseView, offer: CustomerOfferWor
   const manager = questions?.assignees.find(person => person.kind === 'profile' && person.id === questions.managerId)?.name || 'Projektansvarig'
   const managedByMe = Boolean(questions?.userId && questions.userId === questions.managerId)
   const points: OverviewPoint[] = []
+  const paper = activeSigningVersion(offer?.signingVersions)
+  if (paper?.signedCopyTask && !paper.delivery?.signedCopy) {
+    const task = paper.signedCopyTask
+    const owner = questions?.assignees.find(person => person.kind === 'profile' && person.id === task.assigneeProfileId)?.name || 'Uppgiftens ansvariga'
+    points.push({ id: `contract-upload:${paper.id}`, title: 'Ladda upp signerat avtal', owner, source: `Avtal · version ${paper.version}`, view: 'contract', due: task.dueAt || null,
+      mine: Boolean(questions?.userId && questions.userId === task.assigneeProfileId) })
+  }
   // The input is already membership-filtered by the existing question endpoint.
   for (const q of questions?.questions ?? []) {
     if (q.body.status === 'closed') continue

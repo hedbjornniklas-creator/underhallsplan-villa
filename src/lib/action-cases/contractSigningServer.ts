@@ -35,8 +35,15 @@ export async function getContractSigningVersions(ctx: Context, caseId: string): 
   const deliveries = await createSupabaseAdminClient().from('action_case_contract_signing_delivery').select('document_id,participant_id,shared_at,withdrawn_at,signed_copy,signed_at').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
   const deliveryAvailable = !deliveries.error
   if (deliveries.error && !['42P01', 'PGRST205'].includes(deliveries.error.code)) checked(deliveries.error)
+  const db = createSupabaseAdminClient()
+  const tasks = await db.from('action_case_contract_upload_tasks').select('document_id,task_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
+  if (tasks.error && !['42P01', 'PGRST205'].includes(tasks.error.code)) checked(tasks.error)
+  const ids = (tasks.data || []).map(t => t.task_id)
+  const taskStates = ids.length ? await db.from('operational_tasks').select('id,status,due_at,assignee_profile_id').eq('org_id', ctx.orgId).in('id', ids) : { data: [], error: null }
+  checked(taskStates.error)
   return { signingAvailable: true, deliveryAvailable, signingVersions: ((result.data || []) as StoredVersion[]).map((row) => ({
     id: row.id, version: row.version, revision: row.draft_revision, createdAt: row.created_at, releasedAt: row.released_at,
+    ...(() => { const task = tasks.data?.find(t => t.document_id === row.id); const state = taskStates.data?.find(t => t.id === task?.task_id); return task && state ? { signedCopyTask: { id: state.id, status: state.status, dueAt: state.due_at, assigneeProfileId: state.assignee_profile_id } } : {} })(),
     snapshot: row.snapshot, pdfSha256: row.pdf_sha256, fileSizeBytes: Number(row.pdf_size),
     files: row.files.map(({ id, fileName, contentType, fileSizeBytes }) => ({ id, fileName, contentType, fileSizeBytes })),
     ...((deliveries.data || []).some((d) => d.document_id === row.id) ? { delivery: (() => {
@@ -107,9 +114,10 @@ export async function freezeContractForSigning(ctx: Context, caseId: string, pay
 }
 export async function createNewContractDraft(ctx: Context, caseId: string, payload: Record<string, unknown>) {
   await requireProject(ctx, caseId)
+  if (payload.unsignedConfirmed !== true) throw new Error('CUSTOMER_OFFER_UNSIGNED_CONFIRM')
   if (payload.confirmed !== true || !Number.isSafeInteger(payload.revision) || Number(payload.revision) < 1) throw new Error('CUSTOMER_OFFER_INVALID')
   const result = await createSupabaseAdminClient().rpc('write_contract_signing_document', { p_org_id: ctx.orgId, p_case_id: caseId, p_user_id: ctx.userId,
-    p_operation: 'new_draft', p_data: { id: offerId(payload.id), revision: payload.revision, confirmed: true } })
+    p_operation: 'new_draft', p_data: { id: offerId(payload.id), revision: payload.revision, confirmed: true, unsignedConfirmed: true } })
   checked(result.error)
 }
 export async function downloadCurrentContractPdf(ctx: Context, caseId: string, revision: number) {

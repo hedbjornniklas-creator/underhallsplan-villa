@@ -18,6 +18,7 @@ import { createQuoteWorkLine } from './quotesServer'
 import { getSharedCustomerOffers } from './customerOffersServer'
 import { projectCustomerPortal } from './customerSharing'
 import { readCustomerVisibility, requireCustomerSection } from './customerSharingServer'
+import { contractWorkError, getContractWorkLinks } from './contractWorkServer'
 
 type Context = { orgId: string; userId: string }
 
@@ -137,6 +138,7 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
   }
 
   const caseIds = (cases ?? []).map((row) => row.id)
+  const contractLinks = caseIds.length ? await getContractWorkLinks(context, caseId) : {}
   // These reads depend on the authorized case IDs, not on one another.
   const [itemResult, partResult, participantResult, attachmentResult, costResult, suggestionResult, requestResult, packageResult, deliveryResult] = caseIds.length
     ? await Promise.all([
@@ -220,6 +222,7 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
   for (const row of items ?? []) {
     const list = itemsByCase.get(row.action_case_id) ?? []
     const view = mapItem(row, costLinesByItem.get(row.id) ?? [])
+    view.contractWork = contractLinks[row.id]
     view.workParts = ((workParts ?? []) as Record<string, unknown>[]).filter((part) => part.action_case_item_id === row.id).map((part) => ({
       id: String(part.id), title: String(part.title), scope: part.scope ? String(part.scope) : null,
       sortOrder: Number(part.sort_order), updatedAt: String(part.updated_at),
@@ -840,6 +843,7 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
   let update = admin.from('action_case_items').update(patch).eq('id', itemId).eq('org_id', context.orgId)
   if (payload.expectedUpdatedAt) update = update.eq('updated_at', text(payload.expectedUpdatedAt))
   const { data: updated, error } = await update.select('*').maybeSingle()
+  if (error?.message?.includes('ACTION_CASE_CONTRACT_LOCKED') || error?.message?.includes('CUSTOMER_OFFER_')) contractWorkError(error)
   if (error?.message?.includes('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')) throw new Error('ACTION_CASE_SCOPE_ATTACHMENTS_INVALID')
   if (!error && !updated && payload.expectedUpdatedAt) throw new Error('ACTION_CASE_ITEM_STALE')
   if (error || !updated) throw new Error('ACTION_CASE_ITEM_UPDATE_FAILED')
@@ -861,10 +865,12 @@ export async function updateActionCaseItem(context: Context, payload: Record<str
     performed_by: context.userId,
   })
   const saved = mapItem(updated)
+  const links = await getContractWorkLinks(context, String(existing.action_case_id))
   return {
     caseId: String(existing.action_case_id),
     item: {
       id: saved.id, title: saved.title, scope: saved.scope, scopeAttachmentIds: saved.scopeAttachmentIds,
+      contractWork: links[saved.id],
       scopeConditions: saved.scopeConditions,
       scopeExclusions: saved.scopeExclusions, scopeAdvice: saved.scopeAdvice, updatedAt: saved.updatedAt,
       status: saved.status, lumpSum: saved.lumpSum, ownLaborReady: saved.ownLaborReady,

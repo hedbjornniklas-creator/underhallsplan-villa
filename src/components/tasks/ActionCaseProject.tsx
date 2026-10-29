@@ -70,6 +70,15 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   }, [caseId])
   const [sharedSchedule, setSharedSchedule] = useState<ProjectScheduleRow[]>([])
   const [customerRefresh, setCustomerRefresh] = useState(0)
+  const contractState = useRef(JSON.stringify([initialOffer?.revision, initialOffer?.signingVersions, initialOffer?.offers.map(o => [o.id, o.status])]))
+  const receiveContract = useCallback((next: CustomerOfferWorkspace) => {
+    const signature = JSON.stringify([next.revision, next.signingVersions, next.offers.map(o => [o.id, o.status])])
+    if (signature !== contractState.current) {
+      contractState.current = signature
+      setCustomerRefresh(value => value + 1)
+    }
+    setOffer(next)
+  }, [])
   const customerChanged = useCallback(() => {
     setSharedSchedule([])
     setCustomerRefresh((value) => value + 1)
@@ -187,7 +196,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
         <div hidden={!offerViews[view] || view === 'offer' || view === 'offerReview'}>
           {initialOffer ? <CustomerOfferEditor actionCase={project} initial={initialOffer} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
-            embedded draftTarget="contract" offerItems={estimate?.draft.items ?? []} active={Boolean(offerViews[view]) && view !== 'offer' && view !== 'offerReview'} view={view !== 'offer' && view !== 'offerReview' ? offerViews[view] ?? 'contract' : 'contract'} onViewChange={navigateOffer} onWorkspaceChange={setOffer} onCustomerChanged={customerChanged} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy || scheduleDirty} />
+            embedded draftTarget="contract" linkedRevision={Math.max(0, ...project.items.map(item => item.contractWork?.revision ?? 0))} offerItems={estimate?.draft.items ?? []} active={Boolean(offerViews[view]) && view !== 'offer' && view !== 'offerReview'} view={view !== 'offer' && view !== 'offerReview' ? offerViews[view] ?? 'contract' : 'contract'} onViewChange={navigateOffer} onWorkspaceChange={receiveContract} onCustomerChanged={customerChanged} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy || scheduleDirty} />
             : <section className="gizmo-empty" role="alert"><h2>{sectionLabel}</h2><p>{initialOfferError || 'Offertuppgifterna kunde inte hämtas. Projektarbete och filer är fortfarande tillgängliga.'}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>}
         </div>
         <div hidden={view !== 'offer' && view !== 'offerReview'}>

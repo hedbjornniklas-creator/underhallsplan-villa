@@ -357,7 +357,7 @@ test('editor no longer contains the customer-work section and locks still guard 
   assert(editor.includes('Övriga överenskommelser'))
   assert.match(editor, /workspace\.offers\.some\(\(offer\) => offer\.status === 'accepted'\)\) return/)
   assert.match(editor, /draftTarget !== 'contract' \|\| locked/)
-  assert.match(editor, /applyDraftUpgrade\.current = \(\) => update\(currentSnapshot\.current\.draft\)/)
+  assert.match(editor, /applyDraftUpgrade\.current = \(\) => update\(currentSnapshot\.current\.draft, true\)/)
 })
 
 test('two-field advice upgrades only an editable copy and preserves earlier text, dates and customer decisions', () => {

@@ -11,6 +11,7 @@ export default function CustomerContractSigning({ caseId, available, versions = 
   onWithdraw?: (version: ContractSigningVersion) => Promise<boolean>
 }) {
   const [confirm, setConfirm] = useState<'freeze' | 'new_draft' | null>(null)
+  const [unsignedConfirmed, setUnsignedConfirmed] = useState(false)
   const active = activeSigningVersion(versions)
   const blocked = disabled || accepted
   const button = 'gizmo-button inline-flex items-center justify-center gap-2 disabled:opacity-50'
@@ -27,12 +28,14 @@ export default function CustomerContractSigning({ caseId, available, versions = 
       {active ? <>
         <p className="mt-2 flex items-center gap-2 text-sm"><LockKeyhole size={16} /> Version {active.version} · Låst för signering</p>
         <p className="mt-1 text-sm text-slate-600">{active.delivery?.signedCopy ? 'Underskriven kopia registrerad.' : 'Inte registrerat som signerat.'}</p>
-        {!accepted && !active.delivery?.signedCopy && <button className={`${button} mt-3`} disabled={disabled} onClick={() => setConfirm('new_draft')}><FilePlus2 size={16} /> Skapa nytt utkast</button>}
+        {active.signedCopyTask && <p className="mt-2 text-sm"><a className="text-teal-800 underline" href={`/uppdrag?task=${active.signedCopyTask.id}`}>{active.delivery?.signedCopy ? 'Uppgiften för signerad kopia är slutförd' : 'Att göra: Ladda upp signerat avtal'}</a></p>}
+        {!accepted && !active.delivery?.signedCopy && <button className={`${button} mt-3`} disabled={disabled} onClick={() => { setUnsignedConfirmed(false); setConfirm('new_draft') }}><FilePlus2 size={16} /> Skapa nytt utkast</button>}
       </> : !accepted && blockers.map((message) => <p key={message} className="mt-2 text-sm text-amber-800">{message}</p>)}
       {confirm && <div className="mt-3 border-l-2 border-teal-700 bg-slate-50 p-3 text-sm" role="alert">
-        <p>{confirm === 'freeze' ? 'Låsa den sparade avtalsversionen och skapa PDF för underskrift? Texter, priser, betalningsplan och valda bilagor låses. Inget mejl skickas och inget godkännande registreras.' : 'Skapa ett nytt redigerbart utkast? Den gamla PDF-versionen och dess bilagor behålls oförändrade. Det nya utkastet behöver låsas igen före signering.'}</p>
+        <p>{confirm === 'freeze' ? 'Låsa den sparade avtalsversionen och skapa PDF för underskrift? Texter, priser, betalningsplan och valda bilagor låses, liksom de kopplade momenten i Projektarbete och deras kalkyler. En intern uppgift skapas för att ladda upp den signerade PDF-kopian. Inget mejl skickas och inget godkännande registreras.' : 'Skapa ett nytt redigerbart utkast? Kopplade moment öppnas för redigering. Den gamla PDF-versionen och dess bilagor behålls oförändrade. Ett redan underskrivet avtal får inte öppnas på detta sätt.'}</p>
+        {confirm === 'new_draft' && <label className="mt-3 flex items-start gap-2"><input type="checkbox" className="mt-1" checked={unsignedConfirmed} onChange={event => setUnsignedConfirmed(event.target.checked)} disabled={Boolean(busy)} />Jag bekräftar att denna avtalsversion inte har undertecknats.</label>}
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className={button} disabled={blocked || (confirm === 'freeze' && blockers.length > 0)} onClick={async () => {
+          <button className={button} disabled={blocked || (confirm === 'freeze' ? blockers.length > 0 : !unsignedConfirmed)} onClick={async () => {
             const done = confirm === 'freeze' ? await onFreeze() : active ? await onNewDraft(active.id) : false
             if (done) setConfirm(null)
           }}>{busy === confirm ? <Loader2 size={16} className="animate-spin" /> : <LockKeyhole size={16} />}{confirm === 'freeze' ? 'Lås och skapa PDF' : 'Skapa nytt utkast'}</button>

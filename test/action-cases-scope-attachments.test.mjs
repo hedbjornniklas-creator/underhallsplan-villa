@@ -115,6 +115,7 @@ test('item API persists text and files atomically, with case/org scoping and opt
       if (name === '@/lib/supabase/admin') return { createSupabaseAdminClient: () => admin }
       if (name === './scopeAttachments') return scope
       if (name === './lumpSum') return lumpSum
+      if (name === './contractWorkServer') return { getContractWorkLinks: async () => ({}) }
       return {}
     })
     return { writes, reads, save: (more = {}) => mod.exports.updateActionCaseItem({ orgId: id(1), userId: id(2) }, { itemId: id(20), expectedUpdatedAt: 'v1', title: 'Updated', scope: 'Changed', scopeAttachmentIds: [id(30)], ...more }) }

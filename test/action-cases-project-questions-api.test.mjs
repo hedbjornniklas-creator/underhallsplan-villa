@@ -93,7 +93,7 @@ test('abort and complete retries cannot delete registered originals, including o
     const removed=[],calls=[]
     const db={from(table){calls.push(table);const q={select(){return q},eq(){return q},async maybeSingle(){return {data:{id:caseId}}},async limit(){return state==='read-error'?{error:{message:'unavailable'}}:{data:state==='registered'?[{id:id(6),file_name:'Ritning.pdf',content_type:'application/pdf',file_size_bytes:120}]:[]}}};return q},storage:{from(){return {async remove(paths){removed.push(paths);return {error:null}}}}}}
     const deps=Object.fromEntries(['server-only','@/lib/assignments/tokens','./scopeAttachments','./projectScheduleServer','./lumpSum','./domain','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer','./customerOffersServer','./customerSharing','./customerSharingServer'].map(name=>[name,{}]))
-    const server=load('../src/lib/action-cases/server.ts',{...deps,'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
+    const server=load('../src/lib/action-cases/server.ts',{...deps,'./contractWorkServer':{},'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
     const filePath=`${ctx.orgId}/${caseId}/original.pdf`
     if(state==='pending')await server.abortActionCaseUpload(ctx,{caseId,filePath})
     else await assert.rejects(server.abortActionCaseUpload(ctx,{caseId,filePath}),state==='registered'?/FILE_IN_USE/:/DELETE_FAILED/)

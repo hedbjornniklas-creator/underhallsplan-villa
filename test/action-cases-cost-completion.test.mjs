@@ -39,6 +39,7 @@ test('completion API requires Uppdrag access and returns conflicts without repla
       '@/lib/assignments/server': {requireOrgContext:async()=>{if(failure==='UNAUTHORIZED')throw Error(failure);return {orgId:id(1),userId:id(2)}}},
       '@/lib/access/server': {requireModuleAccess:async access=>{assert.equal(access.moduleKey,'tasks');if(failure==='MODULE_ACCESS_REQUIRED')throw Error(failure)}},
       '@/lib/action-cases/server': {getActionCaseWorkspace:async()=>({cases:[]})},
+      '@/lib/action-cases/contractWorkServer': {assertContractWorkMutation:async()=>{}},
       '@/lib/action-cases/costCompletionServer': {setCostLineComplete:async(ctx,payload)=>{calls.push({ctx,payload:costCompletionPayload(payload)});if(failure)throw Error(failure)}}
     })
     const res = await route.POST(new Request('https://example.test/api/action-cases',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set_cost_line_complete',payload:{...body,unitCost:1}})}))

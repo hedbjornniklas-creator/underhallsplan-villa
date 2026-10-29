@@ -126,6 +126,7 @@ export default function CustomerContractWorkParts({ items, projectItems, offerIt
           onChange={(event) => selectRow(item.id, event.target.checked)} /></label>
         <ProjectEditorRow title={item.title || 'Ny arbetsdel'} summary={item.scope.trim().slice(0, 90) || 'Omfattning saknas'}
         amount={item.kind === 'excluded' ? 'Ingår inte' : itemized ? money(item.amountOre) : 'Ingår'} open={expanded === item.id} onToggle={() => setExpanded(expanded === item.id ? null : item.id)}>
+        {projectItems.some(source => source.id === (item.sourceItemId ?? item.id) && source.contractWork) && <p className="mt-2 text-sm text-[#3D6763]">Kopplad till Projektarbete</p>}
         <div className="flex flex-wrap items-center justify-end gap-2">
           {([-1, 1] as const).map((delta) => <button type="button" key={delta} className="gizmo-button" disabled={delta < 0 ? index === 0 : index === items.length - 1}
             title={delta < 0 ? 'Flytta upp' : 'Flytta ned'} aria-label={`${delta < 0 ? 'Flytta upp' : 'Flytta ned'} ${item.title}`} onClick={() => move(index, delta)}>{delta < 0 ? <ArrowUp size={17} /> : <ArrowDown size={17} />}</button>)}

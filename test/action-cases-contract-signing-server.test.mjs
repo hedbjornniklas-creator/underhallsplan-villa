@@ -25,6 +25,7 @@ function harness(options={}) {
         if (table==='action_case_attachments') return {data:options.missingAttachment?[]:[file]}
         if (table==='action_case_customer_offers') return {data:options.online?[{status:options.online}]:[]}
         if (table==='action_case_contract_signing_delivery') return {data:[]}
+        if (table==='action_case_contract_upload_tasks') return {data:[]}
         if (table==='action_case_contract_signing_documents') {
           if (options.schemaMissing) return {error:{code:'42P01'}}
           if (read.filters.some(([k])=>k==='id')) return {data:stored.find((r)=>read.filters.every(([k,v])=>r[k]===v))??null}
@@ -152,6 +153,14 @@ test('current PDF endpoint returns the immutable archive once locked, not a new 
   const pdf=await h.downloadCurrentContractPdf(ctx,caseId,1)
   assert.deepEqual(pdf,old);assert.equal(h.rendered.length,1)
   await assert.rejects(h.downloadCurrentContractPdf(ctx,caseId,2),/STALE/)
+})
+
+test('new draft requires an explicit unsigned confirmation, including in the database payload',async()=>{
+  const h=harness()
+  await assert.rejects(h.createNewContractDraft(ctx,caseId,{id:id(2),revision:1,confirmed:true}),/UNSIGNED_CONFIRM/)
+  assert.equal(h.calls.length,0)
+  await h.createNewContractDraft(ctx,caseId,{id:id(2),revision:1,confirmed:true,unsignedConfirmed:true})
+  assert.equal(h.calls[0].p_data.unsignedConfirmed,true)
 })
 test('failed render, upload or rolled-back write cleans only its own temporary copies; uncertain committed PDF is retained',async()=>{
   for(const options of [{pdfFailed:true},{uploadFailed:true},{rpcFailed:true}]){

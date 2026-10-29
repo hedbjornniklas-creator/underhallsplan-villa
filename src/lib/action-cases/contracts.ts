@@ -23,6 +23,7 @@ export type ActionItemStatus =
   | 'cancelled'
 
 export type ActionCaseItemView = {
+  contractWork?: import('./contractWork').ContractWorkLink
   scopeConditionsAvailable?: boolean
   scopeConditions?: string
   scopeNotesAvailable?: boolean

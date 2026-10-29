@@ -101,6 +101,7 @@ export default function CustomerOfferEditor({
   onDirtyChange,
   sharedSchedule,
   sourcePending = false,
+  linkedRevision = 0,
   contractorSource,
   draftTarget = 'contract',
   offerItems = []
@@ -118,6 +119,7 @@ export default function CustomerOfferEditor({
   onDirtyChange?: (dirty: boolean) => void
   sharedSchedule?: ProjectScheduleRow[]
   sourcePending?: boolean
+  linkedRevision?: number
   contractorSource?: Partial<ContractContractor>
   draftTarget?: 'contract' | 'offer'
   offerItems?: CustomerOfferItem[]
@@ -134,6 +136,7 @@ export default function CustomerOfferEditor({
   const [termsRetry, setTermsRetry] = useState(0)
   const applyStandardTerms = useRef<(file: NonNullable<CustomerOfferWorkspace['standardTermsFile']>) => void>(() => {})
   const currentSnapshot = useRef({ draft, costing })
+  const localEdits = useRef(false)
   currentSnapshot.current = { draft, costing }
   const acknowledgedDraft = useRef(initial.draft)
   const recoveryChecked = useRef(false)
@@ -202,6 +205,7 @@ export default function CustomerOfferEditor({
       const next = { draft: retainNewerDraft(current.draft, submitted.draft, editableDraft(result)),
         costing: retainNewerDraft(current.costing, submitted.costing, result.costing ?? {}) }
       currentSnapshot.current = next
+      if (JSON.stringify(next.draft) === JSON.stringify(editableDraft(result)) && JSON.stringify(next.costing) === JSON.stringify(result.costing ?? {})) localEdits.current = false
       persistDocuments(next.draft)
       setDraft(next.draft)
       setCosting(next.costing)
@@ -215,6 +219,14 @@ export default function CustomerOfferEditor({
   const signingMethod = signingVersion ? 'external' : draft.signingMethod ?? (workspace.offers.length ? 'email_code' : 'external')
   const [customerPortalUrl, setCustomerPortalUrl] = useState('')
   const locked = accepted || Boolean(signingVersion)
+  const linkedRefresh = useRef<() => void>(() => {})
+  const refreshingRevision = useRef(0)
+  linkedRefresh.current = () => { void action('refresh') }
+  useEffect(() => {
+    if (draftTarget !== 'contract' || linkedRevision <= workspace.revision || (dirty && localEdits.current) || planningDirty || sourcePending || busy || autosave.isPending() || (autosave.state?.status === 'error' && localEdits.current) || refreshingRevision.current === linkedRevision) return
+    refreshingRevision.current = linkedRevision
+    linkedRefresh.current()
+  }, [draftTarget, linkedRevision, workspace.revision, dirty, planningDirty, sourcePending, busy, autosave])
   const signingBlockers = [
     ...(documentRecovery ? ['Hantera det lokala handlingsutkastet före låsning.'] : []),
     ...(workspace.offers.some((o) => o.status === 'published') ? ['Återkalla det utskickade avtalet före låsning för underskrift.'] : [])]
@@ -243,8 +255,9 @@ export default function CustomerOfferEditor({
         assignmentForEditing(current, files).documents)
     } catch { /* Browser storage may be unavailable; keep the normal server save path. */ }
   }
-  const update = (patch: Partial<CustomerOfferDraft>) => {
+  const update = (patch: Partial<CustomerOfferDraft>, automatic = false) => {
     if (senderOperation.current) return
+    if (!automatic) localEdits.current = true
     const current = currentSnapshot.current
     let nextDraft = { ...current.draft, ...patch }
     if (draftTarget === 'contract' && !locked) {
@@ -266,9 +279,10 @@ export default function CustomerOfferEditor({
     if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
     setConfirmed(false)
   }
-  applyDraftUpgrade.current = () => update(currentSnapshot.current.draft)
+  applyDraftUpgrade.current = () => update(currentSnapshot.current.draft, true)
   const updateCosting = (id: string, calculation: CustomerOfferCosting[string]) => {
     if (senderOperation.current) return
+    localEdits.current = true
     const current = currentSnapshot.current
     const nextCosting = { ...current.costing, [id]: calculation }
     currentSnapshot.current = { draft: current.draft, costing: nextCosting }
@@ -304,28 +318,28 @@ export default function CustomerOfferEditor({
     }
   }
   useEffect(() => {
-    if (!active || !contractView || locked || recoveryChecked.current) return
+    if (!active || !contractView || locked || linkedRevision > workspace.revision || recoveryChecked.current) return
     recoveryChecked.current = true
     recoverDocuments.current()
-  }, [active, contractView, locked])
+  }, [active, contractView, locked, linkedRevision, workspace.revision])
   useEffect(() => {
-    if (!active || !contractView || draftTarget !== 'contract' || locked || !recoveryChecked.current || documentConflict.current || documentRecovery || initialUpgradeQueued.current) return
+    if (!active || !contractView || draftTarget !== 'contract' || locked || linkedRevision > workspace.revision || !recoveryChecked.current || documentConflict.current || documentRecovery || initialUpgradeQueued.current) return
     initialUpgradeQueued.current = true
     if (JSON.stringify(currentSnapshot.current.draft) !== JSON.stringify(acknowledgedDraft.current))
       applyDraftUpgrade.current()
-  }, [active, contractView, draftTarget, locked, documentRecovery])
+  }, [active, contractView, draftTarget, locked, documentRecovery, linkedRevision, workspace.revision])
   applyStandardTerms.current = (file) => {
     try {
       const current = currentSnapshot.current.draft
       const next = withStandardContractTerms(current, file, files)
-      if (JSON.stringify(next) !== JSON.stringify(current)) update(next)
+      if (JSON.stringify(next) !== JSON.stringify(current)) update(next, true)
     } catch (error) {
       setTermsState('error')
       toast.error(error, 'Standardvillkoren kunde inte läggas till. Kontrollera antalet bilagor.')
     }
   }
   useEffect(() => {
-    if (!active || !contractView || locked || draft.contractForm !== 'abs18' || standardTermsFile) return
+    if (!active || !contractView || locked || linkedRevision > workspace.revision || draft.contractForm !== 'abs18' || standardTermsFile) return
     let cancelled = false
     setTermsState('loading')
     fetch(`/api/action-cases/${actionCase.id}/customer-offers`, {
@@ -339,10 +353,10 @@ export default function CustomerOfferEditor({
       if (!cancelled) { setTermsState('error'); toast.error(error, 'Standardvillkoren kunde inte förberedas.') }
     })
     return () => { cancelled = true }
-  }, [active, contractView, locked, draft.contractForm, standardTermsFile, actionCase.id, termsRetry, toast])
+  }, [active, contractView, locked, draft.contractForm, standardTermsFile, actionCase.id, termsRetry, toast, linkedRevision, workspace.revision])
   useEffect(() => {
-    if (active && contractView && !locked && standardTermsFile) applyStandardTerms.current(standardTermsFile)
-  }, [active, contractView, locked, draft.contractForm, standardTermsFile, termsRetry])
+    if (active && contractView && !locked && linkedRevision <= workspace.revision && standardTermsFile) applyStandardTerms.current(standardTermsFile)
+  }, [active, contractView, locked, draft.contractForm, standardTermsFile, termsRetry, linkedRevision, workspace.revision])
   useEffect(() => {
     if (embedded || !active || previousView.current === view) return
     previousView.current = view
@@ -419,6 +433,7 @@ export default function CustomerOfferEditor({
         costing: operation === 'save' ? retainNewerDraft(currentSnapshot.current.costing, costing, data.costing ?? {}) : data.costing ?? {},
       }
       currentSnapshot.current = next
+      if (operation === 'refresh') { localEdits.current = false; initialUpgradeQueued.current = false }
       setDraft(next.draft)
       setCosting(next.costing)
       persistDocuments(next.draft)
@@ -1056,7 +1071,7 @@ export default function CustomerOfferEditor({
               </fieldset>}
               {contractView && <CustomerContractSigning caseId={actionCase.id} available={workspace.signingAvailable === true} versions={workspace.signingVersions} allowLock={signingMethod === 'external'}
                 accepted={accepted} busy={busy} disabled={Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || dirty || !workspace.revision || Boolean(documentRecovery)}
-                revision={workspace.revision} blockers={signingBlockers} onFreeze={() => action('freeze', { confirmed: true })} onNewDraft={(id) => action('new_draft', { id, confirmed: true })}
+                revision={workspace.revision} blockers={signingBlockers} onFreeze={() => action('freeze', { confirmed: true })} onNewDraft={(id) => action('new_draft', { id, confirmed: true, unsignedConfirmed: true })}
                 onWithdraw={(version) => action('withdraw_share', { id: version.id, revision: version.revision, confirmed: true })} />}
               {contractView && signingVersion && <CustomerContractDelivery key={signingVersion.id} caseId={actionCase.id} version={signingVersion} available={workspace.deliveryAvailable === true}
                 recipient={customer} disabled={Boolean(busy) || autosave.isSaving || dirty} busy={busy} customerUrl={customerPortalUrl} onAction={action} />}

@@ -56,7 +56,8 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const [id] = useState(() => requestId ?? crypto.randomUUID())
   const request = actionCase.quoteRequests?.find((r) => r.id === id)
   const base = request ?? actionCase.quoteRequests?.find((r) => r.id === supplementId)
-  const sources = requestSources(actionCase)
+  const contractLocked = Boolean(request?.lines.some(line => actionCase.items.find(item => item.id === line.itemId)?.contractWork?.locked))
+  const sources = requestSources(actionCase).filter(source => request || !actionCase.items.find(item => item.id === source.itemId)?.contractWork?.locked)
   const initialLineIds = preselectedLineIds ?? (preselectedLineId ? [preselectedLineId] : [])
   const privateDocs = quoteDocumentIds(actionCase)
   const defaultsFor = (lineIds: string[]) => defaultRequestAttachments(
@@ -116,7 +117,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description && (s.workPartId ?? null) === (line.workPartId ?? null) && (s.workPartTitle ?? '') === (line.workPartTitle ?? '') && (s.workPartScope ?? '') === (line.workPartScope ?? '') && (locked || !isFullRequest(request.pricePresentation) || (s.category === line.category && s.quantity === line.quantity && s.unit === line.unit && s.quantityBasis === line.quantityBasis))))
   const close = () => { if (!working && (!(dirty || responseEditing || priceEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
   const run = async (name: string, data: Record<string, unknown>) => {
-    if (inFlight.current) return false
+    if (contractLocked || inFlight.current) return false
     inFlight.current = true; setPending(true)
     try { return await onAction(name, { caseId: actionCase.id, requestId: id, ...data }) }
     finally { inFlight.current = false; setPending(false) }
@@ -141,6 +142,8 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
   }}>
     <header className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6"><div className="min-w-0"><p className="text-xs font-semibold text-violet-700">{actionCase.title}</p><h2 id="group-request-title" className="mt-1 text-xl font-semibold">{editing ? 'Samlad offertförfrågan' : request?.supplierName}</h2><p className="mt-1 text-xs text-slate-500">{request ? statuses[request.deliveryStatus] : 'Ny förfrågan'}{supplementId || request?.supplementsId ? ' · Komplettering' : ''}</p></div><button className={secondary} disabled={working} aria-label="Stäng offertförfrågan" title="Stäng" onClick={close}><X size={20} /></button></header>
+    {contractLocked && <p role="status" className="border-b border-[#D5DCDD] bg-[#EDF1F0] px-4 py-3 text-sm">Förfrågan innehåller moment i ett låst avtal och kan endast läsas.</p>}
+    <fieldset disabled={contractLocked} className="contents">
     <div data-request-content className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
       {editing ? <form id="group-request-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!valid || working) return; void run('quote_request', { ...form, operation: 'save', lines: selectedLines, expectedUpdatedAt: expected }).then((ok) => { if (ok) { setDirty(false); setEditing(false) } }) }}>
         <fieldset disabled={working} className="space-y-4">
@@ -210,5 +213,6 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
         {!request.sentAt ? <button className={primary} disabled={working || (!locked && !current) || Boolean(request.delivery && (request.delivery.revokedAt || Date.parse(request.delivery.expiresAt) <= openedAt))} onClick={() => void run('send_grouped_quote_request', { confirmSend: true, expectedUpdatedAt: request.updatedAt })}>{working ? <Loader2 className="animate-spin" size={16} /> : <Send size={16} />}{working ? 'Förbereder och skickar...' : locked ? 'Försök skicka igen' : 'Skicka förfrågan'}</button> : <button className={secondary} disabled={working} onClick={close}>Stäng</button>}
       </> : null}
     </footer>
+    </fieldset>
   </div></div>, document.body)
 }

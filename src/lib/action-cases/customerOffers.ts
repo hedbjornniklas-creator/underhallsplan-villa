@@ -91,6 +91,7 @@ export type CustomerOfferWorkspace = {
 }
 
 export type ContractSigningVersion = {
+  signedCopyTask?: { id: string; status: string; dueAt?: string; assigneeProfileId?: string | null }
   id: string; version: number; revision: number; createdAt: string; releasedAt: string | null
   pdfSha256: string; fileSizeBytes: number; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]
   delivery?: ContractSigningDelivery

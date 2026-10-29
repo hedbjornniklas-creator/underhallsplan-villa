@@ -52,6 +52,18 @@ test('released versions are not mistaken for locked agreements; digital approval
   assert.equal(overviewContract(o).base, 300_000)
   assert.equal(overviewContract(o).label, 'Godkänt')
 })
+
+test('the signed-copy task appears in Next steps until the PDF is registered, without mutating its locked agreement',()=>{
+  const o=offer(),version={id:'paper',version:1,snapshot:structuredClone(o.draft),releasedAt:null,createdAt:'2026-10-20',signedCopyTask:{id:'task',status:'assigned',dueAt:'2026-10-27T08:00:00Z',assigneeProfileId:'me'}}
+  o.signingVersions=[version]
+  const before=JSON.stringify(o)
+  const point=model(project(),o).points.find(p=>p.id==='contract-upload:paper')
+  assert.equal(point.title,'Ladda upp signerat avtal');assert.equal(point.owner,'Anna');assert.equal(point.view,'contract');assert.equal(point.mine,true)
+  assert.equal(point.due,version.signedCopyTask.dueAt)
+  assert.equal(JSON.stringify(o),before)
+  version.delivery={signedCopy:{fileName:'Signerad.pdf'}}
+  assert.equal(model(project(),o).points.some(p=>p.id==='contract-upload:paper'),false)
+})
 test('missing payment amounts and running pricing do not invent totals or balancing tasks', () => {
   const o = offer()
   o.draft.paymentPlan.installments[0].amountOre = null

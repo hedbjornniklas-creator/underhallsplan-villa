@@ -59,7 +59,7 @@ function portalHarness() {
     const q={select(){return q},eq(...f){r.filters.push(f);return q},in(key,values){r.filters.push([`${key}:in`,values]);return q},order(){return q},update(...v){writes.push({table,v});return q},async maybeSingle(){return result()},then(resolve,reject){return Promise.resolve(result()).then(resolve,reject)}};return q},
     storage:{from(){return {async createSignedUrl(...v){signed.push(v);return {data:{signedUrl:'https://example.test/scoped'}}}}}}}
   const deps=Object.fromEntries(['server-only','./scopeAttachments','./lumpSum','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer'].map(n=>[n,{}]))
-  const server=load('../src/lib/action-cases/server.ts',{...deps,'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/assignments/tokens':{hashAssignmentToken:()=> 'hash'},
+  const server=load('../src/lib/action-cases/server.ts',{...deps,'./contractWorkServer':{},'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/assignments/tokens':{hashAssignmentToken:()=> 'hash'},
     './projectScheduleServer':{async getSharedProjectSchedule(){return []}},'./domain':{filterActionCasePortalItems:(_role,items)=>items},
     './customerOffersServer':{async getSharedCustomerOffers(org,project,recipient){assert.deepEqual([org,project,recipient],[ctx.orgId,caseId,participantId]);return {enabled:true,offers:[]}}},
     './customerSharing':sharing,'./customerSharingServer':{async readCustomerVisibility(){return {revision:1,tabs:{...sharing.defaultCustomerVisibility(),files:!hidden}}},async requireCustomerSection(org,project,key){assert.deepEqual([org,project,key],[ctx.orgId,caseId,'files']);if(hidden)throw Error('CUSTOMER_SHARING_HIDDEN')}}})

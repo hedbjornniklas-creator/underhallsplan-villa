@@ -46,7 +46,7 @@ import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } 
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve(process.argv.includes('--choice-offers') ? 'tmp/choice-offers-ui' : process.argv.includes('--purchase-list') ? 'tmp/purchase-list-ui' : process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
+const output = resolve(process.argv.includes('--contract-work') ? 'tmp/contract-work-ui' : process.argv.includes('--choice-offers') ? 'tmp/choice-offers-ui' : process.argv.includes('--purchase-list') ? 'tmp/purchase-list-ui' : process.argv.includes('--project-overview') ? 'tmp/project-overview-ui' : 'tmp/customer-offer-ui')
 await mkdir(output, { recursive: true })
 await writeFile(resolve(output, '.gitignore'), '*\n')
 await new Promise((done, reject) =>
@@ -82,8 +82,8 @@ await new Promise((done, reject) =>
         : done()
   )
 )
-const { css: base } = await postcss([tailwind()]).process(
-  process.argv.includes('--project-overview') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
+const { css: base } = await postcss([tailwind(process.argv.includes('--contract-work') ? { base: resolve('src') } : {})]).process(
+  process.argv.includes('--project-overview') || process.argv.includes('--contract-work') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
 const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/action-case-purchase-list.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')) + (await readFile('src/components/tasks/project-overview.css', 'utf8')),
@@ -343,6 +343,28 @@ if (process.argv.includes('--purchase-list')) {
   ].map((line, index) => ({ id: id(990 + index), ...normalizeCostLine({ category: 'material', markupPercent: 25, ...line }), coveredByQuoteId: null }))
 }
 const overviewContractBaseline = JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions })
+const contractWorkTest = process.argv.includes('--contract-work')
+const contractWorkRequests=[]
+if (contractWorkTest) {
+  projects.cases[0].title='TEST: Kopplade avtalsmoment'
+  state.draft.signingMethod='external'; state.offers=[]
+  const item=projects.cases[0].items[0]
+  item.lumpSum=null; item.scopeNotesAvailable=true; item.scopeConditionsAvailable=true
+  state.draft.items=[{id:id(610),sourceItemId:item.id,title:item.title,scope:item.scope,scopeConditions:'',scopeExclusions:'',scopeAdvice:'',kind:'included',amountOre:null}]
+  state.draft.contractPricing={version:1,mode:'fixed',basis:'rows',split:'combined',display:'priced',totalOre:null,labourOre:null,materialOre:null,rows:[{id:id(611),sourceItemId:item.id,title:item.title,kind:'fixed',amountOre:100000,labourOre:null,materialOre:null}],running:{hourlyOre:null,managementOre:null,markupPercent:null,approximateOre:null}}
+  state.draft.baseAmountOre=100000
+}
+function updateContractWorkView(){
+  if(!contractWorkTest)return
+  const frozen=state.signingVersions?.find(v=>!v.releasedAt), body=frozen?.snapshot??state.draft
+  for(const item of projects.cases[0].items){
+    const part=body.items.find(row=>row.sourceItemId===item.id),price=body.contractPricing?.rows.find(row=>row.sourceItemId===item.id)
+    if(!part)continue
+    for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice']) item[key]=part[key]??''
+    item.contractWork={revision:state.revision,locked:Boolean(frozen),version:frozen?.version??null,documentId:frozen?.id??null,price:{editable:true,split:'combined',amountOre:price?.amountOre??null,labourOre:null,materialOre:null},differences:[]}
+  }
+}
+updateContractWorkView()
 let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
 const sharingRequests = new Map()
 const sharingWorkspace = () => ({ ...customerSharing, canEdit: questionData.managerId === questionData.userId, managerId: questionData.managerId,
@@ -361,6 +383,7 @@ function customerPortal(participantId) {
 }
 const server = createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname
+  const requestInfo={path,method:req.method}; if(contractWorkTest)contractWorkRequests.push(requestInfo)
   if (['/__test__/viewport/390','/__test__/viewport/344'].includes(path)) {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
@@ -374,6 +397,7 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify(body))
   }
+  if(contractWorkTest && path==='/__test__/requests'){json(contractWorkRequests);return}
   if (process.argv.includes('--choice-files') && path.startsWith('/__test__/choice-pdf-upload/') && req.method === 'PUT') {
     const chunks = []; for await (const chunk of req) chunks.push(chunk)
     choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
@@ -451,11 +475,12 @@ const server = createServer(async (req, res) => {
   }
   if (path.endsWith('/billing') && req.method === 'GET') { json(billing); return }
   if (path.endsWith('/schedule') && req.method === 'GET') { json(schedule); return }
-  if (path === '/api/action-cases' && req.method === 'GET') { json({ workspace: projects }); return }
+  if (path === '/api/action-cases' && req.method === 'GET') { updateContractWorkView(); json({ workspace: projects }); return }
   if (req.method === 'POST') {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
+    if(contractWorkTest){requestInfo.operation=body.operation??body.action;requestInfo.revision=body.revision}
     if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name') || path.endsWith('/sharing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     if (path.endsWith('/sharing')) {
       const before = JSON.stringify({ state, projects })
@@ -557,8 +582,9 @@ const server = createServer(async (req, res) => {
           snapshot:contractSnapshot(),files:[]}
         const pdf = await renderContractSigningPdf(version)
         version.fileSizeBytes=pdf.length; version.pdfSha256='TEST'
+        if(contractWorkTest)version.signedCopyTask={id:id(998),status:'assigned'}
         signingPdfs.set(version.id,pdf); state.signingVersions.unshift(version)
-      } else if (body.operation==='new_draft' && active?.id===body.id && !active.delivery?.signedCopy) { active.releasedAt=new Date().toISOString(); state.revision++ }
+      } else if (body.operation==='new_draft' && active?.id===body.id && !active.delivery?.signedCopy && (!contractWorkTest || body.unsignedConfirmed===true)) { active.releasedAt=new Date().toISOString(); state.revision++ }
       else if(body.operation==='share' && active?.id===body.id) {
         active.delivery??={sharedAt:null,withdrawnAt:null,participantId:null,signedCopy:null}
         active.delivery.sharedAt??=new Date().toISOString();active.delivery.withdrawnAt=null;active.delivery.participantId=body.participantId
@@ -585,8 +611,13 @@ const server = createServer(async (req, res) => {
     if (path === '/api/action-cases') {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
       const payload = body.payload ?? {}
+      if(contractWorkTest && projects.cases[0].items.find(item=>item.id===payload.itemId)?.contractWork?.locked){json({error:'Momentet ingår i ett låst avtal.'},409);return}
       let itemId, caseId
-      if (process.argv.includes('--choice-files') && body.action === 'create_signed_upload') {
+      if(contractWorkTest && body.action==='update_contract_work_price'){
+        if(payload.revision!==state.revision){json({error:'Avtalet har ändrats.'},409);return}
+        state.draft.contractPricing.rows.find(row=>row.sourceItemId===payload.itemId).amountOre=payload.price.amountOre
+        state.draft.baseAmountOre=payload.price.amountOre;state.revision++;updateContractWorkView()
+      } else if (process.argv.includes('--choice-files') && body.action === 'create_signed_upload') {
         json({ upload: { bucket: 'local-test-only', filePath: randomUUID(), token: 'local-test-only', contentType: 'application/pdf' } }); return
       } else if (process.argv.includes('--choice-files') && body.action === 'complete_upload') {
         const uploaded = choiceUploads.get(payload.filePath)
@@ -633,6 +664,10 @@ const server = createServer(async (req, res) => {
           item.status = !item.scope?.trim() ? 'scope_needed' : item.lumpSum?.verified ? 'ready_for_quote' : 'pricing_needed'
         }
         item.updatedAt = new Date().toISOString()
+        if(contractWorkTest){
+          const row=state.draft.items.find(row=>row.sourceItemId===item.id)
+          if(row){for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice'])row[key]=item[key]??'';state.draft.contractPricing.rows.find(price=>price.sourceItemId===item.id).title=item.title;state.revision++;updateContractWorkView()}
+        }
         if (body.action === 'save_item_scope') {
           if (item.lumpSum) item.lumpSum.verified = false
           const { costLines, costSuggestion, workParts, ...saved } = item

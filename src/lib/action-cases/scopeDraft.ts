@@ -10,7 +10,7 @@ export type ActionScopeDraft = {
 }
 
 export type ActionScopeSaveResult = {
-  item: Pick<ActionCaseItemView, 'id' | 'title' | 'scope' | 'scopeAttachmentIds' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'updatedAt' | 'status' | 'lumpSum' | 'ownLaborReady' | 'materialPriceReady' | 'subcontractorPriceReady' | 'wasteSolutionReady' | 'requiresSubcontractor'>
+  item: Pick<ActionCaseItemView, 'id' | 'title' | 'scope' | 'scopeAttachmentIds' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'updatedAt' | 'status' | 'lumpSum' | 'ownLaborReady' | 'materialPriceReady' | 'subcontractorPriceReady' | 'wasteSolutionReady' | 'requiresSubcontractor' | 'contractWork'>
   caseStatus: 'quote_ready' | 'pricing'
 }
 
