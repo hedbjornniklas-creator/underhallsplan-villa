@@ -343,6 +343,13 @@ if (process.argv.includes('--purchase-list')) {
   ].map((line, index) => ({ id: id(990 + index), ...normalizeCostLine({ category: 'material', markupPercent: 25, ...line }), coveredByQuoteId: null }))
 }
 const overviewContractBaseline = JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions })
+if (process.argv.includes('--work-sums')) {
+  for (const line of projects.cases[0].items[0].costLines) line.vatRate = 25
+  projects.cases[0].items[1].costLines = [
+    { id: id(980), ...normalizeCostLine({ category: 'material', description: 'Fiktivt material', quantity: 2, unit: 'st', unitCost: 1000, markupPercent: 20 }), vatRate: 25 },
+    { id: id(981), ...normalizeCostLine({ category: 'own_labor', description: 'Fiktivt montage', quantity: null, unit: 'tim', unitCost: 500 }), vatRate: 25 },
+  ]
+}
 const contractWorkTest = process.argv.includes('--contract-work')
 const contractWorkRequests=[]
 if (contractWorkTest) {

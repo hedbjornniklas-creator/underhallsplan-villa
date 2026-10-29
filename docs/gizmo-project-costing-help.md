@@ -49,3 +49,12 @@ Ingen beloppskonvertering, ny momssats eller ändring av sparade värden ingår.
 - Testbackendens avtal är oförändrat efter öppnad hjälp, byte av kalkylens
   prisunderlag och tre nya testkostnader. Ingen produktionsuppgift har ändrats
   av klicktesterna. Ingen SQL krävs; publicering är ett separat steg.
+
+## Åtgärdssummor i Projektarbete 2026-10-29
+
+Listan visar kalkylerat kundpris inklusive respektive rads moms per åtgärd och
+en totalsumma efter listan. Samlat kalkylpris används när det är valt. Täckta
+paketrader dubbelräknas inte och Klar styr inte beloppet. Ofullständiga kalkyler
+visar bara den kända delen, markerad som preliminär; saknat pris blir inte gratis.
+Avbrutna och avböjda åtgärder visas men ingår inte i totalsumman. Totalsumman
+summerar avrundade åtgärdsbelopp. Visningen skriver inte till kalkyl eller avtal.
