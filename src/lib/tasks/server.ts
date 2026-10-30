@@ -1,4 +1,5 @@
 import 'server-only'
+import { MANUAL_COMPLETION_STATUSES, MANUAL_COMPLETION_COMMENT_LIMIT } from './manualCompletion'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type {
@@ -88,6 +89,7 @@ type OperationalTaskRow = {
   submitted_for_review_at: string | null
   approved_at: string | null
   approved_by_profile_id: string | null
+  completion_method: 'manual' | null
   created_by_profile_id: string | null
   archived_at: string | null
   created_at: string
@@ -465,7 +467,7 @@ async function loadRows(orgId: string, directoryOnly = false) {
     directoryOnly ? Promise.resolve({ data: [], error: null }) : admin
       .from('operational_tasks')
       .select(
-        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
+        'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,completion_method,created_by_profile_id,archived_at,created_at,updated_at'
       )
       .eq('org_id', orgId)
       .is('archived_at', null)
@@ -1022,6 +1024,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       issuerId: task.issuer_profile_id,
       issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
       canDelete: task.created_by_profile_id === input.userId,
+      canCompleteManually: task.issuer_profile_id === input.userId && task.created_source !== 'system'
+        && (MANUAL_COMPLETION_STATUSES as readonly string[]).includes(task.status),
+      completionMethod: task.completion_method ?? null,
       assignee,
       reviewRound: task.review_round,
       version: task.version,
@@ -1141,7 +1146,7 @@ async function requireTask(orgId: string, taskId: string) {
   const { data, error } = await admin
     .from('operational_tasks')
     .select(
-      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,created_by_profile_id,archived_at,created_at,updated_at'
+      'id,org_id,parent_task_id,root_task_id,depth,issuer_profile_id,assignee_profile_id,assignee_contact_id,title,description,context_label,task_kind,status,due_at,due_timezone,next_followup_at,primary_channel,fallback_channel,evidence_requirement,review_round,version,created_source,submitted_for_review_at,approved_at,approved_by_profile_id,completion_method,created_by_profile_id,archived_at,created_at,updated_at'
     )
     .eq('id', taskId)
     .eq('org_id', orgId)
@@ -1544,6 +1549,31 @@ async function transitionTask(input: TaskActionInput) {
   return 'Statusen uppdaterades.'
 }
 
+async function completeTaskManually(input: TaskActionInput) {
+  const taskId = asText(input.payload.taskId)
+  if (!taskId) throw new Error('TASK_NOT_FOUND')
+  const task = await requireTask(input.orgId, taskId)
+  if (task.issuer_profile_id !== input.userId) throw new Error('TASK_MANUAL_COMPLETION_FORBIDDEN')
+  if (task.created_source === 'system') throw new Error('TASK_MANUAL_COMPLETION_MANAGED')
+  const version = requireExpectedVersion(input.payload.version)
+  const comment = asText(input.payload.comment)
+  if (!comment || comment.length > MANUAL_COMPLETION_COMMENT_LIMIT) throw new Error('TASK_MANUAL_COMPLETION_COMMENT_REQUIRED')
+  if (input.payload.confirmed !== true) throw new Error('TASK_MANUAL_COMPLETION_CONFIRM_REQUIRED')
+  const admin = createSupabaseAdminClient()
+  const { data, error } = await admin.rpc('complete_operational_task_manually', {
+    p_org_id: input.orgId, p_task_id: taskId, p_actor_profile_id: input.userId,
+    p_expected_version: version, p_comment: comment, p_acknowledged_gaps: input.payload.acknowledgedGaps ?? null,
+  })
+  if (error?.code === 'PGRST202') throw new Error('TASKS_SCHEMA_REQUIRED')
+  if (error) throw taskDatabaseError(error, 'TASK_MANUAL_COMPLETION_FAILED')
+  if (data?.task?.status !== 'approved' || data.task.completion_method !== 'manual') throw new Error('TASK_MANUAL_COMPLETION_FAILED')
+  if (data?.replayed === true) return 'Uppgiften är redan manuellt klarmarkerad. Eventuellt återkommande uppdrag finns i listan.'
+  return data.nextTaskId
+    ? 'Uppgiften är manuellt klarmarkerad. Nästa återkommande tillfälle har skapats och dess utskick köats.'
+    : 'Uppgiften är manuellt klarmarkerad. Notifieringsstatus visas i uppdraget.'
+}
+
+
 async function addComment(input: TaskActionInput) {
   const taskId = asText(input.payload.taskId)
   const message = asText(input.payload.message)
@@ -1734,6 +1764,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     notice = await setTaskRecurrence(input)
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
+  } else if (input.action === 'complete_manually') {
+    notice = await completeTaskManually(input)
   } else if (input.action === 'comment') {
     const commented = await addComment(input)
     notice = commented.notice

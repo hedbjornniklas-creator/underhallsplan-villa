@@ -47,6 +47,8 @@ import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskNotificationDeliveryStatus from './TaskNotificationDeliveryStatus'
+import TaskManualCompletionDialog from './TaskManualCompletionDialog'
+import { canManuallyCompleteTask, completionEvidenceSatisfied } from '@/lib/tasks/manualCompletion'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -60,6 +62,7 @@ type Props = {
   onUpdateTranscript: (taskId: string, attachmentId: string, transcript: string) => Promise<void>
   onCreateSubtask: (task: TaskView, suggestion?: TaskAiSuggestionView) => void
   onSelectTask: (taskId: string) => void
+  onReload?: () => Promise<void>
 }
 
 const smallInput =
@@ -69,18 +72,6 @@ const TASK_ATTACHMENT_ACCEPT =
 
 function isImageAttachmentFile(file: File) {
   return file.type.toLowerCase().startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
-}
-
-function completionEvidenceSatisfied(
-  type: TaskView['evidenceRequirements'][number],
-  task: TaskView
-) {
-  return task.attachments.some(
-    (attachment) =>
-      attachment.isCompletionEvidence &&
-      (attachment.type === type ||
-        (type === 'text' && attachment.type === 'audio' && Boolean(attachment.transcriptText?.trim())))
-  )
 }
 
 function matchesCompletionEvidenceRequirement(
@@ -109,6 +100,7 @@ export default function TaskDetailSheet({
   onUpdateTranscript,
   onCreateSubtask,
   onSelectTask,
+  onReload,
 }: Props) {
   const effectiveTimeZone = normalizeTaskTimeZone(task ? task.dueTimeZone : workspace.timeZone)
   const todayInput = taskTodayDateInput(effectiveTimeZone)
@@ -130,6 +122,7 @@ export default function TaskDetailSheet({
   const [suggestionRejectReason, setSuggestionRejectReason] = useState('')
   const [suggestionFormError, setSuggestionFormError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [manualCompletionOpen, setManualCompletionOpen] = useState(false)
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>('')
@@ -179,6 +172,7 @@ export default function TaskDetailSheet({
   useEffect(() => {
     if (!task) return
     const onKeyDown = (event: KeyboardEvent) => {
+      if (manualCompletionOpen) return
       if (deleteDialogOpen && event.key === 'Tab') {
         const focusableElements = deleteDialogRef.current?.querySelectorAll<HTMLElement>(
           'button:not([disabled]),[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
@@ -216,7 +210,7 @@ export default function TaskDetailSheet({
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy, deleteBusy, deleteDialogOpen, onClose, task])
+  }, [busy, deleteBusy, deleteDialogOpen, manualCompletionOpen, onClose, task])
 
   useEffect(() => {
     if (!deleteDialogOpen) return
@@ -488,6 +482,7 @@ export default function TaskDetailSheet({
             <div className="flex flex-wrap items-center gap-2">
               <TaskRiskDot risk={task.risk} />
               <TaskStatusBadge status={task.status} />
+              {task.completionMethod === 'manual' ? <span className="text-xs font-semibold text-emerald-700">Manuellt klarmarkerad</span> : null}
               {task.contextLabel ? (
                 <span className="truncate text-xs font-medium text-slate-500">{task.contextLabel}</span>
               ) : null}
@@ -1333,6 +1328,12 @@ export default function TaskDetailSheet({
             ) : null}
 
             <div className="flex gap-2 overflow-x-auto">
+              {canManuallyCompleteTask(task, currentId) ? (
+                <button type="button" disabled={busy} onClick={() => setManualCompletionOpen(true)}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                  <CheckCircle2 size={17} /> Klarmarkera manuellt
+                </button>
+              ) : null}
               {canActAsAssignee && ['assigned', 'waiting', 'returned'].includes(task.status) ? (
                 <button
                   type="button"
@@ -1416,6 +1417,9 @@ export default function TaskDetailSheet({
           </footer>
         ) : null}
       </section>
+
+      {manualCompletionOpen ? <TaskManualCompletionDialog task={task} busy={busy} onClose={() => setManualCompletionOpen(false)}
+        onComplete={payload => onAction('complete_manually', payload)} onReload={onReload} /> : null}
 
       {deleteDialogOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center sm:justify-center sm:p-6">

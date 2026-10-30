@@ -1145,6 +1145,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   openComposer(task, suggestion ?? null)
                 }}
                 onSelectTask={setSelectedTaskId}
+                onReload={refresh}
               />
             ) : null}
             {composerOpen ? (

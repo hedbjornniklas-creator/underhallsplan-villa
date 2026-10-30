@@ -66,6 +66,10 @@ function taskErrorResponse(error: unknown) {
     TASK_COMPLETION_EVIDENCE_REQUIRED: 'Obligatoriskt färdigbevis saknas.',
     TASK_FOLLOWUP_INVALID: 'Ange ett giltigt uppföljningsdatum senast på slutdatumet.',
     TASK_COMMENT_REQUIRED: 'Skriv en kommentar.',
+    TASK_MANUAL_COMPLETION_COMMENT_REQUIRED: 'Skriv en kommentar på högst 4 000 tecken för klarmarkeringen.',
+    TASK_MANUAL_COMPLETION_CONFIRM_REQUIRED: 'Bekräfta den manuella klarmarkeringen.',
+    TASK_MANUAL_COMPLETION_MANAGED: 'Den här automatiska uppgiften avslutas via sin ursprungsfunktion.',
+    TASK_MANUAL_COMPLETION_GAPS_CHANGED: 'Kvarstående krav har ändrats. Uppdatera underlaget och bekräfta igen.',
     TASK_REQUIREMENT_STATUS_INVALID: 'Ogiltigt läge för kontrollpunkten.',
     TASK_REQUIREMENT_DECISION_INVALID: 'Kontrollbeslutet är ogiltigt.',
     TASK_REQUIREMENT_DECISION_LOCKED: 'Kontrollpunkten är låst eftersom uppgiften är stängd.',
@@ -104,6 +108,7 @@ function taskErrorResponse(error: unknown) {
     'TASK_REVIEW_FORBIDDEN',
     'TASK_CANCEL_FORBIDDEN',
     'TASK_ASSIGNEE_ACTION_FORBIDDEN',
+    'TASK_MANUAL_COMPLETION_FORBIDDEN',
     'TASK_COMMENT_FORBIDDEN',
     'TASK_REQUIREMENT_VERIFY_FORBIDDEN',
     'TASK_EXTENSION_REQUEST_FORBIDDEN',
@@ -207,6 +212,9 @@ export async function POST(request: Request) {
     const context = await requireTaskContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = typeof body.action === 'string' ? body.action : ''
+    if (action === 'complete_manually' && request.headers.get('origin') !== new URL(request.url).origin) {
+      return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
+    }
     const payload =
       body.payload && typeof body.payload === 'object'
         ? (body.payload as Record<string, unknown>)

@@ -226,6 +226,8 @@ export type TaskView = {
   issuerId: string
   issuerName: string
   canDelete: boolean
+  canCompleteManually?: boolean
+  completionMethod?: 'manual' | null
   assignee: TaskPerson
   reviewRound: number
   version: number
