@@ -169,6 +169,7 @@ function component(file, extra = {}) {
     './CustomerContractSiteFacilities': { SiteFacilitiesDocument: 'site-facilities' },
     './CustomerContractPartiesEditor': { ContractPartiesDocument: 'parties' },
     './CustomerContractPricing': { ContractPriceDocument: 'contract-pricing' },
+    './CustomerOfferHourEstimate': { OfferHourEstimateDocument: 'offer-hours' },
     './CustomerContractChanges': { ContractChangesDocument: 'change-pricing' },
     ...extra
   }

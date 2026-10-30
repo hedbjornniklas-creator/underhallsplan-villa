@@ -192,6 +192,8 @@ function harness(options = {}) {
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
         return { error: { code: '42883' } }
+      if (name === 'assert_offer_hour_estimate' && options.hourEstimateMissing)
+        return { error: { code: '42883' } }
       if (args.p_operation === 'publish') {
         if (options.publishFailed || options.uncertain)
           return { error: { message: 'CUSTOMER_OFFER_STALE' } }
@@ -326,6 +328,34 @@ test('workspace exposes an independent saved offer alongside the contract, witho
   assert.equal(estimate.draft.title, 'Bara offert')
   assert.equal(estimate.offerDraft, undefined)
   assert.equal(h.sent.length, 0)
+})
+
+test('running offer hours save only to the independent offer and never dispatch or update a contract', async () => {
+  const h = harness(), before = structuredClone(h.draft)
+  const draft = { ...h.draft, offerHourEstimate: { version: 1, minHours: 80, maxHours: 100 },
+    contractPricing: { version: 1, mode: 'running', basis: 'total', display: 'total', split: 'combined', rows: [],
+      totalOre: null, labourOre: null, materialOre: null,
+      running: { hourlyOre: 75000, managementOre: null, markupPercent: null, approximateOre: null } } }
+  await h.api.saveCustomerOffer({ orgId: id(90), userId: id(91) }, id(1), { revision: 1, draft }, 'manual', 'offer')
+  assert(h.calls.some(call => call.name === 'assert_offer_hour_estimate'))
+  assert(h.calls.some(call => call.name === 'assert_customer_offer_pricing'))
+  const write = h.calls.find(call => call.name === 'write_customer_offer')
+  assert.equal(write.p_data.body.baseAmountOre, null)
+  assert.equal(write.p_data.body.contractPricing.running.hourlyOre, 75000)
+  assert.deepEqual(write.p_data.body.offerHourEstimate, draft.offerHourEstimate)
+  assert(!h.calls.some(call => /write_customer_contract|save_customer_contract/.test(call.name)))
+  assert.deepEqual(h.draft, before)
+  assert.deepEqual(h.sent, [])
+  await assert.rejects(h.api.saveCustomerOffer({ orgId: id(90), userId: id(91) }, id(1), { revision: 1, draft }, 'manual', 'contract'), /CUSTOMER_OFFER_INVALID/)
+})
+
+test('missing hour-estimate database protection blocks new offer writes without fallback', async () => {
+  const h = harness({ hourEstimateMissing: true })
+  await assert.rejects(h.api.saveCustomerOffer({ orgId: id(90), userId: id(91) }, id(1), {
+    revision: 1, draft: { ...h.draft, offerHourEstimate: { version: 1, minHours: 80, maxHours: 100 } }
+  }, 'manual', 'offer'), /CUSTOMER_OFFER_SCHEMA/)
+  assert(!h.calls.some(call => call.name.startsWith('write_') || call.name.startsWith('save_')))
+  assert.deepEqual(h.sent, [])
 })
 
 function choiceFixture() {

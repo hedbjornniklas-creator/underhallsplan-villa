@@ -149,6 +149,7 @@ export async function saveCustomerOffer(
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
   let draft = normalizeCustomerOffer(payload.draft)
+  if (target === 'contract' && draft.offerHourEstimate !== undefined) throw new Error('CUSTOMER_OFFER_INVALID')
   await requireCase(ctx, caseId)
   if (target === 'contract') await assertContractSenderDraft(ctx, caseId, draft)
   if (draft.contractForm === 'abs18') {
@@ -226,6 +227,10 @@ async function assertContractSenderDraft(ctx: Context, caseId: string, draft: Cu
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.offerHourEstimate !== undefined) {
+    const guard = await createSupabaseAdminClient().rpc('assert_offer_hour_estimate', { p_body: draft, p_complete: complete })
+    checked(guard.error)
+  }
   if (draft.contractDetails?.siteFacilities) {
     const guard = await createSupabaseAdminClient().rpc('assert_contract_site_facilities', { p_body: draft, p_complete: complete })
     checked(guard.error)
@@ -267,7 +272,7 @@ async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
     checked(guard.error)
   }
   if (
-    draft.pricingMode !== 'itemized' &&
+    !draft.contractPricing && draft.pricingMode !== 'itemized' &&
     !draft.items.some((i) => i.optionGroup)
   ) return
   const result = await createSupabaseAdminClient().rpc('assert_customer_offer_pricing', {

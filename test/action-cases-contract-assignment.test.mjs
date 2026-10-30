@@ -275,6 +275,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='./CustomerContractSiteFacilities') return {SiteFacilitiesDocument:'site-facilities'}
     if(name==='./CustomerContractPartiesEditor') return {ContractPartiesDocument:'parties'}
     if(name==='./CustomerContractPricing') return {ContractPriceDocument:'contract-pricing'}
+    if(name==='./CustomerOfferHourEstimate') return {OfferHourEstimateDocument:'offer-hours'}
     if(name==='@/lib/action-cases/customerOffers') return offers
     if(name==='@/lib/action-cases/customerPaymentPlan') return payments
     throw Error(name)

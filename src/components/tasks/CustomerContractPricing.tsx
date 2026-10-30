@@ -1,6 +1,7 @@
 'use client'
 
 import { useId, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Download, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
 import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
@@ -18,9 +19,12 @@ function Modes<T extends string>({ title, value, choices, onChange }: { title: s
     </label>)}
   </div></fieldset>
 }
-export default function CustomerContractPricing({ value, sources, blocked, importBlocked, onChange }: {
+export default function CustomerContractPricing({ value, sources, blocked, importBlocked, onChange, purpose = 'contract', runningDetails }: {
   value: ContractPricing; sources: ActionCaseItemView[]; blocked: boolean; importBlocked: boolean; onChange: (value: ContractPricing) => void
+  purpose?: 'offer' | 'contract'; runningDetails?: ReactNode
 }) {
+  const document = purpose === 'offer' ? 'offerten' : 'avtalet'
+  const pricesTitle = purpose === 'offer' ? 'Offertens priser' : 'Avtalets priser'
   const [expanded, setExpanded] = useState<string | null>(null)
   const [editHiddenRows, setEditHiddenRows] = useState(false)
   const [picker, setPicker] = useState(false), [selected, setSelected] = useState<string[]>([])
@@ -50,10 +54,10 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
     const next = { ...value, ...values }
     patch({ ...values, totalOre: next.labourOre === null || next.materialOre === null ? null : next.labourOre + next.materialOre })
   }
-  return <fieldset disabled={blocked} className="gizmo-contract-pricing min-w-0 space-y-6" aria-label="Avtalets pris">
+  return <fieldset disabled={blocked} className="gizmo-contract-pricing min-w-0 space-y-6" aria-label={purpose === 'offer' ? 'Offertens pris' : 'Avtalets pris'}>
     <Modes title="Prisform" value={value.mode} choices={Object.entries(modeLabels).map(([key, label]) => ({ value: key as ContractPricing['mode'], label }))} onChange={(mode) => { patch({ mode }); setSwitchBasis(null); setEditHiddenRows(false); setExpanded(null) }} />
     {value.mode !== 'running' && <section className="gizmo-price-settings" aria-label="Prisets redovisning och beräkning">
-      <Modes title="Redovisning i avtalet" value={value.display} choices={[{ value: 'priced', label: 'Delmoment med pris + totalsumma' }, { value: 'unpriced', label: 'Delmoment utan pris + totalsumma' }, { value: 'total', label: 'Enbart totalsumma' }]}
+      <Modes title={`Redovisning i ${document}`} value={value.display} choices={[{ value: 'priced', label: 'Delmoment med pris + totalsumma' }, { value: 'unpriced', label: 'Delmoment utan pris + totalsumma' }, { value: 'total', label: 'Enbart totalsumma' }]}
         onChange={(display) => {
           setEditHiddenRows(false); setExpanded(null); setSwitchBasis(null)
           if (display === 'priced' && value.basis === 'total' && total !== null) { setSwitchBasis('priced'); return }
@@ -72,8 +76,8 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
       {switchBasis && <div role="alert" className="border-l-2 border-[#206961] pl-3 text-sm">Klumpsumman {money(total)} ersätts av summan av prisraderna. Beloppet fördelas inte automatiskt.
         <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="gizmo-button" onClick={() => { patch({ basis: 'rows', ...(switchBasis === 'priced' ? { display: 'priced' } : {}) }); setSwitchBasis(null) }}>Använd prisraderna</button><button type="button" className="gizmo-button" onClick={() => setSwitchBasis(null)}>Avbryt</button></div></div>}
     </section>}
-    <section aria-label="Avtalets priser">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{value.mode === 'running' ? 'Moment på löpande räkning' : 'Avtalets priser'}</h3><div className="flex flex-wrap gap-2">
+    <section aria-label={pricesTitle}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">{value.mode === 'running' ? 'Moment på löpande räkning' : pricesTitle}</h3><div className="flex flex-wrap gap-2">
         <button type="button" className="gizmo-button" disabled={blocked || importBlocked} onClick={() => { setPicker(!picker); setSelected([]); setImportError('') }}><Download size={17} />Hämta från Projektarbete</button>
         <button type="button" className="gizmo-button" disabled={value.rows.length >= 200} onClick={() => {
           const id = crypto.randomUUID(); patch({ rows: [...value.rows, { id, title: '', kind: value.mode === 'running' ? 'running' : 'fixed', amountOre: null, labourOre: null, materialOre: null }] }); setExpanded(id); setEditHiddenRows(value.display === 'total')
@@ -88,7 +92,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
           <input type="checkbox" disabled={blocked || importBlocked || row.amountOre === null} checked={selected.includes(row.id)} aria-label={`Hämta pris för ${row.title}`}
             onChange={(e) => setSelected(e.target.checked ? [...selected, row.id] : selected.filter((id) => id !== row.id))} /><span className="min-w-0 flex-1 break-words font-semibold">{row.title}</span><span>{row.amountOre === null ? 'Pris ej kontrollerat' : money(row.amountOre)}</span>
         </label>)}
-        <p className="py-3 text-sm text-[#596368]">Valda prisrader ersätts. Beloppen hämtas som arbete och material tillsammans; summan beräknas från raderna. Avtalets omfattningstexter ändras inte.</p>
+        <p className="py-3 text-sm text-[#596368]">Valda prisrader ersätts. Beloppen hämtas som arbete och material tillsammans; summan beräknas från raderna. {purpose === 'offer' ? 'Offertens' : 'Avtalets'} omfattningstexter ändras inte.</p>
         {importError && <p role="alert" className="mb-3 text-sm text-[#A52E42]">{importError}</p>}
         <button type="button" className="gizmo-button gizmo-button-primary mb-3" disabled={blocked || importBlocked || !selected.length || selected.some((id) => !priced.some((row) => row.id === id))} onClick={() => {
           if (blocked || importBlocked) return
@@ -107,7 +111,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
             <div role="cell" className="flex justify-end gap-1"><button type="button" className="gizmo-button gizmo-icon-button" title={`Redigera ${row.title || 'moment'}`} aria-label={`Öppna prisrad ${row.title || 'nytt moment'}`} onClick={() => setExpanded(expanded === row.id ? null : row.id)}><Pencil size={17} /></button>
               <button type="button" className="gizmo-button gizmo-icon-button" title="Radera prisrad" aria-label={`Radera prisrad ${row.title || 'nytt moment'}`} onClick={() => setRemoveId(row.id)}><Trash2 size={17} /></button></div>
           </div>
-          {removeId === row.id && <div role="alert" className="border-b border-[#D5DCDD] p-3 text-sm">Radera prisraden för {row.title || 'nytt moment'}? Omfattningen i avtalet ligger kvar.
+          {removeId === row.id && <div role="alert" className="border-b border-[#D5DCDD] p-3 text-sm">Radera prisraden för {row.title || 'nytt moment'}? Omfattningen i {document} ligger kvar.
             <div className="mt-3 flex gap-2"><button type="button" className="gizmo-button" onClick={() => { patch({ rows: value.rows.filter((entry) => entry.id !== row.id) }); setRemoveId(null); if (expanded === row.id) setExpanded(null) }}><Trash2 size={17} />Radera prisrad</button><button type="button" className="gizmo-button" onClick={() => setRemoveId(null)}><X size={17} />Avbryt</button></div></div>}
           {expanded === row.id && <div className="gizmo-price-row-editor space-y-4 border-b border-[#D5DCDD] px-3 py-4">
             <label className="block text-sm font-medium">Moment<input className={field} maxLength={250} value={row.title} aria-label="Prisradens moment" onChange={(e) => patchRow(row.id, { title: e.target.value })} /></label>
@@ -119,7 +123,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
         </div>)}
       </div>
       {value.mode !== 'running' && <>
-        <div className="gizmo-price-total" aria-label="Avtalets totalsumma">
+        <div className="gizmo-price-total" aria-label={purpose === 'offer' ? 'Offertens totalsumma' : 'Avtalets totalsumma'}>
           {value.split === 'separate' && <dl className="gizmo-price-total-line text-sm"><dt>Arbete inkl. moms</dt><dd>{money(splitAmount('labourOre'))}</dd><dt>Material inkl. moms</dt><dd>{money(splitAmount('materialOre'))}</dd></dl>}
           <dl className="gizmo-price-total-line font-semibold"><dt>{value.mode === 'mixed' ? 'Fast del inkl. moms' : 'Totalsumma inkl. moms'}</dt><dd>{money(total)}</dd></dl>
         </div>
@@ -130,6 +134,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
     {value.mode !== 'fixed' && <section className="space-y-5 border-t border-[#D5DCDD] pt-5" aria-label="Löpande prisgrunder">
       <h3 className="font-semibold">Arbete</h3>
       <PriceInput label="Timpris inkl. arvode och moms (kr/tim)" value={value.running.hourlyOre} onChange={(hourlyOre) => running({ hourlyOre })} />
+      {runningDetails}
       <Modes title="Arbetsledning" value={value.running.managementOre === null ? 'same' : 'own'} choices={[{ value: 'same', label: 'Samma timpris' }, { value: 'own', label: 'Eget timpris' }]} onChange={(next) => running({ managementOre: next === 'same' ? null : 0 })} />
       {value.running.managementOre !== null && <PriceInput label="Arbetsledning inkl. arvode och moms (kr/tim)" value={value.running.managementOre} onChange={(managementOre) => running({ managementOre: managementOre ?? 0 })} />}
       <h3 className="border-t border-[#D5DCDD] pt-4 font-semibold">Material, varor, hjälpmedel, UE och övrigt</h3>
@@ -138,15 +143,15 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
       <p className="text-sm text-[#596368]">Moms tillkommer på kostnader och arvode.</p>
       <PriceInput label="Ungefärligt pris för den löpande delen inkl. moms (kr, valfritt)" value={value.running.approximateOre} onChange={(approximateOre) => running({ approximateOre })} />
       <p className="text-sm text-[#596368]">Beställaren får granska originalverifikationerna för arbetena.</p>
-      {value.mode === 'running' && <p className="text-sm">Ingen fast kontraktssumma.</p>}
+      {value.mode === 'running' && <p className="text-sm">{purpose === 'offer' ? 'Ingen fast offertsumma.' : 'Ingen fast kontraktssumma.'}</p>}
     </section>}
   </fieldset>
 }
 
-export function ContractPriceDocument({ value: p, compact = false }: { value: ContractPricing; compact?: boolean }) {
+export function ContractPriceDocument({ value: p, compact = false, purpose = 'contract' }: { value: ContractPricing; compact?: boolean; purpose?: 'offer' | 'contract' }) {
   const fixed = contractFixedRows(p), total = contractFixedAmount(p)
   const splitTotals = (key: 'labourOre' | 'materialOre') => p.basis === 'total' ? p[key] : fixed.some((row) => row[key] === null) ? null : fixed.reduce((sum, row) => sum + row[key]!, 0)
-  return <section aria-label="Priset enligt avtalet" className="space-y-3 text-sm">
+  return <section aria-label={purpose === 'offer' ? 'Priset enligt offerten' : 'Priset enligt avtalet'} className="space-y-3 text-sm">
     {!compact && <h3 className="text-lg font-semibold">Priset</h3>}
     {p.mode !== 'running' && <>
       <p className="font-semibold">{p.mode === 'mixed' ? 'Fast pris för den fasta delen' : 'Fast pris'}</p>
@@ -165,7 +170,7 @@ export function ContractPriceDocument({ value: p, compact = false }: { value: Co
       <p>Material, varor, hjälpmedel, överenskomna underentreprenader och övriga kostnader: självkostnad + {p.running.markupPercent ?? 'Ej angivet'} % entreprenörarvode. Moms tillkommer på kostnader och arvode.</p>
       <p>Beställaren får granska originalverifikationerna för arbetena.</p>
       {p.running.approximateOre !== null && <p>Ungefärligt pris för den löpande delen inklusive moms: {money(p.running.approximateOre)}.</p>}
-      {p.mode === 'running' && <p>Ingen fast kontraktssumma.</p>}
+      {p.mode === 'running' && <p>{purpose === 'offer' ? 'Ingen fast offertsumma.' : 'Ingen fast kontraktssumma.'}</p>}
     </div>}
   </section>
 }

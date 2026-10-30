@@ -74,6 +74,26 @@ async function fixture() {
   return { project,item,line,part,draft,state,save,info,freeze }
 }
 
+test('running offer and hour range persist through the real independent writer without editing linked or frozen contracts', async () => {
+  const f = await fixture(), frozen = await f.freeze(), contractBefore = await f.state()
+  const workBefore = (await db.query('select * from action_case_items where id=$1', [f.item])).rows[0]
+  const documentBefore = (await db.query('select * from action_case_contract_signing_documents where id=$1', [frozen.document])).rows[0]
+  await db.exec(read('2026-10-30_03_offer_hour_estimate'))
+  const body = normalizeCustomerOffer({ ...f.draft, offerHourEstimate: { version: 1, minHours: 80, maxHours: 100 },
+    contractPricing: { ...f.draft.contractPricing, mode: 'running', running: { hourlyOre: 75000, managementOre: null, markupPercent: null, approximateOre: null } } })
+  const save = (revision, value) => db.query("select write_customer_offer($1,$2,$3,'save',$4)", [org, f.project, actor, { revision, body: value }])
+  await save(0, body)
+  const saved = (await db.query('select * from action_case_customer_offer_drafts where action_case_id=$1', [f.project])).rows[0]
+  assert.equal(saved.body.baseAmountOre, null)
+  assert.deepEqual(saved.body.offerHourEstimate, body.offerHourEstimate)
+  assert.equal(saved.body.contractPricing.running.hourlyOre, 75000)
+  await save(1, { ...body, offerHourEstimate: { ...body.offerHourEstimate, maxHours: 110 } })
+  await assert.rejects(save(1, body), /CUSTOMER_OFFER_STALE/)
+  assert.deepEqual(await f.state(), contractBefore)
+  assert.deepEqual((await db.query('select * from action_case_items where id=$1', [f.item])).rows[0], workBefore)
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents where id=$1', [frozen.document])).rows[0], documentBefore)
+})
+
 test('linked scope is synchronized atomically both ways with revision conflicts, never offer/planning writes', async () => {
   const f = await fixture(), current = await f.state()
   await db.query("update action_case_items set scope='Ny projekttext',scope_exclusions='Berg ingar inte',updated_by=$2 where id=$1",[f.item,actor])

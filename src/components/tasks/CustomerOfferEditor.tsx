@@ -1,7 +1,7 @@
 'use client'
 
 import PendingLink from '@/components/ui/PendingLink'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowLeft,
@@ -67,6 +67,7 @@ import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import CustomerContractDelivery from './CustomerContractDelivery'
 import { contractPricingForEditing } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
+import CustomerOfferHourEstimate from './CustomerOfferHourEstimate'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
@@ -78,6 +79,13 @@ const field =
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
+function OfferPriceForm({ onRunning }: { onRunning: () => void }) {
+  const name = useId()
+  return <fieldset className="mb-4 min-w-0"><legend className="mb-2 text-sm font-medium">Prisform</legend><div className="gizmo-price-modes">
+    <label className="selected"><input type="radio" name={name} checked readOnly />Fast pris</label>
+    <label><input type="radio" name={name} checked={false} onChange={onRunning} />Löpande räkning</label>
+  </div></fieldset>
+}
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
   if (activeSigningVersion(workspace.signingVersions)) return workspace.draft
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
@@ -591,8 +599,13 @@ export default function CustomerOfferEditor({
   }
   const priceSection = <ProjectEditorRow title="Priset" summary={draft.contractPricing ? customerPriceLabel(draft) : `${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
     open={expanded === 'price'} onToggle={() => setExpanded(expanded === 'price' ? null : 'price')}>
-    {draftTarget === 'contract' && draft.contractPricing ? <CustomerContractPricing value={draft.contractPricing} sources={actionCase.items}
-      blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(contractPricing) => update({ contractPricing })} /> : <>
+    {draft.contractPricing ? <CustomerContractPricing value={draft.contractPricing} sources={actionCase.items} purpose={draftTarget}
+      runningDetails={draftTarget === 'offer' ? <CustomerOfferHourEstimate draft={draft} onChange={offerHourEstimate => update({ offerHourEstimate })} /> : undefined}
+      blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(contractPricing) => update({ contractPricing, pricingMode: 'total' })} /> : <>
+    {draftTarget === 'offer' && <OfferPriceForm onRunning={() => {
+        setConfirmItemized(false)
+        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running' }, pricingMode: 'total', baseAmountOre: null })
+      }} />}
     <label className="block text-sm">Prissättning av grundåtagandet
       <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {
         const pricingMode = e.target.value as CustomerOfferDraft['pricingMode']
@@ -1050,7 +1063,7 @@ export default function CustomerOfferEditor({
                 {customerPriceLabel(draft)}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                {draft.contractPricing?.mode === 'running' ? 'Prisgrunder enligt avtalet'
+                {draft.contractPricing?.mode === 'running' ? draftTarget === 'offer' ? 'Prisgrunder enligt offerten' : 'Prisgrunder enligt avtalet'
                   : draft.contractPricing?.mode === 'mixed' ? 'Fast del inklusive moms och löpande prisgrunder'
                   : draft.pricingMode === 'itemized'
                   ? 'Summa grundåtagande inklusive moms'

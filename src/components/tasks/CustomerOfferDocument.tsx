@@ -8,6 +8,7 @@ import { SiteFacilitiesDocument } from './CustomerContractSiteFacilities'
 import { paymentConditionsText } from '@/lib/action-cases/customerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import { ContractPriceDocument } from './CustomerContractPricing'
+import { OfferHourEstimateDocument } from './CustomerOfferHourEstimate'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -240,7 +241,9 @@ export default function CustomerOfferDocument({
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.assignment.standardConditions.text}</p>
       </section>}
       {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} fileUrl={fileUrl} />}
-      {purpose === 'contract' && s.contractPricing && <div className="border-t border-slate-200 py-6"><ContractPriceDocument value={s.contractPricing} /></div>}
+      {s.contractPricing && <div className="border-t border-slate-200 py-6"><ContractPriceDocument value={s.contractPricing} purpose={purpose} />
+        {purpose === 'offer' && <OfferHourEstimateDocument draft={s} />}
+      </div>}
       {purpose === 'contract' && s.paymentPlan && <section className="border-t border-slate-200 py-6">
         <h3 className="text-lg font-semibold">Betalningsplan för grundavtalet</h3>
         <PaymentPlanDocument plan={s.paymentPlan} paymentTerms={s.paymentTerms} showTerms={false} />
@@ -301,7 +304,7 @@ export default function CustomerOfferDocument({
       <footer className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 p-5">
         <div>
           <p className="text-sm text-slate-600">
-            {s.contractPricing && s.contractPricing.mode !== 'fixed' ? 'Avtalets prisgrunder' : accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : purpose === 'offer' ? 'Offertens grundpris' : 'Grundavtalets pris'}
+            {s.contractPricing && s.contractPricing.mode !== 'fixed' ? purpose === 'offer' ? 'Offertens prisgrunder' : 'Avtalets prisgrunder' : accepted ? 'Avtalat belopp' : s.items.some((i) => i.kind === 'option') ? 'Grundpris och valda tillval' : purpose === 'offer' ? 'Offertens grundpris' : 'Grundavtalets pris'}
           </p>
           <p className="mt-1 text-2xl font-bold" aria-live="polite">
             {s.contractPricing ? customerPriceLabel(s) : money(accepted ? offer.acceptedTotalOre : total)}

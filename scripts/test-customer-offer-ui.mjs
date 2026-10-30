@@ -395,7 +395,7 @@ const server = createServer(async (req, res) => {
     const width = path.split('/').at(-1)
     res.setHeader('Content-Type','text/html; charset=utf-8')
     const query = new URL(req.url, 'http://localhost').searchParams
-    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions','work','sharing','customer','overview'].includes(query.get('view')) ? query.get('view') : 'contract'}`
+    const target = query.has('customer') ? '/kund' : `/uppdrag/${id(1)}?view=${['choices','questions','work','sharing','customer','overview','offer'].includes(query.get('view')) ? query.get('view') : 'contract'}`
     res.end(`<!doctype html><html lang="sv"><head><title>Gizmo mobiltest ${width}</title><style>body{margin:0}iframe{display:block;border:0;width:${width}px;height:844px}</style></head><body><iframe title="Fiktivt mobilprojekt" src="${target}"></iframe></body></html>`)
     return
   }
@@ -424,6 +424,7 @@ const server = createServer(async (req, res) => {
   }
   if (path === '/__test__/overview-control' && req.method === 'POST' && process.argv.includes('--project-overview')) { overviewReadFailure = true; json({ ok: true }); return }
   if (path === '/__test__/overview-integrity' && req.method === 'GET' && process.argv.includes('--project-overview')) { json({ contractUnchanged: JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions }) === overviewContractBaseline, writes }); return }
+  if (path === '/__test__/offer-integrity' && req.method === 'GET' && independentContract) { json({ contractUnchanged: JSON.stringify({ draft: state.draft, offers: state.offers, signingVersions: state.signingVersions }) === overviewContractBaseline, offer: estimateState }); return }
   if (path === '/__test__/question-task-response' && req.method === 'POST') {
     const task = questionData.questions.flatMap(q => q.tasks)[0]
     if (!task) { json({ error: 'Skapa en fiktiv uppgift först.' }, 409); return }
@@ -763,6 +764,7 @@ const server = createServer(async (req, res) => {
     } else if (path.endsWith('/customer-offers')) {
       if (independentContract && body.draftTarget === 'offer') {
         if (!['save', 'autosave'].includes(body.operation)) { json({ error: 'Invalid operation' }, 400); return }
+        if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
         if (body.revision !== estimateState.revision) { json({ error: 'Offerten har ändrats.' }, 409); return }
         try {
           estimateState.draft = normalizeCustomerOffer(body.draft)

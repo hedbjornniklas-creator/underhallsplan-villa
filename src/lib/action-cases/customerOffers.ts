@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeOfferHourEstimate, offerHourEstimateIssues, type OfferHourEstimate } from './offerHourEstimate.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractFixedAmount, contractFixedRows, contractPricingIssues, normalizeContractPricing, type ContractPricing } from './contractPricing.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
@@ -26,6 +28,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  offerHourEstimate?: OfferHourEstimate | null
   senderProfile?: ContractSenderProfileSnapshot
   signingMethod?: 'email_code' | 'external'
   contractPricing?: ContractPricing
@@ -198,6 +201,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.offerHourEstimate === undefined ? {} : { offerHourEstimate: normalizeOfferHourEstimate(d.offerHourEstimate) }),
     ...(d.senderProfile === undefined ? {} : { senderProfile: normalizeContractSenderProfile(d.senderProfile) }),
     ...(d.signingMethod === undefined ? {} : { signingMethod: d.signingMethod as CustomerOfferDraft['signingMethod'] }),
     ...(d.contractPricing === undefined ? {} : { contractPricing: normalizeContractPricing(d.contractPricing) }),
@@ -304,6 +308,7 @@ export function offerPublishIssues(
     for (const i of missing)
       issues.push(`Ange delpris för ${i.title.trim() || 'namnlöst arbete'}.`)
   } else if (d.baseAmountOre === null) issues.push('Ange grundpriset inklusive moms.')
+  issues.push(...offerHourEstimateIssues(d))
   if (!d.items.some((i) => i.kind === 'included'))
     issues.push('Lägg till minst ett arbete i grundåtagandet.')
   if (d.items.some((i) => !i.title.trim() || !i.scope.trim()))
