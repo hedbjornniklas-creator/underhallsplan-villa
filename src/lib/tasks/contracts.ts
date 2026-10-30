@@ -213,9 +213,9 @@ export type TaskView = {
   status: TaskStatus
   risk: TaskRisk
   ballHolder: TaskBallHolder
-  dueAt: string
+  dueAt: string | null
   dueTimeZone: string
-  nextFollowupAt: string
+  nextFollowupAt: string | null
   recurrenceInterval: TaskRecurrenceInterval | null
   recurrenceSequence: number | null
   primaryChannel: TaskChannel

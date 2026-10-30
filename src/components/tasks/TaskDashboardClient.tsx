@@ -130,7 +130,12 @@ function compareTasks(
   if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
   if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
   if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
-  if (sortField === 'due') comparison = new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+  if (sortField === 'due') {
+    if (a.dueAt === null && b.dueAt !== null) return 1
+    if (b.dueAt === null && a.dueAt !== null) return -1
+    comparison = Date.parse(a.dueAt ?? '') - Date.parse(b.dueAt ?? '')
+    if (!Number.isFinite(comparison)) comparison = 0
+  }
   if (sortField === 'updated') {
     comparison = new Date(a.latestMessage?.createdAt ?? a.updatedAt).getTime()
       - new Date(b.latestMessage?.createdAt ?? b.updatedAt).getTime()
@@ -268,10 +273,10 @@ function TaskCard({
             </span>
             <span className="flex items-center gap-1.5">
               <Clock3 size={14} className="shrink-0" />
-              Klart {formatTaskDateTime(task.dueAt, effectiveTimeZone, 'compact')}
+              {task.dueAt ? `Klart ${formatTaskDateTime(task.dueAt, effectiveTimeZone, 'compact')}` : 'Utan datum'}
             </span>
           </div>
-          <p className="mt-1 text-xs text-slate-400">{taskTimeZoneLabel(effectiveTimeZone)}</p>
+          {task.dueAt ? <p className="mt-1 text-xs text-slate-400">{taskTimeZoneLabel(effectiveTimeZone)}</p> : null}
           {task.latestMessage ? (
             <p className="mt-3 line-clamp-2 rounded-xl border border-blue-100 bg-white/80 px-3 py-2 text-xs leading-5 text-slate-600">
               <span className="font-semibold text-slate-800">{task.latestMessage.actorName}:</span>{' '}
@@ -406,7 +411,7 @@ function TaskTableRow({
       </td>
       <td className="px-3 py-3 align-middle font-medium">
         <span className="block whitespace-nowrap">{formatTaskDateTime(task.dueAt, task.dueTimeZone, 'compact')}</span>
-        <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{taskTimeZoneLabel(task.dueTimeZone)}</span>
+        {task.dueAt ? <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{taskTimeZoneLabel(task.dueTimeZone)}</span> : null}
       </td>
       <td className="px-3 py-3 align-middle">
         <div className="flex min-w-0 items-center gap-2">
@@ -1166,7 +1171,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   const { attachments, aiSubtasks, ...taskPayload } = payload
                   const isExternalRecipient = !payload.assigneeRef.startsWith('profile:')
                   const createsTaskTree = !payload.parentTaskId && aiSubtasks.length > 0
-                  const deferAssignment = attachments.length > 0 || createsTaskTree
+                  const deferAssignment = payload.dueAt !== null && (attachments.length > 0 || createsTaskTree)
                   const created = await runAction(
                     payload.parentTaskId ? 'create_subtask' : 'create_task',
                     {

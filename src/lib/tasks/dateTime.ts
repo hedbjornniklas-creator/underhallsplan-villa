@@ -166,9 +166,10 @@ export function taskDateTimeInputToIso(
 }
 
 export function taskIsoToDateTimeInput(
-  value: string | number | Date,
+  value: string | number | Date | null,
   timeZone?: string | null
 ): TaskDateTimeInput | null {
+  if (value === null) return null
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return null
   const parts = zonedParts(date, normalizeTaskTimeZone(timeZone))
@@ -193,10 +194,11 @@ export function addTaskDateInputDays(value: string, days: number) {
 }
 
 export function formatTaskDateTime(
-  value: string | number | Date,
+  value: string | number | Date | null,
   timeZone?: string | null,
   style: 'long' | 'compact' = 'long'
 ) {
+  if (value === null) return 'Utan datum'
   const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return String(value)
   const zone = normalizeTaskTimeZone(timeZone)

@@ -30,6 +30,7 @@ function taskErrorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : 'TASK_UNKNOWN_ERROR'
   const badRequest: Record<string, string> = {
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras.',
+    TASK_PERSONAL_CREATE_INPUT_INVALID: 'Ange en rubrik på högst 500 tecken.',
     TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, mottagare, datum och kanaler.',
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
     TASK_EVIDENCE_CHECKLIST_INVALID: 'Kontrollera valen för färdigbevis.',
@@ -109,6 +110,7 @@ function taskErrorResponse(error: unknown) {
     'TASK_CANCEL_FORBIDDEN',
     'TASK_ASSIGNEE_ACTION_FORBIDDEN',
     'TASK_MANUAL_COMPLETION_FORBIDDEN',
+    'TASK_PERSONAL_CREATE_FORBIDDEN',
     'TASK_COMMENT_FORBIDDEN',
     'TASK_REQUIREMENT_VERIFY_FORBIDDEN',
     'TASK_EXTENSION_REQUEST_FORBIDDEN',

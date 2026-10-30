@@ -188,8 +188,8 @@ type CreatePayload = {
     email: string
     phone: string
   } | null
-  dueAt: string
-  nextFollowupAt: string
+  dueAt: string | null
+  nextFollowupAt: string | null
   primaryChannel: TaskChannel
   fallbackChannel: TaskChannel | ''
   recurrenceInterval: TaskRecurrenceInterval | ''
@@ -317,6 +317,7 @@ export default function TaskComposerSheet({
   const [dueTime, setDueTime] = useState(initialDraft.dueTime)
   const [followupDate, setFollowupDate] = useState(initialDraft.followupDate)
   const [followupTime, setFollowupTime] = useState(initialDraft.followupTime)
+  const [withoutDates, setWithoutDates] = useState(false)
   const [primaryChannel, setPrimaryChannel] = useState<TaskChannel>(initialDraft.primaryChannel)
   const [fallbackChannel, setFallbackChannel] = useState<TaskChannel | ''>(initialDraft.fallbackChannel)
   const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>(initialDraft.recurrenceInterval)
@@ -361,6 +362,7 @@ export default function TaskComposerSheet({
     || contactCompany
     || contactEmail
     || contactPhone
+    || withoutDates
     || dueDate !== initialDraft.dueDate
     || dueTime !== initialDraft.dueTime
     || followupDate !== initialDraft.followupDate
@@ -394,6 +396,9 @@ export default function TaskComposerSheet({
 
   if (!open) return null
 
+  const canCreateUndated = !parentTask && !suggestion && creationMode === 'manual'
+    && taskKind === 'simple' && assigneeRef === `profile:${currentUserId}`
+  const undated = canCreateUndated && withoutDates
   const maxDueDate = parentDueInCreationZone?.date
   const maxDueTime = maxDueDate && dueDate === maxDueDate ? parentDueInCreationZone?.time : undefined
   const maxFollowupTime = followupDate === dueDate ? dueTime : undefined
@@ -727,10 +732,7 @@ export default function TaskComposerSheet({
       hasIncompleteIncludedSubtask ||
       !title.trim() ||
       !assigneeRef ||
-      !dueDate ||
-      !dueTime ||
-      !followupDate ||
-      !followupTime
+      (!undated && (!dueDate || !dueTime || !followupDate || !followupTime))
     ) return
     const submissionAttachments =
       creationMode === 'email_pdf' && emailPdf && attachSourceDocument
@@ -748,25 +750,25 @@ export default function TaskComposerSheet({
       return
     }
     setAttachmentError(null)
-    const dueAt = taskDateTimeInputToIso(dueDate, dueTime, effectiveTimeZone)
-    const nextFollowupAt = taskDateTimeInputToIso(followupDate, followupTime, effectiveTimeZone)
-    if (!dueAt || !nextFollowupAt) {
+    const dueAt = undated ? null : taskDateTimeInputToIso(dueDate, dueTime, effectiveTimeZone)
+    const nextFollowupAt = undated ? null : taskDateTimeInputToIso(followupDate, followupTime, effectiveTimeZone)
+    if (!undated && (!dueAt || !nextFollowupAt)) {
       setDateTimeError('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
       return
     }
-    if (Date.parse(dueAt) <= submittedAt) {
+    if (dueAt && Date.parse(dueAt) <= submittedAt) {
       setDateTimeError('Sluttiden måste ligga framåt i tiden.')
       return
     }
-    if (Date.parse(nextFollowupAt) < submittedAt) {
+    if (nextFollowupAt && Date.parse(nextFollowupAt) < submittedAt) {
       setDateTimeError('Nästa uppföljning måste ligga framåt i tiden.')
       return
     }
-    if (Date.parse(nextFollowupAt) > Date.parse(dueAt)) {
+    if (nextFollowupAt && dueAt && Date.parse(nextFollowupAt) > Date.parse(dueAt)) {
       setDateTimeError('Nästa uppföljning måste ske senast när uppdraget ska vara klart.')
       return
     }
-    if (parentTask && Date.parse(dueAt) > Date.parse(parentTask.dueAt)) {
+    if (parentTask?.dueAt && dueAt && Date.parse(dueAt) > Date.parse(parentTask.dueAt)) {
       setDateTimeError('Underuppgiften måste vara klar senast vid huvuduppgiftens sluttid.')
       return
     }
@@ -791,9 +793,9 @@ export default function TaskComposerSheet({
       dueAt,
       nextFollowupAt,
       primaryChannel,
-      fallbackChannel,
-      recurrenceInterval,
-      evidenceRequirements,
+      fallbackChannel: undated ? '' : fallbackChannel,
+      recurrenceInterval: undated ? '' : recurrenceInterval,
+      evidenceRequirements: undated ? [] : evidenceRequirements,
       attachments: submissionAttachments,
       aiSubtasks:
         creationMode === 'email_pdf'
@@ -1546,6 +1548,16 @@ export default function TaskComposerSheet({
               ) : null}
             </fieldset>
 
+            {canCreateUndated ? (
+              <label className="flex min-h-11 items-center gap-3 text-sm font-semibold text-slate-800">
+                <input type="checkbox" checked={withoutDates} onChange={(event) => {
+                  setWithoutDates(event.target.checked)
+                  setDateTimeError(null)
+                }} className="h-5 w-5 accent-amber-600" />
+                Utan datum
+              </label>
+            ) : null}
+            {!undated ? <>
             <div className="grid gap-4 sm:grid-cols-2">
               <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5">
                 <legend className="flex items-center gap-2 px-1 text-sm font-semibold text-slate-800">
@@ -1672,12 +1684,14 @@ export default function TaskComposerSheet({
                 </p>
               </fieldset>
             ) : null}
+            </> : null}
             {dateTimeError ? (
               <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800">
                 {dateTimeError}
               </p>
             ) : null}
 
+            {!undated ? <>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold text-slate-800">Huvudkanal</span>
@@ -1756,6 +1770,7 @@ export default function TaskComposerSheet({
               </div>
             </fieldset>
 
+            </> : null}
             <fieldset className="rounded-2xl border border-slate-200 bg-white p-4">
               <legend className="px-1 text-sm font-semibold text-slate-800">Bilder och dokument</legend>
               <p className="mt-1 text-xs leading-5 text-slate-500">
@@ -1868,7 +1883,7 @@ export default function TaskComposerSheet({
                   ? 'Skapa underuppgift'
                   : creationMode === 'email_pdf' && emailPdfAnalysis
                     ? `Skapa huvuduppdrag${includedEmailPdfSubtasks.length > 0 ? ` + ${includedEmailPdfSubtasks.length} uppgifter` : ''}`
-                    : 'Skapa och tilldela'}
+                    : undated ? 'Skapa uppgift' : 'Skapa och tilldela'}
             </button>
           </div>
         </form>

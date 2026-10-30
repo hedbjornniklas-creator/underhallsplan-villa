@@ -77,9 +77,9 @@ type OperationalTaskRow = {
   context_label: string | null
   task_kind: TaskKind
   status: TaskStatus
-  due_at: string
+  due_at: string | null
   due_timezone: string
-  next_followup_at: string
+  next_followup_at: string | null
   primary_channel: TaskChannel
   fallback_channel: TaskChannel | null
   evidence_requirement: TaskEvidenceRequirement
@@ -994,7 +994,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       contextLabel: task.context_label,
       taskKind: task.task_kind,
       status: task.status,
-      risk: evaluateTaskRisk({
+      risk: task.due_at === null && task.next_followup_at === null ? 'green' : evaluateTaskRisk({
         status: task.status,
         now: Date.now(),
         dueAt: task.due_at,
@@ -1274,6 +1274,22 @@ async function resolveAssignee(input: {
 async function createTask(input: TaskActionInput) {
   const title = asText(input.payload.title)
   if (!title) throw new Error('TASK_TITLE_REQUIRED')
+  if (input.payload.dueAt === null && input.payload.nextFollowupAt === null) {
+    if (input.payload.assigneeRef !== `profile:${input.userId}` || input.payload.parentTaskId
+      || input.payload.sourceAiSuggestionId || input.payload.recurrenceInterval
+      || input.payload.taskKind !== 'simple' || input.payload.newContact
+      || (Array.isArray(input.payload.evidenceRequirements) && input.payload.evidenceRequirements.length > 0)) {
+      throw new Error('TASK_PERSONAL_CREATE_FORBIDDEN')
+    }
+    const { data, error } = await createSupabaseAdminClient().rpc('create_undated_personal_task', {
+      p_org_id: input.orgId, p_actor_profile_id: input.userId, p_title: title,
+      p_description: optionalText(input.payload.description), p_context_label: optionalText(input.payload.contextLabel),
+    })
+    if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
+    const created = Array.isArray(data) ? data[0] : data
+    if (!created || typeof created.id !== 'string') throw new Error('TASK_CREATE_FAILED')
+    return { taskId: created.id, hasExternalAssignee: false, undated: true, notice: 'Egen uppgift utan datum skapades.' }
+  }
   const dueAt = parseIsoTimestamp(input.payload.dueAt, 'TASK_DUE_REQUIRED')
   const nextFollowupAt = parseIsoTimestamp(input.payload.nextFollowupAt, 'TASK_FOLLOWUP_REQUIRED')
   if (new Date(nextFollowupAt).getTime() > new Date(dueAt).getTime()) {
@@ -1313,6 +1329,7 @@ async function createTask(input: TaskActionInput) {
 
   if (parentTaskId) {
     parent = await requireTask(input.orgId, parentTaskId)
+    if (!parent.due_at) throw new Error('TASK_DUE_REQUIRED')
     if (
       !input.isOrgAdmin &&
       parent.assignee_profile_id !== input.userId &&
@@ -1320,7 +1337,7 @@ async function createTask(input: TaskActionInput) {
     ) {
       throw new Error('TASK_SUBTASK_FORBIDDEN')
     }
-    if (new Date(dueAt).getTime() > new Date(parent.due_at).getTime()) {
+    if (parent.due_at && new Date(dueAt).getTime() > new Date(parent.due_at).getTime()) {
       throw new Error('TASK_CHILD_AFTER_PARENT_DUE')
     }
     if (sourceAiSuggestionId && !input.isOrgAdmin && parent.issuer_profile_id !== input.userId) {
@@ -1379,6 +1396,7 @@ async function createTask(input: TaskActionInput) {
   return {
     taskId: created.id,
     hasExternalAssignee: Boolean(assignee.assignee_contact_id),
+    undated: false,
     notice: sourceAiSuggestionId
       ? 'Underuppgiften skapades och Gizmo-förslaget markerades som använt.'
       : parent
@@ -1403,6 +1421,7 @@ async function setTaskRecurrence(input: TaskActionInput) {
       ? (rawInterval as TaskRecurrenceInterval)
       : undefined
   if (interval === undefined) throw new Error('TASK_RECURRENCE_INTERVAL_INVALID')
+  if (interval && !task.due_at) throw new Error('TASK_DUE_REQUIRED')
   const admin = createSupabaseAdminClient()
   const { error } = await admin.rpc('set_task_recurrence_rule', {
     p_org_id: input.orgId,
@@ -1425,6 +1444,7 @@ async function dispatchTaskAssignment(input: TaskActionInput) {
     throw new Error('TASK_DISPATCH_FORBIDDEN')
   }
   if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
+  if (task.due_at === null) return 'Egen uppgift utan datum sparades. Ingen automatisk uppföljning är schemalagd.'
 
   const admin = createSupabaseAdminClient()
   const { error } = await admin.rpc('finalize_operational_task_initial_dispatch', {
@@ -1464,6 +1484,9 @@ async function transitionTask(input: TaskActionInput) {
   if (!taskId || !isTaskStatus(toStatus)) throw new Error('TASK_STATUS_INVALID')
   const task = await requireTask(input.orgId, taskId)
   const message = optionalText(input.payload.message)
+  if (!task.due_at && ['waiting', 'ready_for_review', 'returned'].includes(toStatus)) {
+    throw new Error('TASK_DUE_REQUIRED')
+  }
   const expectedVersion = requireExpectedVersion(input.payload.version)
   if (
     ['in_progress', 'waiting', 'ready_for_review'].includes(toStatus) &&
@@ -1673,7 +1696,7 @@ async function requestDeadlineChange(input: TaskActionInput) {
   if (task.assignee_profile_id !== input.userId) {
     throw new Error('TASK_EXTENSION_REQUEST_FORBIDDEN')
   }
-  if (new Date(requestedDueAt).getTime() <= new Date(task.due_at).getTime()) {
+  if (!task.due_at || new Date(requestedDueAt).getTime() <= new Date(task.due_at).getTime()) {
     throw new Error('TASK_EXTENSION_DATE_INVALID')
   }
   const admin = createSupabaseAdminClient()
@@ -1755,7 +1778,7 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
       notice = issued.warning
         ? `${notice} ${issued.warning}`
         : `${notice} Mottagaren har fått sin uppdragslänk.`
-    } else if (input.payload.sendAssignment === false) {
+    } else if (input.payload.sendAssignment === false && !created.undated) {
       notice = `${notice} Utskicket till mottagaren väntar tills underlagen har sparats.`
     }
   } else if (input.action === 'archive_task') {

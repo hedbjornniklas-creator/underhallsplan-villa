@@ -246,11 +246,13 @@ export default function TaskDetailSheet({
   const canActAsIssuer = workspace.currentUser.isOrgAdmin || isTaskIssuer
   const conversationPartnerName = canActAsAssignee ? task.issuerName : task.assignee.name
   const canCreateChild =
+    task.dueAt !== null &&
     !['approved', 'cancelled'].includes(task.status) &&
     task.depth < workspace.limits.maxDepth &&
     task.openChildCount < workspace.limits.maxOpenChildren &&
     (canActAsAssignee || canActAsIssuer)
   const canRequestSigneSuggestions =
+    task.dueAt !== null &&
     canActAsIssuer &&
     !['approved', 'cancelled'].includes(task.status) &&
     task.depth < workspace.limits.maxDepth
@@ -295,7 +297,7 @@ export default function TaskDetailSheet({
   }
 
   const submitTimedPanel = async () => {
-    if (panel !== 'waiting' && panel !== 'extension') return
+    if ((panel !== 'waiting' && panel !== 'extension') || !task.dueAt) return
     const selectedAt = taskDateTimeInputToIso(date, time, effectiveTimeZone)
     if (!selectedAt) {
       setDateTimeError('Kontrollera datum och klockslag. Den valda tiden måste finnas i angiven tidszon.')
@@ -532,7 +534,7 @@ export default function TaskDetailSheet({
               <dd className="mt-2 text-sm font-semibold leading-5 text-slate-900">
                 {formatTaskDateTime(task.dueAt, effectiveTimeZone)}
               </dd>
-              <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd>
+              {task.dueAt ? <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd> : null}
             </div>
             {isTaskIssuer ? (
               <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
@@ -546,7 +548,7 @@ export default function TaskDetailSheet({
             ) : null}
           </dl>
 
-          {!task.parentTaskId ? (
+          {!task.parentTaskId && task.dueAt ? (
             <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="task-recurrence-heading">
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
@@ -1344,7 +1346,7 @@ export default function TaskDetailSheet({
                   <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta' : 'Starta'}
                 </button>
               ) : null}
-              {canActAsAssignee && ['assigned', 'in_progress', 'waiting', 'returned'].includes(task.status) ? (
+              {canActAsAssignee && task.dueAt && ['assigned', 'in_progress', 'waiting', 'returned'].includes(task.status) ? (
                 <>
                   <button
                     type="button"

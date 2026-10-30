@@ -21,7 +21,7 @@ const EXECUTION_STATUSES = new Set<TaskStatus>([
 export type TaskAnalyticsTaskInput = {
   id: string
   status: TaskStatus
-  dueAt: string
+  dueAt: string | null
   submittedForReviewAt: string | null
   approvedAt: string | null
   initialDispatchPending: boolean
