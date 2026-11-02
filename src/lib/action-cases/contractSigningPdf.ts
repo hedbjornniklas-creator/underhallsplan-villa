@@ -107,7 +107,11 @@ export function contractSigningSections({ snapshot: s, files }: SigningPdfInput)
   result.push(section('other', 'Övrigt', s.terms, d?.otherAgreements ?? (d ? contractEntryText(d.fields.customerWork) : ''), d?.advice.customerResponse ? `Beställarens tidigare besked om avrådan\n${d.advice.customerResponse}` : ''))
   for (const { key, title } of siteFacilityFields) if (siteFacilityUsed(d?.siteFacilities?.entries[key])) {
     const entry = d!.siteFacilities!.entries[key]!
-    result.push(section('siteFacilities', `Arbetsplatsens förutsättningar - ${title}`, `Ordnas av: ${siteFacilityPartyLabel(entry.providedBy)}\nBekostas av: ${siteFacilityPartyLabel(entry.paidBy)}`, entry.details))
+    const responsibilities = [
+      entry.providedBy ? `Ordnas av: ${siteFacilityPartyLabel(entry.providedBy)}` : '',
+      entry.paidBy ? `Bekostas av: ${siteFacilityPartyLabel(entry.paidBy)}` : '',
+    ].filter(Boolean).join('\n')
+    result.push(section('siteFacilities', `Arbetsplatsens förutsättningar - ${title}`, responsibilities, entry.details))
   }
   return result.filter((r) => r.paragraphs.length || r.rows?.length)
 }

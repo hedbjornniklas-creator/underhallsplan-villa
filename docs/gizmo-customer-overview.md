@@ -3,6 +3,20 @@
 Status: implementerat forsta steg for kundoversikt och versionerade kundofferter.
 Datum: 2026-10-07.
 
+## Beslut 2026-10-19: utelamna tomma ansvarsrader i avtals-PDF
+
+Under Arbetsplatsens forutsattningar skrivs Ordnas av och Bekostas av endast
+nar respektive part ar vald. Tomma val skriver varken etiketten eller
+reservtexten Inte angivet. Regeln galler samtliga arbetsplatsforutsattningar;
+valda parter och egen fritext bevaras. En rad med enbart fritext finns kvar,
+medan en helt tom forutsattning fortsatt utelamnas. Redigerarens val och
+validering andras inte. Inga sparade avtalsuppgifter eller lasregler andras.
+
+Andringen galler nya PDF-renderingar, inte redan arkiverade/lassta PDF-filer.
+Ingen SQL behovs. Lokalt verifierat med 150 avtalstester, riktad ESLint och
+renderad PDF med bada parter, enbart ordnande part, enbart betalande part
+och enbart fritext. Ingen publicering ar gjord i detta steg.
+
 ## Beslut 2026-10-19: enkel kalkyllista och Klar
 
 Godkant efter visat layoutforslag: alla kostnadsslag i en gemensam kompakt

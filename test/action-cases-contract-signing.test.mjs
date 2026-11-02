@@ -5,6 +5,7 @@ import { activeSigningVersion, signingPdfFilename } from '../src/lib/action-case
 import { contractSigningHeading, contractSigningSections, renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { emptyCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import { signingSnapshot, signingId } from './fixtures/contract-signing.ts'
+import { siteFacilityFields, siteFacilityParties } from '../src/lib/action-cases/contractSiteFacilities.ts'
 
 const input = () => ({ id: signingId(500), version: 1, createdAt: '2026-10-11T10:00:00Z', snapshot: signingSnapshot(), files: [] })
 test('existing mailbox approval still rejects two buyers and incomplete contracts', () => {
@@ -36,6 +37,38 @@ test('shared PDF renderer produces printable PDF without mutating frozen evidenc
   assert.equal(bytes.subarray(0, 5).toString(), '%PDF-')
   assert.ok(bytes.length > 8000)
   assert.equal(JSON.stringify(value), before)
+})
+
+test('workplace PDF omits the entire unselected payer line, keeping the provider and saved details', () => {
+  const value = input()
+  value.snapshot.contractDetails.siteFacilities = { version: 1, entries: {
+    toilet: { providedBy: 'customer', paidBy: '', details: 'Toalett och handtvätt i befintligt hus.' }
+  } }
+  const before = JSON.stringify(value)
+  const parts = contractSigningSections(value).filter(s => s.group === 'siteFacilities')
+  assert.equal(parts.length, 1)
+  assert.equal(parts[0].title, 'Arbetsplatsens förutsättningar - Toalett och handtvätt')
+  assert.deepEqual(parts[0].paragraphs, ['Ordnas av: Beställaren', 'Toalett och handtvätt i befintligt hus.'])
+  assert.doesNotMatch(JSON.stringify(parts), /Bekostas av|Inte angivet/)
+  assert.equal(JSON.stringify(value), before)
+})
+
+test('every workplace facility prints only selected responsibility labels without removing user-authored text', () => {
+  for (const { key, title } of siteFacilityFields) for (const provider of siteFacilityParties) for (const payer of siteFacilityParties) {
+    const value = input(), details = 'Egen fritext: Inte angivet i föregående handling.'
+    value.snapshot.contractDetails.siteFacilities = { version: 1, entries: {
+      [key]: { providedBy: provider.value, paidBy: payer.value, details }
+    } }
+    const before = JSON.stringify(value)
+    const parts = contractSigningSections(value).filter(s => s.group === 'siteFacilities')
+    const selected = [provider.value ? `Ordnas av: ${provider.label}` : '', payer.value ? `Bekostas av: ${payer.label}` : ''].filter(Boolean).join('\n')
+    assert.deepEqual(parts.map(s => s.paragraphs), [[selected, details].filter(Boolean)], `${key}: ${provider.value}/${payer.value}`)
+    assert.equal(parts[0].title, `Arbetsplatsens förutsättningar - ${title}`)
+    assert.equal(JSON.stringify(value), before)
+  }
+  const blank = input()
+  blank.snapshot.contractDetails.siteFacilities = { version: 1, entries: { toilet: { providedBy: '', paidBy: '', details: '  ' } } }
+  assert.equal(contractSigningSections(blank).some(s => s.group === 'siteFacilities'), false)
 })
 
 test('PDF heading identifies the contract type, independently of the internal project name', () => {
