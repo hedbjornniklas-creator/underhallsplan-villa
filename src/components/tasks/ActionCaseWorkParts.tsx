@@ -5,6 +5,8 @@ import { FolderInput, Loader2, Pencil, Plus, RotateCcw, Save, Settings2, Trash2 
 import type { ActionCaseCostLineView, ActionCaseWorkPart } from '@/lib/action-cases/contracts'
 import { MAX_WORK_PART_LINES } from '@/lib/action-cases/workParts'
 import { canEditDirectWork, isHourlyWork } from './ActionCaseDirectCostFields'
+import type { useActionCalculationAutosave } from './useActionCalculationAutosave'
+import CalculationSaveStatus from './CalculationSaveStatus'
 
 export const getWorkPartId = (line: ActionCaseCostLineView) => line.workPartId ?? null
 export const UNASSIGNED_WORK = '__unassigned'
@@ -17,15 +19,24 @@ type ActionProps = {
   onAction: (payload: Record<string, unknown>) => Promise<boolean>
 }
 
-export function ActionCaseWorkParts({ parts, expectedUpdatedAt, busy, filter, onFilter, onEditing, onAction }: ActionProps & {
+export function ActionCaseWorkParts({ parts, expectedUpdatedAt, busy, filter, onFilter, onEditing, onAction, calculation, itemId }: ActionProps & {
   filter: string; onFilter: (id: string) => void
+  calculation?: ReturnType<typeof useActionCalculationAutosave>; itemId?: string
 }) {
   const [managing, setManaging] = useState(false)
-  const [draft, setDraft] = useState<{ partId?: string; title: string; scope: string; expectedUpdatedAt: string } | null>(null)
+  const [draft, setDraft] = useState<{ key: string; partId?: string; title: string; scope: string; expectedUpdatedAt: string } | null>(null)
   const [deleting, setDeleting] = useState<{ partId: string; expectedUpdatedAt: string } | null>(null)
   const edit = (part?: ActionCaseWorkPart) => {
-    setDraft({ partId: part?.id, title: part?.title ?? '', scope: part?.scope ?? '', expectedUpdatedAt })
-    setDeleting(null); setManaging(true); onEditing(true)
+    const existing = part && Object.values(calculation?.states ?? {}).find(entry => entry.edit.operation === 'work_part' && (entry.edit.data.partId === part.id || entry.edit.key === `part:${part.id}`))
+    const key = existing?.edit.key ?? `part:${part?.id ?? crypto.randomUUID()}`, pending = calculation?.states[key]?.edit.data
+    setDraft({ key, partId: pending ? pending.partId == null ? undefined : String(pending.partId) : part?.id, title: String(pending?.title ?? part?.title ?? ''), scope: String(pending?.scope ?? part?.scope ?? ''), expectedUpdatedAt })
+    setDeleting(null); setManaging(true); onEditing(!calculation)
+  }
+  const change = (patch: Partial<NonNullable<typeof draft>>) => {
+    if (!draft) return
+    const next = { ...draft, ...patch }; setDraft(next)
+    const pending = calculation?.states[next.key]?.edit.data
+    if (calculation && itemId) calculation.change({ key: next.key, itemId, operation: 'work_part', data: { operation: 'save', partId: pending ? pending.partId : next.partId ?? null, title: next.title, scope: next.scope } }, expectedUpdatedAt)
   }
   const cancel = () => { setDraft(null); setDeleting(null); onEditing(false) }
   return <div className="mt-3 border-b border-slate-100 pb-3">
@@ -39,19 +50,22 @@ export function ActionCaseWorkParts({ parts, expectedUpdatedAt, busy, filter, on
       {!draft ? <ul className="divide-y divide-slate-100">{parts.map((part) => <li key={part.id} className="py-2">
         <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><strong className="block break-words text-sm">{part.title}</strong>{part.scope ? <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-500">{part.scope}</p> : null}</div>
           <button className={iconButton} type="button" disabled={busy || Boolean(deleting)} title="Redigera arbetsdel" aria-label={`Redigera arbetsdelen ${part.title}`} onClick={() => edit(part)}><Pencil size={16} /></button>
-          <button className={iconButton} type="button" disabled={busy || Boolean(deleting)} title="Ta bort arbetsdel" aria-label={`Ta bort arbetsdelen ${part.title}`} onClick={() => { setDeleting({ partId: part.id, expectedUpdatedAt }); onEditing(true) }}><Trash2 size={16} /></button>
+          <button className={iconButton} type="button" disabled={busy || Boolean(deleting) || calculation?.states[`part:${part.id}`]?.status === 'saving'} title="Ta bort arbetsdel" aria-label={`Ta bort arbetsdelen ${part.title}`} onClick={() => {
+            if (calculation?.discardNewPart(`part:${part.id}`)) { if (filter === part.id) onFilter(''); return }
+            setDeleting({ partId: part.id, expectedUpdatedAt }); onEditing(true)
+          }}><Trash2 size={16} /></button>
         </div>
         {deleting?.partId === part.id ? <div className="mt-2 flex flex-wrap items-center gap-2"><p className="basis-full text-sm text-amber-800">Ta bort arbetsdelen? Arbetena behålls utan arbetsdel.</p><button className={button} type="button" disabled={busy} onClick={cancel}>Avbryt</button><button className={button} type="button" disabled={busy} onClick={() => void onAction({ operation: 'delete', ...deleting }).then((ok) => { if (ok) { cancel(); if (filter === part.id) onFilter('') } })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Ta bort</button></div> : null}
       </li>)}</ul> : <form className="space-y-3" onSubmit={(event) => {
         event.preventDefault()
-        if (busy || !draft.title.trim() || draft.title.trim().length > 200 || draft.scope.trim().length > 10000) return
+        if (calculation || busy || !draft.title.trim() || draft.title.trim().length > 200 || draft.scope.trim().length > 10000) return
         void onAction({ operation: 'save', ...draft, title: draft.title.trim(), scope: draft.scope.trim() || null }).then((ok) => { if (ok) cancel() })
       }}>
         <fieldset disabled={busy} className="space-y-3">
-          <label className="block text-xs font-semibold text-slate-600">Arbetsdelens namn *<input autoFocus required maxLength={200} className={input} placeholder="Snickeri" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-          <label className="block text-xs font-semibold text-slate-600">Omfattning<textarea maxLength={10000} rows={2} className={`${input} py-2`} value={draft.scope} onChange={(event) => setDraft({ ...draft, scope: event.target.value })} /></label>
+          <label className="block text-xs font-semibold text-slate-600">Arbetsdelens namn *<input autoFocus required maxLength={200} className={input} placeholder="Snickeri" value={draft.title} onChange={(event) => change({ title: event.target.value })} /></label>
+          <label className="block text-xs font-semibold text-slate-600">Omfattning<textarea maxLength={10000} rows={2} className={`${input} py-2`} value={draft.scope} onChange={(event) => change({ scope: event.target.value })} /></label>
         </fieldset>
-        <div className="flex flex-wrap justify-end gap-2"><button className={button} type="button" disabled={busy} onClick={cancel}>Avbryt</button><button className={button} type="submit" disabled={busy || !draft.title.trim()}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Spara arbetsdel</button></div>
+        <div className="flex flex-wrap justify-end gap-2">{calculation && <CalculationSaveStatus entry={calculation.states[draft.key]} onRetry={() => calculation.retry(draft.key)} />}<button className={button} type="button" disabled={busy} onClick={cancel}>{calculation ? 'Stäng arbetsdel' : 'Avbryt'}</button>{!calculation && <button className={button} type="submit" disabled={busy || !draft.title.trim()}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Spara arbetsdel</button>}</div>
       </form>}
     </div> : null}
   </div>

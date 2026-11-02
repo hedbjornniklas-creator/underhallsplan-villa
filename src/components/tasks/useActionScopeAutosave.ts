@@ -12,9 +12,10 @@ export type ScopeSaveState = {
 }
 
 // Owned by the project workspace, not the drawer: closing a drawer keeps its saves alive.
-export function useActionScopeAutosave({ onSaved, onError }: {
+export function useActionScopeAutosave({ onSaved, onError, coordinate = work => work() }: {
   onSaved: (result: ActionScopeSaveResult) => void
   onError: (message: string) => void
+  coordinate?: <T>(work: () => Promise<T>) => Promise<T>
 }) {
   const entries = useRef<Record<string, ScopeSaveState>>({})
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
@@ -23,9 +24,9 @@ export function useActionScopeAutosave({ onSaved, onError }: {
   const queue = useAutosaveQueue<Record<string, true>, void>({
     mergePayload: (previous, next) => ({ ...previous, ...next }),
     save: async (ids) => {
-      for (const id of Object.keys(ids)) {
+      for (const id of Object.keys(ids)) await coordinate(async () => {
         const submitted = entries.current[id]
-        if (!submitted || submitted.status !== 'pending' || !submitted.draft.title.trim()) continue
+        if (!submitted || submitted.status !== 'pending' || !submitted.draft.title.trim()) return
         clearTimeout(timers.current.get(id)); timers.current.delete(id)
         entries.current[id] = { ...submitted, status: 'saving' }; publish()
         try {
@@ -48,7 +49,7 @@ export function useActionScopeAutosave({ onSaved, onError }: {
           onError(message)
         }
         publish()
-      }
+      })
     },
   })
   const enqueueRef = useRef(queue.enqueue)
@@ -73,11 +74,24 @@ export function useActionScopeAutosave({ onSaved, onError }: {
     for (const [id, state] of Object.entries(entries.current)) if (state.status === 'saved') delete entries.current[id]
     publish()
   }
+  const rebase = (id: string, before: string, after: string) => {
+    const entry = entries.current[id]
+    if (entry && entry.expectedUpdatedAt === before && entry.status !== 'error') entry.expectedUpdatedAt = after
+  }
+  async function flushAll() {
+    timers.current.forEach(clearTimeout); timers.current.clear()
+    while (true) {
+      const pending = Object.entries(entries.current).filter(([, entry]) => entry.status === 'pending' || entry.status === 'saving')
+      if (pending.some(([, entry]) => !entry.draft.title.trim())) return false
+      if (!pending.length) return !Object.values(entries.current).some(entry => entry.status === 'error')
+      await enqueueRef.current(Object.fromEntries(pending.map(([id]) => [id, true as const])))
+    }
+  }
   useEffect(() => {
     const pendingTimers = timers.current
     return () => { pendingTimers.forEach(clearTimeout); pendingTimers.clear() }
   }, [])
   const hasUnsaved = Object.values(states).some((state) => state.status !== 'saved')
   const isSaving = Object.values(states).some((state) => state.status === 'pending' || state.status === 'saving')
-  return { states, change, flush, retry, forgetSaved, hasUnsaved, isSaving }
+  return { states, change, flush, flushAll, retry, rebase, forgetSaved, hasUnsaved, isSaving }
 }

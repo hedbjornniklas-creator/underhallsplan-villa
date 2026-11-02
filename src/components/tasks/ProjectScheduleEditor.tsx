@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Download, Eye, EyeOff, Loader2, Plus, RefreshCw, Save, Trash2, Undo2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react'
+import { ArrowDown, ArrowUp, Download, Eye, EyeOff, Loader2, Plus, RefreshCw, Trash2, Undo2 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { importScheduleRows, normalizeScheduleRows, schedulePhases, scheduleStatuses, type ProjectSchedule, type ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
+import { useProjectScheduleAutosave } from './useProjectScheduleAutosave'
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-semibold disabled:opacity-40'
 const field = 'min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm'
@@ -27,44 +28,77 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
   customerRefresh?: number
 }) {
   const [saved, setSaved] = useState<ProjectSchedule | null>(null)
-  const [rows, setRows] = useState<ProjectScheduleRow[]>([])
+  const [rows, setRowsState] = useState<ProjectScheduleRow[]>([])
   const [busy, setBusy] = useState('load'), [error, setError] = useState(false)
   const [showImport, setShowImport] = useState(false), [selected, setSelected] = useState<string[]>([])
   const [shareConfirm, setShareConfirm] = useState(false)
   const [removed, setRemoved] = useState<{ row: ProjectScheduleRow; index: number } | null>(null)
   const running = useRef(false), toast = useToast()
+  const currentRows = useRef(rows), currentSaved = useRef(saved), loadedRefresh = useRef<number | null>(null)
+  const [saveError, setSaveError] = useState('')
+  const autosave = useProjectScheduleAutosave({
+    save: async (submitted, revision) => {
+      const response = await fetch(`/api/action-cases/${caseId}/schedule`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000), body: JSON.stringify({ operation: 'save', rows: normalizeScheduleRows(submitted), revision }) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Tidsplanen kunde inte sparas. Dina ändringar är kvar.')
+      return data as ProjectSchedule
+    },
+    onSaved: (data, submitted) => {
+      currentSaved.current = data; setSaved(data)
+      const next = retainNewerDraft(currentRows.current, submitted, data.rows)
+      currentRows.current = next; setRowsState(next); onShared(data.sharedRows); setSaveError('')
+    },
+    onError: error => setSaveError(error instanceof Error ? error.message : 'Tidsplanen kunde inte sparas.'),
+  })
+  const saveRef = useRef(autosave); saveRef.current = autosave
+  function setRows(value: SetStateAction<ProjectScheduleRow[]>) {
+    const next = typeof value === 'function' ? value(currentRows.current) : value
+    currentRows.current = next; setRowsState(next); setShareConfirm(false)
+    let valid = true
+    try { normalizeScheduleRows(next) } catch { valid = false }
+    autosave.change(next, valid)
+  }
   const dirty = Boolean(saved && JSON.stringify(rows) !== JSON.stringify(saved.rows))
-  const refresh = useCallback(async (signal?: AbortSignal) => {
+  const refresh = useCallback(async (signal?: AbortSignal, discard = false) => {
+    if (!discard && (saveRef.current.isPending() || JSON.stringify(currentRows.current) !== JSON.stringify(currentSaved.current?.rows ?? []))) return
+    const before = JSON.stringify(currentRows.current)
     setBusy('load'); setError(false)
     try {
       const response = await fetch(`/api/action-cases/${caseId}/schedule`, { signal })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Tidsplanen kunde inte hämtas.')
-      setSaved(data); setRows(data.rows); onShared(data.sharedRows)
+      if (signal?.aborted || before !== JSON.stringify(currentRows.current) || saveRef.current.isSaving) return
+      currentSaved.current = data; currentRows.current = data.rows
+      setSaved(data); setRowsState(data.rows); onShared(data.sharedRows); saveRef.current.reset(data.revision); setSaveError('')
+      loadedRefresh.current = customerRefresh
     } catch (e) {
       if (!signal?.aborted) { setError(true); toast.error(e, 'Tidsplanen kunde inte hämtas.') }
     } finally { if (!signal?.aborted) setBusy('') }
-  }, [caseId, onShared, toast])
-  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort() }, [refresh, customerRefresh])
-  useEffect(() => { onDirty(dirty || Boolean(busy && busy !== 'load')) }, [dirty, busy, onDirty])
+  }, [caseId, onShared, toast, customerRefresh])
   useEffect(() => {
-    if (!dirty && busy !== 'save') return
+    if (loadedRefresh.current === customerRefresh || dirty || saveRef.current.isPending()) return
+    const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort()
+  }, [refresh, customerRefresh, dirty, autosave.state])
+  useEffect(() => { onDirty(dirty || saveRef.current.isPending() || Boolean(busy && busy !== 'load')) }, [dirty, busy, onDirty, autosave.state])
+  useEffect(() => {
+    if (!dirty && !saveRef.current.isPending()) return
     const prevent = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', prevent)
     return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, busy])
-  async function write(operation: 'save' | 'share' | 'unshare') {
+  }, [dirty, autosave.state])
+  async function write(operation: 'share' | 'unshare') {
     if (running.current || !saved) return
     try { normalizeScheduleRows(rows, operation === 'share') } catch { toast.error('Kontrollera rubriker och datum. Slutdatum får inte ligga före startdatum.'); return }
-    if (operation === 'share' && (!shareConfirm || dirty)) return
+    if (autosave.isPending() || (operation === 'share' && (!shareConfirm || dirty))) return
     running.current = true; setBusy(operation)
     try {
-      const response = await fetch(`/api/action-cases/${caseId}/schedule`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation, rows, revision: saved.revision, confirmed: operation === 'share' }) })
+      const response = await fetch(`/api/action-cases/${caseId}/schedule`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation, rows: currentRows.current, revision: autosave.getRevision(), confirmed: operation === 'share' }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || 'Tidsplanen kunde inte sparas.')
-      setSaved(data); setRows((current) => retainNewerDraft(current, rows, data.rows)); onShared(data.sharedRows)
+      currentSaved.current = data; currentRows.current = data.rows
+      setSaved(data); setRowsState(data.rows); autosave.reset(data.revision); onShared(data.sharedRows)
       setShareConfirm(false)
-      toast.success(operation === 'save' ? 'Tidsplanen sparades internt.' : operation === 'share' ? 'Tidsplanen visas för beställaren.' : 'Tidsplanen är nu intern.')
+      toast.success(operation === 'share' ? 'Tidsplanen visas för beställaren.' : 'Tidsplanen är nu intern.')
     } catch (e) { toast.error(e, 'Tidsplanen kunde inte sparas. Dina ändringar finns kvar.') }
     finally { running.current = false; setBusy('') }
   }
@@ -73,13 +107,15 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
   const available = items.filter((i) => !rows.some((r) => r.sourceItemId === i.id))
   return <section className="border-t border-slate-200 py-5" aria-label="Produktionsplanering">
     <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg">Moment och datum</h3>
-      <div className="flex items-center gap-3"><span role="status" className="text-sm text-slate-600">{busy === 'load' ? 'Hämtar…' : busy === 'save' ? 'Sparar…' : busy ? 'Uppdaterar delning…' : dirty ? 'Osparade ändringar' : saved?.available ? 'Sparat internt' : ''}</span>
-        <button className={icon} title="Hämta sparad tidsplan" aria-label="Hämta sparad tidsplan" disabled={Boolean(busy)} onClick={() => { if (!dirty || window.confirm('Ersätta dina osparade ändringar med den sparade tidsplanen?')) void refresh() }}><RefreshCw size={17} /></button></div>
+      <div className="flex min-h-8 flex-wrap items-center gap-3"><span role="status" className="text-sm text-slate-600">{busy === 'load' ? 'Hämtar…' : busy ? 'Uppdaterar delning…' : saveError ? 'Kunde inte spara' : autosave.state?.status === 'invalid' ? 'Komplettera moment och datum · Inte sparat' : autosave.isSaving ? 'Sparar…' : dirty ? 'Osparade ändringar' : saved?.available ? 'Sparat internt' : ''}</span>
+        {saveError && <button type="button" className={button} disabled={Boolean(busy) || autosave.isSaving} onClick={() => void autosave.retry()}><RefreshCw size={17} />Försök igen</button>}
+        <button className={icon} title="Hämta sparad tidsplan" aria-label="Hämta sparad tidsplan" disabled={Boolean(busy) || autosave.isSaving} onClick={() => { if (!dirty || window.confirm('Ersätta dina osparade ändringar med den sparade tidsplanen?')) void refresh(undefined, true) }}><RefreshCw size={17} /></button></div>
     </div>
     {error && <p role="alert" className="py-4 text-sm">Tidsplanen kunde inte hämtas. Försök igen med uppdateringsknappen.</p>}
+    {saveError && <p role="alert" className="py-2 text-sm text-rose-700">{saveError}</p>}
     {saved && !saved.available && <p className="py-4 text-sm">Tidsplaneringen behöver aktiveras av administratören.</p>}
     {saved?.available && <>
-      <fieldset className="min-w-0" disabled={Boolean(busy) && busy !== 'save'}>
+      <fieldset className="min-w-0" disabled={Boolean(busy)}>
         <ol className="mt-4 divide-y divide-slate-200">{rows.map((r, index) => <li key={r.id} className="py-3">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(100px,1.5fr)_minmax(80px,1fr)_140px_140px_110px]">
             <label className="text-xs text-slate-600">Moment *<input className={`${field} mt-1`} maxLength={250} value={r.title} onChange={(e) => patch(r.id, { title: e.target.value })} /></label>
@@ -108,9 +144,8 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
         </div>}
       </fieldset>
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
-        <button className={`${button} bg-slate-950 text-white`} disabled={Boolean(busy) || !dirty} onClick={() => void write('save')}>{busy === 'save' ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} Spara tidsplan</button>
-        <button className={button} disabled={Boolean(busy) || dirty || !rows.length || JSON.stringify(saved.rows) === JSON.stringify(saved.sharedRows)} onClick={() => setShareConfirm(!shareConfirm)} aria-expanded={shareConfirm}><Eye size={17} /> Visa för beställaren</button>
-        {saved.sharedRows.length > 0 && <button className={button} disabled={Boolean(busy) || dirty} onClick={() => void write('unshare')}><EyeOff size={17} /> Dölj för beställaren</button>}
+        <button className={button} disabled={Boolean(busy) || autosave.isPending() || dirty || !rows.length || JSON.stringify(saved.rows) === JSON.stringify(saved.sharedRows)} onClick={() => setShareConfirm(!shareConfirm)} aria-expanded={shareConfirm}><Eye size={17} /> Visa för beställaren</button>
+        {saved.sharedRows.length > 0 && <button className={button} disabled={Boolean(busy) || autosave.isPending() || dirty} onClick={() => void write('unshare')}><EyeOff size={17} /> Dölj för beställaren</button>}
         <span className="text-sm text-slate-600">{saved.sharedRows.length ? `${saved.sharedRows.length} moment delade${JSON.stringify(saved.rows) !== JSON.stringify(saved.sharedRows) ? ' · Nyare intern plan finns' : ''}` : 'Planeringen är intern'}</span>
       </div>
       {shareConfirm && <div className="mt-4 border-t border-slate-200 pt-4">

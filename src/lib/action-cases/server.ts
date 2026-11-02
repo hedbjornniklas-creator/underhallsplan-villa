@@ -8,7 +8,6 @@ import { parseScopeAttachmentIds } from './scopeAttachments'
 import { getSharedProjectSchedule } from './projectScheduleServer'
 import { normalizeLumpSum } from './lumpSum'
 import { filterActionCasePortalItems } from './domain'
-import { normalizeCostLine } from './costing'
 import { mapQuote, QUOTE_VIEW_COLUMNS, quoteIsStale } from './quotes'
 import { mapQuoteRequest, REQUEST_VIEW_COLUMNS } from './quoteRequests'
 import { mapQuotePackage, PACKAGE_VIEW_COLUMNS } from './quotePackages'
@@ -19,6 +18,8 @@ import { getSharedCustomerOffers } from './customerOffersServer'
 import { projectCustomerPortal } from './customerSharing'
 import { readCustomerVisibility, requireCustomerSection } from './customerSharingServer'
 import { contractWorkError, getContractWorkLinks } from './contractWorkServer'
+import { calculationData, sameCalculationVersion, type CalculationEdit, type CalculationSaveResult } from './calculationSave'
+import { offerId } from './customerOffers'
 
 type Context = { orgId: string; userId: string }
 
@@ -343,15 +344,42 @@ async function writeCosts(context: Context, payload: Record<string, unknown>, op
 
 export async function createActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
   if (payload.pricingMethod === 'quotes') return createQuoteWorkLine(context, payload)
-  await writeCosts(context, payload, 'add', [normalizeCostLine(payload)])
+  throw new Error('ACTION_CASE_CALCULATION_CLIENT_OLD')
 }
 
 export async function updateActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
-  await writeCosts(context, payload, 'update', [{ ...normalizeCostLine(payload), id: text(payload.costLineId) }])
+  void context; void payload
+  throw new Error('ACTION_CASE_CALCULATION_CLIENT_OLD')
+}
+
+export async function saveActionCaseCalculation(context: Context, payload: Record<string, unknown>): Promise<CalculationSaveResult> {
+  const caseId = offerId(payload.caseId), itemId = offerId(payload.itemId), requestId = offerId(payload.requestId)
+  const expectedUpdatedAt = text(payload.expectedUpdatedAt)
+  if (!sameCalculationVersion(expectedUpdatedAt, expectedUpdatedAt)) throw new Error('ACTION_CASE_ITEM_STALE')
+  if (!['line', 'delete_line', 'complete', 'lump_sum', 'work_part', 'markup'].includes(String(payload.operation)) || !payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) throw new Error('ACTION_CASE_COST_LINE_INVALID')
+  const edit: CalculationEdit = { key: '', itemId, operation: payload.operation as CalculationEdit['operation'], data: payload.data as Record<string, unknown> }
+  const { data, error } = await createSupabaseAdminClient().rpc('save_action_case_calculation', {
+    p_org_id: context.orgId, p_case_id: caseId, p_item_id: itemId, p_user_id: context.userId,
+    p_request_id: requestId, p_expected_updated_at: expectedUpdatedAt, p_operation: edit.operation,
+    p_data: calculationData(edit, caseId, expectedUpdatedAt),
+  })
+  if (error) {
+    if (['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code)) throw new Error('ACTION_CASE_CALCULATION_SCHEMA')
+    throw new Error(error.message.match(/(?:ACTION_CASE_[A-Z_]+|CUSTOMER_OFFER_[A-Z_]+)/)?.[0] ?? 'ACTION_CASE_COST_LINE_WRITE_FAILED')
+  }
+  if (data?.requestId !== requestId || !sameCalculationVersion(data.expectedUpdatedAt ?? '', expectedUpdatedAt) || !data.updatedAt) throw new Error('ACTION_CASE_COST_LINE_WRITE_FAILED')
+  // Return only the changed item. Never replace unrelated projects or newer local drafts.
+  const workspace = await getActionCaseWorkspace(context, caseId)
+  const project = workspace.cases.find(entry => entry.id === caseId), item = project?.items.find(entry => entry.id === itemId)
+  if (!project || !item) throw new Error('ACTION_CASE_NOT_FOUND')
+  // A concurrent writer after our commit must not silently become the next write's baseline.
+  if (!sameCalculationVersion(item.updatedAt, data.updatedAt)) throw new Error('ACTION_CASE_ITEM_STALE')
+  return { requestId, expectedUpdatedAt, updatedAt: item.updatedAt, caseId, ...(data.partId ? { partId: String(data.partId) } : {}), item, caseStatus: project.status }
 }
 
 export async function deleteActionCaseCostLine(context: Context, payload: Record<string, unknown>) {
-  await writeCosts(context, payload, 'delete', [{ id: text(payload.costLineId) }])
+  void context; void payload
+  throw new Error('ACTION_CASE_CALCULATION_CLIENT_OLD')
 }
 
 export async function applyActionCaseCostSuggestions(context: Context, payload: Record<string, unknown>) {

@@ -31,6 +31,8 @@ function sheetHarness(overrides = {}) {
     '@/lib/action-cases/scopeAttachments': { scopeAttachmentIds: () => [] },
     '@/lib/action-cases/scopeDraft': { actionScopeDraft },
     '@/lib/action-cases/contractWork': { contractWorkFields },
+    '@/lib/action-cases/calculationSave': {},
+    './CalculationSaveStatus': { default: 'CalculationSaveStatus' },
     './actionCaseGroupPricing': { groupPriceForLine: () => null, coveringQuoteForLine: () => null },
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},

@@ -32,7 +32,7 @@ export async function writeContractWorkPrice(ctx: Context, payload: Record<strin
   contractWorkError(error)
 }
 
-const mutations = new Set(['save_item_scope', 'update_item', 'delete_item', 'create_cost_line', 'delete_cost_line', 'update_cost_line',
+const mutations = new Set(['save_calculation', 'save_item_scope', 'update_item', 'delete_item', 'create_cost_line', 'delete_cost_line', 'update_cost_line',
   'set_cost_line_complete', 'generate_cost_suggestions', 'apply_cost_suggestions', 'work_quote', 'send_quote_request', 'quote_request',
   'work_part', 'quote_package', 'send_grouped_quote_request'])
 
@@ -44,7 +44,7 @@ export async function assertContractWorkMutation(ctx: Context, action: string, p
     if (Array.isArray(lines)) for (const line of lines) if (typeof line?.itemId === 'string') ids.add(line.itemId)
   }
   addLines(payload.lines)
-  if (typeof payload.requestId === 'string') {
+  if (action !== 'save_calculation' && typeof payload.requestId === 'string') {
     const { data, error } = await createSupabaseAdminClient().from('action_case_quote_requests').select('lines').eq('org_id', ctx.orgId).eq('id', offerId(payload.requestId)).maybeSingle()
     contractWorkError(error); addLines(data?.lines)
   }

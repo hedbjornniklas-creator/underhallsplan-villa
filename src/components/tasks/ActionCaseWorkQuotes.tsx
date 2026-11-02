@@ -9,6 +9,8 @@ import { defaultRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 import ActionCaseDirectCostFields, { canEditDirectWork } from './ActionCaseDirectCostFields'
 import { coveringQuoteForLine, groupPriceForLine, groupPriceUsability } from './actionCaseGroupPricing'
 import ActionCaseRfqDelivery from './ActionCaseRfqDelivery'
+import type { useActionCalculationAutosave } from './useActionCalculationAutosave'
+import CalculationSaveStatus from './CalculationSaveStatus'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const button = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40'
@@ -22,6 +24,7 @@ type Props = {
   onEditing: (editing: boolean) => void
   onRequest?: (costLineIds: string[]) => void
   onOpenRequest?: (requestId: string) => void
+  calculation?: ReturnType<typeof useActionCalculationAutosave>
 }
 
 function QuoteForm({ line, item, caseId, attachments, participants, quote, mode, busy, onSave, onCancel }: Props & {
@@ -77,7 +80,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
 }
 
 export default function ActionCaseWorkQuotes(props: Props) {
-  const { line, item, attachments, busy, onAction, onEditing, caseId } = props
+  const { line, item, attachments, busy, onAction, onEditing, caseId, calculation } = props
   const [editor, setEditor] = useState<{ quote?: ActionCaseQuote; mode: 'request' | 'offer' } | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [openedAt] = useState(Date.now)
@@ -95,7 +98,8 @@ export default function ActionCaseWorkQuotes(props: Props) {
   }
   const edit = (value: typeof editor) => { setEditor(value); onEditing(Boolean(value) || directEditing || Boolean(markupDraft)) }
   const controlsBusy = busy || directEditing || Boolean(markupDraft)
-  const markup = markupDraft?.value ?? String(line.markupPercent)
+  const markupEntry = calculation?.states[`markup:${line.id}`]
+  const markup = calculation ? String(markupEntry?.edit.data.markupPercent ?? line.markupPercent) : markupDraft?.value ?? String(line.markupPercent)
   const markupValid = Boolean(markup.trim()) && Number.isFinite(Number(markup)) && Number(markup) >= -100 && Number(markup) <= 1000
   if (groupQuote || line.coveredByQuoteId) {
     const requestId = (groupQuote ?? coveringQuote)?.requestId
@@ -115,7 +119,10 @@ export default function ActionCaseWorkQuotes(props: Props) {
   }
   return <section className="mt-3 border-y border-violet-200 py-4" aria-label={`Prisunderlag för ${line.description}`}>
     <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">{([['direct', line.unit === 'tim' || line.pricingMethod === 'quotes' ? 'Timmar' : 'Eget pris'], ['quotes', `Offerter (${quotes.length})`]] as const).map(([key, label]) => <button type="button" className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${view === key ? 'bg-white text-violet-800 shadow-sm' : 'text-slate-600'}`} key={key} aria-pressed={view === key} disabled={controlsBusy || Boolean(editor)} onClick={() => setView(key)}>{label}</button>)}</div>
-    {view === 'direct' ? canEditDirectWork(line) || directEditing ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={busy} onEditing={(value) => { setDirectEditing(value); onEditing(value) }} onSave={(payload) => onAction('work_part', payload)} /> : <div className="mt-3 space-y-3">
+    {view === 'direct' ? canEditDirectWork(line) || directEditing ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={busy} onEditing={(value) => { setDirectEditing(value); onEditing(value) }} onSave={(payload) => onAction('work_part', payload)} auto={calculation ? {
+      entry: calculation.states[`line:${line.id}`], onRetry: () => calculation.retry(`line:${line.id}`),
+      onChange: data => calculation.change({ key: `line:${line.id}`, itemId: item.id, operation: 'line', data: { ...data, id: line.id, create: false } }, item.updatedAt),
+    } : undefined} /> : <div className="mt-3 space-y-3">
       <p className="text-sm text-slate-600">{line.coveredByQuoteId ? 'Arbetet ingår i en vald offert.' : line.selectedQuoteId ? 'Vald offert används i kalkylen.' : 'Offertpris används för arbetet. Ingen offert är vald.'}</p>
       {!line.coveredByQuoteId ? <button type="button" className={button} disabled={busy} onClick={() => void action('method', { method: 'direct' })}><Pencil size={16} />Använd egen kalkyl</button> : null}
     </div> : <>
@@ -159,11 +166,12 @@ export default function ActionCaseWorkQuotes(props: Props) {
         </section> : null}
         {line.pricingMethod === 'quotes' ? <form className="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4" onSubmit={(event) => {
           event.preventDefault()
-          if (!busy && markupDraft && markupValid) void action('markup', { markupPercent: markup, expectedLineUpdatedAt: markupDraft.expectedLineUpdatedAt }).then((saved) => { if (saved) { setMarkupDraft(null); onEditing(false) } })
+          if (!calculation && !busy && markupDraft && markupValid) void action('markup', { markupPercent: markup, expectedLineUpdatedAt: markupDraft.expectedLineUpdatedAt }).then((saved) => { if (saved) { setMarkupDraft(null); onEditing(false) } })
         }}><label className="min-w-0 text-xs font-semibold text-slate-600">Prispåslag, % (inte moms)<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="-100" max="1000" value={markup} disabled={busy} onChange={(event) => {
+          if (calculation) { calculation.change({ key: `markup:${line.id}`, itemId: item.id, operation: 'markup', data: { id: line.id, markupPercent: event.target.value } }, item.updatedAt); return }
           const changed = !event.target.value.trim() || Number(event.target.value) !== line.markupPercent
           setMarkupDraft(changed ? { value: event.target.value, expectedLineUpdatedAt: markupDraft?.expectedLineUpdatedAt ?? line.updatedAt } : null); onEditing(changed)
-        }} /></label><button className={button} type="submit" disabled={busy || !markupValid || !markupDraft}><Save size={16} />Spara påslag</button>{markupDraft ? <button type="button" className={button} disabled={busy} title="Återställ påslag" aria-label="Återställ påslag" onClick={() => { setMarkupDraft(null); onEditing(false) }}><RotateCcw size={16} /></button> : null}</form> : null}
+        }} /></label>{calculation ? <CalculationSaveStatus entry={markupEntry} onRetry={() => calculation.retry(`markup:${line.id}`)} /> : <button className={button} type="submit" disabled={busy || !markupValid || !markupDraft}><Save size={16} />Spara påslag</button>}{markupDraft ? <button type="button" className={button} disabled={busy} title="Återställ påslag" aria-label="Återställ påslag" onClick={() => { setMarkupDraft(null); onEditing(false) }}><RotateCcw size={16} /></button> : null}</form> : null}
       </>}
     </>}
   </section>

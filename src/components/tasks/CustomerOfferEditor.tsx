@@ -284,7 +284,7 @@ export default function CustomerOfferEditor({
     persistDocuments(nextDraft)
     setDraft(nextDraft)
     setCosting(nextCosting)
-    if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
+    if (!locked && !running.current) autosave.change({ draft: nextDraft, costing: nextCosting })
     setConfirmed(false)
   }
   applyDraftUpgrade.current = () => update(currentSnapshot.current.draft, true)
@@ -295,7 +295,7 @@ export default function CustomerOfferEditor({
     const nextCosting = { ...current.costing, [id]: calculation }
     currentSnapshot.current = { draft: current.draft, costing: nextCosting }
     setCosting(nextCosting)
-    if (draftTarget === 'contract' && !locked && !running.current) autosave.change({ draft: current.draft, costing: nextCosting })
+    if (!locked && !running.current) autosave.change({ draft: current.draft, costing: nextCosting })
     setConfirmed(false)
   }
   const restoreDocuments = (backup: ContractDocumentDraft) => {
@@ -446,7 +446,7 @@ export default function CustomerOfferEditor({
       setCosting(next.costing)
       persistDocuments(next.draft)
       // Edits made while the manual request was running still need a queued save.
-      if (operation === 'save' && draftTarget === 'contract' && !locked &&
+      if (operation === 'save' && !locked &&
         (JSON.stringify(next.draft) !== JSON.stringify(editableDraft(data)) || JSON.stringify(next.costing) !== JSON.stringify(data.costing ?? {})))
         autosave.change(next)
       if (operation === 'separate_choices' || operation === 'bind_customer' ||
@@ -1083,7 +1083,7 @@ export default function CustomerOfferEditor({
                 </label>)}</div>
               </fieldset>}
               {contractView && <CustomerContractSigning caseId={actionCase.id} available={workspace.signingAvailable === true} versions={workspace.signingVersions} allowLock={signingMethod === 'external'}
-                accepted={accepted} busy={busy} disabled={Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || dirty || !workspace.revision || Boolean(documentRecovery)}
+                accepted={accepted} busy={busy} disabled={Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || dirty || sourcePending || !workspace.revision || Boolean(documentRecovery)}
                 revision={workspace.revision} blockers={signingBlockers} onFreeze={() => action('freeze', { confirmed: true })} onNewDraft={(id) => action('new_draft', { id, confirmed: true, unsignedConfirmed: true })}
                 onWithdraw={(version) => action('withdraw_share', { id: version.id, revision: version.revision, confirmed: true })} />}
               {contractView && signingVersion && <CustomerContractDelivery key={signingVersion.id} caseId={actionCase.id} version={signingVersion} available={workspace.deliveryAvailable === true}
@@ -1094,7 +1094,7 @@ export default function CustomerOfferEditor({
                 </p>
               ) : (
                 <>
-                  <button
+                  {draftTarget !== 'offer' && <button
                     disabled={
                       Boolean(busy) || autosave.isSaving || (!dirty && !recipientChanged && workspace.revision > 0 && autosave.state?.status !== 'error')
                       || confirmItemized
@@ -1108,7 +1108,7 @@ export default function CustomerOfferEditor({
                       <Save size={17} />
                     )}
                     {autosave.state?.status === 'error' ? 'Försök spara igen' : contractView && recipientChanged ? 'Bekräfta mottagare' : contractView ? 'Spara nu' : 'Spara utkast'}
-                  </button>
+                  </button>}
                   {contractView && recipientChanged && <p className="mt-2 text-sm text-amber-800">Mottagaren är inte uppdaterad.</p>}
                   <button
                     className={`${button} mt-3 w-full bg-white`}

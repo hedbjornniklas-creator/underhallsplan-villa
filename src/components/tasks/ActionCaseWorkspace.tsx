@@ -32,6 +32,9 @@ import ActionCaseProjectList from './ActionCaseProjectList'
 import { projectUrl } from '@/lib/action-cases/projectNavigation'
 import { mergeScopeSave } from '@/lib/action-cases/scopeDraft'
 import { useActionScopeAutosave } from './useActionScopeAutosave'
+import { useActionCalculationAutosave } from './useActionCalculationAutosave'
+import { useActionSaveCoordinator } from './useActionSaveCoordinator'
+import { mergeCalculationSave, overlayCalculation, sameCalculationVersion } from '@/lib/action-cases/calculationSave'
 import { workItemSum, workProjectSum } from '@/lib/action-cases/workSums'
 
 type Props = {
@@ -340,24 +343,39 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineIds?: string[]; supplementId?: string } | null>(null)
   const [creating, setCreating] = useState(false)
   const [newItemTitle, setNewItemTitle] = useState('')
-  const selectedCase = workspace?.cases.find((item) => item.id === caseId) ?? null
-  const selectedItem = selectedCase?.items.find((item) => item.id === selectedItemId) ?? null
   const running = useRef(false)
   const openingCreatedProject = useRef(false)
   const workspaceRef = useRef(workspace)
+  const coordinate = useActionSaveCoordinator()
+  const rebaseScope = useRef<(id: string, before: string, after: string) => void>(() => {})
   const receive = (next: Workspace) => {
     workspaceRef.current = next
     setWorkspace(next)
     onWorkspaceChange?.(next)
   }
-  const scopeAutosave = useActionScopeAutosave({
-    onSaved: (result) => { if (workspaceRef.current) receive(mergeScopeSave(workspaceRef.current, result)) },
+  const calculation = useActionCalculationAutosave({ caseId, coordinate, onSaved: result => {
+    rebaseScope.current(result.item.id, result.expectedUpdatedAt, result.updatedAt)
+    if (workspaceRef.current) receive(mergeCalculationSave(workspaceRef.current, result))
+  } })
+  const scopeAutosave = useActionScopeAutosave({ coordinate,
+    onSaved: (result) => {
+      const before = workspaceRef.current?.cases.flatMap(project => project.items).find(item => item.id === result.item.id)?.updatedAt
+      if (before) calculation.rebase(result.item.id, before, result.item.updatedAt)
+      if (workspaceRef.current) receive(mergeScopeSave(workspaceRef.current, result))
+    },
     onError: (message) => toast.error(message),
   })
+  rebaseScope.current = scopeAutosave.rebase
+  const savedCase = workspace?.cases.find(item => item.id === caseId) ?? null
+  const edits = Object.values(calculation.states).filter(entry => entry.status !== 'saved').map(entry => entry.edit)
+  const selectedCase = savedCase ? { ...savedCase, items: savedCase.items.map(item => overlayCalculation(item, edits)) } : null
+  const selectedItem = selectedCase?.items.find(item => item.id === selectedItemId) ?? null
   const forgetSavedScope = useRef(scopeAutosave.forgetSaved)
   forgetSavedScope.current = scopeAutosave.forgetSaved
+  const forgetSavedCalculation = useRef(calculation.forgetSaved), loadedCustomerRefresh = useRef(0)
+  forgetSavedCalculation.current = calculation.forgetSaved
   useEffect(() => {
-    if (!customerRefresh || scopeAutosave.hasUnsaved || itemDirty || uploading || running.current) return
+    if (!customerRefresh || loadedCustomerRefresh.current === customerRefresh || scopeAutosave.hasUnsaved || calculation.hasUnsaved || itemDirty || uploading || running.current) return
     const controller = new AbortController()
     running.current = true
     setBusy(true)
@@ -369,6 +387,8 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         if (!controller.signal.aborted) {
           workspaceRef.current = result.workspace
           forgetSavedScope.current()
+          forgetSavedCalculation.current()
+          loadedCustomerRefresh.current = customerRefresh
           setWorkspace(result.workspace)
           onWorkspaceChange?.(result.workspace)
         }
@@ -377,9 +397,9 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       } finally { if (!controller.signal.aborted) { running.current = false; setBusy(false) } }
     })()
     return () => { controller.abort(); running.current = false }
-  }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, itemDirty, uploading])
-  const guarded = busy || uploading || scopeAutosave.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
-  useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving) }, [busy, uploading, scopeAutosave.isSaving, onBusyChange])
+  }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, calculation.hasUnsaved, itemDirty, uploading])
+  const guarded = busy || uploading || scopeAutosave.hasUnsaved || calculation.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
+  useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving || calculation.isSaving) }, [busy, uploading, scopeAutosave.isSaving, calculation.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
   useEffect(() => {
     if (!guarded) return
@@ -392,21 +412,29 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   }, [guarded])
   const action = async (name: string, payload: Record<string, unknown>, successMessage?: string | null): Promise<ActionResult | null> => {
     if (running.current) return null
-    if (scopeAutosave.hasUnsaved) {
-      toast.error(scopeAutosave.isSaving ? 'Omfattningen sparas. Försök igen när sparningen är klar.' : 'Spara ändringarna i omfattningen innan du fortsätter.')
-      return null
-    }
     running.current = true
-    setBusy(true)
+    const before = workspaceRef.current?.cases.flatMap(project => project.items).find(item => item.id === payload.itemId)
+    const beforeLine = before?.costLines.find(line => line.id === payload.costLineId)
     try {
-      const response = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, payload }) })
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Kunde inte spara.')
-      receive(result.workspace)
-      scopeAutosave.forgetSaved()
-      setError(null)
-      if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Projektet skapades.' : 'Åtgärden sparades.'))
-      return result as ActionResult
+      if (!await scopeAutosave.flushAll() || !await calculation.flushAll()) { toast.error('Komplettera eller återförsök de osparade ändringarna innan du fortsätter.'); return null }
+      setBusy(true)
+      return await coordinate(async () => {
+        const current = workspaceRef.current?.cases.flatMap(project => project.items).find(item => item.id === payload.itemId)
+        const currentLine = current?.costLines.find(line => line.id === payload.costLineId)
+        // Only advance versions acknowledged by our own background saves, never an older editor snapshot.
+        const next = { ...payload,
+          ...(before && current && typeof payload.expectedUpdatedAt === 'string' && sameCalculationVersion(payload.expectedUpdatedAt, before.updatedAt) ? { expectedUpdatedAt: current.updatedAt } : {}),
+          ...(beforeLine?.updatedAt && currentLine?.updatedAt && typeof payload.expectedLineUpdatedAt === 'string' && sameCalculationVersion(payload.expectedLineUpdatedAt, beforeLine.updatedAt) ? { expectedLineUpdatedAt: currentLine.updatedAt } : {}),
+        }
+        const response = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, payload: next }) })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Kunde inte spara.')
+        receive(result.workspace)
+        scopeAutosave.forgetSaved(); calculation.forgetSaved()
+        setError(null)
+        if (successMessage !== null) toast.success(successMessage ?? (name === 'create_case' ? 'Projektet skapades.' : 'Åtgärden sparades.'))
+        return result as ActionResult
+      })
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : 'Kunde inte spara.')
       if (['update_contract_work_price', 'send_quote_request', 'work_quote', 'quote_request', 'send_grouped_quote_request', 'quote_package', 'work_part', 'set_cost_line_complete', 'delete_attachment', 'revoke_rfq_delivery'].includes(name)) {
@@ -443,11 +471,15 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span className="gizmo-work-amount">Kalkyl inkl. moms</span><span /></div>
       <ul className="gizmo-work-rows" aria-label="Projektets åtgärder">{selectedCase.items.map((item) => {
         const save = scopeAutosave.states[item.id]
-        const saveIssue = save?.status === 'error' ? 'Kunde inte spara' : save && !save.draft.title.trim() ? 'Rubrik saknas' : null
+        const calculationEntries = Object.values(calculation.states).filter(entry => entry.edit.itemId === item.id)
+        const saveIssue = save?.status === 'error' ? 'Kunde inte spara' : save && !save.draft.title.trim() ? 'Rubrik saknas'
+          : calculationEntries.some(entry => entry.status === 'error') ? 'Kalkylen är inte sparad'
+          : calculationEntries.some(entry => entry.status === 'invalid') ? 'Komplettera kalkylrad'
+          : calculationEntries.some(entry => entry.status === 'pending' || entry.status === 'saving') ? 'Sparar kalkyl' : null
         const sum = workItemSum(item)
         const excluded = ['cancelled', 'declined'].includes(item.status)
         return <li key={item.id}><button type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItemId === item.id}>
-          <strong>{item.title}</strong><span>{item.contractWork?.locked ? item.contractWork.differences.length ? 'Befintlig skillnad mot avtalet' : 'Ingår i låst avtal' : saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{item.contractWork?.locked ? 'Låst' : saveIssue ?? ITEM_STATUS[item.status]}</span>
+          <strong>{item.title}</strong><span>{item.contractWork?.locked ? item.contractWork.differences.length ? 'Befintlig skillnad mot avtalet' : 'Ingår i låst avtal' : saveIssue === 'Sparar kalkyl' ? 'Ändringar sparas i bakgrunden' : saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{item.contractWork?.locked ? 'Låst' : saveIssue ?? ITEM_STATUS[item.status]}</span>
           <span className="gizmo-work-amount"><span className="gizmo-work-amount-label">Kalkyl inkl. moms</span><b>{sumLabel(sum.amountOre)}</b>{excluded ? <small>Ej i totalsumman</small> : sum.partial && sum.amountOre !== null ? <small>Preliminärt</small> : null}</span><ChevronRight size={18} aria-hidden="true" />
         </button></li>
       })}</ul>
@@ -480,6 +512,17 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       busy={busy}
       scopeSave={scopeAutosave.states[selectedItem.id]}
       scopeBlocked={scopeAutosave.hasUnsaved}
+      calculation={calculation}
+      onReloadCalculation={async () => {
+        if (running.current || calculation.isSaving || scopeAutosave.hasUnsaved || !window.confirm('Ersätta momentets osparade kalkyländringar med den sparade kalkylen?')) return
+        running.current = true; setBusy(true)
+        try {
+          const response = await fetch('/api/action-cases', { cache: 'no-store' }), result = await response.json()
+          if (!response.ok || !result.workspace) throw new Error(result.error || 'Kalkylen kunde inte hämtas.')
+          if (calculation.discardItem(selectedItem.id)) { receive(result.workspace); calculation.forgetSaved(); setSelectedItemId(null) }
+        } catch (error) { toast.error(error, 'Kalkylen kunde inte hämtas. Dina ändringar är kvar.') }
+        finally { running.current = false; setBusy(false) }
+      }}
       onDirtyChange={setItemDirty}
       onScopeChange={(draft) => scopeAutosave.change(selectedItem.id, selectedItem.updatedAt, draft)}
       onScopeFlush={() => scopeAutosave.flush(selectedItem.id)}

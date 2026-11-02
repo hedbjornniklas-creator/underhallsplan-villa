@@ -58,7 +58,7 @@ function portalHarness() {
       table==='action_case_attachments'?r.filters.some(([k])=>k==='id')?{storage_bucket:'action-case-files',file_path:'scoped.pdf',file_name:'Shared.pdf',content_type:'application/pdf'}:[{id:fileId,file_name:'Shared.pdf',file_size_bytes:100}]:[]})
     const q={select(){return q},eq(...f){r.filters.push(f);return q},in(key,values){r.filters.push([`${key}:in`,values]);return q},order(){return q},update(...v){writes.push({table,v});return q},async maybeSingle(){return result()},then(resolve,reject){return Promise.resolve(result()).then(resolve,reject)}};return q},
     storage:{from(){return {async createSignedUrl(...v){signed.push(v);return {data:{signedUrl:'https://example.test/scoped'}}}}}}}
-  const deps=Object.fromEntries(['server-only','./scopeAttachments','./lumpSum','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer'].map(n=>[n,{}]))
+  const deps=Object.fromEntries(['server-only','./scopeAttachments','./lumpSum','./costing','./quotes','./quoteRequests','./quotePackages','./rfqDelivery','./quotesServer','./calculationSave','./customerOffers'].map(n=>[n,{}]))
   const server=load('../src/lib/action-cases/server.ts',{...deps,'./contractWorkServer':{},'node:crypto':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/assignments/tokens':{hashAssignmentToken:()=> 'hash'},
     './projectScheduleServer':{async getSharedProjectSchedule(){return []}},'./domain':{filterActionCasePortalItems:(_role,items)=>items},
     './customerOffersServer':{async getSharedCustomerOffers(org,project,recipient){assert.deepEqual([org,project,recipient],[ctx.orgId,caseId,participantId]);return {enabled:true,offers:[]}}},

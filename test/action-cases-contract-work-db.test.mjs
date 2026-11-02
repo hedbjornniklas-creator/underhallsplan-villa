@@ -49,6 +49,91 @@ before(async () => {
 })
 after(() => db.close())
 
+let calculationInstalled = false
+async function calculationFixture() {
+  if (!calculationInstalled) {
+    await db.exec(`create schema if not exists auth;
+      create or replace function auth.role() returns text language sql as $$select coalesce(current_setting('request.jwt.claim.role',true),'service_role')$$;`)
+    await db.exec(read('2026-10-19_02_action_case_cost_completion'))
+    await db.exec(read('2026-11-02_01_action_case_calculation_autosave'))
+    await db.exec(read('2026-11-02_01_action_case_calculation_autosave'))
+    calculationInstalled = true
+  }
+  const f = await fixture()
+  const version = async () => (await db.query('select updated_at::text stamp from action_case_items where id=$1', [f.item])).rows[0].stamp
+  const write = async (operation, data, options = {}) => (await db.query('select save_action_case_calculation($1,$2,$3,$4,$5,$6,$7,$8) result',
+    [options.org ?? org, f.project, f.item, options.actor ?? actor, options.requestId ?? randomUUID(), options.version ?? await version(), operation, data])).rows[0].result
+  return { ...f, version, write }
+}
+
+test('background calculation saves create exactly one row and replay atomically with the original microsecond version', async () => {
+  const f = await calculationFixture(), id = randomUUID(), requestId = randomUUID(), version = await f.version(), before = await f.state()
+  const data = { id, create: true, category: 'material', description: 'Gratis testprodukt', quantity: 2, unit: 'st', unitCost: 0, markupPercent: 15, priceSource: 'manual', quantityBasis: 'provided', verified: false }
+  const first = await f.write('line', data, { requestId, version })
+  const replay = await f.write('line', data, { requestId, version })
+  assert.deepEqual(first, replay)
+  assert.equal((await db.query('select count(*) n from action_case_cost_lines where id=$1', [id])).rows[0].n, 1)
+  assert.equal((await db.query("select count(*) n from action_case_events where action_case_item_id=$1 and event_type='calculation_saved'", [f.item])).rows[0].n, 1)
+  await assert.rejects(f.write('line', { ...data, unitCost: 1 }, { requestId, version }), /REQUEST_CONFLICT/)
+  await assert.rejects(f.write('line', { ...data, create: false, unitCost: 1 }, { version }), /ITEM_STALE/)
+  const saved = (await db.query('select quantity,unit_cost from action_case_cost_lines where id=$1', [id])).rows[0]
+  assert.equal(Number(saved.unit_cost), 0)
+  assert.deepEqual(await f.state(), before, 'internal costs cannot change the contract price or revision')
+})
+
+test('calculation writers retain null instead of inventing zero, and Klar never replays stale prices', async () => {
+  const f = await calculationFixture()
+  const data = { id: f.line, create: false, category: 'material', description: 'Testprodukt', quantity: 1, unit: 'st', unitCost: null, markupPercent: 0, priceSource: 'manual', quantityBasis: 'provided', verified: false }
+  await f.write('line', data)
+  assert.equal((await db.query('select unit_cost from action_case_cost_lines where id=$1', [f.line])).rows[0].unit_cost, null)
+  await assert.rejects(f.write('complete', { id: f.line, complete: true }), /COST_LINE_INVALID/)
+  await f.write('line', { ...data, unitCost: 123 })
+  await f.write('complete', { id: f.line, complete: true })
+  const completed = (await db.query('select unit_cost,is_verified from action_case_cost_lines where id=$1', [f.line])).rows[0]
+  assert.equal(Number(completed.unit_cost), 123); assert.equal(completed.is_verified, true)
+  await f.write('complete', { id: f.line, complete: false })
+  await f.write('delete_line', { id: f.line })
+  assert.equal((await db.query('select count(*) n from action_case_cost_lines where id=$1', [f.line])).rows[0].n, 0)
+})
+
+test('work-part creation returns its stable ID and lump-sum saves preserve underlying rows and contract prices', async () => {
+  const f = await calculationFixture(), version = await f.version(), requestId = randomUUID(), before = await f.state()
+  const data = { operation: 'save', partId: null, title: 'Snickeri', scope: 'Testomfattning' }
+  const first = await f.write('work_part', data, { requestId, version })
+  assert.ok(first.partId)
+  assert.deepEqual(await f.write('work_part', data, { requestId, version }), first)
+  await f.write('work_part', { ...data, partId: first.partId, title: 'Snickeri och dörrar' })
+  assert.equal((await db.query('select count(*) n from action_case_work_parts where action_case_item_id=$1', [f.item])).rows[0].n, 1)
+  await f.write('lump_sum', { lumpSum: { customerPrice: 0, internalCost: null, vatRate: 25, verified: false } })
+  await assert.rejects(f.write('line', { id: f.line, create: false }), /ITEM_LOCKED/)
+  await f.write('lump_sum', { lumpSum: null })
+  assert.equal((await db.query('select count(*) n from action_case_cost_lines where id=$1', [f.line])).rows[0].n, 1)
+  assert.deepEqual(await f.state(), before)
+})
+
+test('background saves reject foreign actors, tenants, browser roles and all mutations on a frozen contract', async () => {
+  const f = await calculationFixture(), unknown = randomUUID()
+  await assert.rejects(f.write('delete_line', { id: f.line }, { actor: unknown }), /NOT_FOUND/)
+  await assert.rejects(f.write('delete_line', { id: f.line }, { org: unknown }), /NOT_FOUND/)
+  await db.exec("set request.jwt.claim.role='authenticated'")
+  await assert.rejects(f.write('delete_line', { id: f.line }), /NOT_FOUND/)
+  await db.exec("set request.jwt.claim.role='service_role'")
+  await f.freeze()
+  const before = await f.state(), rows = (await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows
+  for (const operation of ['line','delete_line','complete','work_part','markup','lump_sum']) await assert.rejects(f.write(operation, { id: f.line }), /CONTRACT_LOCKED/)
+  assert.deepEqual(await f.state(), before)
+  assert.deepEqual((await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows, rows)
+})
+
+test('quote markup autosaves through the quote writer, while other rows and contract prices remain unchanged', async () => {
+  const f = await calculationFixture(), quoteLine = randomUUID(), before = await f.state()
+  await db.query("insert into action_case_cost_lines(id,org_id,action_case_id,action_case_item_id,category,description,unit,pricing_method) values($1,$2,$3,$4,'own_labor','Testoffert','tim','quotes')", [quoteLine,org,f.project,f.item])
+  await f.write('markup', { id: quoteLine, markupPercent: 18 })
+  assert.equal(Number((await db.query('select markup_percent from action_case_cost_lines where id=$1',[quoteLine])).rows[0].markup_percent), 18)
+  assert.equal(Number((await db.query('select markup_percent from action_case_cost_lines where id=$1',[f.line])).rows[0].markup_percent), 25)
+  assert.deepEqual(await f.state(), before)
+})
+
 async function fixture() {
   const project = randomUUID(), item = randomUUID(), line = randomUUID(), part = randomUUID()
   await db.query("insert into action_cases(id,org_id,title,property_address,customer_name,manager_profile_id) values($1,$2,'Fiktivt projekt','Testgatan','Test',$3)", [project,org,manager])

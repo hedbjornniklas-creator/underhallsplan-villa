@@ -18,6 +18,7 @@ import {
   updateActionCaseItem,
   saveActionCaseScope,
   updateActionCaseCostLine,
+  saveActionCaseCalculation,
   applyActionCaseCostSuggestions,
 } from '@/lib/action-cases/server'
 import { generateActionCaseCosts } from '@/lib/action-cases/costingAiServer'
@@ -56,6 +57,9 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    ACTION_CASE_CALCULATION_CLIENT_OLD: [409, 'Den här fliken använder en äldre kalkylredigerare. Behåll dina uppgifter och ladda om sidan innan du fortsätter.'],
+    ACTION_CASE_CALCULATION_SCHEMA: [503, 'Bakgrundssparning av kalkylen behöver aktiveras i databasen. Dina ändringar är kvar.'],
+    ACTION_CASE_CALCULATION_REQUEST_CONFLICT: [409, 'Kalkylen kunde inte bekräftas. Hämta sparade uppgifter innan du fortsätter. Dina ändringar är kvar.'],
     ACTION_CASE_CONTRACT_LOCKED: [409, 'Momentet ingår i ett låst avtal. Omfattning, pris och kalkyl kan inte ändras.'],
     ACTION_CASE_CONTRACT_SCHEMA: [503, 'Databasmigrationen för kopplingen mellan Projektarbete och Avtal behöver köras.'],
     ACTION_CASE_CONTRACT_READ_FAILED: [503, 'Avtalslåsningen kunde inte kontrolleras. Försök igen.'],
@@ -158,8 +162,10 @@ export async function POST(request: Request) {
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object' ? body.payload as Record<string, unknown> : {}
     const ctx = await context()
+    if (action === 'save_calculation' && request.headers.get('origin') !== new URL(request.url).origin) return NextResponse.json({ error: 'Begäran måste komma från samma webbplats.' }, { status: 403 })
     await assertContractWorkMutation(ctx, action, payload)
     if (action === 'save_item_scope') return NextResponse.json(await saveActionCaseScope(ctx, scopeSavePayload(payload)))
+    if (action === 'save_calculation') return NextResponse.json(await saveActionCaseCalculation(ctx, payload))
     let accessUrl: string | undefined
     let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined

@@ -20,7 +20,7 @@ test('manual covers the existing calculator with unique navigable chapters and u
   }
   assert.equal(costingHelpTopics[0].steps.length, 4)
   const content = costingHelpTopics.flatMap(topic => topic.paragraphs).join(' ')
-  for (const term of ['exklusive moms', 'inte samma sak som marginal', 'Spara rad', 'Klar', 'Markera rader', 'Priskälla', 'Samlat pris', 'Preliminär summa', 'inte en beställning', 'låsta avtalsversioner', 'Beställningslista', 'Listan sparas inte']) assert.ok(content.includes(term), term)
+  for (const term of ['exklusive moms', 'inte samma sak som marginal', 'automatiskt i bakgrunden', 'Klar', 'Markera rader', 'Priskälla', 'Samlat pris', 'Preliminär summa', 'inte en beställning', 'låsta avtalsversioner', 'Beställningslista', 'Listan sparas inte']) assert.ok(content.includes(term), term)
 })
 
 test('the manual arithmetic agrees with calculation and a free product is not an unknown price', () => {
