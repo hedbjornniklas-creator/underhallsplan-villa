@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { formatTaskDateTime, taskIsoToDateTimeInput } from '../src/lib/tasks/dateTime.ts'
+import * as estimates from '../src/lib/tasks/timeEstimate.ts'
 
 function harness() {
   const calls = []
@@ -10,6 +11,7 @@ function harness() {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const module = { exports: {} }
   new Function('require', 'module', 'exports', code)(name => {
+    if (name === './timeEstimate') return estimates
     if (name === '@/lib/supabase/admin') return { createSupabaseAdminClient: () => ({ async rpc(name, payload) { calls.push({ name, payload }); return { data: { id: 'new' } } } }) }
     if (name === './domain') return { DEFAULT_TASK_AUTOMATION_LIMITS: {} }
     return {}

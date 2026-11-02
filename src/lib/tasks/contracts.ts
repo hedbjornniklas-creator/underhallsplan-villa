@@ -202,6 +202,9 @@ export type TaskAiSuggestionView = {
 }
 
 export type TaskView = {
+  estimatedMinutes?: number | null
+  estimateVersion?: number
+  canEditEstimate?: boolean
   id: string
   parentTaskId: string | null
   rootTaskId: string
@@ -259,6 +262,7 @@ export type TaskWorkspaceSummary = {
 }
 
 export type TaskWorkspace = {
+  timeEstimatesAvailable?: boolean
   /** Current organization zone; individual deadlines use task.dueTimeZone. */
   timeZone: string
   currentUser: {

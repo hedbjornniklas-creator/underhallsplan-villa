@@ -26,6 +26,8 @@ import type {
   TaskRecurrenceInterval,
   TaskView,
 } from '@/lib/tasks/contracts'
+import { parseTaskEstimate } from '@/lib/tasks/timeEstimate'
+import TaskTimeEstimateInput from './TaskTimeEstimateInput'
 import {
   addTaskDateInputDays,
   formatTaskDateTime,
@@ -174,6 +176,7 @@ type MainTaskDraftSnapshot = {
 }
 
 type CreatePayload = {
+  estimatedMinutes?: number | null
   parentTaskId: string | null
   parentVersion: number | null
   sourceAiSuggestionId: string | null
@@ -202,6 +205,7 @@ type CreatePayload = {
 }
 
 type Props = {
+  timeEstimatesAvailable?: boolean
   open: boolean
   parentTask: TaskView | null
   suggestion: TaskAiSuggestionView | null
@@ -261,6 +265,7 @@ function supportedInitialAttachment(file: File) {
 }
 
 export default function TaskComposerSheet({
+  timeEstimatesAvailable = false,
   open,
   parentTask,
   suggestion,
@@ -307,6 +312,7 @@ export default function TaskComposerSheet({
   const [title, setTitle] = useState(initialDraft.title)
   const [description, setDescription] = useState(initialDraft.description)
   const [contextLabel, setContextLabel] = useState(initialDraft.contextLabel)
+  const [estimateRaw, setEstimateRaw] = useState('')
   const [taskKind, setTaskKind] = useState<TaskKind>(initialDraft.taskKind)
   const [assigneeRef, setAssigneeRef] = useState(initialDraft.assigneeRef)
   const [contactName, setContactName] = useState('')
@@ -356,6 +362,7 @@ export default function TaskComposerSheet({
     title !== initialDraft.title
     || description !== initialDraft.description
     || contextLabel !== initialDraft.contextLabel
+    || estimateRaw !== ''
     || taskKind !== initialDraft.taskKind
     || assigneeRef !== initialDraft.assigneeRef
     || contactName
@@ -723,6 +730,8 @@ export default function TaskComposerSheet({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    let estimatedMinutes: number | null
+    try { estimatedMinutes = timeEstimatesAvailable ? parseTaskEstimate(estimateRaw) : null } catch { return }
     const submittedAt = event.timeStamp > 1_000_000_000_000
       ? event.timeStamp
       : window.performance.timeOrigin + event.timeStamp
@@ -774,6 +783,7 @@ export default function TaskComposerSheet({
     }
     setDateTimeError(null)
     await onCreate({
+      ...(timeEstimatesAvailable ? { estimatedMinutes } : {}),
       parentTaskId: parentTask?.id ?? null,
       parentVersion: parentTask?.version ?? null,
       sourceAiSuggestionId: suggestion?.id ?? null,
@@ -1445,6 +1455,7 @@ export default function TaskComposerSheet({
               />
             </label>
 
+            {timeEstimatesAvailable && <TaskTimeEstimateInput value={estimateRaw} onChange={setEstimateRaw} disabled={busy} />}
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold text-slate-800">Arbetsflöde</span>

@@ -48,6 +48,7 @@ import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskNotificationDeliveryStatus from './TaskNotificationDeliveryStatus'
 import TaskManualCompletionDialog from './TaskManualCompletionDialog'
+import TaskTimeEstimateEditor from './TaskTimeEstimateEditor'
 import { canManuallyCompleteTask, completionEvidenceSatisfied } from '@/lib/tasks/manualCompletion'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
@@ -123,6 +124,15 @@ export default function TaskDetailSheet({
   const [suggestionFormError, setSuggestionFormError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [manualCompletionOpen, setManualCompletionOpen] = useState(false)
+  const [estimateDirty, setEstimateDirty] = useState(false)
+  const discardEstimate = useCallback(() => !estimateDirty || window.confirm('Stäng utan att spara tidsuppskattningen?'), [estimateDirty])
+  const requestClose = useCallback(() => { if (!busy && discardEstimate()) onClose() }, [busy, discardEstimate, onClose])
+  useEffect(() => {
+    if (!estimateDirty) return
+    const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  }, [estimateDirty])
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>('')
@@ -206,11 +216,11 @@ export default function TaskDetailSheet({
         if (!deleteBusy) setDeleteDialogOpen(false)
         return
       }
-      if (!busy) onClose()
+      if (!busy) requestClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy, deleteBusy, deleteDialogOpen, manualCompletionOpen, onClose, task])
+  }, [busy, deleteBusy, deleteDialogOpen, manualCompletionOpen, requestClose, task])
 
   useEffect(() => {
     if (!deleteDialogOpen) return
@@ -472,7 +482,7 @@ export default function TaskDetailSheet({
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-slate-950/45 backdrop-blur-[2px] lg:items-stretch lg:justify-end">
-      <button className="absolute inset-0 cursor-default" aria-label="Stäng" onClick={busy ? undefined : onClose} />
+      <button className="absolute inset-0 cursor-default" aria-label="Stäng" onClick={busy ? undefined : requestClose} />
       <section
         role="dialog"
         aria-modal="true"
@@ -495,7 +505,7 @@ export default function TaskDetailSheet({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={busy}
             className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
             aria-label="Stäng"
@@ -547,6 +557,9 @@ export default function TaskDetailSheet({
               </div>
             ) : null}
           </dl>
+
+          {workspace.timeEstimatesAvailable && <TaskTimeEstimateEditor task={task} busy={busy} onDirtyChange={setEstimateDirty} onReload={onReload}
+            onSave={(estimatedMinutes, estimateVersion, version) => onAction('set_time_estimate', { taskId: task.id, estimatedMinutes, estimateVersion, version })} />}
 
           {!task.parentTaskId && task.dueAt ? (
             <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4" aria-labelledby="task-recurrence-heading">
@@ -908,7 +921,7 @@ export default function TaskDetailSheet({
                               <button
                                 type="button"
                                 disabled={busy}
-                                onClick={() => onCreateSubtask(task, suggestion)}
+                                onClick={() => { if (discardEstimate()) onCreateSubtask(task, suggestion) }}
                                 className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
                               >
                                 <Plus size={15} /> Skapa underuppgift manuellt
@@ -946,7 +959,7 @@ export default function TaskDetailSheet({
               {canCreateChild ? (
                 <button
                   type="button"
-                  onClick={() => onCreateSubtask(task)}
+                  onClick={() => { if (discardEstimate()) onCreateSubtask(task) }}
                   className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   <Plus size={15} /> Lägg till
@@ -959,7 +972,7 @@ export default function TaskDetailSheet({
                   <button
                     type="button"
                     key={child.id}
-                    onClick={() => onSelectTask(child.id)}
+                    onClick={() => { if (discardEstimate()) onSelectTask(child.id) }}
                     className="flex min-h-14 w-full items-center gap-3 border-b border-slate-100 px-4 py-3 text-left hover:bg-slate-50 last:border-0"
                   >
                     <CornerDownRight className="shrink-0 text-slate-400" size={17} />
@@ -1398,7 +1411,7 @@ export default function TaskDetailSheet({
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => onCreateSubtask(task)}
+                  onClick={() => { if (discardEstimate()) onCreateSubtask(task) }}
                   className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
                   <Plus size={17} /> Underuppgift

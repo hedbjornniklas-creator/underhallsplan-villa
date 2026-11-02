@@ -29,6 +29,7 @@ async function requireTaskContext() {
 function taskErrorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : 'TASK_UNKNOWN_ERROR'
   const badRequest: Record<string, string> = {
+    TASK_ESTIMATE_INVALID: 'Ange tidsåtgång i hela minuter, 1–10080, eller lämna tomt.',
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras.',
     TASK_PERSONAL_CREATE_INPUT_INVALID: 'Ange en rubrik på högst 500 tecken.',
     TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, mottagare, datum och kanaler.',
@@ -105,6 +106,7 @@ function taskErrorResponse(error: unknown) {
     TASK_INITIAL_DISPATCH_FINALIZE_INPUT_INVALID: 'Uppgiften kunde inte förberedas för utskick.',
   }
   const forbidden = new Set([
+    'TASK_ESTIMATE_FORBIDDEN',
     'TASK_SUBTASK_FORBIDDEN',
     'TASK_REVIEW_FORBIDDEN',
     'TASK_CANCEL_FORBIDDEN',
@@ -171,6 +173,9 @@ function taskErrorResponse(error: unknown) {
   if (code === 'SIGNE_SUGGESTION_NOT_PENDING' || code === 'TASK_AI_SUGGESTION_NOT_PENDING') {
     return jsonError('Förslaget har redan behandlats. Ladda om uppgiften.', 409, code)
   }
+  if (code === 'TASK_ESTIMATE_CONFLICT') return jsonError('Tidsuppskattningen har ändrats. Din text är kvar. Hämta uppgiften igen före sparning.', 409, code)
+  if (code === 'TASK_ESTIMATE_READ_FAILED' || code === 'TASK_ESTIMATE_SAVE_FAILED') return jsonError('Tidsuppskattningen kunde inte hanteras. Försök igen.', 503, code)
+  if (code === 'TASK_ESTIMATE_SCHEMA_REQUIRED') return jsonError('Tidsuppskattningar behöver aktiveras i databasen.', 503, code)
   if (code === 'TASK_VERSION_CONFLICT' || code === 'TASK_PARENT_VERSION_CONFLICT') {
     return jsonError('Uppgiften ändrades av någon annan. Ladda om och försök igen.', 409, code)
   }
@@ -214,7 +219,7 @@ export async function POST(request: Request) {
     const context = await requireTaskContext()
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = typeof body.action === 'string' ? body.action : ''
-    if (action === 'complete_manually' && request.headers.get('origin') !== new URL(request.url).origin) {
+    if (['complete_manually', 'set_time_estimate'].includes(action) && request.headers.get('origin') !== new URL(request.url).origin) {
       return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
     }
     const payload =
@@ -229,7 +234,7 @@ export async function POST(request: Request) {
     })
     const assignmentDeferred =
       (action === 'create_task' || action === 'create_subtask') && payload.sendAssignment === false
-    if (!assignmentDeferred && action !== 'mark_messages_read') {
+    if (!assignmentDeferred && !['mark_messages_read', 'set_time_estimate'].includes(action)) {
       after(async () => {
         try {
           await runTaskFollowupBatch({ limit: 5 })

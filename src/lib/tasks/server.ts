@@ -1,5 +1,6 @@
 import 'server-only'
 import { MANUAL_COMPLETION_STATUSES, MANUAL_COMPLETION_COMMENT_LIMIT } from './manualCompletion'
+import { normalizeTaskEstimate } from './timeEstimate'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type {
@@ -490,6 +491,12 @@ async function loadRows(orgId: string, directoryOnly = false) {
   if (memberResult.error) throw new Error('TASK_MEMBERS_READ_FAILED')
   if (settingsResult.error) throw new Error('TASKS_SCHEMA_REQUIRED')
 
+  const estimateResult = directoryOnly ? { data: [], error: null } : await admin.from('task_time_estimates')
+    .select('task_id,estimated_minutes,version').eq('org_id', orgId)
+    .in('task_id', (taskResult.data ?? []).map(task => String(task.id)))
+  const timeEstimatesAvailable = !directoryOnly && !estimateResult.error
+  if (estimateResult.error && !['42P01', 'PGRST205', 'PGRST204'].includes(estimateResult.error.code)) throw new Error('TASK_ESTIMATE_READ_FAILED')
+
   const tasks = (taskResult.data ?? []) as OperationalTaskRow[]
   const contacts = (contactResult.data ?? []) as ContactRow[]
   const memberProfileIds = (memberResult.data ?? []).map((row) => String(row.profile_id))
@@ -604,6 +611,8 @@ async function loadRows(orgId: string, directoryOnly = false) {
 
   return {
     timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
+    timeEstimatesAvailable,
+    timeEstimates: (estimateResult.data ?? []) as { task_id: string; estimated_minutes: number | null; version: number }[],
     tasks,
     contacts,
     profiles,
@@ -819,6 +828,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     childCounts.set(task.parent_task_id, count)
   }
 
+  const estimatesByTask = new Map(rows.timeEstimates.map(estimate => [estimate.task_id, estimate]))
   const taskViews: TaskView[] = visibleTasks.map((task) => {
     const assigneeProfile = task.assignee_profile_id ? profilesById.get(task.assignee_profile_id) : null
     const assigneeContact = task.assignee_contact_id ? contactsById.get(task.assignee_contact_id) : null
@@ -986,6 +996,10 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
 
     return {
       id: task.id,
+      estimatedMinutes: estimatesByTask.get(task.id)?.estimated_minutes ?? null,
+      estimateVersion: estimatesByTask.get(task.id)?.version ?? 0,
+      canEditEstimate: rows.timeEstimatesAvailable && !isTerminalTaskStatus(task.status)
+        && (task.issuer_profile_id === input.userId || task.assignee_profile_id === input.userId),
       parentTaskId: task.parent_task_id,
       rootTaskId: task.root_task_id ?? task.id,
       depth: task.depth,
@@ -1102,6 +1116,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
 
   return {
     timeZone: rows.timeZone,
+    timeEstimatesAvailable: rows.timeEstimatesAvailable,
     currentUser: {
       id: input.userId,
       name: currentProfile?.full_name?.trim() || currentProfile?.email?.trim() || 'Användare',
@@ -1272,6 +1287,7 @@ async function resolveAssignee(input: {
 }
 
 async function createTask(input: TaskActionInput) {
+  const estimatedMinutes = normalizeTaskEstimate(input.payload.estimatedMinutes)
   const title = asText(input.payload.title)
   if (!title) throw new Error('TASK_TITLE_REQUIRED')
   if (input.payload.dueAt === null && input.payload.nextFollowupAt === null) {
@@ -1281,10 +1297,13 @@ async function createTask(input: TaskActionInput) {
       || (Array.isArray(input.payload.evidenceRequirements) && input.payload.evidenceRequirements.length > 0)) {
       throw new Error('TASK_PERSONAL_CREATE_FORBIDDEN')
     }
-    const { data, error } = await createSupabaseAdminClient().rpc('create_undated_personal_task', {
+    const args = {
       p_org_id: input.orgId, p_actor_profile_id: input.userId, p_title: title,
       p_description: optionalText(input.payload.description), p_context_label: optionalText(input.payload.contextLabel),
-    })
+    }
+    const { data, error } = await createSupabaseAdminClient().rpc(estimatedMinutes === null ? 'create_undated_personal_task' : 'create_task_with_time_estimate',
+      estimatedMinutes === null ? args : { p_org_id: input.orgId, p_actor_profile_id: input.userId, p_minutes: estimatedMinutes, p_without_dates: true, p_task: args })
+    if (estimatedMinutes !== null && error && ['PGRST202', '42883', '42P01'].includes(error.code ?? '')) throw new Error('TASK_ESTIMATE_SCHEMA_REQUIRED')
     if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
     const created = Array.isArray(data) ? data[0] : data
     if (!created || typeof created.id !== 'string') throw new Error('TASK_CREATE_FAILED')
@@ -1365,7 +1384,7 @@ async function createTask(input: TaskActionInput) {
   const expectedParentVersion = parent
     ? requireExpectedVersion(input.payload.parentVersion)
     : null
-  const { data: createdData, error } = await admin.rpc('create_operational_task_with_recurrence', {
+  const args = {
     p_org_id: input.orgId,
     p_title: title,
     p_due_at: dueAt,
@@ -1388,7 +1407,10 @@ async function createTask(input: TaskActionInput) {
     p_source_ai_suggestion_id: sourceAiSuggestionId,
     p_defer_initial_dispatch: input.payload.sendAssignment === false,
     p_recurrence_interval: recurrenceInterval,
-  })
+  }
+  const { data: createdData, error } = await admin.rpc(estimatedMinutes === null ? 'create_operational_task_with_recurrence' : 'create_task_with_time_estimate',
+    estimatedMinutes === null ? args : { p_org_id: input.orgId, p_actor_profile_id: input.userId, p_minutes: estimatedMinutes, p_without_dates: false, p_task: args })
+  if (estimatedMinutes !== null && error && ['PGRST202', '42883', '42P01'].includes(error.code ?? '')) throw new Error('TASK_ESTIMATE_SCHEMA_REQUIRED')
   if (error) throw taskDatabaseError(error, 'TASK_CREATE_FAILED')
   const created = Array.isArray(createdData) ? createdData[0] : createdData
   if (!created || typeof created.id !== 'string') throw new Error('TASK_CREATE_FAILED')
@@ -1403,6 +1425,23 @@ async function createTask(input: TaskActionInput) {
         ? 'Underuppgiften skapades.'
         : 'Uppgiften skapades.',
   }
+}
+
+async function setTaskTimeEstimate(input: TaskActionInput) {
+  if (!Object.hasOwn(input.payload, 'estimatedMinutes')) throw new Error('TASK_ESTIMATE_INVALID')
+  const minutes = normalizeTaskEstimate(input.payload.estimatedMinutes)
+  const task = await requireTask(input.orgId, asText(input.payload.taskId))
+  if (task.issuer_profile_id !== input.userId && task.assignee_profile_id !== input.userId) throw new Error('TASK_ESTIMATE_FORBIDDEN')
+  if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
+  const estimateVersion = input.payload.estimateVersion
+  if (!Number.isSafeInteger(estimateVersion) || Number(estimateVersion) < 0) throw new Error('TASK_ESTIMATE_INVALID')
+  const { error } = await createSupabaseAdminClient().rpc('set_task_time_estimate', {
+    p_org_id: input.orgId, p_task_id: task.id, p_actor_profile_id: input.userId,
+    p_task_version: requireExpectedVersion(input.payload.version), p_estimate_version: estimateVersion, p_minutes: minutes,
+  })
+  if (error && ['PGRST202', '42883', '42P01'].includes(error.code ?? '')) throw new Error('TASK_ESTIMATE_SCHEMA_REQUIRED')
+  if (error) throw taskDatabaseError(error, 'TASK_ESTIMATE_SAVE_FAILED')
+  return minutes === null ? 'Tidsuppskattningen togs bort.' : 'Tidsuppskattningen sparades.'
 }
 
 async function setTaskRecurrence(input: TaskActionInput) {
@@ -1785,6 +1824,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     notice = await archiveTask(input)
   } else if (input.action === 'set_recurrence') {
     notice = await setTaskRecurrence(input)
+  } else if (input.action === 'set_time_estimate') {
+    notice = await setTaskTimeEstimate(input)
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
   } else if (input.action === 'complete_manually') {

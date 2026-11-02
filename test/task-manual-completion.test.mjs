@@ -83,7 +83,7 @@ test('UI and API retain the explicit confirmation, retry and dialog boundaries',
   assert.match(dialog, /submittingRef.current/)
   assert.match(read('src/components/tasks/TaskDetailSheet.tsx'), /if \(manualCompletionOpen\) return/)
   assert.match(read('src/app/api/tasks/route.ts'), /'TASK_MANUAL_COMPLETION_FORBIDDEN'/)
-  assert.match(read('src/app/api/tasks/route.ts'), /action === 'complete_manually' && request.headers.get\('origin'\)/)
+  assert.match(read('src/app/api/tasks/route.ts'), /\['complete_manually', 'set_time_estimate'\]\.includes\(action\) && request.headers.get\('origin'\)/)
 })
 
 test('API checks the origin of manual completion and derives the actor from its session', async () => {

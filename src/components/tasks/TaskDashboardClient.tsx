@@ -42,11 +42,12 @@ import ActionCaseWorkspace from './ActionCaseWorkspace'
 import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
 import UppdragScope from './UppdragScope'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
+import { compareTaskEstimates, parseTaskEstimate, taskEstimateLabel, taskHasMyBall, taskIsTimeCandidate, TASK_ESTIMATE_PRESETS } from '@/lib/tasks/timeEstimate'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
 type WorkspaceView = 'current' | 'action_cases' | 'statistics'
 type TaskListMode = 'grouped' | 'all' | 'attention'
-type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated'
+type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated' | 'estimate'
 type SortDirection = 'asc' | 'desc'
 
 const TASK_LIST_STORAGE_KEY = 'hushub:tasks:list-view:v1'
@@ -85,8 +86,7 @@ function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
     )
   }
   if (filter === 'my_ball') {
-    if (task.ballHolder === 'issuer') return task.issuerId === userId
-    return task.ballHolder === 'assignee' && task.assignee.kind === 'profile' && task.assignee.id === userId
+    return taskHasMyBall(task, userId)
   }
   return true
 }
@@ -127,6 +127,10 @@ function compareTasks(
   sortDirection: SortDirection
 ) {
   let comparison = 0
+  if (sortField === 'estimate') {
+    const timeComparison = compareTaskEstimates(a, b, sortDirection)
+    if (timeComparison) return timeComparison
+  }
   if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
   if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
   if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
@@ -265,6 +269,7 @@ function TaskCard({
             {task.contextLabel ? <span className="truncate text-xs font-medium text-slate-500">{task.contextLabel}</span> : null}
           </div>
           <h2 className={`mt-2 text-base leading-snug text-slate-950 ${task.unreadMessageCount > 0 ? 'font-bold' : 'font-semibold'}`}>{task.title}</h2>
+          <p className="mt-1 text-xs font-medium text-[#596368]">Tidsåtgång: {taskEstimateLabel(task.estimatedMinutes)}</p>
           {task.description ? <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{task.description}</p> : null}
           <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
             <span className="flex min-w-0 items-center gap-1.5">
@@ -405,6 +410,7 @@ function TaskTableRow({
         </div>
       </td>
       <td className="px-3 py-3 align-middle"><TaskStatusBadge status={task.status} /></td>
+      <td className="whitespace-nowrap px-3 py-3 align-middle text-sm" title="Uppskattad tidsåtgång">{taskEstimateLabel(task.estimatedMinutes)}</td>
       <td className="px-3 py-3 align-middle">
         <p className="truncate font-medium text-slate-800">{task.assignee.name}</p>
         <p className="mt-0.5 truncate text-xs text-slate-500">Bollen hos {ballText(task)}</p>
@@ -442,6 +448,14 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
   const [listMode, setListMode] = useState<TaskListMode>('grouped')
+  const [timeBudgetMode, setTimeBudgetMode] = useState('all'), [customTimeBudget, setCustomTimeBudget] = useState('')
+  const timeBudgetActive = workspace?.timeEstimatesAvailable === true && timeBudgetMode !== 'all'
+  const effectiveListMode = timeBudgetActive ? 'all' : listMode
+  let timeBudget: number | null = null, invalidTimeBudget = false
+  if (timeBudgetActive) {
+    try { timeBudget = parseTaskEstimate(timeBudgetMode === 'custom' ? customTimeBudget : timeBudgetMode); invalidTimeBudget = timeBudget === null }
+    catch { invalidTimeBudget = true }
+  }
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set())
   const workspaceTimeZone = normalizeTaskTimeZone(workspace?.timeZone)
   const [sortField, setSortField] = useState<SortField>('due')
@@ -489,7 +503,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           setFilter(parsed.filter as FilterKey)
         }
         if (typeof parsed.search === 'string') setSearch(parsed.search)
-        if (['title', 'status', 'assignee', 'due', 'updated'].includes(parsed.sortField ?? '')) {
+        if (['title', 'status', 'assignee', 'due', 'updated', 'estimate'].includes(parsed.sortField ?? '')) {
           setSortField(parsed.sortField as SortField)
         }
         if (parsed.sortDirection === 'asc' || parsed.sortDirection === 'desc') {
@@ -519,7 +533,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
 
   useEffect(() => {
     setPage(1)
-  }, [drilldownTaskIds, filter, listMode, pageSize, search, sortDirection, sortField])
+  }, [drilldownTaskIds, filter, listMode, pageSize, search, sortDirection, sortField, timeBudgetMode, customTimeBudget])
 
   const taskHierarchy = useMemo(() => {
     const tasks = workspace?.tasks ?? []
@@ -558,39 +572,43 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     return { byId, roots, rootIdByTask, descendantsByRoot, groupStatsByRoot }
   }, [workspace])
 
-  const visibleTasks = useMemo(() => {
+  const matchingTasks = useMemo(() => {
     if (!workspace) return []
     const term = search.trim().toLocaleLowerCase('sv-SE')
-    const candidates = listMode === 'all' ? workspace.tasks : taskHierarchy.roots
+    const candidates = effectiveListMode === 'all' ? workspace.tasks : taskHierarchy.roots
     return candidates
       .filter((task) => {
-        const groupedTasks = listMode === 'all'
+        const groupedTasks = effectiveListMode === 'all'
           ? [task]
           : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
         return (
           (!drilldownTaskIds || groupedTasks.some((item) => drilldownTaskIds.has(item.id)))
           && groupedTasks.some((item) => taskMatchesFilter(item, filter, workspace.currentUser.id))
           && groupedTasks.some((item) => taskMatchesSearch(item, term))
-          && (listMode !== 'attention' || groupedTasks.some((item) => taskNeedsAttention(item, workspace.currentUser.id)))
+          && (effectiveListMode !== 'attention' || groupedTasks.some((item) => taskNeedsAttention(item, workspace.currentUser.id)))
+          && (!timeBudgetActive || taskIsTimeCandidate(task, workspace.currentUser.id))
         )
       })
       .sort((a, b) => compareTasks(a, b, sortField, sortDirection))
       .map((task) => ({
         task,
-        parentTitle: listMode === 'all' && task.parentTaskId
+        parentTitle: effectiveListMode === 'all' && task.parentTaskId
           ? taskHierarchy.byId.get(task.parentTaskId)?.title ?? null
           : null,
       }))
-  }, [drilldownTaskIds, filter, listMode, search, sortDirection, sortField, taskHierarchy, workspace])
+  }, [drilldownTaskIds, filter, effectiveListMode, search, sortDirection, sortField, taskHierarchy, workspace, timeBudgetActive])
+  const visibleTasks = useMemo(() => timeBudgetActive ? matchingTasks.filter(({ task }) => task.estimatedMinutes != null && timeBudget !== null && task.estimatedMinutes <= timeBudget) : matchingTasks, [matchingTasks, timeBudget, timeBudgetActive])
+  const unestimatedTasks = useMemo(() => timeBudgetActive ? matchingTasks.filter(({ task }) => task.estimatedMinutes == null) : [], [matchingTasks, timeBudgetActive])
 
   const filterCounts = useMemo(() => {
     if (!workspace) return { all: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
-    const candidates = listMode === 'all' ? workspace.tasks : taskHierarchy.roots
-    const groupFor = (task: TaskView) => listMode === 'all'
+    const candidates = (effectiveListMode === 'all' ? workspace.tasks : taskHierarchy.roots)
+      .filter(task => !timeBudgetActive || (taskIsTimeCandidate(task, workspace.currentUser.id) && task.estimatedMinutes != null && timeBudget !== null && task.estimatedMinutes <= timeBudget))
+    const groupFor = (task: TaskView) => effectiveListMode === 'all'
       ? [task]
       : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
     const inSelectedMode = (tasks: TaskView[]) => (
-      listMode !== 'attention'
+      effectiveListMode !== 'attention'
       || tasks.some((task) => taskNeedsAttention(task, workspace.currentUser.id))
     )
     const count = (nextFilter: FilterKey) => candidates.filter((task) => {
@@ -605,12 +623,12 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
       overdue: count('overdue'),
       unread: count('unread'),
     }
-  }, [listMode, taskHierarchy, workspace])
+  }, [effectiveListMode, taskHierarchy, workspace, timeBudgetActive, timeBudget])
 
   const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pagedTasks = visibleTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  const groupedList = listMode !== 'all'
+  const groupedList = effectiveListMode !== 'all'
   const toggleTaskGroup = (taskId: string) => {
     setExpandedGroupIds((current) => {
       const next = new Set(current)
@@ -661,10 +679,12 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
       const body = (await response.json().catch(() => ({}))) as { workspace?: TaskWorkspace; error?: string }
       if (!response.ok || !body.workspace) throw new Error(body.error || 'Kunde inte hämta uppgifterna.')
       setWorkspace(body.workspace)
+      return true
     } catch (refreshError) {
       const message = refreshError instanceof Error ? refreshError.message : 'Kunde inte hämta uppgifterna.'
       if (workspace) showError(message)
       else setWorkspaceError(message)
+      return false
     } finally {
       setBusy(false)
     }
@@ -929,6 +949,25 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   </label>
                 </div>
 
+                {workspace.timeEstimatesAvailable && <div className="mt-4 flex flex-wrap items-end gap-3 border-y border-[#D5DCDD] py-3">
+                  <label className="text-sm font-medium text-slate-700">Jag har
+                    <select aria-label="Jag har tid" value={timeBudgetMode} onChange={event => { setTimeBudgetMode(event.target.value); if (event.target.value !== 'all') { setSortField('estimate'); setSortDirection('asc') } }}
+                      className="ml-2 min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+                      <option value="all">Alla tider</option>{TASK_ESTIMATE_PRESETS.map(minutes => <option key={minutes} value={minutes}>{minutes} minuter</option>)}<option value="custom">Egen tid</option>
+                    </select>
+                  </label>
+                  {timeBudgetMode === 'custom' && <label className="text-sm text-slate-700">Minuter
+                    <input aria-label="Min tillgängliga tid i minuter" inputMode="numeric" type="text" value={customTimeBudget} onChange={event => { if (/^\d*$/.test(event.target.value)) setCustomTimeBudget(event.target.value) }}
+                      className="ml-2 min-h-10 w-24 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" aria-invalid={invalidTimeBudget} />
+                  </label>}
+                  {timeBudgetActive && <span className="text-sm text-[#596368]">Bollen hos mig</span>}
+                  {invalidTimeBudget && <p role="alert" className="w-full text-sm text-[#A52E42]">Ange 1–10080 hela minuter.</p>}
+                </div>}
+                <label className="mt-3 block text-sm md:hidden">Sortera
+                  <select aria-label="Sortering" value={`${sortField}:${sortDirection}`} onChange={event => { const [field, direction] = event.target.value.split(':'); setSortField(field as SortField); setSortDirection(direction as SortDirection) }} className="ml-2 min-h-10 max-w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm">
+                    {([['due:asc','Slutdatum, tidigast'],['due:desc','Slutdatum, senast'],['estimate:asc','Tidsåtgång, kortast'],['estimate:desc','Tidsåtgång, längst'],['title:asc','Uppgift A–Ö'],['title:desc','Uppgift Ö–A'],['updated:desc','Senast uppdaterad'],['updated:asc','Äldst uppdaterad'],['status:asc','Status, stigande'],['status:desc','Status, fallande'],['assignee:asc','Mottagare A–Ö'],['assignee:desc','Mottagare Ö–A']] as const).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
                 <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Välj listvisning">
                     {([
@@ -939,10 +978,11 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                       <button
                         key={mode}
                         type="button"
-                        aria-pressed={listMode === mode}
+                        aria-pressed={effectiveListMode === mode}
+                        disabled={timeBudgetActive}
                         onClick={() => setListMode(mode)}
                         className={`min-h-10 flex-1 rounded-lg px-3 text-xs font-semibold transition sm:flex-none ${
-                          listMode === mode
+                          effectiveListMode === mode
                             ? 'bg-white text-slate-950 shadow-sm'
                             : 'text-slate-600 hover:text-slate-950'
                         }`}
@@ -952,9 +992,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                     ))}
                   </div>
                   <p className="px-2 text-xs leading-5 text-slate-500">
-                    {listMode === 'grouped'
+                    {effectiveListMode === 'grouped'
                       ? 'Huvuduppdrag visas först. Öppna en grupp för att se underuppgifterna.'
-                      : listMode === 'attention'
+                      : effectiveListMode === 'attention'
                         ? 'Visar grupper med förseningar, olästa meddelanden eller beslut som väntar.'
                         : 'Visar varje huvud- och underuppgift som en egen rad.'}
                   </p>
@@ -1044,11 +1084,12 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide">
                             <tr>
                               <th className="w-10 px-3 py-3"><span className="sr-only">Risk</span></th>
-                              <th className="w-[30%] px-3 py-3"><SortButton field="title" label="Uppdrag" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
-                              <th className="w-[15%] px-3 py-3"><SortButton field="status" label="Status" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
-                              <th className="w-[19%] px-3 py-3"><SortButton field="assignee" label="Mottagare / boll" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[26%] px-3 py-3"><SortButton field="title" label="Uppdrag" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[12%] px-3 py-3"><SortButton field="status" label="Status" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[10%] px-3 py-3" title="Uppskattad tidsåtgång"><SortButton field="estimate" label="Tid" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[18%] px-3 py-3"><SortButton field="assignee" label="Mottagare / boll" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
                               <th className="w-[12%] px-3 py-3"><SortButton field="due" label="Slutdatum" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
-                              <th className="w-[24%] px-3 py-3"><SortButton field="updated" label="Senaste meddelande" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
+                              <th className="w-[22%] px-3 py-3"><SortButton field="updated" label="Senaste meddelande" activeField={sortField} direction={sortDirection} onChange={changeSort} /></th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1108,10 +1149,17 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 ) : (
                   <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white/70 px-6 py-12 text-center">
                     <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><CheckCircle2 size={22} /></span>
-                    <h2 className="mt-4 text-lg font-semibold text-slate-900">Inget här just nu</h2>
-                    <p className="mt-1 text-sm text-slate-500">Byt filter eller skapa ett nytt uppdrag.</p>
+                    <h2 className="mt-4 text-lg font-semibold text-slate-900">{timeBudgetActive ? 'Inga tidsuppskattade uppgifter matchar' : 'Inget här just nu'}</h2>
+                    {!timeBudgetActive && <p className="mt-1 text-sm text-slate-500">Byt filter eller skapa ett nytt uppdrag.</p>}
                   </div>
                 )}
+                {unestimatedTasks.length > 0 && <details className="mt-4 border-y border-[#D5DCDD] py-3"><summary className="cursor-pointer text-sm font-semibold">Tid ej angiven ({unestimatedTasks.length})</summary>
+                  <ul className="mt-2 divide-y divide-slate-200">{unestimatedTasks.map(({ task, parentTitle }) => <li key={task.id}>
+                    <button type="button" className="flex min-h-11 w-full items-center gap-3 py-2 text-left text-sm" onClick={() => setSelectedTaskId(task.id)} aria-label={`Öppna uppdraget ${task.title}`}>
+                      <span className="min-w-0 flex-1 break-words">{task.title}{parentTitle && <span className="block text-xs text-[#596368]">{parentTitle}</span>}</span><ChevronRight size={17} className="shrink-0" />
+                    </button>
+                  </li>)}</ul>
+                </details>}
                   </section>
                 </>
               )}
@@ -1150,7 +1198,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   openComposer(task, suggestion ?? null)
                 }}
                 onSelectTask={setSelectedTaskId}
-                onReload={refresh}
+                onReload={async () => { if (!await refresh()) throw new Error('Uppgiften kunde inte hämtas.') }}
               />
             ) : null}
             {composerOpen ? (
@@ -1162,6 +1210,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 people={workspace.people}
                 currentUserId={workspace.currentUser.id}
                 timeZone={workspaceTimeZone}
+                timeEstimatesAvailable={workspace.timeEstimatesAvailable}
                 busy={busy}
                 onClose={() => {
                   setComposerOpen(false)
