@@ -20,7 +20,7 @@ await new Promise((done, reject) => webpack({ mode: 'development', devtool: fals
 }, (error, stats) => error || stats.hasErrors() ? reject(error ?? Error(stats.toString('errors-only'))) : done()))
 const source = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/background-saving-view.tsx";')
 const css = (await postcss([tailwind({ base: resolve('src') })]).process(source, { from: resolve('src/app/globals.css') })).css
-const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8'))
+const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/project-schedule.css', 'utf8'))
 await writeFile(resolve(output, 'view.css'), css + theme)
 const workspace = projectFixture(actionCase), item = workspace.cases[0].items[0]
 item.updatedAt = '2026-11-02T12:00:00.000001Z'
@@ -31,10 +31,22 @@ item.costLines = [
 const history = [], completed = new Map()
 let stamp = 1, delay = 0, fail = false
 let schedule = { available: true, revision: 0, rows: [{ id: randomUUID(), title: 'Grund', phase: 'Mark', startDate: '', endDate: '', status: 'planned', sourceItemId: null }], sharedRows: [] }
+if (process.argv.includes('--schedule-gantt')) schedule.rows = [
+  ['Mark och grund', '2026-11-02', '2026-11-13', 'completed'],
+  ['Stomme och fasad', '2026-11-09', '2026-11-20', 'completed'],
+  ['Tak', '2026-11-16', '2026-11-27', 'in_progress'],
+  ['Fönster och dörrar', '2026-11-23', '2026-12-04', 'planned'],
+  ['Invändiga arbeten', '2026-11-30', '2026-12-18', 'planned'],
+  ['VVS och värme', '2026-12-07', '2026-12-18', 'planned'],
+  ['Ventilation och injustering med ett mycket långt momentnamn', '2026-12-14', '', 'planned'],
+  ['Slutkontroll', '', '', 'planned'],
+].map(([title, startDate, endDate, status]) => ({ id: randomUUID(), title, phase: '', startDate, endDate, status, sourceItemId: null }))
 const server = createServer(async (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname
   const send = (value, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(value)) }
   try {
+    if (path === '/__test__/responsive') { response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); response.end('<!doctype html><html lang="sv"><title>Tidsplan - mobilkontroll</title><body style="margin:0;padding:16px;background:#edf1f1"><iframe title="Tidsplan 390 px" src="/?view=schedule" style="display:block;width:390px;height:844px;border:0;background:white"></iframe></body></html>'); return }
+    if (path === '/uppdrag/brand/logo.svg' || path === '/uppdrag/brand/manrope.ttf') { response.writeHead(200, { 'Content-Type': path.endsWith('.svg') ? 'image/svg+xml' : 'font/ttf' }); response.end(await readFile(resolve('public', path.slice(1)))); return }
     if (path === '/view.js' || path === '/view.css') { response.writeHead(200, { 'Content-Type': path.endsWith('.js') ? 'text/javascript' : 'text/css' }); response.end(await readFile(resolve(output, path.slice(1)))); return }
     if (path === '/fixture') { send(workspace); return }
     if (path === '/__test__/state') { send({ workspace, schedule, history }); return }

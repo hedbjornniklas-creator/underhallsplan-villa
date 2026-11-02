@@ -1,0 +1,103 @@
+.uppdrag-scope .gizmo-project-schedule { min-width: 0; }
+.uppdrag-scope .gizmo-project-schedule fieldset { min-width: 0; }
+/* Dense planning controls override the shared 44px input/selector rule. */
+.uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon) { min-height: 36px !important; }
+.uppdrag-scope .gizmo-schedule-segments button { min-height: 34px !important; }
+.uppdrag-scope .gizmo-gantt-name { min-height: 0 !important; }
+.uppdrag-scope .gizmo-gantt-bar { min-height: 22px !important; }
+.uppdrag-scope .gizmo-schedule-title { min-height: 34px !important; }
+.uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon) { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; padding: 6px 11px; border: 1px solid var(--uppdrag-line); border-radius: 5px; background: white; color: var(--uppdrag-ink); font-size: 13px; line-height: 20px; font-weight: 600; }
+.uppdrag-scope .gizmo-schedule-icon { width: 34px; min-width: 34px; padding: 0; }
+.uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon):hover:not(:disabled) { background: var(--uppdrag-row-hover); border-color: var(--uppdrag-control); }
+.uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon):disabled { opacity: .45; }
+.uppdrag-scope .gizmo-schedule-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+.uppdrag-scope :is(.gizmo-schedule-heading, .gizmo-schedule-tools) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.uppdrag-scope .gizmo-schedule-heading h4 { font-size: 14px; line-height: 20px; font-weight: 650; }
+.uppdrag-scope .gizmo-schedule-heading > span { font-size: 12px; color: var(--uppdrag-muted); }
+.uppdrag-scope .gizmo-schedule-segments { display: inline-flex; border: 1px solid var(--uppdrag-line); border-radius: 5px; overflow: hidden; }
+.uppdrag-scope .gizmo-schedule-segments button { min-height: 34px; min-width: 65px; border-radius: 0; padding: 4px 12px; font-size: 13px; border-right: 1px solid var(--uppdrag-line); }
+.uppdrag-scope .gizmo-schedule-segments button:last-child { border-right: 0; }
+.uppdrag-scope .gizmo-schedule-segments button[aria-pressed='true'] { background: var(--uppdrag-selected); box-shadow: inset 0 -2px var(--uppdrag-ink); font-weight: 650; }
+.gizmo-gantt { --schedule-label-width: 200px; margin-top: 10px; }
+.gizmo-gantt-viewport { width: 100%; max-height: 510px; overflow: auto; border: 1px solid var(--uppdrag-line); background: white; scrollbar-gutter: stable; }
+.gizmo-gantt-canvas { min-width: 100%; }
+.gizmo-gantt-header, .gizmo-gantt-row { display: grid; grid-template-columns: var(--schedule-label-width) minmax(0, 1fr); }
+.gizmo-gantt-header { height: 52px; position: sticky; top: 0; z-index: 4; background: var(--uppdrag-paper); border-bottom: 1px solid var(--uppdrag-line); }
+.uppdrag-scope .gizmo-gantt-name { position: sticky; left: 0; z-index: 2; display: flex; align-items: center; min-height: 0; min-width: 0; border-radius: 0; border-right: 1px solid var(--uppdrag-line); padding: 0 12px; gap: 10px; text-align: left; font-size: 12px; background: white; overflow: hidden; }
+.gizmo-gantt-header .gizmo-gantt-name { background: var(--uppdrag-paper); font-weight: 650; }
+.gizmo-gantt-name > span { width: 16px; flex-shrink: 0; color: var(--uppdrag-muted); font-size: 11px; }
+.gizmo-gantt-name strong { font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gizmo-gantt-axis { position: relative; overflow: hidden; }
+.gizmo-gantt-month, .gizmo-gantt-tick { position: absolute; padding: 3px 8px; font-size: 11px; white-space: nowrap; overflow: hidden; border-left: 1px solid var(--uppdrag-line); }
+.gizmo-gantt-month { top: 0; height: 26px; border-bottom: 1px solid var(--uppdrag-line); font-weight: 600; text-transform: capitalize; }
+.gizmo-gantt-tick { top: 26px; height: 26px; color: var(--uppdrag-muted); }
+.gizmo-gantt-row { height: 40px; border-bottom: 1px solid var(--uppdrag-line); }
+.gizmo-gantt-row:last-child { border-bottom: 0; }
+.gizmo-gantt-track { position: relative; min-width: 0; }
+.gizmo-gantt-row.is-selected :is(.gizmo-gantt-name, .gizmo-gantt-track) { background: var(--uppdrag-selected); }
+.gizmo-gantt-row:hover .gizmo-gantt-name { background: var(--uppdrag-row-hover); }
+.gizmo-gantt-line { position: absolute; top: 0; bottom: 0; border-left: 1px solid #e6ebeb; pointer-events: none; }
+.uppdrag-scope .gizmo-gantt-bar { position: absolute; top: 9px; height: 22px; min-height: 22px; min-width: 3px; max-width: 100%; border-radius: 4px; font-size: 10px; line-height: 20px; font-weight: 650; text-align: center; background: var(--uppdrag-link); color: white; border: 1px solid #15544e; overflow: hidden; white-space: nowrap; }
+.uppdrag-scope .gizmo-gantt-bar.is-in_progress { background: var(--uppdrag-accent); color: var(--uppdrag-ink); border-color: #b5a149; }
+.uppdrag-scope .gizmo-gantt-bar.is-completed { background: #dceee3; color: var(--uppdrag-success); border-color: #9cbea9; }
+.uppdrag-scope .gizmo-gantt-bar.is-partial { border-radius: 2px; transform: translateX(-5px); }
+.gizmo-gantt-today { position: absolute; top: 0; bottom: 0; z-index: 1; border-left: 2px solid #b44d42; pointer-events: none; }
+.gizmo-gantt-unplanned { position: absolute; left: 12px; top: 10px; font-size: 11px; color: var(--uppdrag-muted); background: white; padding: 0 4px; }
+.gizmo-gantt-unplanned.is-invalid { color: var(--uppdrag-error); }
+.gizmo-gantt-legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 10px 0 2px; font-size: 11px; color: var(--uppdrag-muted); }
+.gizmo-gantt-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.gizmo-gantt-legend i { width: 12px; height: 8px; border-radius: 2px; background: var(--uppdrag-link); }
+.gizmo-gantt-legend .is-in_progress { background: var(--uppdrag-accent); }
+.gizmo-gantt-legend .is-completed { background: #dceee3; border: 1px solid #9cbea9; }
+.gizmo-gantt-legend .is-today { height: 12px; width: 2px; background: #b44d42; }
+.gizmo-gantt-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--uppdrag-muted); background: var(--uppdrag-paper); border-block: 1px solid var(--uppdrag-line); font-size: 13px; }
+.gizmo-schedule-table-toolbar { margin-top: 20px; border-top: 1px solid var(--uppdrag-line); }
+.gizmo-schedule-table-scroll { position: relative; max-width: 100%; overflow: auto; }
+.gizmo-schedule-table { width: 100%; min-width: 820px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.gizmo-schedule-table th { height: 34px; padding: 4px 10px; text-align: left; background: var(--uppdrag-table-head); font-weight: 550; color: var(--uppdrag-muted); border-block: 1px solid var(--uppdrag-line); white-space: nowrap; }
+.gizmo-schedule-table td { height: 40px; padding: 2px 10px; border-bottom: 1px solid var(--uppdrag-line); white-space: nowrap; }
+.gizmo-schedule-table td:last-child { padding: 0 4px; }
+.gizmo-schedule-table tr:hover td { background: var(--uppdrag-row-hover); }
+.gizmo-schedule-table tr.is-selected td { background: var(--uppdrag-selected); }
+.gizmo-schedule-table tr:focus { outline: 2px solid var(--uppdrag-link); outline-offset: -2px; }
+.uppdrag-scope .gizmo-schedule-table .gizmo-schedule-icon { min-height: 32px; height: 32px; border-color: transparent; background: transparent; }
+.uppdrag-scope .gizmo-schedule-title { display: flex; align-items: center; gap: 10px; min-height: 34px; min-width: 0; max-width: 100%; width: 100%; text-align: left; }
+.gizmo-schedule-title > span { flex-shrink: 0; width: 16px; color: var(--uppdrag-muted); font-size: 11px; }
+.gizmo-schedule-title strong { font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
+.gizmo-schedule-title small { flex-shrink: 0; max-width: 30%; overflow: hidden; text-overflow: ellipsis; color: var(--uppdrag-muted); font-size: 11px; }
+.gizmo-schedule-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
+.gizmo-schedule-status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--uppdrag-link); }
+.gizmo-schedule-status.is-in_progress::before { background: #b48d16; }
+.gizmo-schedule-status.is-completed::before { background: var(--uppdrag-success); }
+.gizmo-schedule-empty { padding: 24px 10px; color: var(--uppdrag-muted); font-size: 13px; }
+.gizmo-schedule-confirm { margin-block: 12px; padding: 14px; border-left: 3px solid var(--uppdrag-accent); background: var(--uppdrag-warning-bg); font-size: 13px; }
+.gizmo-schedule-confirm p { margin-block: 5px 10px; }
+.gizmo-schedule-confirm > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.uppdrag-scope .gizmo-schedule-dialog { position: fixed; inset: 0 0 0 auto; margin: 0; padding: 0; max-height: 100dvh; height: 100dvh; width: min(480px, 100%); max-width: 100%; border: 0; border-left: 1px solid var(--uppdrag-line); border-radius: 0; background: white; color: var(--uppdrag-ink); }
+.gizmo-schedule-dialog::backdrop { background: rgb(23 34 31 / 30%); }
+.gizmo-schedule-dialog[open] { display: flex; flex-direction: column; }
+.gizmo-schedule-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; padding: 20px; gap: 12px; border-bottom: 1px solid var(--uppdrag-line); }
+.gizmo-schedule-dialog header > div { min-width: 0; }
+.gizmo-schedule-dialog header span { font-size: 12px; color: var(--uppdrag-muted); }
+.gizmo-schedule-dialog h3 { overflow-wrap: anywhere; margin-top: 4px; }
+.gizmo-schedule-dialog-body { padding: 20px; overflow: auto; flex: 1; }
+.gizmo-schedule-dialog fieldset { display: grid; min-width: 0; gap: 18px; }
+.gizmo-schedule-dialog label { display: grid; gap: 6px; font-size: 13px; }
+.uppdrag-scope .gizmo-schedule-dialog :is(input, select) { width: 100%; min-width: 0; min-height: 42px; border: 1px solid var(--uppdrag-control); border-radius: 5px; padding: 8px 10px; background: white; color: var(--uppdrag-ink); font-size: 14px; }
+.gizmo-schedule-date-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.gizmo-schedule-row-actions { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--uppdrag-line); padding-top: 16px; }
+.gizmo-schedule-row-actions > button:last-child { margin-left: auto; }
+.gizmo-schedule-dialog > footer { padding: 16px 20px; border-top: 1px solid var(--uppdrag-line); display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.gizmo-schedule-dialog footer span { font-size: 12px; color: var(--uppdrag-muted); }
+.gizmo-schedule-warning { font-size: 12px; color: var(--uppdrag-error); }
+@media (max-width: 639px) {
+  .gizmo-gantt { --schedule-label-width: 150px; }
+  .gizmo-gantt-viewport { max-height: 430px; }
+  .uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon, .gizmo-schedule-title, .gizmo-schedule-segments button) { min-height: 44px !important; }
+  .uppdrag-scope .gizmo-schedule-icon { min-width: 44px; width: 44px; }
+  .gizmo-schedule-table td { height: 46px; }
+  .uppdrag-scope .gizmo-schedule-table .gizmo-schedule-icon { min-height: 44px; width: 40px; min-width: 40px; }
+  .uppdrag-scope .gizmo-schedule-title { min-height: 44px; }
+  .gizmo-schedule-date-fields { grid-template-columns: minmax(0, 1fr); }
+  .uppdrag-scope .gizmo-schedule-dialog :is(input, select) { font-size: 16px; }
+}

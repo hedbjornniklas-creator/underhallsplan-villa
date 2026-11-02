@@ -7,7 +7,7 @@ import ProjectScheduleEditor from '@/components/tasks/ProjectScheduleEditor'
 import type { ActionCaseWorkspace as Workspace } from '@/lib/action-cases/contracts'
 
 function Preview({ workspace }: { workspace: Workspace }) {
-  const [view, setView] = useState('work'), [refresh, setRefresh] = useState(0)
+  const [view, setView] = useState(() => new URLSearchParams(window.location.search).get('view') === 'schedule' ? 'schedule' : 'work'), [refresh, setRefresh] = useState(0)
   const project = workspace.cases[0]
   return <AppToastProvider><UppdragScope external><div className="gizmo-workspace">
     <header className="flex flex-wrap items-center gap-3 border-b p-4 text-sm">
