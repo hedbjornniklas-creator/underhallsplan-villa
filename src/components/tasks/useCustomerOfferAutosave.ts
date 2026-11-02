@@ -9,6 +9,7 @@ export type CustomerOfferSaveSnapshot = { draft: CustomerOfferDraft; costing: Cu
 type SaveState = {
   snapshot: CustomerOfferSaveSnapshot
   status: 'pending' | 'saving' | 'saved' | 'error'
+  errorMessage?: string
 }
 
 // The editor stays mounted across project sections, so its existing queue can finish in the background.
@@ -41,7 +42,7 @@ export function useCustomerOfferAutosave({ initialRevision, save, onSaved, onErr
         const current = entry.current!
         entry.current = { ...current, status: JSON.stringify(current.snapshot) === JSON.stringify(submitted.snapshot) ? 'saved' : 'pending' }
       } catch (error) {
-        entry.current = { ...entry.current!, status: 'error' }
+        entry.current = { ...entry.current!, status: 'error', errorMessage: error instanceof Error ? error.message : 'Utkastet kunde inte sparas. Dina ändringar är kvar.' }
         if (mounted.current) onError(error)
       }
       publish()
@@ -66,7 +67,7 @@ export function useCustomerOfferAutosave({ initialRevision, save, onSaved, onErr
   flushRef.current = flush
   const change = (snapshot: CustomerOfferSaveSnapshot) => {
     const failed = entry.current?.status === 'error'
-    entry.current = { snapshot, status: failed ? 'error' : 'pending' }; publish()
+    entry.current = { snapshot, status: failed ? 'error' : 'pending', ...(failed ? { errorMessage: entry.current?.errorMessage } : {}) }; publish()
     clearTimeout(timer.current)
     if (!failed) timer.current = setTimeout(() => { void flushRef.current() }, 700)
   }

@@ -71,3 +71,51 @@ arbetsdata jamfors falt for falt och maste vara exakt oforandrat efter migrering
 API-sparrarna, att kalkylpris aldrig ersatter kundpris och att lasning fortfarande
 tillater materialmarkering och bestallningsutskrift. UI-testserverns flagga
 `--contract-work --contract-signing --cost-table` anvander endast fiktiva data.
+
+## Beslutsandring 2026-11-02: Offert Delar Momentens Omfattning
+
+Anvandaren har uttryckligen andrat gransdragningen: aven Offert ska anvanda samma
+rubrik, omfattning, forutsattningar, undantag och avradan for kallkopplade moment
+innan de lases. Detta ersatter endast tidigare beslut om separat offertomfattning.
+Offertens priser, prisvillkor, interna kalkyl, parter och bilagor forblir separata.
+Val och tillval och tidsplanen ingar inte i denna koppling.
+
+- Databasen synkar endast andrade arbetsfalt via momentets ID. En rubriklikhet
+  skapar aldrig en koppling. Manuella rader och gamla tillvals/option-rader ar
+  fristaende; en offert kan aven anvandas innan ett avtalsutkast finns.
+- Inga befintliga skillnader skrivs over nar SQL-filen kors eller ett gammalt
+  utkast oppnas. Prisredigering far inte tyst aterfora en gammal omfattning.
+- Ett uttryckligen tomt textfalt delas som tomt. Aldre klienter som inte skickar
+  valfria falt far inte ta bort sparade forutsattningar, undantag eller avradan.
+- Kopplade offertfalt blir skrivskyddade nar momentet ingar i en last version.
+  Databasen skyddar detta aven mot gamla flikar. Att ta bort en offertreferens
+  raderar inte momentet, och andra offertuppgifter andrar aldrig den lasta versionen.
+- Synkning sker i samma transaktion med projektlas och versionskontroller.
+  Ett offertanrop far bara flytta sin revision en gang, inte via en trigger-eko.
+- Projektvyn laser om arbetsunderlaget efter sparade offerttexter. Offerten laser
+  in ny gemensam omfattning endast nar eget utkast ar sparat. En misslyckad
+  hamtning visas med aterforsok; text som tillkommer under en hamtning behalls.
+
+Kor `docs/db/2026-11-02_02_offer_work_scope_link.sql` efter den tidigare
+avtalskopplingen och fore publicering. Filen ar additiv och kan koras igen.
+Anvandaren bekraftade 2026-11-02 att filen ar kord. Lasande produktionskontroll
+bekraftar exakta funktionskroppar, tre aktiva triggers och service-only anrop.
+
+Utvidgade PGlite-tester provar de verkliga skrivfunktionerna, UPSERT, tomma och
+uteblivna falt, revisionskonflikter, trevagssynkning och exakta frysta dokument.
+Komponenttesterna provar saker hamtning och skrivskydd. Klicktestserverns
+`--contract-work --independent-contract --shared-work-scope --serve` anvander
+bara fiktiva uppgifter. Den ersatter inte databasens transaktionstester.
+
+Den rena verifieringskopians 787 avgransade tester och produktionsbygge passerar.
+Klicktestet bekraftar text i alla tre vyerna efter andring fran Offert,
+Projektarbete respektive Avtal. Inga produktionsuppgifter har redigerats.
+Den nya bekraftelsen for att ersatta ett misslyckat offertutkast anvander en
+synlig ruta i sidan i stallet for window.confirm. Komponenttesterna provar
+avbryt, bekrafta och lasfel. Uppfoljande klicktest 2026-11-02 bekraftar att den
+gamla testfliken ar stangd, Avbryt behaller den lokala texten och Ersatt med
+sparad offert aterlaser forst efter det uttryckliga valet. Testfliken och den
+lokala servern har stangts. Ingen riktig projektflik har berorts och publicering
+ar godkand av anvandaren. Lokevagens sparade projekt, arbetsrader, avtal,
+dokument och kundplanering ar oforandrade efter SQL-installationen. Den nya
+tidsplanen byggs separat efter detta publiceringspaket.

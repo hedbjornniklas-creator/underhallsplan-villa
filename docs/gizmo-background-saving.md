@@ -85,3 +85,28 @@ produktionens API-schema bekraftar bada nya tabellerna och de tre funktionerna
 for kalkylsparning och tidsuppskattning. Den rena, sammanslagna kopians 771 tester
 passerar. Inga riktiga projekt anvands for mutationstester. Driftsatt version och
 skrivfri jamforelse av befintliga projektunderlag verifieras efter publiceringen.
+
+## Rattning Av Offertens Sparstatus 2026-11-02
+
+- Dolda avtalsstandardvarden raknas inte som anvandarandringar innan utkastet
+  faktiskt redigeras eller en aktiv uppgradering har koats for sparning.
+- Offertens separata redigerare monterar inte ytterligare kopior av Val och
+  tillval eller Fakturakund. Deras utkast kan inte ge offerten falsk sparstatus.
+- Sparstatusen galler aktuellt dokument. Osparade uppgifter i andra delar visas
+  med delens namn och en knapp som oppnar ratt del; lamna-sidan-skyddet behalls.
+- En lista visar vilka uppgiftsgrupper som ar andrade. Vid sparfel visas aven
+  serverns felmeddelande tills ett uttryckligt aterforsok har lyckats.
+- Offertens sparfel har aven ett uttryckligt hamtningsval med bekraftelse av
+  att lokala andringar ersatts. Avbryts valet, misslyckas hamtningen eller
+  tillkommer ny text under tiden behalls det lokala utkastet.
+- Ett lokalt redigerat utkast som saknar vantande sparning aterfors till kon.
+  Fel eller versionskonflikter aterforsoks inte automatiskt, och lasta avtal
+  skrivs aldrig av aterhamtningsflodet.
+
+De 772 avgransade testerna, riktad ESLint och ett rent produktionsbygge passerar.
+Klicktester med enbart fiktiva uppgifter bekraftar felorsak, berord uppgiftsgrupp,
+aterforsok, bevarad text efter omladdning och navigering utan falsk varning.
+Mobilkontrollen vid 390 px visar ingen horisontell sidoverstromning.
+Avtalskopian i testprojektet ar oforandrad. Ingen SQL behovs for rattningen.
+Anvandaren har darefter godkant publicering tillsammans med omfattningssynkningen.
+Det sammanslagna paketets 787 tester och rena produktionsbygge passerar.

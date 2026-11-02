@@ -351,6 +351,7 @@ if (process.argv.includes('--work-sums')) {
   ]
 }
 const contractWorkTest = process.argv.includes('--contract-work')
+const sharedScopeTest = process.argv.includes('--shared-work-scope')
 const contractWorkRequests=[]
 if (contractWorkTest) {
   projects.cases[0].title='TEST: Kopplade avtalsmoment'
@@ -370,7 +371,17 @@ function updateContractWorkView(){
     for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice']) item[key]=part[key]??''
     item.contractWork={revision:state.revision,locked:Boolean(frozen),version:frozen?.version??null,documentId:frozen?.id??null,price:{editable:true,split:'combined',amountOre:price?.amountOre??null,labourOre:null,materialOre:null},differences:[]}
   }
+  if(sharedScopeTest){
+    let changed=false
+    for(const item of projects.cases[0].items){
+      const row=estimateState.draft.items.find(row=>row.kind!=='option'&&(row.sourceItemId??row.id)===item.id)
+      if(!row)continue
+      for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice'])if((row[key]??'')!==(item[key]??'')){row[key]=item[key]??'';changed=true}
+    }
+    if(changed)estimateState.revision++
+  }
 }
+if(sharedScopeTest)estimateState.draft.items=structuredClone(state.draft.items)
 updateContractWorkView()
 let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
 const sharingRequests = new Map()
@@ -405,6 +416,9 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(body))
   }
   if(contractWorkTest && path==='/__test__/requests'){json(contractWorkRequests);return}
+  if(sharedScopeTest && path.endsWith('/sender-profile') && req.method==='GET'){
+    json({available:true,organization:{id:state.customerLink?.organizationId??id(100),name:'Exempelbygg AB',legalName:'Exempelbygg AB',organizationNumber:'556000-0000',legalNameVersion:1},profiles:[],selected:null});return
+  }
   if (process.argv.includes('--choice-files') && path.startsWith('/__test__/choice-pdf-upload/') && req.method === 'PUT') {
     const chunks = []; for await (const chunk of req) chunks.push(chunk)
     choiceUploads.set(decodeURIComponent(path.split('/').at(-1)), Buffer.concat(chunks)); json({ ok: true }); return
@@ -767,9 +781,31 @@ const server = createServer(async (req, res) => {
         if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
         if (body.revision !== estimateState.revision) { json({ error: 'Offerten har ändrats.' }, 409); return }
         try {
-          estimateState.draft = normalizeCustomerOffer(body.draft)
+          const next=normalizeCustomerOffer(body.draft)
+          if(sharedScopeTest){
+            const changes=[]
+            for(const row of next.items.filter(row=>row.kind!=='option')){
+              const source=projects.cases[0].items.find(item=>item.id===(row.sourceItemId??row.id))
+              const previous=estimateState.draft.items.find(item=>(item.sourceItemId??item.id)===(row.sourceItemId??row.id))
+              if(!source)continue
+              const patch={}
+              for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice'])if((row[key]??'')!==(previous?.[key]??'')&&(row[key]??'')!==(source[key]??''))patch[key]=row[key]??''
+              if(Object.keys(patch).length&&source.contractWork?.locked)throw Error('Momentet ingår i ett låst avtal.')
+              if(Object.keys(patch).length)changes.push({source,patch})
+            }
+            let changedContract=false
+            for(const {source,patch} of changes){
+              Object.assign(source,patch);source.updatedAt=new Date().toISOString()
+              const contract=state.draft.items.find(item=>(item.sourceItemId??item.id)===source.id)
+              if(contract){Object.assign(contract,patch);changedContract=true
+                if(patch.title){const price=state.draft.contractPricing?.rows.find(row=>row.sourceItemId===source.id);if(price)price.title=patch.title}}
+            }
+            if(changedContract)state.revision++
+          }
+          estimateState.draft = next
           estimateState.costing = normalizeCustomerOfferCosting(body.costing, estimateState.draft.items)
           estimateState.revision++
+          if(sharedScopeTest)updateContractWorkView()
           json({ ...state, ...estimateState, offerDraft: undefined })
         } catch (error) { json({ error: error.message }, 400) }
         return

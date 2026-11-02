@@ -3,6 +3,15 @@ export const contractWorkFields = [
   ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan'],
 ] as const
 
+type WorkScope = { id: string; sourceItemId?: string; kind?: string; title: string; scope?: string | null;
+  scopeConditions?: string; scopeExclusions?: string; scopeAdvice?: string }
+
+export function sharedWorkScopeKey(items: readonly WorkScope[]): string {
+  return JSON.stringify(items.filter(item => item.kind !== 'option')
+    .map(item => [item.sourceItemId ?? item.id, ...contractWorkFields.map(([key]) => item[key] ?? '')])
+    .sort((a, b) => a[0].localeCompare(b[0])))
+}
+
 export type ContractWorkPrice = {
   editable: boolean
   split: 'combined' | 'separate'

@@ -56,6 +56,8 @@ import { abs18PaymentText, paymentConditionsText, syncPaymentPlan } from '@/lib/
 import ProjectEditorRow from './ProjectEditorRow'
 import CustomerContractSiteFacilities from './CustomerContractSiteFacilities'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
+import { customerOfferSaveChanges } from '@/lib/action-cases/customerOfferSaveChanges'
+import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 import { ContractCustomerEditor, ContractContractorEditor } from './CustomerContractPartiesEditor'
@@ -159,6 +161,7 @@ export default function CustomerOfferEditor({
   const setView = (next: CustomerEditorView) => { setInternalView(next); onViewChange?.(next) }
   const [itemView, setItemView] = useState<'included' | 'excluded'>('included')
   const [removeId, setRemoveId] = useState<string | null>(null)
+  const [confirmOfferReload, setConfirmOfferReload] = useState(false)
   const [expanded, setExpanded] = useState<string | null>('customer')
   const [planningDirty, setPlanningDirty] = useState(false)
   const [billingDirty, setBillingDirty] = useState(false)
@@ -181,8 +184,10 @@ export default function CustomerOfferEditor({
   const contractView = view === 'contract'
   const apiUrl = `/api/action-cases/${actionCase.id}/customer-offers${draftTarget === 'offer' ? '?draftTarget=offer' : ''}`
   const editableDraft = (result: CustomerOfferWorkspace) => draftTarget === 'offer' ? result.draft : draftForEditing(result)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(workspace.draft) ||
-    JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {})
+  // Prepared contract defaults are not user edits while that editor is hidden.
+  const dirty = (draftTarget === 'offer' || localEdits.current || initialUpgradeQueued.current) &&
+    (JSON.stringify(draft) !== JSON.stringify(workspace.draft) || JSON.stringify(costing) !== JSON.stringify(workspace.costing ?? {}))
+  const pendingChanges = dirty ? customerOfferSaveChanges(draft, workspace.draft, costing, workspace.costing) : []
   const recipientChanged = Boolean(draft.contractParties && (
     parties.customers[0].name.trim() !== (customer?.name ?? '') ||
     parties.email.trim().toLowerCase() !== (customer?.email ?? '').trim().toLowerCase() ||
@@ -227,14 +232,36 @@ export default function CustomerOfferEditor({
   const signingMethod = signingVersion ? 'external' : draft.signingMethod ?? (workspace.offers.length ? 'email_code' : 'external')
   const [customerPortalUrl, setCustomerPortalUrl] = useState('')
   const locked = accepted || Boolean(signingVersion)
+  useEffect(() => {
+    // Recover edits made while another action temporarily owned the save path.
+    if (!dirty || !localEdits.current || locked || busy || autosave.isPending() || autosave.state?.status === 'error') return
+    autosave.change(currentSnapshot.current)
+  }, [dirty, draft, costing, locked, busy, autosave])
   const linkedRefresh = useRef<() => void>(() => {})
   const refreshingRevision = useRef(0)
-  linkedRefresh.current = () => { void action('refresh') }
+  const linkedScopeKey = sharedWorkScopeKey(actionCase.items)
+  const refreshedOfferScope = useRef(linkedScopeKey)
+  const [linkedScopeError, setLinkedScopeError] = useState(false)
+  const refreshOfferScope = useRef<() => Promise<boolean>>(async () => false)
+  refreshOfferScope.current = async () => {
+    setLinkedScopeError(false)
+    const refreshed = await action('refresh', { silent: true })
+    setLinkedScopeError(!refreshed)
+    return refreshed
+  }
+  linkedRefresh.current = () => { void action('refresh', { silent: true }) }
   useEffect(() => {
     if (draftTarget !== 'contract' || linkedRevision <= workspace.revision || (dirty && localEdits.current) || planningDirty || sourcePending || busy || autosave.isPending() || (autosave.state?.status === 'error' && localEdits.current) || refreshingRevision.current === linkedRevision) return
     refreshingRevision.current = linkedRevision
     linkedRefresh.current()
   }, [draftTarget, linkedRevision, workspace.revision, dirty, planningDirty, sourcePending, busy, autosave])
+  useEffect(() => {
+    if (draftTarget !== 'offer' || !active || linkedScopeKey === refreshedOfferScope.current || dirty || sourcePending || busy || autosave.isPending() || autosave.state?.status === 'error') return
+    refreshedOfferScope.current = linkedScopeKey
+    void refreshOfferScope.current()
+  }, [draftTarget, active, linkedScopeKey, dirty, sourcePending, busy, autosave])
+  const scopeLocked = (item: CustomerOfferItem) => draftTarget === 'offer' && item.kind !== 'option' && Boolean(
+    actionCase.items.find(source => source.id.toLowerCase() === (item.sourceItemId ?? item.id).toLowerCase())?.contractWork?.locked)
   const signingBlockers = [
     ...(documentRecovery ? ['Hantera det lokala handlingsutkastet före låsning.'] : []),
     ...(workspace.offers.some((o) => o.status === 'published') ? ['Återkalla det utskickade avtalet före låsning för underskrift.'] : [])]
@@ -426,6 +453,9 @@ export default function CustomerOfferEditor({
       const data = await response.json()
       if (!response.ok)
         throw new Error(data.error || 'Offerten kunde inte hanteras.')
+      if (operation === 'refresh' && (JSON.stringify(currentSnapshot.current.draft) !== JSON.stringify(draft) ||
+        JSON.stringify(currentSnapshot.current.costing) !== JSON.stringify(costing)))
+        throw new Error('Du hann redigera under hämtningen. Din text har behållits; den hämtade versionen har inte lagts in.')
       if (operation === 'save' && !contractDocumentsAcknowledged(draft, data.draft, data.standardTermsFile?.id ?? standardTermsFile?.id))
         throw new Error('Sparningen av handlingarna kunde inte bekräftas. Dina ändringar är kvar.')
       if (operation === 'bind_customer' || operation === 'bind_property' || data.recipient?.name !== workspace.recipient?.name ||
@@ -456,7 +486,7 @@ export default function CustomerOfferEditor({
       }
       if (operation === 'separate_choices') setView('planning')
       setConfirmed(false)
-      toast.success(
+      if (operation !== 'refresh' || extra.silent !== true) toast.success(
         operation === 'publish' || operation === 'send'
           ? 'Avtalet har skickats.'
           : operation === 'freeze' ? 'Avtalsversionen är låst. PDF och bilagor kan hämtas för signering.'
@@ -655,7 +685,7 @@ export default function CustomerOfferEditor({
                 ? 'Kunde inte spara'
               : autosave.isSaving
                 ? 'Sparar utkast…'
-              : dirty || planningDirty || billingDirty
+              : dirty
                 ? 'Osparade ändringar'
               : documentRecovery
                 ? 'Lokalt utkast finns'
@@ -676,6 +706,32 @@ export default function CustomerOfferEditor({
           </div>
         </div>
       </header>}
+      {draftTarget === 'offer' && linkedScopeError && <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 border-l-4 border-[#F2D76A] bg-[#FFF7D6] px-3 py-2 text-sm print:hidden">
+        <span>Den gemensamma omfattningen kunde inte hämtas. Senast inlästa uppgifter visas.</span>
+        <button type="button" className="gizmo-button" disabled={Boolean(busy) || dirty || autosave.isSaving || autosave.state?.status === 'error'} onClick={() => void refreshOfferScope.current()}><RefreshCw size={16} />Försök hämta omfattningen igen</button>
+      </div>}
+      {(dirty || autosave.state?.status === 'error') && view !== 'customer' && <section className="mb-4 border-l-4 border-[#F2D76A] bg-[#FFF7D6] px-3 py-2 text-sm print:hidden" aria-label="Sparinformation">
+        <details><summary className="cursor-pointer font-medium">{autosave.state?.status === 'error' ? 'Vad kunde inte sparas?' : 'Ändringar som väntar på sparning'}</summary>
+          <ul className="mt-2 list-inside list-disc">{(pendingChanges.length ? pendingChanges : ['Utkastet']).map(label => <li key={label}>{label}</li>)}</ul>
+        </details>
+        {autosave.state?.status === 'error' && <p role="alert" className="mt-2 break-words">{autosave.state.errorMessage || 'Utkastet kunde inte sparas. Dina ändringar är kvar.'}</p>}
+        {draftTarget === 'offer' && autosave.state?.status === 'error' && <>
+          <button type="button" className="gizmo-button mt-2" disabled={Boolean(busy) || autosave.isSaving} onClick={() => setConfirmOfferReload(true)}><RefreshCw size={16} />Hämta sparad offert</button>
+          {confirmOfferReload && <div role="group" aria-label="Bekräfta hämtning av sparad offert" className="mt-3 border-t border-[#D5DCDD] pt-3">
+            <p className="font-medium">Ersätta dina osparade offertändringar?</p>
+            <p className="mt-1">Ditt utkast ersätts först när den sparade offerten har hämtats. Avbryt för att behålla texten.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className="gizmo-button" disabled={Boolean(busy)} onClick={() => setConfirmOfferReload(false)}>Avbryt hämtning</button>
+              <button type="button" className="gizmo-button" disabled={Boolean(busy) || autosave.isSaving} onClick={() => { setConfirmOfferReload(false); void action('refresh') }}><RefreshCw size={16} />Ersätt med sparad offert</button>
+            </div>
+          </div>}
+        </>}
+        {dirty && !locked && !busy && !autosave.isSaving && autosave.state?.status !== 'error' && <button type="button" className="gizmo-button mt-2" onClick={() => { autosave.change(currentSnapshot.current); void autosave.flush() }}><RefreshCw size={16} />Försök spara nu</button>}
+      </section>}
+      {draftTarget === 'contract' && (planningDirty || billingDirty) && view !== 'customer' && <div className="mb-4 flex flex-wrap items-center gap-2 text-sm print:hidden" role="status">
+        {planningDirty && <button type="button" className="gizmo-text-button" onClick={() => setView('planning')}>Ändringar i Val och tillval<ArrowRight size={16} /></button>}
+        {billingDirty && <button type="button" className="gizmo-text-button" onClick={() => { setPaymentView('billing'); setView('payments') }}>Osparade faktureringsuppgifter<ArrowRight size={16} /></button>}
+      </div>}
       {!embedded && <nav
         className="flex gap-2 overflow-x-auto border-b border-slate-200 py-3"
         aria-label="Offert och avtal"
@@ -725,7 +781,7 @@ export default function CustomerOfferEditor({
         {(dirty || planningDirty) && <p className="mt-2 text-sm">Spara ändringarna innan valen flyttas.</p>}
       </section>}
       <div hidden={view !== 'planning'}>
-        <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} files={actionCase.attachments} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />
+        {draftTarget === 'contract' && <CustomerPlanningEditor key={planningReset} caseId={actionCase.id} files={actionCase.attachments} initial={planning ?? { available: false, revision: 0, items: [], sharedItems: [] }} onDirty={setPlanningDirty} onSaved={setPlanning} />}
       </div>
       <div hidden={view !== 'payments'} className="py-6">
         <h2 className="text-xl">Betalning och fakturering</h2>
@@ -739,7 +795,7 @@ export default function CustomerOfferEditor({
           {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
         </div>
         <div id={`payment-panel-${actionCase.id}-billing`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-billing`} hidden={paymentView !== 'billing'}>
-          <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />
+          {draftTarget === 'contract' && <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />}
         </div>
       </div>
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>
@@ -898,6 +954,7 @@ export default function CustomerOfferEditor({
                       Arbetsrubrik *
                       <input
                         className={field}
+                        disabled={scopeLocked(item)}
                         value={item.title}
                         onChange={(e) =>
                           update({
@@ -942,6 +999,7 @@ export default function CustomerOfferEditor({
                     </div>
                   </div>
                   {removeId === item.id && <div role="alert" className="mt-3 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm"><p>Ta bort {item.title || 'arbetet'} ur offertutkastet?</p><div className="mt-3 flex flex-wrap gap-2"><button className={button} onClick={() => { update({ items: draft.items.filter((i) => i.id !== item.id) }); setRemoveId(null) }}><Trash2 size={16} /> Ta bort från utkast</button><button className={button} onClick={() => setRemoveId(null)}>Avbryt</button></div></div>}
+                  {scopeLocked(item) && <p role="status" className="mt-3 text-sm text-slate-600">Momentets rubrik och omfattning är låsta med avtalet.</p>}
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className="text-sm">
                       Ingår som
@@ -973,6 +1031,7 @@ export default function CustomerOfferEditor({
                     Omfattning och avgränsningar *
                     <textarea
                       className={field}
+                      disabled={scopeLocked(item)}
                       rows={3}
                       value={item.scope}
                       onChange={(e) =>
@@ -989,7 +1048,7 @@ export default function CustomerOfferEditor({
                   {([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, label]) => item[key] !== undefined && (
                     <label key={key} className="mt-3 block text-sm">
                       {label} (valfritt)
-                      <textarea className={field} rows={3} maxLength={6000} value={item[key]} onChange={(e) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, [key]: e.target.value } : i) })} />
+                      <textarea className={field} disabled={scopeLocked(item)} rows={3} maxLength={6000} value={item[key]} onChange={(e) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, [key]: e.target.value } : i) })} />
                     </label>
                   ))}
                 </ProjectEditorRow>

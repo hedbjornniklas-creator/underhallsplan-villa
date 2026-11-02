@@ -335,3 +335,133 @@ test('upload task falls back to the locker when no project manager exists and re
   for(let i=0;i<2;i++) await db.query("select write_contract_signing_delivery($1,$2,$3,'register_signed',$4)",[org,f.project,actor,{id:document,revision:(await f.state()).revision,confirmed:true,signedCopy}])
   assert.equal((await db.query("select count(*) n from task_events e join action_case_contract_upload_tasks l on l.task_id=e.task_id where l.document_id=$1 and e.event_type='task_approved'",[document])).rows[0].n,1)
 })
+
+const scopeLinkMigration = '2026-11-02_02_offer_work_scope_link'
+async function linkedOffer(f) {
+  const offerState = async () => (await db.query('select * from action_case_customer_offer_drafts where action_case_id=$1', [f.project])).rows[0]
+  const saveOffer = async (body, revision) => db.query("select write_customer_offer($1,$2,$3,'save',$4)",
+    [org, f.project, actor, { body: normalizeCustomerOffer(body), revision: revision ?? (await offerState())?.revision ?? 0 }])
+  const body = structuredClone(f.draft)
+  body.baseAmountOre = 25000; body.contractPricing.rows[0].amountOre = 25000
+  await saveOffer(body)
+  return { ...f, offerState, saveOffer }
+}
+function withoutWorkText(body) {
+  const result = structuredClone(body)
+  for (const item of result.items) for (const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice']) delete item[key]
+  for (const row of result.contractPricing?.rows ?? []) delete row.title
+  return result
+}
+
+test('installing offer scope sync is additive and preserves old frozen mismatches, work and signed evidence exactly', async () => {
+  const f = await linkedOffer(await fixture()), offer = await f.offerState()
+  offer.body.items[0].scope = 'Gammal fristaende offerttext'
+  await f.saveOffer(offer.body)
+  const frozen = await f.freeze()
+  const snapshot = async () => ({ work: (await db.query('select * from action_case_items where id=$1',[f.item])).rows[0],
+    contract: await f.state(), offer: await f.offerState(), document: (await db.query('select * from action_case_contract_signing_documents where id=$1',[frozen.document])).rows[0] })
+  const before = await snapshot()
+  await db.exec(read(scopeLinkMigration)); await db.exec(read(scopeLinkMigration))
+  assert.deepEqual(await snapshot(), before)
+  const priceOnly = structuredClone(before.offer.body); priceOnly.contractPricing.rows[0].amountOre = 35000; priceOnly.baseAmountOre = 35000
+  await f.saveOffer(priceOnly)
+  const after = await snapshot()
+  assert.deepEqual(after.contract, before.contract); assert.deepEqual(after.work, before.work); assert.deepEqual(after.document, before.document)
+  assert.equal(after.offer.body.items[0].scope, 'Gammal fristaende offerttext')
+})
+
+test('offer, work and contract share only changed work fields with one offer revision and no price or planning writes', async () => {
+  const f = await linkedOffer(await fixture()), offer = await f.offerState(), contract = await f.state()
+  const costs = (await db.query('select * from action_case_cost_lines where id=$1',[f.line])).rows
+  const next = structuredClone(offer.body)
+  Object.assign(next.items[0], { title: 'Gemensam rubrik', scope: 'Ny omfattning fran offerten', scopeConditions: 'Fri passage', scopeExclusions: 'Malning ingar inte', scopeAdvice: 'Samordna arbetet' })
+  await f.saveOffer(next, offer.revision)
+  assert.equal((await f.offerState()).revision, offer.revision + 1, 'the offer cannot echo a second revision into itself')
+  const work = (await db.query('select * from action_case_items where id=$1',[f.item])).rows[0]
+  assert.equal(work.title, next.items[0].title); assert.equal(work.scope, next.items[0].scope)
+  assert.equal(work.scope_conditions, 'Fri passage'); assert.equal(work.scope_exclusions, 'Malning ingar inte'); assert.equal(work.scope_advice, 'Samordna arbetet')
+  assert.equal((await f.state()).body.items[0].scope, next.items[0].scope)
+  assert.deepEqual(withoutWorkText((await f.state()).body), withoutWorkText(contract.body))
+  assert.deepEqual(withoutWorkText((await f.offerState()).body), withoutWorkText(offer.body))
+  assert.deepEqual((await db.query('select * from action_case_cost_lines where id=$1',[f.line])).rows, costs)
+  assert.equal((await db.query('select count(*) n from action_case_customer_planning where action_case_id=$1',[f.project])).rows[0].n, 0)
+  const current = await f.state(), previousOffer = await f.offerState()
+  current.body.items[0].scopeExclusions = 'Ny avgransning fran avtalet'; await f.save(current.body)
+  assert.equal((await f.offerState()).body.items[0].scopeExclusions, 'Ny avgransning fran avtalet')
+  assert.equal((await f.offerState()).revision, previousOffer.revision + 1)
+  await assert.rejects(f.saveOffer(previousOffer.body, previousOffer.revision), /STALE/)
+  await db.query("update action_case_items set scope='Ny projektomfattning' where id=$1", [f.item])
+  assert.equal((await f.offerState()).body.items[0].scope, 'Ny projektomfattning')
+  assert.equal((await f.state()).body.items[0].scope, 'Ny projektomfattning')
+})
+
+test('work and offer stay linked before a contract exists; explicit clearing is shared but missing legacy fields are preserved', async () => {
+  const f = await fixture()
+  await db.query('delete from action_case_customer_contract_drafts where action_case_id=$1', [f.project])
+  await db.query("update action_case_items set scope_conditions='Befintliga forutsattningar' where id=$1", [f.item])
+  delete f.draft.items[0].scopeConditions
+  const g = await linkedOffer(f)
+  assert.equal((await g.offerState()).body.items[0].scopeConditions, 'Befintliga forutsattningar')
+  const first = await g.offerState(), next = structuredClone(first.body)
+  delete next.items[0].scopeConditions
+  await g.saveOffer(next)
+  assert.equal((await g.offerState()).body.items[0].scopeConditions, 'Befintliga forutsattningar')
+  const clear = (await g.offerState()).body; clear.items[0].scopeConditions = ''; await g.saveOffer(clear)
+  assert.equal((await db.query('select scope_conditions from action_case_items where id=$1',[f.item])).rows[0].scope_conditions, '')
+  await db.query("update action_case_items set scope='Omfattning utan avtal' where id=$1", [f.item])
+  assert.equal((await g.offerState()).body.items[0].scope, 'Omfattning utan avtal')
+  assert.equal(await g.state(), undefined)
+})
+
+test('locked work rejects shared offer text edits atomically while independent offer prices remain editable', async () => {
+  const f = await linkedOffer(await fixture()), frozen = await f.freeze(), before = await f.state()
+  const document = (await db.query('select * from action_case_contract_signing_documents where id=$1',[frozen.document])).rows[0]
+  const original = await f.offerState()
+  for (const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice']) {
+    const changed = structuredClone(original.body); changed.items[0][key] = 'Far inte andra last omfattning'
+    await assert.rejects(f.saveOffer(changed, original.revision), /CONTRACT_LOCKED/)
+    assert.deepEqual(await f.offerState(), original)
+  }
+  const price = structuredClone(original.body); price.baseAmountOre = 50000; price.contractPricing.rows[0].amountOre = 50000
+  await f.saveOffer(price)
+  assert.deepEqual(await f.state(), before)
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents where id=$1',[frozen.document])).rows[0], document)
+})
+
+test('manual rows, legacy options, foreign source IDs and other projects never acquire shared scope by their names', async () => {
+  const f = await linkedOffer(await fixture()), other = await fixture(), workBefore = (await db.query('select * from action_case_items where id=$1',[other.item])).rows[0]
+  const next = (await f.offerState()).body
+  next.items.push({ id: randomUUID(), title: 'Grund', scope: 'Manuell omfattning', kind: 'included', amountOre: null })
+  next.items.push({ id: randomUUID(), sourceItemId: other.item, title: 'Grund', scope: 'Annan projekttext', kind: 'excluded', amountOre: null })
+  await f.saveOffer(next)
+  assert.deepEqual((await db.query('select * from action_case_items where id=$1',[other.item])).rows[0], workBefore)
+  const option = (await f.offerState()).body; option.items[0].kind = 'option'; option.items[0].scope = 'Fristaende gammalt tillval'
+  await f.saveOffer(option)
+  await db.query("update action_case_items set scope='Endast grundarbetet' where id=$1", [f.item])
+  assert.equal((await f.offerState()).body.items[0].scope, 'Fristaende gammalt tillval')
+  assert.equal((await f.state()).body.items[0].scope, 'Endast grundarbetet')
+})
+
+test('offer scope migration reruns preserve all documents and deny browser execution of trigger helpers', async () => {
+  const before = (await db.query('select * from action_case_contract_signing_documents order by id')).rows
+  await db.exec(read(scopeLinkMigration))
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents order by id')).rows, before)
+  for (const fn of ['prepare_offer_work_scope()','sync_offer_work_from_item()','sync_offer_work_to_item()']) {
+    assert.equal((await db.query("select has_function_privilege('authenticated',$1,'EXECUTE') allowed",[fn])).rows[0].allowed, false)
+    assert.equal((await db.query("select has_function_privilege('anon',$1,'EXECUTE') allowed",[fn])).rows[0].allowed, false)
+  }
+})
+
+test('shared work titles support running offers without price rows and retain their rates without inventing a fixed price', async () => {
+  const f=await linkedOffer(await fixture()), body=(await f.offerState()).body
+  body.baseAmountOre=null
+  body.contractPricing={...body.contractPricing,mode:'running',basis:'total',rows:[],totalOre:null,
+    running:{hourlyOre:75000,managementOre:null,markupPercent:15,approximateOre:null}}
+  await f.saveOffer(body)
+  await db.query("update action_case_items set title='Gemensam lopande omfattning' where id=$1",[f.item])
+  const offer=(await f.offerState()).body
+  assert.equal(offer.items[0].title,'Gemensam lopande omfattning')
+  assert.deepEqual(offer.contractPricing.rows,[])
+  assert.equal(offer.contractPricing.running.hourlyOre,75000)
+  assert.equal(offer.baseAmountOre,null)
+})

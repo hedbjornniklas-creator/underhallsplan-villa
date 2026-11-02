@@ -17,6 +17,7 @@ import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import ProjectQuestions, { type QuestionOpenRequest } from './ProjectQuestions'
 import ProjectOverview from './ProjectOverview'
 import ProjectCustomerSharing from './ProjectCustomerSharing'
+import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -70,6 +71,12 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   }, [caseId])
   const [sharedSchedule, setSharedSchedule] = useState<ProjectScheduleRow[]>([])
   const [customerRefresh, setCustomerRefresh] = useState(0)
+  const estimateScope = useRef(sharedWorkScopeKey(estimate?.draft.items ?? []))
+  const receiveEstimate = useCallback((next: CustomerOfferWorkspace) => {
+    const key = sharedWorkScopeKey(next.draft.items)
+    if (key !== estimateScope.current) { estimateScope.current = key; setCustomerRefresh(value => value + 1) }
+    setEstimate(next)
+  }, [])
   const contractState = useRef(JSON.stringify([initialOffer?.revision, initialOffer?.signingVersions, initialOffer?.offers.map(o => [o.id, o.status])]))
   const receiveContract = useCallback((next: CustomerOfferWorkspace) => {
     const signature = JSON.stringify([next.revision, next.signingVersions, next.offers.map(o => [o.id, o.status])])
@@ -202,7 +209,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         <div hidden={view !== 'offer' && view !== 'offerReview'}>
           {estimate && <CustomerOfferEditor actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
             embedded draftTarget="offer" active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
-            onViewChange={navigateOffer} onWorkspaceChange={setEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
+            onViewChange={navigateOffer} onWorkspaceChange={receiveEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
         </div>
         <section hidden={view !== 'schedule'}>
           <div className="gizmo-section-heading"><h2>Tidsplan</h2></div>
