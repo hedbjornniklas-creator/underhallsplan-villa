@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react'
-import { Download, Eye, EyeOff, Loader2, Pencil, Plus, RefreshCw, Undo2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Download, Eye, EyeOff, ListX, Loader2, Pencil, Plus, RefreshCw, Undo2 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { importScheduleRows, normalizeScheduleRows, scheduleStatuses, type ProjectSchedule, type ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -109,7 +109,17 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
     finally { running.current = false; setBusy('') }
   }
   function patch(id: string, value: Partial<ProjectScheduleRow>) { setRows((current) => current.map((r) => r.id === id ? { ...r, ...value } : r)) }
-  function move(index: number, delta: number) { setRows((current) => { const next = [...current], target = index + delta; if (target < 0 || target >= next.length) return current; [next[index], next[target]] = [next[target], next[index]]; return next }) }
+  function move(id: string, delta: number) {
+    const current = currentRows.current, index = current.findIndex(row => row.id === id), target = index + delta
+    if (index < 0 || target < 0 || target >= current.length) return
+    const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; setRows(next)
+  }
+  function importSelectedRows() {
+    const current = currentRows.current
+    const sources = items.filter(item => selected.includes(item.id) && !current.some(row => row.sourceItemId === item.id))
+    if (!sources.length || sources.length > 200 - current.length) return
+    setRows(importScheduleRows(current, sources, () => crypto.randomUUID())); setSelected([]); setShowImport(false)
+  }
   function addRow() {
     const row: ProjectScheduleRow = { id: crypto.randomUUID(), title: '', phase: '', startDate: '', endDate: '', status: 'planned', sourceItemId: null }
     setRows([...currentRows.current, row]); setEditingId(row.id); setSelectedId(row.id)
@@ -119,6 +129,9 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
     const node = rowNodes.current.get(id); node?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); node?.focus({ preventScroll: true })
   }
   const available = items.filter((i) => !rows.some((r) => r.sourceItemId === i.id))
+  const importCount = available.filter(item => selected.includes(item.id)).length
+  const allImportSelected = available.length > 0 && importCount === available.length
+  const importCapacity = 200 - rows.length
   const editingIndex = rows.findIndex(row => row.id === editingId), editingRow = rows[editingIndex]
   const saveStatus = busy === 'load' ? 'Hämtar…' : busy ? 'Uppdaterar delning…' : saveError ? 'Kunde inte spara' : autosave.state?.status === 'invalid' ? 'Komplettera moment och datum · Inte sparat' : autosave.isSaving ? 'Sparar…' : dirty ? 'Osparade ändringar' : saved?.available ? 'Sparat internt' : ''
   return <section className="gizmo-project-schedule border-t border-slate-200 py-5" aria-label="Produktionsplanering">
@@ -139,16 +152,18 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
           <button className={button} disabled={rows.length >= 200} onClick={addRow}><Plus size={17} /> Lägg till moment</button>
           {removed && <button className={button} disabled={rows.length >= 200 || rows.some((r) => r.sourceItemId && r.sourceItemId === removed.row.sourceItemId)} onClick={() => { const next = [...rows]; next.splice(Math.min(removed.index, next.length), 0, removed.row); setRows(next); setRemoved(null) }}><Undo2 size={17} /> Ångra borttagning</button>}
         </div></div>
-        {showImport && <div className="border-y border-slate-200 py-4">
-          {available.map((item) => <label key={item.id} className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={selected.includes(item.id)} onChange={(e) => setSelected(e.target.checked ? [...selected, item.id] : selected.filter((id) => id !== item.id))} />{item.title}</label>)}
-          <button className={`${button} mt-3`} disabled={!selected.some((id) => available.some((i) => i.id === id))} onClick={() => { setRows(importScheduleRows(rows, available.filter((i) => selected.includes(i.id)), () => crypto.randomUUID())); setSelected([]); setShowImport(false) }}><Plus size={17} /> Lägg till valda moment</button>
-        </div>}
-        <div className="gizmo-schedule-table-scroll" role="region" aria-label="Moment och datum" tabIndex={0}><table className="gizmo-schedule-table"><colgroup><col /><col style={{ width: 145 }} /><col style={{ width: 145 }} /><col style={{ width: 70 }} /><col style={{ width: 110 }} /><col style={{ width: 44 }} /></colgroup><thead><tr><th>Moment</th><th>Start</th><th>Slut</th><th title="Kalenderdagar, inklusive start- och slutdag">Dagar</th><th>Status</th><th><span className="sr-only">Redigera</span></th></tr></thead><tbody>{rows.map((row, index) => <tr key={row.id} tabIndex={-1} ref={node => { if (node) rowNodes.current.set(row.id, node); else rowNodes.current.delete(row.id) }} className={selectedId === row.id ? 'is-selected' : undefined}>
+        {showImport && <section className="gizmo-schedule-import" aria-label="Hämta moment från projektarbete">
+          <div className="gizmo-schedule-import-tools"><label><input type="checkbox" aria-label="Välj alla moment för import" disabled={!available.length} checked={allImportSelected} ref={node => { if (node) node.indeterminate = importCount > 0 && !allImportSelected }} onChange={event => setSelected(event.target.checked ? available.map(item => item.id) : [])} />Välj alla</label><span role="status">{importCount} av {available.length} valda</span><button type="button" className={button} disabled={!importCount} onClick={() => setSelected([])}><ListX size={16} />Avmarkera alla</button></div>
+          <div className="gizmo-schedule-import-items">{available.map(item => <label key={item.id}><input type="checkbox" checked={selected.includes(item.id)} onChange={event => setSelected(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id))} />{item.title}</label>)}{!available.length && <p>Alla projektmoment finns redan i tidsplanen.</p>}</div>
+          {importCount > importCapacity && <p role="alert" className="gizmo-schedule-warning">Det finns plats för {importCapacity} moment till. Avmarkera {importCount - importCapacity} moment för att hämta de valda.</p>}
+          <button type="button" className={button} disabled={!importCount || importCount > importCapacity} onClick={importSelectedRows}><Plus size={17} />Lägg till valda moment ({importCount})</button>
+        </section>}
+        <div className="gizmo-schedule-table-scroll" role="region" aria-label="Moment och datum" tabIndex={0}><table className="gizmo-schedule-table"><colgroup><col /><col style={{ width: 145 }} /><col style={{ width: 145 }} /><col style={{ width: 70 }} /><col style={{ width: 110 }} /><col style={{ width: 'var(--schedule-actions-width)' }} /></colgroup><thead><tr><th>Moment</th><th>Start</th><th>Slut</th><th title="Kalenderdagar, inklusive start- och slutdag">Dagar</th><th>Status</th><th><span className="sr-only">Ordning och redigering</span></th></tr></thead><tbody>{rows.map((row, index) => <tr key={row.id} tabIndex={-1} ref={node => { if (node) rowNodes.current.set(row.id, node); else rowNodes.current.delete(row.id) }} className={selectedId === row.id ? 'is-selected' : undefined}>
           <td><button type="button" className="gizmo-schedule-title" title={[row.title || 'Nytt moment', row.phase].filter(Boolean).join(' · ')} onClick={() => { setEditingId(row.id); setSelectedId(row.id) }}><span>{index + 1}</span><strong>{row.title || 'Nytt moment'}</strong>{row.phase && <small>{row.phase}</small>}</button></td>
-          <td>{scheduleDateLabel(row.startDate)}</td><td>{scheduleDateLabel(row.endDate)}</td><td>{scheduleDays(row) ?? '–'}</td><td><span className={`gizmo-schedule-status is-${row.status}`}>{scheduleStatuses[row.status]}</span></td><td><button type="button" className={icon} title={`Redigera ${row.title || 'moment'}`} aria-label={`Redigera ${row.title || 'moment'}`} onClick={() => { setEditingId(row.id); setSelectedId(row.id) }}><Pencil size={16} /></button></td>
+          <td>{scheduleDateLabel(row.startDate)}</td><td>{scheduleDateLabel(row.endDate)}</td><td>{scheduleDays(row) ?? '–'}</td><td><span className={`gizmo-schedule-status is-${row.status}`}>{scheduleStatuses[row.status]}</span></td><td><div className="gizmo-schedule-order-actions"><button type="button" className={icon} title="Flytta upp" aria-label={`Flytta upp ${row.title || 'moment'}`} disabled={index === 0} onClick={() => move(row.id, -1)}><ArrowUp size={16} /></button><button type="button" className={icon} title="Flytta ned" aria-label={`Flytta ned ${row.title || 'moment'}`} disabled={index === rows.length - 1} onClick={() => move(row.id, 1)}><ArrowDown size={16} /></button><button type="button" className={icon} title={`Redigera ${row.title || 'moment'}`} aria-label={`Redigera ${row.title || 'moment'}`} onClick={() => { setEditingId(row.id); setSelectedId(row.id) }}><Pencil size={16} /></button></div></td>
         </tr>)}</tbody></table>{!rows.length && <p className="gizmo-schedule-empty">Inga moment planerade.</p>}</div>
       </fieldset>
-      {editingRow && <ProjectScheduleRowEditor key={editingRow.id} row={editingRow} index={editingIndex} count={rows.length} disabled={Boolean(busy)} saveStatus={saveStatus} saveError={saveError} onRetry={() => void autosave.retry()} onPatch={value => patch(editingRow.id, value)} onMove={delta => move(editingIndex, delta)} onRemove={() => { setRemoved({ row: editingRow, index: editingIndex }); setRows(current => current.filter(row => row.id !== editingRow.id)); setEditingId(null) }} onClose={() => setEditingId(null)} />}
+      {editingRow && <ProjectScheduleRowEditor key={editingRow.id} row={editingRow} index={editingIndex} count={rows.length} disabled={Boolean(busy)} saveStatus={saveStatus} saveError={saveError} onRetry={() => void autosave.retry()} onPatch={value => patch(editingRow.id, value)} onMove={delta => move(editingRow.id, delta)} onRemove={() => { setRemoved({ row: editingRow, index: editingIndex }); setRows(current => current.filter(row => row.id !== editingRow.id)); setEditingId(null) }} onClose={() => setEditingId(null)} />}
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
         <button className={button} disabled={Boolean(busy) || autosave.isPending() || dirty || !rows.length || JSON.stringify(saved.rows) === JSON.stringify(saved.sharedRows)} onClick={() => setShareConfirm(!shareConfirm)} aria-expanded={shareConfirm}><Eye size={17} /> Visa för beställaren</button>
         {saved.sharedRows.length > 0 && <button className={button} disabled={Boolean(busy) || autosave.isPending() || dirty} onClick={() => void write('unshare')}><EyeOff size={17} /> Dölj för beställaren</button>}

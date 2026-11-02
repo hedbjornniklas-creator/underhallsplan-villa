@@ -53,7 +53,7 @@
 .gizmo-gantt-empty { min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--uppdrag-muted); background: var(--uppdrag-paper); border-block: 1px solid var(--uppdrag-line); font-size: 13px; }
 .gizmo-schedule-table-toolbar { margin-top: 20px; border-top: 1px solid var(--uppdrag-line); }
 .gizmo-schedule-table-scroll { position: relative; max-width: 100%; overflow: auto; }
-.gizmo-schedule-table { width: 100%; min-width: 820px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.gizmo-schedule-table { --schedule-actions-width: 116px; width: 100%; min-width: 820px; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
 .gizmo-schedule-table th { height: 34px; padding: 4px 10px; text-align: left; background: var(--uppdrag-table-head); font-weight: 550; color: var(--uppdrag-muted); border-block: 1px solid var(--uppdrag-line); white-space: nowrap; }
 .gizmo-schedule-table td { height: 40px; padding: 2px 10px; border-bottom: 1px solid var(--uppdrag-line); white-space: nowrap; }
 .gizmo-schedule-table td:last-child { padding: 0 4px; }
@@ -61,6 +61,15 @@
 .gizmo-schedule-table tr.is-selected td { background: var(--uppdrag-selected); }
 .gizmo-schedule-table tr:focus { outline: 2px solid var(--uppdrag-link); outline-offset: -2px; }
 .uppdrag-scope .gizmo-schedule-table .gizmo-schedule-icon { min-height: 32px; height: 32px; border-color: transparent; background: transparent; }
+.gizmo-schedule-order-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.gizmo-schedule-import { padding: 12px 0; margin-bottom: 12px; border-block: 1px solid var(--uppdrag-line); }
+.gizmo-schedule-import-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 8px; }
+.gizmo-schedule-import-tools > span { font-size: 12px; color: var(--uppdrag-muted); }
+.gizmo-schedule-import-tools > button { margin-left: auto; }
+.gizmo-schedule-import label { display: flex; align-items: center; gap: 10px; min-height: 36px; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.gizmo-schedule-import input { flex-shrink: 0; width: 16px; height: 16px; }
+.gizmo-schedule-import-items { max-height: 280px; overflow: auto; margin-bottom: 10px; padding-right: 8px; }
+.gizmo-schedule-import .gizmo-schedule-warning { margin-bottom: 10px; }
 .uppdrag-scope .gizmo-schedule-title { display: flex; align-items: center; gap: 10px; min-height: 34px; min-width: 0; max-width: 100%; width: 100%; text-align: left; }
 .gizmo-schedule-title > span { flex-shrink: 0; width: 16px; color: var(--uppdrag-muted); font-size: 11px; }
 .gizmo-schedule-title strong { font-weight: 600; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; }
@@ -96,6 +105,8 @@
   .uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon, .gizmo-schedule-title, .gizmo-schedule-segments button) { min-height: 44px !important; }
   .uppdrag-scope .gizmo-schedule-icon { min-width: 44px; width: 44px; }
   .gizmo-schedule-table td { height: 46px; }
+  .gizmo-schedule-table { --schedule-actions-width: 136px; }
+  .gizmo-schedule-import label { min-height: 44px; }
   .uppdrag-scope .gizmo-schedule-table .gizmo-schedule-icon { min-height: 44px; width: 40px; min-width: 40px; }
   .uppdrag-scope .gizmo-schedule-title { min-height: 44px; }
   .gizmo-schedule-date-fields { grid-template-columns: minmax(0, 1fr); }

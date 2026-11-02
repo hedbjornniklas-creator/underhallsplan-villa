@@ -65,3 +65,29 @@ Testserverns `/__test__/responsive` gor denna kontroll reproducerbar.
 Den slutliga releasekopians 767 tester, riktad ESLint och produktionsbygge
 passerar efter mobilrattningen. Releasefilerna har hashjamforts med den testade
 kopian. Publiceringspaketet andrar inga API:er, SQL-filer eller avtalskomponenter.
+
+## Beslutsandring: Massval Och Synlig Radordning
+
+Anvandaren vill kunna massmarkera moment vid hamtning fran Projektarbete och
+ater ha flyttpilar synliga direkt i listan, inte bara inne i pennpanelen.
+
+- Importen har Valj alla med mellanlage, Avmarkera alla och antal valda. Bara
+  annu inte importerade projektmoment visas. Markeringar sparar eller delar inget.
+- Lagga till valda moment hamtar det uttryckliga urvalet tillsammans och anvander
+  befintlig autosparning. Om urvalet overskrider planens grans pa 200 moment visas
+  hur manga som maste avmarkeras. Inga val kapas tyst och inga datum hittas pa.
+- Upp/ned och penna ligger direkt pa varje rad. Ytterlagena ar avaktiverade.
+  Flytt foljer momentets ID aven vid snabba klick, och samma ordning anvands i
+  tabell och Gantt. Pilfunktionerna inne i panelen finns ocksa kvar.
+- Avtal, datum, projektarbetets ordning och redan delad kundkopia andras inte.
+  Endast den interna tidsplanens ordning autosparas; uppdaterad delning ar separat.
+
+Andringen kraver ingen SQL. Anvandaren har godkant publicering efter granskad
+forhandsvisning. Paketet innehaller endast importval, synlig radordning och
+deras dokumentation och tester; inga avtalskomponenter eller API:er andras.
+
+Verifiering: 771 avgransade tester, riktad ESLint och produktionsbygge passerar.
+Klicktestet anvander enbart fiktiva uppgifter och bekraftar massval, avmarkering,
+gemensam import utan dubbletter, snabba upp/ned-klick och sparad ordning efter
+omladdning. Datorraderna ar fortsatt 40 px. I mobilramen ar rootens clientWidth
+och scrollWidth bada 375 px; tabellen rullar separat och pilknapparna ar 40x44 px.
