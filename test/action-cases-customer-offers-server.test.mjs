@@ -1024,6 +1024,20 @@ test('old client costing cannot erase saved choice rows, even with a current pla
   assert.equal(h.calls.at(-1).name, 'write_customer_planning')
 })
 
+test('saved selectable offer parts survive autosave, reject stale editors, and cannot be written into contracts', async () => {
+  const alternatives = { version: 1, issuedOn: '2026-11-02', selectionTerms: 'FIKTIV skriftlig beställning.', parts: [{ id: id(555), title: 'FIKTIV del', scope: 'Oförändrad omfattning.', amountExVatOre: 10800000 }] }
+  const seed = harness().draft
+  const draft = domain.normalizeCustomerOffer({ ...seed, items: [], baseAmountOre: null, contractPricing: undefined, offerAlternatives: alternatives })
+  const ctx = { orgId: id(90), userId: id(91) }, good = harness({ offerDraft: draft })
+  await good.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'offer')
+  assert.deepEqual(good.calls.find(call => call.p_operation === 'save').p_data.body.offerAlternatives, alternatives)
+  assert.equal(good.calls.some(call => call.name === 'write_customer_contract'), false)
+  const stale = harness({ offerDraft: draft })
+  await assert.rejects(stale.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: seed }, 'autosave', 'offer'), /STALE/)
+  assert.equal(stale.calls.some(call => call.p_operation === 'save'), false)
+  await assert.rejects(good.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'contract'), /INVALID/)
+})
+
 test('assignment metadata requires schema protection before autosave and survives the frozen contract projection', async () => {
   const ctx = { orgId: id(90), userId: id(91) }, h = harness({ assignmentMissing: true })
   h.draft.contractDetails = emptyContractDetails()

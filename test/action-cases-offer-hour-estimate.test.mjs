@@ -105,6 +105,7 @@ test('the real offer document prints rates and estimated labour once, never inte
   }
   modules['./CustomerContractPricing'] = load('CustomerContractPricing')
   modules['./CustomerOfferHourEstimate'] = load('CustomerOfferHourEstimate')
+  modules['./CustomerOfferAlternatives'] = { OfferAlternativesDocument: 'offer-alternatives' }
   const Document = load('CustomerOfferDocument').default
   const flatten = node => Array.isArray(node) ? node.flatMap(flatten) : node && typeof node === 'object'
     ? flatten(typeof node.type === 'function' ? node.type(node.props) : node.props?.children) : [node]

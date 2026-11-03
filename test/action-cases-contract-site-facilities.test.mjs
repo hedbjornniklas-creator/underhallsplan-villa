@@ -87,6 +87,7 @@ function component(file, extra = {}) {
     './CustomerContractPartiesEditor': { ContractPartiesDocument: 'parties' },
     './CustomerContractPricing': { ContractPriceDocument: 'contract-price' },
     './CustomerOfferHourEstimate': { OfferHourEstimateDocument: 'offer-hours' },
+    './CustomerOfferAlternatives': { OfferAlternativesDocument: 'offer-alternatives' },
     ...extra
   }
   new Function('require', 'module', 'exports', code)((name) => {

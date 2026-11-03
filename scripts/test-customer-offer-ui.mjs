@@ -84,7 +84,7 @@ await new Promise((done, reject) =>
   )
 )
 const { css: base } = await postcss([tailwind(process.argv.includes('--contract-work') ? { base: resolve('src') } : {})]).process(
-  process.argv.includes('--project-overview') || process.argv.includes('--contract-work') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
+  process.argv.includes('--project-overview') || process.argv.includes('--contract-work') || process.argv.includes('--offer-alternatives') ? (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../components/ui";\n@source "../../test/fixtures/customer-offer-view.tsx";') : await readFile('src/app/globals.css', 'utf8'),
   { from: resolve('src/app/globals.css') }
 )
 const theme = (await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')) + (await readFile('src/components/tasks/project-questions.css', 'utf8')) + (await readFile('src/components/tasks/action-case-costs.css', 'utf8')) + (await readFile('src/components/tasks/action-case-purchase-list.css', 'utf8')) + (await readFile('src/components/tasks/customer-choice-costs.css', 'utf8')) + (await readFile('src/components/tasks/customer-sharing.css', 'utf8')) + (await readFile('src/components/tasks/project-overview.css', 'utf8')),
@@ -263,6 +263,16 @@ if (process.argv.includes('--contract-changes')) {
 }
 const estimateState = { draft: structuredClone(state.draft), revision: state.revision, costing: structuredClone(state.costing ?? {}) }
 if (independentContract) { state.offers = []; state.offerDraft = estimateState }
+if (process.argv.includes('--offer-alternatives')) {
+  Object.assign(estimateState.draft, { contractForm: 'custom', items: [], baseAmountOre: null, contractPricing: undefined, attachmentIds: [], termsAttachmentId: null,
+    paymentTerms: 'FIKTIVT: 30 dagar netto. Fakturering efter avslutad beställd del.', schedule: 'FIKTIV tidplan efter skriftlig beställning.', terms: 'FIKTIV beställning via mejl.',
+    offerAlternatives: { version: 1, issuedOn: '2026-11-02', selectionTerms: 'FIKTIVT: Del 3 ersätter del 2. Ingen automatisk totalsumma.', parts: [
+      { id: id(701), title: '1. Fiktiv gångbrygga', scope: 'FIKTIV oförändrad omfattning och material.', amountExVatOre: 10800000 },
+      { id: id(702), title: '2. Fiktiv lagning', scope: 'FIKTIV avgränsad lagning.', amountExVatOre: 840000 },
+      { id: id(703), title: '3. Fiktivt alternativ', scope: 'FIKTIV alternativ omfattning.', amountExVatOre: 9840000 },
+    ] } })
+  estimateState.costing = {}
+}
 if (process.argv.includes('--site-facilities')) {
   state.draft.contractDetails ??= emptyContractDetails()
   for (const [key,providedBy,details] of [

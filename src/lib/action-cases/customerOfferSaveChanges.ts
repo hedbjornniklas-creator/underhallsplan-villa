@@ -7,6 +7,7 @@ export function customerOfferSaveChanges(draft: CustomerOfferDraft, saved: Custo
   const changes: string[] = []
   if (['title', 'introduction', 'validUntil'].some(key => changed(key as keyof CustomerOfferDraft))) changes.push('Rubrik, inledning eller giltighetsdatum')
   if (changed('items')) changes.push('Arbetsmoment och omfattning')
+  if (changed('offerAlternatives')) changes.push('Valbara offertdelar, omfattning och priser exklusive moms')
   if (['baseAmountOre', 'pricingMode', 'contractPricing', 'offerHourEstimate'].some(key => changed(key as keyof CustomerOfferDraft))) changes.push('Pris och prisvillkor')
   if (changed('contractParties')) changes.push('Beställare eller entreprenör')
   if (changed('senderProfile')) changes.push('Avsändarprofil')

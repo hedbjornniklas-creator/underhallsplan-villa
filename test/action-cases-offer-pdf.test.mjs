@@ -4,12 +4,53 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
 import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
-import { contractSigningHeading, renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
+import { contractSigningHeading, contractSigningSections, offerIntroductionBlocks, renderContractSigningPdf, renderOfferPresentationPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { signingSnapshot } from './fixtures/contract-signing.ts'
 import { contractSenderFixture } from './fixtures/contract-sender-profile.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ctx = { orgId: id(1), userId: id(2) }, caseId = id(3)
+
+test('editorial offer presentation accepts explicit sections without changing saved data or allowing a contract override', async () => {
+  const snapshot = signingSnapshot(), before = structuredClone(snapshot)
+  const input = { id: caseId, version: 0, kind: 'offer', createdAt: '2026-11-03T10:00:00Z', snapshot, files: [] }
+  const sections = [
+    ...contractSigningSections(input).filter(part => ['parties', 'property'].includes(part.group)),
+    { group: 'assignment', title: 'Arbeten', paragraphs: ['FIKTIV beskrivning.'] },
+    { group: 'price', title: 'Priser', paragraphs: [], columns: ['Arbete', 'Exkl. moms'], rows: [['Testarbete', '0 kr']] },
+    { group: 'schedule', title: 'Tid', paragraphs: ['FIKTIV tidplan.'] },
+    { group: 'payments', title: 'Betalningsvillkor', paragraphs: ['FIKTIVA betalningsvillkor.'] },
+    { group: 'changes', title: 'Ändringar och tilläggsarbeten (ÄTA)', paragraphs: ['FIKTIVA ändringsvillkor.'] },
+  ]
+  const beforeSections = structuredClone(sections)
+  const bytes = await renderOfferPresentationPdf(input, sections)
+  assert.equal(bytes.subarray(0, 5).toString(), '%PDF-')
+  assert.deepEqual(snapshot, before)
+  assert.deepEqual(sections, beforeSections)
+  await assert.rejects(renderOfferPresentationPdf({ ...input, kind: undefined }, sections), /OFFER_PRESENTATION_REQUIRED/)
+})
+
+test('numbered offer paragraphs get separate headings without interpreting prices or changing their text', () => {
+  const introduction = 'Tre valbara delar. Del 3 ersätter del 2.\n\n1. Gångbrygga\nPris: 108 000 kr exklusive moms.\nArbete och material.\n\n2. Lagning\nPris: 8 400 kr exklusive moms.\n\n3. Alternativ\nPris: 98 400 kr exklusive moms.'
+  const blocks = offerIntroductionBlocks(introduction)
+  assert.deepEqual(blocks.map(block => block.label), [undefined, '1. Gångbrygga', '2. Lagning', '3. Alternativ'])
+  assert.equal(blocks.map(block => [block.label, block.text].filter(Boolean).join('\n')).join('\n\n'), introduction)
+  assert.deepEqual(offerIntroductionBlocks('En vanlig inledning.\nNästa rad.'), [{ text: 'En vanlig inledning.\nNästa rad.' }])
+  assert.deepEqual(offerIntroductionBlocks(''), [])
+})
+
+test('offers without structured prices omit the empty total but keep real zero amounts and incomplete work rows', () => {
+  const snapshot = { ...signingSnapshot(), introduction: '1. Valbar del\nPris enligt beskrivning.', items: [], baseAmountOre: null }
+  delete snapshot.contractPricing
+  const before = structuredClone(snapshot), input = { snapshot, files: [], kind: 'offer' }
+  assert.equal(contractSigningSections(input).some(part => part.group === 'price'), false)
+  assert.equal(contractSigningSections(input).find(part => part.title === 'Uppdraget').blocks[0].label, '1. Valbar del')
+  assert.equal(contractSigningSections({ ...input, kind: undefined }).some(part => part.group === 'price'), true)
+  assert.equal(contractSigningSections({ ...input, kind: undefined }).find(part => part.title === 'Uppdraget').blocks, undefined)
+  assert.deepEqual(snapshot, before)
+  assert.equal(contractSigningSections({ ...input, snapshot: { ...snapshot, baseAmountOre: 0 } }).find(part => part.group === 'price').rows.at(-1)[1], offers.money(0))
+  assert.equal(contractSigningSections({ ...input, snapshot: { ...snapshot, items: [{ id: id(10), kind: 'included', title: 'Ofullständig rad', scope: '', amountOre: null }] } }).some(part => part.group === 'price'), true)
+})
 function load(path,deps) {
   const compiled = { exports: {} }, source = ts.transpileModule(readFileSync(new URL(`../${path}`,import.meta.url),'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   new Function('require','module','exports',source)(name => { assert.ok(name in deps,name); return deps[name] },compiled,compiled.exports)

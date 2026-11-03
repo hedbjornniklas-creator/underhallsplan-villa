@@ -9,6 +9,7 @@ import { paymentConditionsText } from '@/lib/action-cases/customerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import { ContractPriceDocument } from './CustomerContractPricing'
 import { OfferHourEstimateDocument } from './CustomerOfferHourEstimate'
+import { OfferAlternativesDocument } from './CustomerOfferAlternatives'
 import { contractFormName } from '@/lib/action-cases/standardContractTerms'
 import {
   customerOfferBaseAmount,
@@ -102,6 +103,10 @@ export default function CustomerOfferDocument({
           <p className="mt-5 whitespace-pre-wrap leading-7">{s.introduction}</p>
         )}
       </header>
+      {purpose === 'offer' && s.offerAlternatives ? <>
+        <OfferAlternativesDocument snapshot={s} />
+        {files.length > 0 && <section className="py-5"><h3 className="font-semibold">Bilagor</h3>{files.map(file => <a key={file.id} href={fileUrl(file.id)} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-2 underline"><Download size={16} />{file.fileName}</a>)}</section>}
+      </> : <>
       {purpose === 'contract' && s.contractParties && <ContractPartiesDocument value={s.contractParties} />}
       <section className="py-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
@@ -329,6 +334,7 @@ export default function CustomerOfferDocument({
           </p>
         )}
       </footer>
+      </>}
       {s.senderProfile && (s.senderProfile.website || s.senderProfile.reportFooterText) && <div className="border-b border-slate-200 py-5 text-sm leading-6 text-slate-600">
         {s.senderProfile.website && <p>{s.senderProfile.website}</p>}
         {s.senderProfile.reportFooterText && <p className="whitespace-pre-wrap">{s.senderProfile.reportFooterText}</p>}

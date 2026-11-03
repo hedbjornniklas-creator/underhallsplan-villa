@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeOfferAlternatives, type OfferAlternatives } from './offerAlternatives.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferHourEstimate, offerHourEstimateIssues, type OfferHourEstimate } from './offerHourEstimate.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractFixedAmount, contractFixedRows, contractPriceModeLabel, contractPricingIssues, normalizeContractPricing, type ContractPricing } from './contractPricing.ts'
@@ -28,6 +30,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  offerAlternatives?: OfferAlternatives | null
   offerHourEstimate?: OfferHourEstimate | null
   senderProfile?: ContractSenderProfileSnapshot
   signingMethod?: 'email_code' | 'external'
@@ -201,6 +204,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.offerAlternatives === undefined ? {} : { offerAlternatives: normalizeOfferAlternatives(d.offerAlternatives) }),
     ...(d.offerHourEstimate === undefined ? {} : { offerHourEstimate: normalizeOfferHourEstimate(d.offerHourEstimate) }),
     ...(d.senderProfile === undefined ? {} : { senderProfile: normalizeContractSenderProfile(d.senderProfile) }),
     ...(d.signingMethod === undefined ? {} : { signingMethod: d.signingMethod as CustomerOfferDraft['signingMethod'] }),
@@ -225,6 +229,8 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     items
   }
   if (draft.contractParties && draft.contractDetails) draft.contractDetails.fields.parties = { status: 'specified', text: contractPartiesSummary(draft.contractParties) }
+  if (draft.offerAlternatives && (draft.items.length || draft.contractPricing || draft.offerHourEstimate || draft.baseAmountOre !== null || draft.paymentPlan?.installments.length))
+    throw new Error('CUSTOMER_OFFER_INVALID')
   if (draft.contractDetails?.assignment?.documents.some((doc) => !attachmentIds.includes(doc.fileId)))
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (draft.contractDetails?.assignment?.standardConditions && draft.contractForm !== 'abs18')
@@ -247,6 +253,7 @@ function normalizeSourceReview(value: unknown): NonNullable<CustomerOfferItem['s
 }
 
 export function customerOfferBaseAmount(d: CustomerOfferDraft): number | null {
+  if (d.offerAlternatives) return null
   if (d.contractPricing) return contractFixedAmount(d.contractPricing)
   if (d.pricingMode !== 'itemized') return d.baseAmountOre
   const included = d.items.filter((i) => i.kind === 'included')
@@ -287,6 +294,7 @@ export function offerPublishIssues(
   signing: 'online' | 'paper' = 'online'
 ): string[] {
   const issues: string[] = contractDetailsIssues(d.contractDetails, Boolean(d.contractParties))
+  if (d.offerAlternatives) issues.push('Valbara offertdelar beställs separat skriftligen innan ett grundavtal kan upprättas.')
   const assignment = d.contractDetails?.assignment
   if (assignment && d.termsAttachmentId && !assignment.documents.some((doc) => doc.fileId === d.termsAttachmentId))
     issues.push('Lägg avtalshandlingen i uppdragets handlingsförteckning.')
@@ -374,6 +382,7 @@ export function money(ore: number | null) {
       }).format(ore / 100)
 }
 export function customerPriceLabel(d: CustomerOfferDraft): string {
+  if (d.offerAlternatives) return `${d.offerAlternatives.parts.length} valbara offertdelar`
   if (d.contractPricing?.mode === 'running') return contractPriceModeLabel(d.contractPricing)
   const amount = money(customerOfferBaseAmount(d))
   return d.contractPricing?.mode === 'mixed' ? `Fast del ${amount} + löpande räkning${d.contractPricing.budget ? ' med budget' : ''}` : amount

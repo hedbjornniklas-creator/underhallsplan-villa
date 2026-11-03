@@ -72,6 +72,7 @@ import CustomerContractDelivery from './CustomerContractDelivery'
 import { contractBudgetAmount, contractPricingForEditing, defaultBudgetReviewTerms } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
 import CustomerOfferHourEstimate from './CustomerOfferHourEstimate'
+import CustomerOfferAlternatives from './CustomerOfferAlternatives'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
@@ -854,9 +855,13 @@ export default function CustomerOfferEditor({
               open={expanded === 'offer-info'} onToggle={() => setExpanded(expanded === 'offer-info' ? null : 'offer-info')}>
             <section className="space-y-4">
               <CustomerContractFormSelect draft={draft} files={files} onChange={update} />
-              {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || parties.business) && <section className="space-y-4 border-b border-slate-200 pb-4">
+              {parties.business && !draft.offerAlternatives && !draft.items.length && !draft.contractPricing && !draft.offerHourEstimate && draft.baseAmountOre === null && !draft.paymentPlan?.installments.length && <button type="button" className={button} onClick={() => update({ offerAlternatives: { version: 1, issuedOn: '', selectionTerms: '', parts: [] } })}><Plus size={16} />Skapa valbara offertdelar</button>}
+              <section className="space-y-4 border-b border-slate-200 pb-4">
                 <h3 className="font-semibold">Beställare</h3>
                 <ContractCustomerEditor value={parties} onChange={contractParties => update({ contractParties })} />
+              </section>
+              {draft.offerAlternatives && <section className="space-y-4 border-b border-slate-200 pb-4"><h3 className="font-semibold">Entreprenör</h3><ContractContractorEditor value={parties.contractor} source={contractorSource} companyFieldsReadonly={Boolean(draft.senderProfile)} onChange={contractor => update({ contractParties: { ...parties, contractor } })} /></section>}
+              {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || parties.business) && <section className="space-y-4 border-b border-slate-200 pb-4">
                 <label className="block text-sm">Standardbestämmelser (PDF)<select aria-label="Standardbestämmelser (PDF)" className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {
                   update(selectManualContractTerms(draft, files.find(row => row.id === event.target.value), files))
                 }}><option value="">Ingen vald bilaga</option>{files.filter(file => file.contentType === 'application/pdf' && !standardTermsForFile(file)).map(file => <option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>
@@ -930,7 +935,8 @@ export default function CustomerOfferEditor({
               </fieldset>
             </ProjectEditorRow>
             </div>
-            <section hidden={contractView}>
+            {!contractView && draft.offerAlternatives && <CustomerOfferAlternatives value={draft.offerAlternatives} onChange={offerAlternatives => update({ offerAlternatives })} />}
+            <section hidden={contractView || Boolean(draft.offerAlternatives)}>
               <h2 className="text-lg">Uppdraget</h2>
               {!contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
                 onChange={(items) => { update({ items }); setItemView('included') }} />}
@@ -1074,7 +1080,7 @@ export default function CustomerOfferEditor({
                 <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : 'Lägg till avgränsning'}
               </button>
             </section>
-            <div hidden={contractView}>{priceSection}</div>
+            <div hidden={contractView || Boolean(draft.offerAlternatives)}>{priceSection}</div>
             <div hidden={!contractView} className="space-y-5">
             {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
             {contractSection('advice', 'Avrådande', [], true)}
@@ -1092,14 +1098,20 @@ export default function CustomerOfferEditor({
                 conditions={paymentSource.paymentConditions} priceMode={paymentSource.contractPricing?.mode} />
             </ProjectEditorRow>
             </div>
-            <ProjectEditorRow title="Tid för arbetenas påbörjande och avslutande" summary={draft.schedule.trim() ? 'Tider ifyllda' : 'Tider saknas'}
+            <ProjectEditorRow title={!contractView && draft.offerAlternatives ? 'Tid' : 'Tid för arbetenas påbörjande och avslutande'} summary={draft.schedule.trim() ? 'Tider ifyllda' : 'Tider saknas'}
               open={expanded === 'schedule'} onToggle={() => setExpanded(expanded === 'schedule' ? null : 'schedule')}>
               <label className="block text-sm">Tider och förutsättningar *<textarea className={field} rows={3} value={draft.schedule} onChange={(e) => update({ schedule: e.target.value })} /></label>
             </ProjectEditorRow>
-            {contractSection('delay', 'Vite vid försening', ['delay'])}
-            {contractSection('inspection', 'Besiktning', ['inspection'])}
-            {contractSection('insurance', 'Försäkringar och säkerhet', ['insurance', 'completionProtection', 'security'])}
-            <ProjectEditorRow title="Övrigt" summary={draft.terms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
+            {!contractView && draft.offerAlternatives && <>
+              <ProjectEditorRow title="Betalningsvillkor" summary={draft.paymentTerms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'offer-payment'} onToggle={() => setExpanded(expanded === 'offer-payment' ? null : 'offer-payment')}>
+                <label className="block text-sm">Betalningsvillkor<textarea aria-label="Offertens betalningsvillkor" maxLength={6000} rows={3} className={field} value={draft.paymentTerms} onChange={event => update({ paymentTerms: event.target.value })} /></label>
+              </ProjectEditorRow>
+              {contractSection('offer-changes', 'Ändringar och tilläggsarbeten (ÄTA)', ['changes'])}
+            </>}
+            {(!draft.offerAlternatives || contractView || draft.contractDetails?.fields.delay.text) && contractSection('delay', 'Vite vid försening', ['delay'])}
+            {(!draft.offerAlternatives || contractView || draft.contractDetails?.fields.inspection.text) && contractSection('inspection', 'Besiktning', ['inspection'])}
+            {(!draft.offerAlternatives || contractView || ['insurance', 'completionProtection', 'security'].some(key => draft.contractDetails?.fields[key as ContractFieldKey]?.text)) && contractSection('insurance', 'Försäkringar och säkerhet', ['insurance', 'completionProtection', 'security'])}
+            <ProjectEditorRow title={!contractView && draft.offerAlternatives ? 'Beställning' : 'Övrigt'} summary={draft.terms.trim() ? 'Villkor ifyllda' : 'Villkor saknas'} open={expanded === 'terms'} onToggle={() => setExpanded(expanded === 'terms' ? null : 'terms')}>
               <label className="block text-sm">Villkor och hänvisning till avtalshandling *<textarea className={field} rows={5} value={draft.terms} onChange={(e) => update({ terms: e.target.value })} /></label>
               {contractView && <CustomerContractSiteFacilities value={draft.contractDetails?.siteFacilities} disabled={locked || Boolean(busy)}
                 onChange={(siteFacilities) => update({ contractDetails: { ...(draft.contractDetails ?? emptyContractDetails()), siteFacilities } })} />}
@@ -1121,14 +1133,14 @@ export default function CustomerOfferEditor({
                 {customerPriceLabel(draft)}
               </p>
               <p className="mt-1 text-sm text-slate-500">
-                {draft.contractPricing?.mode === 'running' ? draftTarget === 'offer' ? 'Prisgrunder enligt offerten' : 'Prisgrunder enligt avtalet'
+                {draft.offerAlternatives ? 'Ingen totalsumma före beställarens skriftliga val' : draft.contractPricing?.mode === 'running' ? draftTarget === 'offer' ? 'Prisgrunder enligt offerten' : 'Prisgrunder enligt avtalet'
                   : draft.contractPricing?.mode === 'mixed' ? 'Fast del inklusive moms och löpande prisgrunder'
                   : draft.pricingMode === 'itemized'
                   ? 'Summa grundåtagande inklusive moms'
                   : 'Grundpris inklusive moms'}
               </p>
               {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">Planeringsbudget totalt inkl. moms</dt><dd className="mt-1 font-semibold">{contractBudgetAmount(draft.contractPricing) === null ? 'Budget ej komplett' : money(contractBudgetAmount(draft.contractPricing))}</dd></dl>}
-              {draft.pricingMode === 'itemized' && baseAmount === null && (
+              {!draft.offerAlternatives && draft.pricingMode === 'itemized' && baseAmount === null && (
                 <p className="mt-2 text-sm text-amber-700">
                   {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris
                 </p>
@@ -1177,7 +1189,7 @@ export default function CustomerOfferEditor({
                     {contractView ? 'Granska avtal' : 'Granska offert'}
                   </button>
                   {draftTarget === 'offer' && <div className="mt-3">{offerPdfControl}</div>}
-                  {!contractView && <button className={`${button} mt-3 w-full bg-slate-950 text-white`} onClick={() => { setExpanded('customer'); setView('contract') }}>Gå vidare till avtal <ArrowRight size={17} /></button>}
+                  {!contractView && <button className={`${button} mt-3 w-full bg-slate-950 text-white`} onClick={() => { setExpanded('customer'); setView('contract') }}>{draft.offerAlternatives ? 'Öppna avtal' : 'Gå vidare till avtal'} <ArrowRight size={17} /></button>}
                   {contractView && signingMethod === 'email_code' && <>
                   {issues.length > 0 && (
                     <details className="mt-5 text-sm">

@@ -23,6 +23,34 @@
 - Lasta avtal och historiska utskick behaller sin frysta avsandare och sina filer.
   Inga befintliga projekt eller dokument skrivs om vid installation.
 
+## Offertpresentation 2026-11-03
+
+- Bestallartyp kan redigeras aven nar offerten anvander en egen avtalshandling.
+  Valet av foretag/forening byter inte avtalsgrund eller priser automatiskt.
+- Numrerade stycken i offertens inledning far en separat underrubrik nar den
+  forsta raden ar en numrerad titel. Text och belopp tolkas inte som kalkylrader.
+- En offert utan grundmoment och utan strukturerat totalbelopp skriver inte ut
+  en tom pristabell. Nollbelopp och ofullstandiga verkliga prisrader behalls.
+- Valbara delar summeras inte automatiskt. Avtalsutskriftens presentation och
+  redan frysta PDF-filer andras inte av detta.
+- Offerten pagineras lopande utan framtvingat sidbyte efter parterna. Brodtexten
+  ar 10,5 punkter; rubrikstorlekarna behalls. Tomma undertecknar- och okontrollerade
+  F-skattefalt skrivs inte ut i offert, men behalls for handifyllnad i avtal.
+- Beslut: valbara offertdelar sparas uttryckligen i offertutkastets
+  `offerAlternatives`, med datum, rubrik, omfattning, fast delpris exklusive
+  moms och villkor for sammanrakning. Inga belopp beraknas fran fritext.
+  Vanlig omfattning, kontraktspris och betalningsplan blandas inte med denna form.
+- Offertvyn och vanlig PDF-knapp visar Arbeten, Priser, Tid, Betalningsvillkor,
+  ATA och Bestallning fran sparade uppgifter. Delarna summeras inte innan de
+  bestallts. Offerten skickas manuellt som PDF; inget digitalt godkannande byggs.
+- Datum, omfattning och priser ar redigerbara med befintlig autosparning.
+  API:t avvisar aldre flikar som saknar redan sparade valbara offertdelar.
+  Explicit `null` ar nodvandigt for att ta bort formatet; faltet tappas aldrig tyst.
+- Uppgifterna far inte skrivas till avtalsutkast. Automatisk avtalsutskickning
+  blockeras tills valda delar har avtalats separat. Projektarbete, lasta avtal
+  och betalningsplan andras inte.
+- Befintlig JSON-lagring ateranvands. Ingen ny SQL-migrering behovs for detta.
+
 ## Installation
 
 Kor `docs/db/2026-11-03_01_running_price_budget.sql` och darefter
