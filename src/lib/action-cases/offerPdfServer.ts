@@ -45,7 +45,8 @@ export async function downloadCurrentOfferPdf(ctx: Context, caseId: string, revi
     return file ? [{ id: file.id, fileName: file.file_name, contentType: file.content_type, fileSizeBytes: Number(file.file_size_bytes) }] : []
   })
   const customerSnapshot = mapCustomerOffer({ id: caseId, version: 0, status: 'published', snapshot, files }).snapshot
-  let bytes = await renderContractSigningPdf({ kind: 'offer', id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: customerSnapshot, files })
+  const createdAt = new Date()
+  let bytes = await renderContractSigningPdf({ kind: 'offer', id: caseId, version: 0, draftRevision: revision, createdAt: createdAt.toISOString(), snapshot: customerSnapshot, files })
   const ids = [...new Set([...(draft.contractDetails?.assignment?.documents.map(document => document.fileId) ?? []), ...draft.attachmentIds])]
     .filter(id => offerDocumentMode(draft, id) === 'pdf' && !(draft.contractForm === 'hf17' && id === workspace.standardTermsFile?.id))
   if (ids.length) {
@@ -80,5 +81,6 @@ export async function downloadCurrentOfferPdf(ctx: Context, caseId: string, revi
   const current = await db.from('action_case_customer_offer_drafts').select('revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
   checked(current.error)
   if (current.data?.revision !== revision) throw new Error('CUSTOMER_OFFER_STALE')
-  return { bytes, fileName: 'Offert.pdf', contentType: 'application/pdf' }
+  const date = createdAt.toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' }).replaceAll('-', '')
+  return { bytes, fileName: `Offert ${date}.pdf`, contentType: 'application/pdf' }
 }

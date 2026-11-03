@@ -215,7 +215,7 @@ function harness(options = {}) {
 test('offer PDF reads only the saved offer revision, uses its sender and never writes or freezes contracts',async()=> {
   const h=harness(), before=structuredClone(h.draft)
   const file=await h.server.downloadCurrentOfferPdf(ctx,caseId,7)
-  assert.equal(file.fileName,'Offert.pdf'); assert.equal(file.contentType,'application/pdf')
+  assert.match(file.fileName,/^Offert \d{8}\.pdf$/); assert.equal(file.contentType,'application/pdf')
   assert.deepEqual(h.workspaces,[{context:ctx,project:caseId,target:'offer'}])
   assert.equal(h.rendered[0].kind,'offer'); assert.equal(h.rendered[0].draftRevision,7)
   assert.equal(h.rendered[0].snapshot.issuerName,'Projektets frysta avsändare')
@@ -225,6 +225,17 @@ test('offer PDF reads only the saved offer revision, uses its sender and never w
   assert.equal(h.rendered[0].snapshot.contractParties.customers[0].personalNumber,'')
   assert.equal('costing' in h.rendered[0].snapshot,false)
   assert.deepEqual(h.draft,before)
+})
+
+test('offer filename uses the export date in Sweden, not the draft date or server timezone', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-03T23:30:00Z') })
+  const first = harness()
+  assert.equal((await first.server.downloadCurrentOfferPdf(ctx, caseId, 7)).fileName, 'Offert 20261104.pdf')
+  assert.equal(first.rendered[0].createdAt, '2026-11-03T23:30:00.000Z')
+  t.mock.timers.setTime(new Date('2026-07-01T22:30:00Z').valueOf())
+  assert.equal((await harness().server.downloadCurrentOfferPdf(ctx, caseId, 7)).fileName, 'Offert 20260702.pdf')
+  t.mock.timers.setTime(new Date('2026-11-03T10:00:00Z').valueOf())
+  assert.equal((await harness().server.downloadCurrentOfferPdf(ctx, caseId, 7)).fileName, 'Offert 20261103.pdf')
 })
 
 test('stale revisions and changes during pagination fail rather than downloading an older offer',async()=> {
@@ -278,11 +289,12 @@ test('foreign, private, missing, oversized and invalid selected PDFs cannot prod
   }
 })
 
-test('PDF route requires module context and returns a private printable attachment without mutations',async()=> {
+test('PDF route requires module context and returns a private printable attachment without mutations',async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-03T10:00:00Z') })
   const h=harness(), params={params:Promise.resolve({caseId})}, request=new Request(`https://hushub.se/api/action-cases/${caseId}/customer-offers/pdf?revision=7`)
   const response=await h.route.GET(request,params)
   assert.equal(response.status,200); assert.equal(response.headers.get('content-type'),'application/pdf')
-  assert.match(response.headers.get('content-disposition'),/attachment; filename="Offert.pdf"/)
+  assert.equal(response.headers.get('content-disposition'),'attachment; filename="Offert 20261103.pdf"')
   assert.equal(response.headers.get('cache-control'),'private, no-store')
   assert.equal(response.headers.get('x-content-type-options'),'nosniff')
   const denied=harness({forbidden:true}); assert.equal((await denied.route.GET(request,params)).status,403)
