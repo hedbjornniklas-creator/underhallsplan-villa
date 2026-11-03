@@ -8,7 +8,7 @@ import { customerOfferBaseAmount, money, type CustomerOfferSnapshot, type Custom
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount } from './contractPricing.ts'
+import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -61,21 +61,34 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
   const documentRows = documents.flatMap((doc) => {
     const file = files.find((f) => f.id === doc.fileId)
     if (![doc.type, doc.name, doc.date].some((value) => value.trim()) && !file) return []
-    return [[doc.type, doc.name || file?.fileName || '', doc.date]]
+    return [[kind === 'offer' && s.contractForm === 'hf17' && doc.fileId === s.termsAttachmentId ? 'Allmänna bestämmelser' : doc.type,
+      kind === 'offer' && s.contractForm === 'hf17' && doc.fileId === s.termsAttachmentId ? 'Allmänna bestämmelser för Hantverkarformuläret 17' : doc.name || file?.fileName || '', doc.date]]
   })
   documentRows.push(...files.filter((f) => !listedFiles.has(f.id)).map((f) => ['Bilaga', f.fileName, '']))
-  if (documentRows.length || assignment?.documentNotes) result.push({ ...section('assignment', 'Handlingar som ingår i uppdraget', assignment?.documentNotes || ''),
+  if (documentRows.length || assignment?.documentNotes) result.push({ ...section('assignment', kind === 'offer' ? 'Handlingar och bilagor som hör till offerten' : 'Handlingar som ingår i uppdraget', assignment?.documentNotes || ''),
     columns: ['Typ av handling', 'Handlingens namn', 'Datum'], columnWidths: [0.25, 0.57, 0.18], rows: documentRows })
   if (d && !assignment) result.push(section('assignment', 'Avtalshandlingar', contractEntryText(d.fields.documents)))
   const included = s.items.filter((i) => i.kind === 'included')
   result.push(labelledSection('assignment', 'Arbetets omfattning', included.map((item) => ({ label: item.title, text: item.scope })), true))
   result.push(labelledSection('assignment', 'Förutsättningar för arbetena', included.map((item) => ({ label: item.title, text: item.scopeConditions || '' }))))
-  result.push(labelledSection('assignment', 'Entreprenörens åtagande omfattar inte', [
+  const exclusions = [
     { text: assignment?.exclusions || '' }, ...included.map((item) => ({ label: item.title, text: item.scopeExclusions || '' })),
     ...s.items.filter((i) => i.kind === 'excluded').map((item) => ({ label: item.title,
       text: [item.scope, item.scopeConditions, item.scopeExclusions, item.scopeAdvice].filter(Boolean).join('\n\n') })),
     ...(s.contractForm === 'abs18' && assignment?.standardConditions?.text ? [{ label: 'Beställarens ansvar och avgifter', text: assignment.standardConditions.text }] : []),
-  ]))
+  ]
+  if (kind === 'offer') {
+    const rows = [
+      ...(assignment?.exclusions?.trim() ? [['Gemensam avgränsning', assignment.exclusions]] : []),
+      ...included.filter(item => item.scopeExclusions?.trim()).map(item => [item.title, item.scopeExclusions!]),
+      ...s.items.filter(item => item.kind === 'excluded').map(item => [item.title,
+        ['Arbetsdelen ingår inte.', item.scope, item.scopeConditions, item.scopeExclusions, item.scopeAdvice].filter(Boolean).join('\n\n')]),
+      ...(s.contractForm === 'abs18' && assignment?.standardConditions?.text ? [['Beställarens ansvar och avgifter', assignment.standardConditions.text]] : []),
+    ]
+    if (rows.length) result.push({ ...section('assignment', 'Avgränsningar - detta ingår inte',
+      'För respektive arbetsdel undantas endast det som uttryckligen anges i högra kolumnen. Arbetets omfattning framgår ovan.'),
+      columns: ['Berörd arbetsdel', 'Undantaget från åtagandet'], columnWidths: [0.38, 0.62], rows })
+  } else result.push(labelledSection('assignment', 'Entreprenörens åtagande omfattar inte', exclusions))
   result.push(labelledSection('assignment', 'Avrådan för arbetsdelar', included.map((item) => ({ label: item.title, text: item.scopeAdvice || '' }))))
   if (d) {
     for (const { key, title } of contractFields.filter(({ key }) => key === 'workEnvironment'))
@@ -87,22 +100,45 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
   const price = s.contractPricing
   if (price) {
     const fixed = contractFixedRows(price), running = price.rows.filter((r) => price.mode === 'running' || r.kind === 'running')
+    if (kind === 'offer') result.push(section('price', 'Ersättningsmodell', offerCompensationText(price)))
     if (price.mode !== 'running') {
       const rows: string[][] = [], columns = price.display === 'unpriced' ? ['Moment'] : price.split === 'combined' ? ['Moment', 'Pris inkl. moms'] : ['Moment', 'Arbete', 'Material', 'Totalt inkl. moms']
       const sum = (key: 'labourOre' | 'materialOre') => fixed.length && fixed.every((r) => r[key] !== null) ? fixed.reduce((t, r) => t + r[key]!, 0) : null
       if (price.display !== 'total') for (const r of fixed) rows.push(price.display === 'unpriced' ? [r.title] : price.split === 'combined' ? [r.title, pdfMoney(contractRowAmount(price, r))] : [r.title, pdfMoney(r.labourOre), pdfMoney(r.materialOre), pdfMoney(contractRowAmount(price, r))])
-      rows.push(price.display === 'unpriced' || price.split === 'combined' ? ['Totalsumma inkl. moms', pdfMoney(contractFixedAmount(price))] : ['Totalsumma inkl. moms', pdfMoney(price.basis === 'total' ? price.labourOre : sum('labourOre')), pdfMoney(price.basis === 'total' ? price.materialOre : sum('materialOre')), pdfMoney(contractFixedAmount(price))])
-      result.push({ ...section('price', price.mode === 'mixed' ? 'Fast del av priset' : 'Priset - fast pris'), columns: price.display === 'total' ? price.split === 'combined' ? ['Pris', 'Inkl. moms'] : ['Pris', 'Arbete', 'Material', 'Totalt inkl. moms'] : price.display === 'unpriced' ? ['Moment', ''] : columns, rows, totalRow: true,
+      const totalTitle = kind === 'offer' && price.mode === 'mixed' ? 'Summa fasta priser inkl. moms' : 'Totalsumma inkl. moms'
+      rows.push(price.display === 'unpriced' || price.split === 'combined' ? [totalTitle, pdfMoney(contractFixedAmount(price))] : [totalTitle, pdfMoney(price.basis === 'total' ? price.labourOre : sum('labourOre')), pdfMoney(price.basis === 'total' ? price.materialOre : sum('materialOre')), pdfMoney(contractFixedAmount(price))])
+      result.push({ ...section('price', kind === 'offer' ? 'Fasta priser' : price.mode === 'mixed' ? 'Fast del av priset' : 'Priset - fast pris'), columns: price.display === 'total' ? price.split === 'combined' ? ['Pris', 'Inkl. moms'] : ['Pris', 'Arbete', 'Material', 'Totalt inkl. moms'] : price.display === 'unpriced' ? ['Moment', ''] : columns, rows, totalRow: true,
         numericColumns: price.split === 'separate' && price.display !== 'unpriced' ? [1, 2, 3] : [1], columnWidths: price.split === 'separate' && price.display !== 'unpriced' ? [0.4, 0.2, 0.2, 0.2] : [0.68, 0.32] })
     }
-    if (price.mode !== 'fixed') result.push(section('price', price.budget ? 'Löpande räkning med budget' : 'Löpande räkning', ...(price.budget ? [] : running.map((r) => r.title)),
-      `Timpris inklusive arvode och moms: ${pdfMoney(price.running.hourlyOre)}`, `Arbetsledning: ${pdfMoney(price.running.managementOre ?? price.running.hourlyOre)}/timme`,
-      `Entreprenörarvode på självkostnader exklusive moms: ${price.running.markupPercent ?? ''} %. Moms tillkommer.`, price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`))
+    if (price.mode !== 'fixed') {
+      if (kind === 'offer') result.push({ ...section('price', 'Löpande räkning - prisgrunder',
+        ...(price.budget ? [] : running.map(row => row.title)),
+        'Timpriser anges inklusive arvode och moms. Material, varor, hjälpmedel, överenskomna underentreprenader och övriga kostnader ersätts med självkostnad plus angivet påslag. Moms tillkommer på självkostnad och påslag.',
+        price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`),
+        columns: ['Prisgrund', 'Ersättning'], columnWidths: [0.68, 0.32], numericColumns: [1], rows: [
+          ['Arbete, inkl. arvode och moms', price.running.hourlyOre === null ? '' : `${money(price.running.hourlyOre)}/tim`],
+          ['Arbetsledning, inkl. arvode och moms', (price.running.managementOre ?? price.running.hourlyOre) === null ? '' : `${money(price.running.managementOre ?? price.running.hourlyOre)}/tim`],
+          ['Påslag på självkostnad exkl. moms', price.running.markupPercent === null ? '' : `${price.running.markupPercent} %`],
+        ] })
+      else result.push(section('price', price.budget ? 'Löpande räkning med budget' : 'Löpande räkning', ...(price.budget ? [] : running.map((r) => r.title)),
+        `Timpris inklusive arvode och moms: ${pdfMoney(price.running.hourlyOre)}`, `Arbetsledning: ${pdfMoney(price.running.managementOre ?? price.running.hourlyOre)}/timme`,
+        `Entreprenörarvode på självkostnader exklusive moms: ${price.running.markupPercent ?? ''} %. Moms tillkommer.`, price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`))
+    }
     if (price.budget) {
-      const rows = running.map(row => [row.title, pdfMoney(price.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null)])
-      if (price.mode === 'mixed') rows.push(['Fast del inkl. moms', pdfMoney(contractFixedAmount(price))])
-      rows.push(['Planeringsbudget totalt inkl. moms', pdfMoney(contractBudgetAmount(price))])
-      result.push({ ...section('price', 'Planeringsbudget inklusive moms'), columns: ['Moment', 'Budget inkl. moms'], rows, totalRow: true, numericColumns: [1], columnWidths: [0.68, 0.32] })
+      const breakdown = kind === 'offer' ? offerBudgetBreakdown(price) : null
+      const partial = Boolean(breakdown?.unbudgetedTitles.length)
+      const rows = running.map(row => {
+        const amount = price.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null
+        return [row.title, kind === 'offer' && amount === null ? 'Ej budgeterat' : pdfMoney(amount)]
+      })
+      const total = contractBudgetAmount(price)
+      const incompleteText = partial ? [`Följande poster saknar budget och ingår inte i budgetbeloppet: ${breakdown!.unbudgetedTitles.join(', ')}. Tom budget innebär inte att posten är kostnadsfri.`] : []
+      if (kind === 'offer') rows.push([partial ? 'Summa budgeterade löpande poster inkl. moms' : 'Summa budget, löpande del inkl. moms', pdfMoney(breakdown!.runningOre)])
+      else {
+        if (price.mode === 'mixed') rows.push(['Fast del inkl. moms', pdfMoney(contractFixedAmount(price))])
+        rows.push(['Planeringsbudget totalt inkl. moms', pdfMoney(total)])
+      }
+      result.push({ ...section('price', kind === 'offer' ? 'Planeringsbudget för löpande arbeten och inköp' : 'Planeringsbudget inklusive moms'), columns: ['Moment', 'Budget inkl. moms'], rows, totalRow: true, numericColumns: [1], columnWidths: [0.68, 0.32], ...(partial ? { afterTable: incompleteText } : {}) })
       result.push(labelledSection('price', 'Budgetens förutsättningar och uppföljning', [
         { label: 'Förutsättningar och osäkerheter', text: price.budget.assumptions },
         { label: 'Uppföljning och samråd', text: price.budget.reviewTerms },
@@ -366,7 +402,7 @@ async function renderSigningPdf(input: SigningPdfInput, presentation?: SigningPd
   const number = (group: SectionGroup) => groups.indexOf(group) + 1
   // Fresh text nodes keep line height stable during dynamic pagination passes.
   const footer = () => h(View, { fixed: true, style: styles.footer,
-    render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages?: number }) => h(Text, { style: styles.footerText }, `Sida ${pageNumber} av ${totalPages ?? ''}`) })
+    render: ({ pageNumber, totalPages }: { pageNumber: number; totalPages?: number }) => h(Text, { style: styles.footerText }, `${offer ? 'Offert | ' : ''}Sida ${pageNumber} av ${totalPages ?? ''}`) })
   const header = (context: string, hideOnFirst = false) => h(View, { fixed: true, style: [styles.runningHeader, ...(hideOnFirst ? [{ borderBottomWidth: 0 }] : [])],
     render: ({ pageNumber, subPageNumber }) => hideOnFirst && pageNumber === 1 ? null : h(Text, { style: styles.headerText }, `${heading.title} / ${heading.form}${s.title ? ` / ${clean(s.title)}` : ''}\n${context}${subPageNumber > 1 ? ' - fortsättning' : ''}`) })
   const coverParts = parts.filter((part) => ['parties', 'controls', 'property'].includes(part.group))
@@ -386,7 +422,12 @@ async function renderSigningPdf(input: SigningPdfInput, presentation?: SigningPd
     h(View, { style: styles.signature, wrap: false }, text('Underskrift', { style: styles.signatureCaption }), ...(name.trim() ? [text(name, { style: styles.partyName })] : []),
       text(role, { style: styles.signatureCaption }), ...(detail ? [text(detail, { style: styles.signatureCaption })] : [])))
   const assignmentContent = assignment.length ? h(View, { style: frameStyle },
-    ...assignment.map((part, i) => h(React.Fragment, { key: `assignment-${i}` }, ...renderSection(part, i === 0 || part.title === 'Uppdraget' ? undefined : `${number('assignment')}.${++assignmentNumber}. ${part.title}`, i === 0 ? documentBand(number('assignment'), presentation ? part.title : 'Uppdraget') : undefined, Boolean(presentation))))) : null
+    ...assignment.map((part, i) => {
+      const hideHeading = part.title === 'Uppdraget' || i === 0 && (!offer || Boolean(presentation))
+      const subheading = hideHeading ? undefined : `${number('assignment')}.${++assignmentNumber}. ${part.title}`
+      return h(React.Fragment, { key: `assignment-${i}` }, ...renderSection(part, subheading,
+        i === 0 ? documentBand(number('assignment'), presentation ? part.title : 'Uppdraget') : undefined, Boolean(presentation)))
+    })) : null
   const senderNotes = [
     ...(s.senderProfile?.website && !presentation ? [text(s.senderProfile.website, { key: 'website', style: styles.senderNote })] : []),
     ...(s.senderProfile?.reportFooterText ? [text(s.senderProfile.reportFooterText, { key: 'sender-footer', style: styles.senderNote })] : []),

@@ -4,13 +4,15 @@ import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Loader2, RefreshCw, Tras
 import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { CustomerOfferDraft, CustomerOfferFile } from '@/lib/action-cases/customerOffers'
 import { assignmentForEditing, assignmentPatch, type ContractAssignment } from '@/lib/action-cases/contractAssignment'
+import { emptyContractDetails } from '@/lib/action-cases/customerContract'
+import { offerDocumentMode, selectedOfferDocuments } from '@/lib/action-cases/offerDocuments'
 import { contractFormName, selectManualContractTerms, standardTermsFor, standardTermsForFile } from '@/lib/action-cases/standardContractTerms'
 import CustomerContractFormSelect from './CustomerContractFormSelect'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 const tool = 'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 disabled:opacity-30'
 
-export default function CustomerContractAssignmentEditor({ draft, files, caseId, onChange, children, standardTermsId, termsState, onRetryTerms }: {
+export default function CustomerContractAssignmentEditor({ draft, files, caseId, onChange, children, standardTermsId, termsState, onRetryTerms, purpose = 'contract' }: {
   draft: CustomerOfferDraft
   files: CustomerOfferFile[]
   caseId: string
@@ -19,9 +21,13 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
   standardTermsId?: string
   termsState?: '' | 'loading' | 'error'
   onRetryTerms?: () => void
+  purpose?: 'contract' | 'offer'
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
   const listId = useId()
+  const typesId = `${listId}-types`, termsGroup = `${listId}-terms`
+  const isOffer = purpose === 'offer'
+  const documentTitle = isOffer ? 'Handlingar och bilagor som hör till offerten' : 'Handlingar som ingår i uppdraget'
   const clicked = useRef<{ element: HTMLElement; top: number } | null>(null)
   useLayoutEffect(() => {
     const anchor = clicked.current
@@ -37,12 +43,16 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
     clicked.current = { element, top: element.getBoundingClientRect().top }
     setExpanded(expanded === fileId ? null : fileId)
   }
-  const value = assignmentForEditing(draft, files)
+  const assignmentDraft = isOffer && !draft.contractDetails ? { ...draft, contractDetails: emptyContractDetails() } : draft
+  const value = assignmentForEditing(assignmentDraft, files)
   const standard = standardTermsFor(draft.contractForm)
   const standardName = contractFormName(draft.contractForm)
   const selected = new Set(value.documents.map((d) => d.fileId))
   const available = files.filter((f) => f.id !== standardTermsId && !selected.has(f.id) && (draft.attachmentIds.length < 30 || draft.attachmentIds.includes(f.id)))
-  const change = (patch: Partial<ContractAssignment>) => onChange(assignmentPatch(draft, { ...value, ...patch }, value))
+  const change = (patch: Partial<ContractAssignment>) => {
+    const next = assignmentPatch(assignmentDraft, { ...value, ...patch }, value)
+    onChange({ ...next, ...(isOffer ? { offerDocuments: selectedOfferDocuments(draft, next.attachmentIds!, files) } : {}) })
+  }
   const add = (fileId: string) => {
     const file = files.find((f) => f.id === fileId)
     if (!file || selected.has(fileId)) return
@@ -58,8 +68,8 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
     change({ documents })
   }
   return <div className="space-y-6">
-    <CustomerContractFormSelect draft={draft} files={files} onChange={onChange} />
-    <section className="gizmo-contract-documents" aria-label="Handlingar som ingår i uppdraget">
+    {!isOffer && <CustomerContractFormSelect draft={draft} files={files} onChange={onChange} />}
+    <section className="gizmo-contract-documents" aria-label={documentTitle}>
       {standard && <div className="flex min-h-11 items-center gap-2 text-sm text-slate-600" role="status">
         {termsState === 'loading' ? <><Loader2 size={16} className="animate-spin" /> Förbereder {standardName}…</>
           : termsState === 'error' ? <button type="button" className={tool} onClick={onRetryTerms} title="Försök lägga till standardvillkoren igen" aria-label={`Försök lägga till ${standardName}-villkoren igen`}><RefreshCw size={17} /></button>
@@ -68,11 +78,11 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
       {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06') && <label className="my-3 block text-sm">Standardbestämmelser (PDF)<select className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {
         onChange(selectManualContractTerms(draft, files.find(row => row.id === event.target.value), files))
       }}><option value="">Ingen vald bilaga</option>{files.filter(file => file.contentType === 'application/pdf' && !standardTermsForFile(file)).map(file => <option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>}
-      <h3 className="font-semibold">Handlingar som ingår i uppdraget</h3>
-      <datalist id="contract-document-types">
+      <h3 className="font-semibold">{documentTitle}</h3>
+      <datalist id={typesId}>
         {['Beskrivning', 'Ritning', 'Anbud', 'Administrativa föreskrifter', 'Allmänna bestämmelser, ABS 18', 'Avtalshandling'].map((type) => <option key={type} value={type} />)}
       </datalist>
-      <table className="gizmo-document-table mt-3 w-full table-fixed border-y border-slate-200 text-left text-sm" aria-label="Handlingsförteckning">
+      <table className="gizmo-document-table mt-3 w-full table-fixed border-y border-slate-200 text-left text-sm" aria-label={isOffer ? 'Offertens handlingsförteckning' : 'Handlingsförteckning'}>
         <thead>
           <tr>
             <th scope="col" className="gizmo-document-type w-1/4 px-3">Typ av handling</th>
@@ -82,7 +92,7 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
           </tr>
         </thead>
         <tbody>
-          <tr className="border-t border-slate-200">
+          {!isOffer && <tr className="border-t border-slate-200">
             <th scope="row" className="gizmo-document-type px-3 py-3 font-medium">Detta kontrakt</th>
             <td className="px-3 py-3 [overflow-wrap:anywhere]">
               <span className="gizmo-document-mobile mb-1 text-xs text-slate-500">Detta kontrakt</span>
@@ -91,11 +101,11 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
             </td>
             <td className="gizmo-document-date px-3 py-3 text-xs text-slate-500">Datum vid publicering</td>
             <td />
-          </tr>
+          </tr>}
           {value.documents.map((doc, index) => {
             const file = files.find((f) => f.id === doc.fileId)
             if (standard && doc.fileId === standardTermsId) return <tr key={doc.fileId} className="gizmo-document-standard border-t border-slate-200">
-              <td className="gizmo-document-type px-3 py-2">{draft.contractForm === 'hf17' ? 'HF17' : 'ABS 18'}<span className="mt-1 block text-xs font-medium text-teal-800">Avtalsvillkor</span></td>
+              <td className="gizmo-document-type px-3 py-2">{draft.contractForm === 'hf17' ? 'HF17' : 'ABS 18'}<span className="mt-1 block text-xs font-medium text-teal-800">{isOffer && draft.contractForm === 'hf17' ? 'Ingår i PDF' : 'Avtalsvillkor'}</span></td>
               <td className="px-3 py-2"><strong className="block font-semibold">{standard.name}</strong><span className="gizmo-document-mobile mt-1 text-xs text-slate-600">Avtalsvillkor · {draft.contractForm === 'hf17' ? '2017' : '2018.06'}</span></td>
               <td className="gizmo-document-date px-3 py-2 text-slate-600">{draft.contractForm === 'hf17' ? '2017' : '2018.06'}</td>
               <td className="px-2 py-1"><div className="flex justify-end"><a className="gizmo-document-tool text-teal-800" href={`/api/action-cases/${caseId}/attachments/${doc.fileId}`} target="_blank" rel="noopener noreferrer" aria-label={`Öppna ${standardName}-villkoren i ny flik`} title={`Öppna ${standardName}-villkoren i ny flik`}><ExternalLink size={17} /></a></div></td>
@@ -112,6 +122,7 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
                 <td className="gizmo-document-type px-3 py-2">
                   <span className={`block truncate ${doc.type.trim() ? '' : 'text-amber-800'}`} title={doc.type || 'Typ saknas'}>{doc.type || 'Typ saknas'}</span>
                   {terms && <span className="mt-1 block text-xs font-medium text-teal-800">Avtalsvillkor</span>}
+                  {isOffer && <span className="mt-1 block text-xs text-slate-600">{offerDocumentMode(draft, doc.fileId) === 'pdf' ? 'Ingår i PDF' : 'Endast referens'}</span>}
                 </td>
                 <td className="px-3 py-1">
                   <button type="button" className="gizmo-document-toggle flex w-full min-w-0 items-center text-left" aria-label={`${open ? 'Stäng' : 'Redigera'} handling ${index + 1}: ${doc.name || file?.fileName || 'Namnet saknas'}`} aria-expanded={open} aria-controls={panelId} title={doc.name || file?.fileName} onClick={(e) => toggle(doc.fileId, e.currentTarget)}>
@@ -135,7 +146,7 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
                   <div id={panelId} role="group" aria-label={`Handling ${index + 1}`}>
                     <div className="gizmo-document-fields grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(140px,1fr)]">
                       <label className="min-w-0 text-sm">Typ av handling
-                        <input aria-label={`Typ av handling ${index + 1}`} className={field} list="contract-document-types" maxLength={100} value={doc.type} onChange={(e) => edit({ type: e.target.value })} />
+                        <input aria-label={`Typ av handling ${index + 1}`} className={field} list={typesId} maxLength={100} value={doc.type} onChange={(e) => edit({ type: e.target.value })} />
                       </label>
                       <label className="min-w-0 text-sm">Handlingens namn
                         <input aria-label={`Handlingens namn ${index + 1}`} className={field} maxLength={250} value={doc.name} onChange={(e) => edit({ name: e.target.value })} />
@@ -146,15 +157,21 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
                         }} onBlur={(e) => e.target.reportValidity()} />
                       </label>
                     </div>
+                    {isOffer && <label className="mt-3 block max-w-sm text-sm">Hantering i offerten
+                      <select aria-label={`Hantering av handling ${index + 1}`} className={field} value={offerDocumentMode(draft, doc.fileId)} onChange={event => {
+                        if (event.target.value === 'hidden') change({ documents: value.documents.filter(document => document.fileId !== doc.fileId) })
+                        else onChange({ offerDocuments: { version: 1, modes: { ...draft.offerDocuments?.modes, [doc.fileId]: event.target.value === 'pdf' ? 'pdf' : 'reference' } } })
+                      }}><option value="pdf" disabled={file?.contentType !== 'application/pdf'}>Inkludera i PDF</option><option value="reference">Endast referens</option><option value="hidden">Dölj från offerten</option></select>
+                    </label>}
                     {draft.contractForm === 'custom' && file?.contentType === 'application/pdf' && <label className="gizmo-document-terms mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-                      <input type="radio" name={`contract-terms-${caseId}`} aria-label={`Använd handling ${index + 1} som avtalsvillkor`} className="h-4 w-4 accent-teal-800" checked={draft.termsAttachmentId === doc.fileId} onChange={() => onChange({ ...assignmentPatch(draft, value, value), termsAttachmentId: doc.fileId })} />
+                      <input type="radio" name={termsGroup} aria-label={`Använd handling ${index + 1} som avtalsvillkor`} className="h-4 w-4 accent-teal-800" checked={draft.termsAttachmentId === doc.fileId} onChange={() => onChange({ ...assignmentPatch(assignmentDraft, value, value), termsAttachmentId: doc.fileId })} />
                       Innehåller avtalsvillkoren
                     </label>}
                     <div className="mt-3 flex flex-wrap items-center justify-end gap-2 text-sm">
                       {!file && <span role="alert" className="flex-1 text-red-700">Filen saknas i projektet. Välj en ny handling.</span>}
                       <button type="button" className={tool} title="Flytta handling upp" aria-label={`Flytta handling ${index + 1} upp`} disabled={index === 0 || (Boolean(standard) && value.documents[index - 1].fileId === standardTermsId)} onClick={() => move(index, -1)}><ArrowUp size={17} /></button>
                       <button type="button" className={tool} title="Flytta handling ned" aria-label={`Flytta handling ${index + 1} ned`} disabled={index === value.documents.length - 1} onClick={() => move(index, 1)}><ArrowDown size={17} /></button>
-                      <button type="button" className={`${tool} text-red-700`} title="Ta bort från avtalet" aria-label={`Ta bort handling ${index + 1} från avtalet`} onClick={() => change({ documents: value.documents.filter((d) => d.fileId !== doc.fileId) })}><Trash2 size={17} /></button>
+                      <button type="button" className={`${tool} text-red-700`} title={isOffer ? 'Ta bort från offerten' : 'Ta bort från avtalet'} aria-label={`Ta bort handling ${index + 1} från ${isOffer ? 'offerten' : 'avtalet'}`} onClick={() => change({ documents: value.documents.filter((d) => d.fileId !== doc.fileId) })}><Trash2 size={17} /></button>
                     </div>
                   </div>
                 </td>
@@ -171,14 +188,14 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
       </label>
       {!files.length && <p className="mt-2 text-sm text-slate-500">Inga handlingar uppladdade. <a className="underline" href={`/uppdrag/${caseId}?view=files`}>Bilder och filer</a></p>}
       {draft.contractForm === 'custom' && <label className="mt-3 inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm">
-        <input type="radio" name={`contract-terms-${caseId}`} aria-label="Ingen separat villkorsbilaga" className="h-4 w-4 accent-teal-800" checked={!draft.termsAttachmentId} onChange={() => onChange({ ...assignmentPatch(draft, value, value), termsAttachmentId: null })} />
+        <input type="radio" name={termsGroup} aria-label="Ingen separat villkorsbilaga" className="h-4 w-4 accent-teal-800" checked={!draft.termsAttachmentId} onChange={() => onChange({ ...assignmentPatch(assignmentDraft, value, value), termsAttachmentId: null })} />
         Ingen separat villkorsbilaga
       </label>}
       <label className="mt-4 block text-sm">Kompletterande uppgifter om handlingarna
         <textarea aria-label="Kompletterande uppgifter om handlingarna" className={field} rows={2} maxLength={6000} value={value.documentNotes} onChange={(e) => change({ documentNotes: e.target.value })} />
       </label>
     </section>
-    <label className="block text-sm font-medium">Samt enligt följande
+    {!isOffer && <><label className="block text-sm font-medium">Samt enligt följande
       <textarea aria-label="Samt enligt följande" className={field} rows={4} maxLength={12000} value={value.additionalScope} onChange={(e) => change({ additionalScope: e.target.value })} />
     </label>
     {children}
@@ -188,6 +205,6 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
     {draft.contractForm === 'abs18' && value.standardConditions && <label className="block text-sm font-medium">Standardtexter för uppdraget · ABS 18
       <textarea aria-label="Standardtexter för uppdraget, ABS 18" className={field} rows={4} maxLength={6000} value={value.standardConditions.text}
         onChange={(e) => change({ standardConditions: { ...value.standardConditions!, text: e.target.value } })} />
-    </label>}
+    </label>}</>}
   </div>
 }

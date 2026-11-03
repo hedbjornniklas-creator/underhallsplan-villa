@@ -105,7 +105,7 @@ export default function CustomerOfferDocument({
       </header>
       {purpose === 'offer' && s.offerAlternatives ? <>
         <OfferAlternativesDocument snapshot={s} />
-        {files.length > 0 && <section className="py-5"><h3 className="font-semibold">Bilagor</h3>{files.map(file => <a key={file.id} href={fileUrl(file.id)} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-2 underline"><Download size={16} />{file.fileName}</a>)}</section>}
+        {files.length > 0 && <section className="py-5"><h3 className="font-semibold">Handlingar och bilagor som hör till offerten</h3>{files.map(file => <a key={file.id} href={fileUrl(file.id)} target="_blank" rel="noopener noreferrer" className="mt-2 flex items-center gap-2 underline"><Download size={16} />{file.fileName}</a>)}</section>}
       </> : <>
       {purpose === 'contract' && s.contractParties && <ContractPartiesDocument value={s.contractParties} />}
       <section className="py-6">
@@ -287,7 +287,8 @@ export default function CustomerOfferDocument({
           <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.advice.customerResponse}</p>
         </div>}
         </>}
-        {files.length > 0 && (
+        {files.length > 0 && (<>
+          {purpose === 'offer' && <h3 className="font-semibold">Handlingar och bilagor som hör till offerten</h3>}
           <ul className="mt-4 divide-y divide-slate-200">
             {files.map((f) => (
               <li key={f.id}>
@@ -306,7 +307,7 @@ export default function CustomerOfferDocument({
                 </a>
               </li>
             ))}
-          </ul>
+          </ul></>
         )}
       </section>
       <footer className="flex flex-wrap items-center justify-between gap-3 border-y border-slate-200 bg-slate-50 p-5">

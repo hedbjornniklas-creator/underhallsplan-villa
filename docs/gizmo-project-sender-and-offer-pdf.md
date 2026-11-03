@@ -65,6 +65,37 @@
 - Kopplingen skriver endast offertutkastet. Avtal, Projektarbete, kundregister,
   skickade versioner och lasta dokument andras inte. Inga nya SQL-steg kravs.
 
+## Rubrik for offertbilagor 2026-11-03
+
+- Offertens dokumenttabell har rubriken Handlingar och bilagor som hor till
+  offerten. Rubriken visas aven nar tabellen ar forst under Uppdraget och
+  offertens inledning ar tom. Arbetets omfattning foljer som egen underrubrik.
+- Detta andrar enbart offertens presentation. Dokumenturval, filer, priser,
+  omfattning och avtalsutskriftens befintliga rubriker behalls.
+- Offert har eget dokumentval under Handlingar och bilagor. Den befintliga
+  dokumentredigeraren ateranvands, men sparar bara offertens val, namn, typ,
+  datum och ordning. Borttagning tar inte bort projektfilen och paverkar inte
+  Avtal, omfattning eller priser. Projektfiler valjs inte automatiskt.
+- Varje offertbilaga kan inkluderas i PDF eller vara endast referens. Dolj tar
+  bort den fran offertens urval, inte fran projektet. Nya valda PDF-filer far
+  laget inkludera; andra filtyper kan bara vara referenser. Befintliga val andras
+  inte fran referens till inkluderade sidor utan ett uttryckligt val.
+- Lagena lagras i offertens `offerDocuments`. Aldre flikar utan detta falt far
+  inte tyst kasta sparade val. Avtalsutkast accepterar inte denna offertmetadata.
+- HF17 ligger forvalt och kan inte tas bort eller flyttas fran standardraden.
+  Den verifierade originalfilens sida med allmanna bestammelser laggs sist i
+  samma offert-PDF. De tre tomma blankettsidorna bifogas inte. Saknad eller
+  felaktig standardutgava stoppar PDF-hamtningen; en ofullstandig PDF lamnas
+  inte ut. Ovriga valda PDF-sidor laggs fore HF17 i dokumentordningen. Endast
+  referenser listas men deras sidor slas inte ihop. Fil-lankarna finns kvar.
+- Inkluderade filer kontrolleras mot organisation och projekt, privat filtyp,
+  storlek och tillganglighet. Fragors privata filer och interna offertunderlag
+  far inte inkluderas. Interaktiva formular, kommentarer och aktiva PDF-atgarder
+  avvisas i stallet for att tyst forandra eller tappa deras innehall.
+- Sammanfogningen anvander en gemensam PDF-hjalpfunktion och `pdf-lib`.
+  Originalsidans utseende och offertens metadata behalls. Befintliga frysta
+  avtals-PDF:er och utskick andras inte. Ingen SQL-migrering kravs.
+
 ## Installation
 
 Kor `docs/db/2026-11-03_01_running_price_budget.sql` och darefter

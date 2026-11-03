@@ -38,7 +38,7 @@ import {
   type CustomerOfferSnapshot,
   type CustomerOfferWorkspace
 } from '@/lib/action-cases/customerOffers'
-import { selectManualContractTerms, standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
+import { standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
 import CustomerContractFormSelect from './CustomerContractFormSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
@@ -69,7 +69,7 @@ import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import CustomerContractDelivery from './CustomerContractDelivery'
-import { contractBudgetAmount, contractPricingForEditing, defaultBudgetReviewTerms } from '@/lib/action-cases/contractPricing'
+import { contractPricingForEditing, defaultBudgetReviewTerms, offerBudgetBreakdown } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
 import CustomerOfferHourEstimate from './CustomerOfferHourEstimate'
 import CustomerOfferAlternatives from './CustomerOfferAlternatives'
@@ -296,7 +296,10 @@ export default function CustomerOfferEditor({
   const baseAmount = customerOfferBaseAmount(draft)
   const offerDetailsPending = draftTarget === 'offer' && !locked && appliedProjectDetails.current !== offerDetailsKey &&
     JSON.stringify(withOfferProjectDetails(draft, offerDetailsSource, parties)) !== JSON.stringify(draft)
-  const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1 || offerDetailsPending
+  const offerTermsPending = draftTarget === 'offer' && draft.contractForm === 'hf17' && (Boolean(termsState) || !standardTermsFile ||
+    standardTermsForFile(standardTermsFile)?.version !== standardTermsFor('hf17')?.version ||
+    draft.termsAttachmentId !== standardTermsFile.id || !draft.attachmentIds.includes(standardTermsFile.id))
+  const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1 || offerDetailsPending || offerTermsPending
   const offerPdfControl = offerPdfBlocked
     ? <button type="button" className={`${button} bg-white`} disabled title="Vänta tills offertens ändringar är sparade"><Download size={17} />Offert (PDF)</button>
     : <a className={`${button} bg-white`} href={`/api/action-cases/${actionCase.id}/customer-offers/pdf?revision=${workspace.revision}`} target="_blank" rel="noopener noreferrer"><Download size={17} />Offert (PDF)</a>
@@ -888,11 +891,6 @@ export default function CustomerOfferEditor({
                   <div key={key} className="min-w-0"><dt className="text-[#596368]">{title}</dt><dd className="mt-1 break-words">{draft.contractDetails!.property![key]}</dd></div>)}</dl>
               </section>}
               {draft.offerAlternatives && <section className="space-y-4 border-b border-slate-200 pb-4"><h3 className="font-semibold">Entreprenör</h3><ContractContractorEditor value={parties.contractor} source={contractorSource} companyFieldsReadonly={Boolean(draft.senderProfile)} onChange={contractor => update({ contractParties: { ...parties, contractor } })} /></section>}
-              {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || parties.business) && <section className="space-y-4 border-b border-slate-200 pb-4">
-                <label className="block text-sm">Standardbestämmelser (PDF)<select aria-label="Standardbestämmelser (PDF)" className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {
-                  update(selectManualContractTerms(draft, files.find(row => row.id === event.target.value), files))
-                }}><option value="">Ingen vald bilaga</option>{files.filter(file => file.contentType === 'application/pdf' && !standardTermsForFile(file)).map(file => <option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>
-              </section>}
               <h2 className="text-lg">
                 Offert till {parties.customers.map((row) => row.name).filter(Boolean).join(', ') || actionCase.customerName}
               </h2>
@@ -929,6 +927,11 @@ export default function CustomerOfferEditor({
               </div>
             </section>
             </ProjectEditorRow>
+            {draftTarget === 'offer' && <ProjectEditorRow title="Handlingar och bilagor" summary={`${assignmentForEditing(draft, files).documents.length} valda`}
+              open={expanded === 'offer-documents'} onToggle={() => setExpanded(expanded === 'offer-documents' ? null : 'offer-documents')}>
+              <CustomerContractAssignmentEditor purpose="offer" draft={draft} files={files} caseId={actionCase.id} onChange={update}
+                standardTermsId={standardTermsFile?.id} termsState={termsState} onRetryTerms={() => setTermsRetry(value => value + 1)} />
+            </ProjectEditorRow>}
             </div>
             <div hidden={!contractView} className="space-y-5">
             <ProjectEditorRow title="Avtalsuppgifter" summary={draft.title || 'Rubrik saknas'} open={expanded === 'contract-info'} onToggle={() => setExpanded(expanded === 'contract-info' ? null : 'contract-info')}>
@@ -1166,7 +1169,7 @@ export default function CustomerOfferEditor({
                   ? 'Summa grundåtagande inklusive moms'
                   : 'Grundpris inklusive moms'}
               </p>
-              {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">Planeringsbudget totalt inkl. moms</dt><dd className="mt-1 font-semibold">{contractBudgetAmount(draft.contractPricing) === null ? 'Budget ej komplett' : money(contractBudgetAmount(draft.contractPricing))}</dd></dl>}
+              {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">Budgeterade löpande poster inkl. moms</dt><dd className="mt-1 font-semibold">{money(offerBudgetBreakdown(draft.contractPricing)?.runningOre ?? null)}</dd></dl>}
               {!draft.offerAlternatives && draft.pricingMode === 'itemized' && baseAmount === null && (
                 <p className="mt-2 text-sm text-amber-700">
                   {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris

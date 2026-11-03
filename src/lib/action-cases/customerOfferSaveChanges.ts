@@ -12,7 +12,7 @@ export function customerOfferSaveChanges(draft: CustomerOfferDraft, saved: Custo
   if (changed('contractParties')) changes.push('Beställare eller entreprenör')
   if (changed('senderProfile')) changes.push('Avsändarprofil')
   if (changed('contractDetails')) changes.push('Avtalsuppgifter och handlingar')
-  if (['contractForm', 'terms', 'attachmentIds', 'termsAttachmentId'].some(key => changed(key as keyof CustomerOfferDraft))) changes.push('Villkor och bilagor')
+  if (['contractForm', 'terms', 'attachmentIds', 'termsAttachmentId', 'offerDocuments'].some(key => changed(key as keyof CustomerOfferDraft))) changes.push('Villkor och bilagor')
   if (['paymentPlan', 'paymentConditions', 'paymentTerms'].some(key => changed(key as keyof CustomerOfferDraft))) changes.push('Betalningsplan eller betalningsvillkor')
   if (changed('schedule')) changes.push('Tider')
   if (changed('signingMethod')) changes.push('Signeringssätt')

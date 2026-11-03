@@ -4,6 +4,10 @@ import { getCustomerOfferWorkspace } from './customerOffersServer'
 import { mapCustomerOffer, offerId, type CustomerOfferSnapshot } from './customerOffers'
 import { renderContractSigningPdf } from './contractSigningPdf'
 import { publicContractParties } from './customerContractParties'
+import { verifyStandardTermsFile } from './standardContractTermsServer'
+import { appendHf17TermsPdf } from './standardContractTermsPdf'
+import { appendPdfDocuments } from '../pdf/appendPages'
+import { offerDocumentMode } from './offerDocuments'
 
 type Context = { orgId: string; userId: string }
 function checked(error: { code?: string } | null) {
@@ -26,7 +30,7 @@ export async function downloadCurrentOfferPdf(ctx: Context, caseId: string, revi
   if (organization) checked(organization.error)
   const user = profile ? null : await db.from('profiles').select('email').eq('id', ctx.userId).maybeSingle()
   if (user) checked(user.error)
-  const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes')
+  const selected = draft.attachmentIds.length ? await db.from('action_case_attachments').select('id,file_name,content_type,file_size_bytes,storage_bucket,file_path,question_id')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('id', draft.attachmentIds) : { data: [], error: null }
   checked(selected.error)
   const snapshot: CustomerOfferSnapshot = { ...draft,
@@ -41,7 +45,36 @@ export async function downloadCurrentOfferPdf(ctx: Context, caseId: string, revi
     return file ? [{ id: file.id, fileName: file.file_name, contentType: file.content_type, fileSizeBytes: Number(file.file_size_bytes) }] : []
   })
   const customerSnapshot = mapCustomerOffer({ id: caseId, version: 0, status: 'published', snapshot, files }).snapshot
-  const bytes = await renderContractSigningPdf({ kind: 'offer', id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: customerSnapshot, files })
+  let bytes = await renderContractSigningPdf({ kind: 'offer', id: caseId, version: 0, draftRevision: revision, createdAt: new Date().toISOString(), snapshot: customerSnapshot, files })
+  const ids = [...new Set([...(draft.contractDetails?.assignment?.documents.map(document => document.fileId) ?? []), ...draft.attachmentIds])]
+    .filter(id => offerDocumentMode(draft, id) === 'pdf' && !(draft.contractForm === 'hf17' && id === workspace.standardTermsFile?.id))
+  if (ids.length) {
+    const quotes = await db.from('action_case_work_quotes').select('document_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('document_id', ids)
+    const requests = await db.from('action_case_quote_requests').select('response_document_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('response_document_id', ids)
+    checked(quotes.error); checked(requests.error)
+    if (quotes.data?.length || requests.data?.length) throw new Error('CUSTOMER_OFFER_PDF_ATTACHMENTS')
+    const appendices: { bytes: Buffer }[] = []
+    let total = bytes.length
+    for (const id of ids) {
+      const file = selected.data?.find(file => file.id === id), size = Number(file?.file_size_bytes)
+      if (!file || file.question_id || file.content_type !== 'application/pdf' || file.storage_bucket !== 'action-case-files' ||
+        typeof file.file_path !== 'string' || !file.file_path.startsWith(`${ctx.orgId}/${caseId}/`) || file.file_path.includes('..') ||
+        !Number.isSafeInteger(size) || size <= 0 || size > 20_000_000 || total + size > 50_000_000) throw new Error('CUSTOMER_OFFER_PDF_ATTACHMENTS')
+      const stored = await db.storage.from(file.storage_bucket).download(file.file_path)
+      if (stored.error || !stored.data) throw new Error('CUSTOMER_OFFER_PDF_ATTACHMENTS')
+      const content = Buffer.from(await stored.data.arrayBuffer())
+      if (content.length !== size) throw new Error('CUSTOMER_OFFER_PDF_ATTACHMENTS')
+      total += content.length
+      appendices.push({ bytes: content })
+    }
+    try { bytes = await appendPdfDocuments(bytes, appendices) } catch { throw new Error('CUSTOMER_OFFER_PDF_ATTACHMENTS') }
+  }
+  if (draft.contractForm === 'hf17') {
+    const terms = workspace.standardTermsFile
+    if (!terms || draft.termsAttachmentId !== terms.id || !files.some(file => file.id === terms.id)) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
+    await verifyStandardTermsFile(ctx.orgId, caseId, 'hf17')
+    bytes = await appendHf17TermsPdf(bytes)
+  }
   if (bytes.length < 100 || bytes.length > 50_000_000) throw new Error('CUSTOMER_OFFER_PDF_LIMIT')
   // Never download a superseded draft if it changed while PDF pagination was running.
   const current = await db.from('action_case_customer_offer_drafts').select('revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()

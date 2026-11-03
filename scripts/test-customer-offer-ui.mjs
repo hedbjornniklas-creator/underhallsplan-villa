@@ -38,6 +38,10 @@ import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/proper
 import { signingDraft } from '../test/fixtures/contract-signing.ts'
 import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
+import { PDFDocument } from 'pdf-lib'
+import { appendPdfDocuments } from '../src/lib/pdf/appendPages.ts'
+import { appendHf17TermsPdf } from '../src/lib/action-cases/standardContractTermsPdf.ts'
+import { offerDocumentMode } from '../src/lib/action-cases/offerDocuments.ts'
 import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
 import { offerProjectDetails } from '../src/lib/action-cases/offerProjectDetails.ts'
 import { emptyQuestion, questionMutation } from '../src/lib/action-cases/projectQuestions.ts'
@@ -273,6 +277,18 @@ if (process.argv.includes('--offer-project-details')) {
   estimateState.draft.contractDetails = emptyContractDetails()
   state.offerProjectDetails = offerProjectDetails(state.draft, state.revision)
 }
+let offerDocumentPdf
+if (process.argv.includes('--offer-documents')) {
+  const document = await PDFDocument.create()
+  document.addPage([595.28, 841.89]).drawText('FIKTIV RITNING - ENDAST TEST', { x: 50, y: 750, size: 18 })
+  offerDocumentPdf = Buffer.from(await document.save())
+  const standard = { id: id(141), fileName: HF17_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: HF17_TERMS.size }
+  state.standardTermsFile = standard
+  estimateState.draft = normalizeCustomerOffer(withStandardContractTerms({ ...estimateState.draft, introduction: '', contractForm: 'hf17' }, standard))
+  const template = projects.cases[0].attachments.find(file => file.contentType === 'application/pdf')
+  projects.cases[0].attachments.push({ ...template, ...standard, isQuoteDocument: false },
+    { ...template, id: id(770), title: 'FIKTIV ritning', fileName: 'FIKTIV-ritning.pdf', fileSizeBytes: offerDocumentPdf.length, isQuoteDocument: false })
+}
 if (process.argv.includes('--offer-alternatives')) {
   Object.assign(estimateState.draft, { contractForm: 'custom', items: [], baseAmountOre: null, contractPricing: undefined, attachmentIds: [], termsAttachmentId: null,
     paymentTerms: 'FIKTIVT: 30 dagar netto. Fakturering efter avslutad beställd del.', schedule: 'FIKTIV tidplan efter skriftlig beställning.', terms: 'FIKTIV beställning via mejl.',
@@ -497,7 +513,11 @@ const server = createServer(async (req, res) => {
     const revision=Number(new URL(req.url,'http://localhost').searchParams.get('revision'))
     if(revision!==estimateState.revision){json({error:'Offerten har andrats.'},409);return}
     const snapshot={...estimateState.draft,projectTitle:'FIKTIVT TEST',propertyAddress:'Testgatan 1',customerName:'Anna Test',customerEmail:'anna@example.test',issuerName:senderSnapshot.name,replyEmail:senderSnapshot.email}
-    const pdf=await renderContractSigningPdf({kind:'offer',id:id(1),version:0,draftRevision:revision,createdAt:new Date().toISOString(),snapshot,files:[]})
+    const selectedFiles=projects.cases[0].attachments.filter(file=>estimateState.draft.attachmentIds.includes(file.id))
+    let pdf=await renderContractSigningPdf({kind:'offer',id:id(1),version:0,draftRevision:revision,createdAt:new Date().toISOString(),snapshot,files:selectedFiles})
+    const included=estimateState.draft.attachmentIds.filter(fileId=>fileId!==state.standardTermsFile?.id&&offerDocumentMode(estimateState.draft,fileId)==='pdf')
+    if(included.length&&offerDocumentPdf)pdf=await appendPdfDocuments(pdf,included.map(()=>({bytes:offerDocumentPdf})))
+    if(estimateState.draft.contractForm==='hf17')pdf=await appendHf17TermsPdf(pdf)
     res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','attachment; filename="TEST-offert.pdf"');res.end(pdf);return
   }
   const signingDownload = path.match(/\/contract-signing\/([^/]+)\/(pdf|customer-pdf)$/)
@@ -965,6 +985,9 @@ const server = createServer(async (req, res) => {
   if (path.endsWith('/customer-planning')) { json(state.planning); return }
   if(path==='/hf17-2017.pdf'||path.endsWith(`/attachments/${id(141)}`)){
     res.writeHead(200,{'Content-Type':'application/pdf'});res.end(await readFile(HF17_TERMS.assetPath));return
+  }
+  if(offerDocumentPdf&&path.endsWith(`/attachments/${id(770)}`)){
+    res.writeHead(200,{'Content-Type':'application/pdf'});res.end(offerDocumentPdf);return
   }
   if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`) || (process.argv.includes('--choice-files') && path.endsWith(`/attachments/${id(4)}`))) {
     res.setHeader('Content-Type', 'application/pdf')

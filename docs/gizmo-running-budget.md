@@ -50,3 +50,30 @@ nytt godkannandeflode byggs inte nu. Befintliga versions- och lasskydd anvands.
 Standardtexten ar ett produktforslag som bor granskas av entreprenadjurist.
 Benamningen budget garanterar inte ensam en viss juridisk klassificering och
 andra prisgranser eller konsumenttjanstlagens skydd upphavs inte av funktionen.
+
+## Offertens Prisuppdelning 2026-11-03
+
+Anvandaren vill skilja fasta arbeten fran lopande arbeten/inkop och budget.
+Offertens presentation och PDF far darfor en ersattningsmodell, fasta priser,
+lopande prisgrunder och en tabell for den lopande delens budget.
+Anvandaren avvisade sedan avsnittet Samlad kostnadsplan: fasta priser och budget
+ska inte summeras ihop i offertens visning, redigering eller PDF. Alla delbelopp
+bevaras, men ingen gemensam summa visas. Befintlig intern berakning och
+validering av avtalsbudget andras inte av detta presentationsbeslut.
+Poster utan budget marks Ej budgeterat och raknas inte som noll. Offertens
+budgettabell visar enbart budgeterade lopande poster, med ett uttryckligt
+besked om att poster utan budget ligger utanfor budgetbeloppet.
+Detta omklassificerar inte befintliga sparade priser eller arbetsmoment.
+Avtals-PDF och lasta dokument behaller sin tidigare presentation.
+
+Avgransningar i offertens PDF redovisas i en tvakolumnstabell: berord arbetsdel
+och det som uttryckligen undantas. Helt undantagna arbetsdelar marks separat;
+en materialavgransning ska inte se ut som om hela plattsattningen ar undantagen.
+
+Anvandaren har granskat en lokal PDF och darefter godkant publicering.
+Prisformens fordefinierade textmall anvands generellt i offertvy och PDF for
+fast, lopande och blandat pris, med separat stycke nar budget ar aktiverad.
+Installationen omklassificerar inte nagot sparat projekt. Gashagas lokala
+granskningskopia anvander fasta priser for Byggarbeten och Etablering/administration
+med material separat pa lopande rakning. Det ar inte en utskickad offert eller
+en andring av Gashagas sparade avtals- och projektuppgifter.

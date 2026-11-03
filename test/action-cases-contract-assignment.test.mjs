@@ -4,11 +4,13 @@ import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import ts from 'typescript'
 import * as assignment from '../src/lib/action-cases/contractAssignment.ts'
+import * as contractDetails from '../src/lib/action-cases/customerContract.ts'
 import { emptyContractDetails, normalizeContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
 import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
+import * as offerDocuments from '../src/lib/action-cases/offerDocuments.ts'
 import { id } from './fixtures/customer-offer-data.ts'
 
 const files = [{ id: id(4), fileName: 'Ritning A.pdf', contentType: 'application/pdf', fileSizeBytes: 10 },
@@ -116,6 +118,8 @@ function editor() {
     }
     if (name === 'lucide-react') return { ArrowDown:'svg', ArrowUp:'svg', ChevronDown:'svg', ExternalLink:'svg', Trash2:'svg' }
     if (name === '@/lib/action-cases/contractAssignment') return assignment
+    if (name === '@/lib/action-cases/customerContract') return contractDetails
+    if (name === '@/lib/action-cases/offerDocuments') return offerDocuments
     if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
     if (name === './CustomerContractFormSelect') return { default: 'contract-form-select' }
     throw Error(name)
@@ -149,6 +153,38 @@ test('the real editor supports free types, dates, ordered files and secure separ
   assert.equal(patch.contractDetails.assignment.documents[1].date, '')
   find('Ta bort handling 1 från avtalet').props.onClick()
   assert.deepEqual(patch.attachmentIds, []); assert.equal(patch.termsAttachmentId, null)
+})
+
+test('offer document picker edits only selected offer files, preserves work and does not show contract scope controls', () => {
+  const contract = structured(), before = structuredClone(contract)
+  let offer = { ...structuredClone(contract), contractForm: 'custom' }
+  delete offer.contractDetails
+  const view = editor()
+  const render = () => flatten(view({ purpose: 'offer', draft: offer, files, caseId: id(1), onChange: patch => { offer = { ...offer, ...patch } } }))
+  let nodes = render()
+  assert.equal(nodes.some(node => node?.type === 'contract-form-select'), false)
+  assert.equal(nodes.includes('Samt enligt följande'), false)
+  assert.equal(nodes.includes('Detta kontrakt'), false)
+  assert(nodes.includes('Handlingar och bilagor som hör till offerten'))
+  nodes.find(node => node?.props?.['aria-label'] === 'Lägg till handling från projektet').props.onChange({ target: { value: id(6) } })
+  assert.deepEqual(offer.attachmentIds, [id(4), id(6)])
+  assert.equal(offer.contractDetails.assignment.documents[1].name, 'Beskrivning.pdf')
+  nodes = render()
+  nodes.find(node => node?.props?.['aria-label'] === 'Ta bort handling 1 från offerten').props.onClick()
+  assert.deepEqual(offer.attachmentIds, [id(6)])
+  assert.deepEqual(contract, before)
+  assert.equal(files.length, 2)
+  assert.deepEqual(offer.items, before.items)
+  assert.equal(offer.baseAmountOre, before.baseAmountOre)
+})
+
+test('HF17 remains automatic and unremovable in the offer picker', () => {
+  const file = { id: id(141), fileName: standardTerms.HF17_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: standardTerms.HF17_TERMS.size }
+  const draft = standardTerms.withStandardContractTerms({ ...structured(), contractForm: 'hf17' }, file, files)
+  const nodes = flatten(editor()({ purpose: 'offer', draft, files: [...files, file], caseId: id(1), standardTermsId: file.id, onChange: () => assert.fail('Read-only render must not write') }))
+  assert.equal(nodes.some(node => node?.props?.['aria-label'] === 'Ta bort handling 1 från offerten'), false)
+  assert.equal(nodes.find(node => node?.props?.['aria-label'] === 'Flytta handling 2 upp').props.disabled, true)
+  assert.equal(nodes.find(node => node?.props?.['aria-label'] === 'Öppna Hantverkarformuläret 17-villkoren i ny flik').props.target, '_blank')
 })
 
 test('one file picker and PDF row radios replace the duplicate agreement picker, retaining metadata and file inclusion', () => {

@@ -334,6 +334,18 @@ test('workspace exposes an independent saved offer alongside the contract, witho
   assert.equal(h.sent.length, 0)
 })
 
+test('offer document modes save only to the offer and old clients cannot silently discard the saved selection', async () => {
+  const draft = { ...workspace.draft, offerDocuments: { version: 1, modes: { [id(4)]: 'pdf' } } }
+  const h = harness({ offerDraft: draft }), ctx = { orgId: id(90), userId: id(91) }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'offer')
+  const saved = h.calls.find(call => call.name === 'write_customer_offer')
+  assert.deepEqual(saved.p_data.body.offerDocuments, draft.offerDocuments)
+  assert.equal(h.calls.some(call => call.name === 'write_customer_contract' || call.name === 'writeContractCustomer'), false)
+  const oldClient = { ...draft }; delete oldClient.offerDocuments
+  await assert.rejects(h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft: oldClient }, 'autosave', 'offer'), /CUSTOMER_OFFER_STALE/)
+  await assert.rejects(h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'contract'), /CUSTOMER_OFFER_INVALID/)
+})
+
 test('offer workspace exposes saved project facts separately, with organization filtering and no writes', async () => {
   const h = harness(), ctx = { orgId: id(90), userId: id(91) }
   h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')

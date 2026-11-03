@@ -169,13 +169,14 @@ export async function saveCustomerOffer(
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0)
     throw new Error('CUSTOMER_OFFER_INVALID')
   let draft = normalizeCustomerOffer(payload.draft)
-  if (target === 'contract' && (draft.offerHourEstimate !== undefined || draft.offerAlternatives)) throw new Error('CUSTOMER_OFFER_INVALID')
+  if (target === 'contract' && (draft.offerHourEstimate !== undefined || draft.offerAlternatives || draft.offerDocuments)) throw new Error('CUSTOMER_OFFER_INVALID')
   await requireCase(ctx, caseId)
   if (target === 'offer') {
     const previous = await createSupabaseAdminClient().from('action_case_customer_offer_drafts').select('body')
       .eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
     checked(previous.error)
     if (previous.data?.body?.offerAlternatives && draft.offerAlternatives === undefined) throw new Error('CUSTOMER_OFFER_STALE')
+    if (previous.data?.body?.offerDocuments && draft.offerDocuments === undefined) throw new Error('CUSTOMER_OFFER_STALE')
   }
   if (target === 'contract') await assertContractSenderDraft(ctx, caseId, draft)
   else if (draft.senderProfile) {

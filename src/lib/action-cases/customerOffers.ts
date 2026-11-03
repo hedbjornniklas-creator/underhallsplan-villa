@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { normalizeOfferDocuments, type OfferDocuments } from './offerDocuments.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferAlternatives, type OfferAlternatives } from './offerAlternatives.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferHourEstimate, offerHourEstimateIssues, type OfferHourEstimate } from './offerHourEstimate.ts'
@@ -30,6 +32,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  offerDocuments?: OfferDocuments | null
   offerAlternatives?: OfferAlternatives | null
   offerHourEstimate?: OfferHourEstimate | null
   senderProfile?: ContractSenderProfileSnapshot
@@ -205,6 +208,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.offerDocuments === undefined ? {} : { offerDocuments: normalizeOfferDocuments(d.offerDocuments, attachmentIds) }),
     ...(d.offerAlternatives === undefined ? {} : { offerAlternatives: normalizeOfferAlternatives(d.offerAlternatives) }),
     ...(d.offerHourEstimate === undefined ? {} : { offerHourEstimate: normalizeOfferHourEstimate(d.offerHourEstimate) }),
     ...(d.senderProfile === undefined ? {} : { senderProfile: normalizeContractSenderProfile(d.senderProfile) }),

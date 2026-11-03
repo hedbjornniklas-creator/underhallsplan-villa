@@ -85,6 +85,7 @@ export function customerOfferError(error: unknown) {
     CUSTOMER_OFFER_SIGNING_SCHEMA: [503, 'Låsning och PDF behöver aktiveras av administratören. Avtalsutkastet är kvar.'],
     CUSTOMER_OFFER_PDF_FAILED: [503, 'Avtals-PDF:en kunde inte skapas. Kontrollera avtalsstatus innan du försöker igen.'],
     CUSTOMER_OFFER_PDF_LIMIT: [400, 'Avtalet eller bilagorna är för stora för PDF-hanteringen. Kontakta administratören.'],
+    CUSTOMER_OFFER_PDF_ATTACHMENTS: [409, 'En vald PDF-bilaga kunde inte inkluderas. Kontrollera att filen är tillgänglig och högst 20 MB. PDF-filer med formulär eller kommentarer behöver anges som endast referens.'],
     CUSTOMER_OFFER_STANDARD_TERMS: [503, 'Standardvillkoren kunde inte förberedas. Dina ändringar är kvar. Försök igen innan avtalet skickas.'],
     CUSTOMER_OFFER_TERMS_LIMIT: [400, 'Lämna plats för ABS 18:s standardvillkor. Avtalet kan innehålla högst 30 bilagor.'],
     PROPERTY_SCHEMA: [503, 'Fastighetskopplingen behöver aktiveras av administratören. Dina ändringar är kvar.'],

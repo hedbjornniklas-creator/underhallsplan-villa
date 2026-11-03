@@ -113,6 +113,23 @@ export function contractPriceModeLabel(p: ContractPricing): string {
   if (p.mode === 'mixed') return p.budget ? 'Fast pris + löpande med budget' : 'Fast + löpande'
   return p.budget ? 'Löpande räkning med budget' : 'Löpande räkning'
 }
+export function offerCompensationText(p: ContractPricing): string {
+  const basis = p.mode === 'mixed'
+    ? 'Offerten kombinerar fast pris och löpande räkning. Fast pris gäller endast de arbeten och leveranser som anges under Fasta priser. Övriga angivna arbeten och inköp ersätts enligt prisgrunderna för löpande räkning.'
+    : p.mode === 'fixed' ? 'Fast pris gäller för den omfattning och de leveranser som anges i offerten.'
+      : 'Arbeten och inköp ersätts på löpande räkning enligt angivna timpriser och påslag.'
+  return p.budget
+    ? `${basis} Budgetbeloppen redovisas separat som underlag för planering, kostnadsuppföljning och samråd. Fast pris och budget ska inte läsas som ett fast totalpris för hela uppdraget.`
+    : basis
+}
+export function offerBudgetBreakdown(p: ContractPricing) {
+  if (!p.budget) return null
+  const running = p.rows.filter(row => p.mode === 'running' || row.kind === 'running')
+  const amounts = running.map(row => p.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null)
+  const unbudgetedTitles = running.filter((_, index) => amounts[index] === null).map(row => row.title)
+  const runningOre = amounts.some(amount => amount !== null) ? amounts.reduce<number>((sum, amount) => sum + (amount ?? 0), 0) : null
+  return { runningOre, unbudgetedTitles }
+}
 export function contractPricingIssues(p: ContractPricing): string[] {
   const issues: string[] = []
   if (p.rows.some((row) => !row.title.trim())) issues.push('Ange momentets namn för alla prisrader.')

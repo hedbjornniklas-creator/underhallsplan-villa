@@ -70,14 +70,16 @@ export function assignmentForEditing(draft: CustomerOfferDraft, files: CustomerO
 export function assignmentPatch(draft: CustomerOfferDraft, assignment: ContractAssignment, previous = draft.contractDetails?.assignment): Partial<CustomerOfferDraft> {
   const previousIds = new Set(previous?.documents.map((d) => d.fileId) ?? [])
   const nextIds = new Set(assignment.documents.map((d) => d.fileId))
+  const attachmentIds = [...new Set([...draft.attachmentIds.filter((id) => !previousIds.has(id) || nextIds.has(id)), ...nextIds])]
   return {
+    ...(draft.offerDocuments ? { offerDocuments: { version: 1 as const, modes: Object.fromEntries(Object.entries(draft.offerDocuments.modes).filter(([id]) => attachmentIds.includes(id))) } } : {}),
     contractDetails: draft.contractDetails ? { ...draft.contractDetails, assignment,
       ...(draft.contractDetails.changesPricing?.mode === 'attachment' && draft.contractDetails.changesPricing.annex ? {
         changesPricing: { ...draft.contractDetails.changesPricing, annex: assignment.documents.find((doc) => doc.fileId === draft.contractDetails!.changesPricing!.annex!.fileId) ?? null }
       } : {}),
       fields: { ...draft.contractDetails.fields, documents: { status: assignmentIssues(assignment).length ? 'unreviewed' : 'specified', text: assignmentDocumentsText } }
     } : undefined,
-    attachmentIds: [...new Set([...draft.attachmentIds.filter((id) => !previousIds.has(id) || nextIds.has(id)), ...nextIds])],
+    attachmentIds,
     termsAttachmentId: draft.termsAttachmentId && previousIds.has(draft.termsAttachmentId) && !nextIds.has(draft.termsAttachmentId) ? null : draft.termsAttachmentId
   }
 }
