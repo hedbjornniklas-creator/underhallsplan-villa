@@ -237,6 +237,7 @@ test('shared project selector stays mounted and guards both document editors whi
   assert.match(project, /active=\{view === 'overview'\}/)
   assert.equal((project.match(/projectOperationPending=\{senderPending\}/g) ?? []).length, 2)
   assert.match(editor, /const senderPending = projectOperationPending/)
+  assert.match(editor, /onDirtyChange\?\.\(dirty \|\| planningDirty \|\| billingDirty \|\| Boolean\(documentRecovery\)/)
   assert.match(editor, /if \(senderOperation\.current \|\| running\.current \|\| autosave\.isPending\(\)\) return false/)
   assert.equal((editor.match(/if \(senderOperation\.current\) return/g) ?? []).length, 2)
   assert.match(editor, /if \(!dirty && !planningDirty && !billingDirty && !senderPending\) return/)

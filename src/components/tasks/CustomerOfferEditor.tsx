@@ -229,7 +229,7 @@ export default function CustomerOfferEditor({
     },
     onError: (error) => toast.error(error, 'Utkastet kunde inte sparas. Dina ändringar är kvar.'),
   })
-  useEffect(() => { onDirtyChange?.(dirty || planningDirty || billingDirty || Boolean(busy) || autosave.isSaving) }, [dirty, planningDirty, billingDirty, busy, autosave.isSaving, onDirtyChange])
+  useEffect(() => { onDirtyChange?.(dirty || planningDirty || billingDirty || Boolean(documentRecovery) || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error') }, [dirty, planningDirty, billingDirty, documentRecovery, busy, autosave.isSaving, autosave.state?.status, onDirtyChange])
   useEffect(() => { onWorkspaceChange?.({ ...workspace, planning }) }, [workspace, planning, onWorkspaceChange])
   const accepted = workspace.offers.some((o) => o.status === 'accepted')
   const signingVersion = draftTarget === 'contract' ? activeSigningVersion(workspace.signingVersions) : undefined
