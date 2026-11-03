@@ -42,6 +42,18 @@ function payload() {
   return { revision: 1, draft, requestId: id(94), binding: { mode: 'create' }, costing: {} }
 }
 
+test('a business buyer can save contact details but cannot enter the private-customer binding flow', async () => {
+  const h = harness(), p = payload()
+  p.draft.contractForm = 'ab04'
+  p.draft.contractParties.business = { organizationNumber: '769600-0000', contactName: 'Anna Test', signatoryName: 'Bo Test' }
+  await assert.rejects(h.writeContractCustomer(ctx, id(1), p, true), /BUSINESS_UNSUPPORTED/)
+  assert.deepEqual(h.calls, [])
+  await h.writeContractCustomer(ctx, id(1), p)
+  assert.equal(h.calls[0].args.p_mode, 'save')
+  assert.deepEqual(h.calls[0].args.p_data.body.contractParties.business, p.draft.contractParties.business)
+  assert.equal(h.calls[0].args.p_data.customerInput, undefined)
+})
+
 test('uses common customer parser and atomic RPC with organization, actor, revision and idempotency key', async () => {
   const h = harness(), p = payload()
   p.draft.contractParties.customers[0].personalNumber = '199001011234'

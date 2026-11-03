@@ -23,6 +23,7 @@ export function parseContractCustomerBinding(value: unknown): ContractCustomerBi
 }
 
 export function contractCustomerInput(parties: ContractParties): OrganizationCustomerInput {
+  if (parties.business) throw new Error('CUSTOMER_REGISTRY_BUSINESS_UNSUPPORTED')
   return {
     customerType: 'private', name: parties.customers[0].name,
     identityNumber: parties.customers[0].personalNumber || null,
@@ -35,6 +36,7 @@ export function contractCustomerInput(parties: ContractParties): OrganizationCus
 }
 
 export function copyRegistryCustomer(parties: ContractParties, customer: OrganizationCustomer): ContractParties {
+  if (parties.business) throw new Error('CUSTOMER_REGISTRY_BUSINESS_UNSUPPORTED')
   if (customer.customerType !== 'private' || !customer.isActive) throw new Error('CUSTOMER_REGISTRY_NOT_FOUND')
   return { ...parties, customers: [{ name: customer.name, personalNumber: customer.identityNumber ?? '' }, ...parties.customers.slice(1)],
     street: [customer.address, customer.addressLine2].filter(Boolean).join(', '),

@@ -38,7 +38,7 @@ import {
   type CustomerOfferSnapshot,
   type CustomerOfferWorkspace
 } from '@/lib/action-cases/customerOffers'
-import { standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
+import { selectManualContractTerms, standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
 import CustomerContractFormSelect from './CustomerContractFormSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
@@ -854,6 +854,13 @@ export default function CustomerOfferEditor({
               open={expanded === 'offer-info'} onToggle={() => setExpanded(expanded === 'offer-info' ? null : 'offer-info')}>
             <section className="space-y-4">
               <CustomerContractFormSelect draft={draft} files={files} onChange={update} />
+              {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || parties.business) && <section className="space-y-4 border-b border-slate-200 pb-4">
+                <h3 className="font-semibold">Beställare</h3>
+                <ContractCustomerEditor value={parties} onChange={contractParties => update({ contractParties })} />
+                <label className="block text-sm">Standardbestämmelser (PDF)<select aria-label="Standardbestämmelser (PDF)" className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {
+                  update(selectManualContractTerms(draft, files.find(row => row.id === event.target.value), files))
+                }}><option value="">Ingen vald bilaga</option>{files.filter(file => file.contentType === 'application/pdf' && !standardTermsForFile(file)).map(file => <option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>
+              </section>}
               <h2 className="text-lg">
                 Offert till {parties.customers.map((row) => row.name).filter(Boolean).join(', ') || actionCase.customerName}
               </h2>

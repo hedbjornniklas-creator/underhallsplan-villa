@@ -34,6 +34,7 @@ export function contractSigningSections({ snapshot: s, files }: SigningPdfInput)
   const result: SigningPdfSection[] = [], d = s.contractDetails, p = s.contractParties
   if (p) {
     result.push(section('parties', 'Beställare', ...p.customers.map((c, i) => `Beställare ${i + 1}: ${c.name}${c.personalNumber ? `\nPersonnummer: ${c.personalNumber}` : ''}`),
+      ...(p.business ? [`Organisationsnummer: ${p.business.organizationNumber}`, `Kontaktperson: ${p.business.contactName}`, `Undertecknare: ${p.business.signatoryName}`] : []),
       `${p.street}\n${p.postalCode} ${p.city}`, `Telefon: ${p.phone}\nMobiltelefon: ${p.mobile}\nE-post: ${p.email}`))
     const c = p.contractor
     result.push(section('parties', 'Entreprenör', `${c.companyName}${s.senderProfile ? `\nJuridiskt bolag: ${s.senderProfile.legalName}` : ''}\nOrganisationsnummer: ${c.organizationNumber}`, `${c.street}\n${c.postalCode} ${c.city}`,
@@ -267,16 +268,18 @@ function renderSection(part: SigningPdfSection, heading?: string, groupHeading?:
 
 function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
   const p = s.contractParties
+  const customerTitle = p?.business ? 'Beställare (företag/förening)' : s.contractForm === 'ab04' || s.contractForm === 'abt06' ? 'Beställare' : 'Beställare (konsument)'
   if (!p) return h(View, {}, h(View, { style: styles.columns },
-    h(View, { style: styles.column }, text('Beställare (konsument)', { style: styles.partyTitle }), fact('Namn', s.customerName), fact('E-post', s.customerEmail)),
+    h(View, { style: styles.column }, text(customerTitle, { style: styles.partyTitle }), fact('Namn', s.customerName), fact('E-post', s.customerEmail)),
     h(View, { style: styles.column }, text('Entreprenör (näringsidkare)', { style: styles.partyTitle }), fact('Företag', s.issuerName), fact('E-post', s.replyEmail),
       ...(s.senderProfile ? [fact('Juridiskt bolag', s.senderProfile.legalName), fact('Organisationsnummer', s.senderProfile.organizationNumber), fact('Adress', [s.senderProfile.address, s.senderProfile.postalCode, s.senderProfile.city].filter(Boolean).join(', ')), fact('Telefon', s.senderProfile.phone ?? '')] : []))),
     ...parts.filter((part) => part.title === 'Parternas kompletterande uppgifter').map((part, i) => h(View, { key: i }, renderSection(part))))
   const c = p.contractor
   return h(View, { style: styles.columns },
-    h(View, { style: styles.column }, text('Beställare (konsument)', { style: styles.partyTitle }),
+    h(View, { style: styles.column }, text(customerTitle, { style: styles.partyTitle }),
       ...p.customers.map((customer, i) => h(View, { key: i, style: styles.fact, wrap: false }, customer.name.trim() ? text(customer.name, { style: styles.partyName }) : fact('Namn', ''),
         ...(customer.personalNumber ? [fact('Personnummer', customer.personalNumber)] : []))),
+      ...(p.business ? [fact('Organisationsnummer', p.business.organizationNumber), fact('Kontaktperson', p.business.contactName), fact('Undertecknare', p.business.signatoryName)] : []),
       fact('Adress', [p.street, `${p.postalCode} ${p.city}`.trim()].filter(Boolean).join('\n')),
       fact('E-post', p.email), fact('Telefon / mobil', [p.phone, p.mobile].filter(Boolean).join(' / '))),
     h(View, { style: styles.column }, text('Entreprenör (näringsidkare)', { style: styles.partyTitle }), c.companyName.trim() ? text(c.companyName, { style: styles.partyName }) : fact('Företag', ''),
@@ -290,6 +293,10 @@ function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
 }
 
 export function contractSigningHeading(s: CustomerOfferSnapshot, kind?: 'offer') {
+  if (s.contractForm === 'ab04' || s.contractForm === 'abt06') {
+    const form = s.contractForm === 'ab04' ? 'AB 04 - Utförandeentreprenad' : 'ABT 06 - Totalentreprenad'
+    return { title: kind === 'offer' ? 'OFFERT' : 'ENTREPRENADKONTRAKT', form: kind === 'offer' ? `Med hänvisning till ${form}` : form }
+  }
   if (s.contractForm === 'hf17') return { title: kind === 'offer' ? 'OFFERT' : 'HANTVERKARAVTAL',
     form: kind === 'offer' ? 'Med hänvisning till Hantverkarformuläret 17' : 'Hantverkarformuläret 17' }
   if (kind === 'offer') return { title: 'OFFERT', form: s.contractForm === 'abs18' ? 'Med hänvisning till ABS 18' : 'Omfattning, pris och villkor' }
@@ -349,7 +356,9 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
       ...body,
       ...(offer ? [] : [h(View, { style: [styles.sectionFrame, { paddingBottom: 12 }], wrap: false }, band(groups.length + 1, 'Underskrifter'),
         text('Ort och datum: ____________________________________________________', { style: styles.signingDate }),
-        h(View, { style: styles.columns }, ...customers.map((c, i) => h(View, { key: i, style: styles.column }, signature(c.name, `Beställare ${i + 1}`)))),
+        h(View, { style: styles.columns }, ...(s.contractParties?.business
+          ? [h(View, { key: 'business', style: styles.column }, signature(s.contractParties.business.signatoryName, 'För beställaren', customers[0].name))]
+          : customers.map((c, i) => h(View, { key: i, style: styles.column }, signature(c.name, `Beställare ${i + 1}`))))),
         signature(s.contractParties?.contractor.companyName || s.issuerName, 'Entreprenör', s.contractParties?.contractor.contactName))]),
       ...(s.senderProfile?.website ? [text(s.senderProfile.website, { style: styles.senderNote })] : []),
       ...(s.senderProfile?.reportFooterText ? [text(s.senderProfile.reportFooterText, { style: styles.senderNote })] : []),

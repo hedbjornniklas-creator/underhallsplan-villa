@@ -12,6 +12,7 @@ export async function writeContractCustomer(ctx: Context, caseId: string, payloa
   if (!Number.isSafeInteger(payload.revision) || Number(payload.revision) < 0) throw new Error('CUSTOMER_OFFER_INVALID')
   let draft = normalizeCustomerOffer(payload.draft)
   if (!draft.contractParties) throw new Error('CUSTOMER_OFFER_INVALID')
+  if (bind && draft.contractParties.business) throw new Error('CUSTOMER_REGISTRY_BUSINESS_UNSUPPORTED')
   const binding = bind ? parseContractCustomerBinding(payload.binding) : null
   let customerInput
   let includeIdentity = false

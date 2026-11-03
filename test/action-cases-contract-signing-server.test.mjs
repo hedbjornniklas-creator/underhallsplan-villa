@@ -16,6 +16,12 @@ function harness(options={}) {
   if (!options.empty) draft.attachmentIds=[fileId]
   if (options.abs18) { draft.contractForm='abs18'; draft.termsAttachmentId=fileId }
   if (options.hf17) { draft.contractForm='hf17'; draft.termsAttachmentId=fileId; delete draft.contractDetails.assignment?.standardConditions }
+  if (options.commercial) {
+    draft.contractForm=options.commercial
+    draft.contractParties.customers=[{name:'Brf Fiktiv',personalNumber:''}]
+    draft.contractParties.business={organizationNumber:'769600-0000',contactName:'Anna Test',signatoryName:'Bo Test'}
+    delete draft.contractDetails.assignment?.standardConditions
+  }
   const file={id:fileId,file_name:'Ritning.pdf',content_type:'application/pdf',file_size_bytes:1000,storage_bucket:'action-case-files',file_path:sourcePath}
   const blobs=new Map([[sourcePath,Buffer.alloc(1000,1)]])
   const admin={
@@ -117,6 +123,20 @@ test('HF17 locking verifies its selected original and preserves the frozen form 
   const corrupt=harness({hf17:true,corruptTerms:true})
   await assert.rejects(freeze(corrupt),/STANDARD_TERMS/)
   assert.equal(corrupt.rendered.length,0);assert.equal(corrupt.calls.length,0)
+})
+
+test('commercial paper locking freezes saved legal identity and still permits incomplete drafts',async()=>{
+  for(const form of ['ab04','abt06']){
+    const h=harness({commercial:form}),before=structuredClone(h.draft)
+    h.draft.contractParties.business.signatoryName=''
+    before.contractParties.business.signatoryName=''
+    await freeze(h)
+    assert.equal(h.stored[0].snapshot.contractForm,form)
+    assert.deepEqual(h.stored[0].snapshot.contractParties.business,before.contractParties.business)
+    assert.deepEqual(h.stored[0].snapshot.contractPricing,before.contractPricing)
+    assert.deepEqual(h.draft,before)
+    assert.equal(h.calls.some(row=>/send/.test(row.p_operation)),false)
+  }
 })
 
 test('draft PDF uses only saved contract data and does not archive, lock, send or mutate anything',async()=>{

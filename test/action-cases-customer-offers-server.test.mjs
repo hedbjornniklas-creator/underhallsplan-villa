@@ -579,6 +579,22 @@ test('HF17 publication rejects the ABS edition or corrupt HF17 bytes before shar
   }
 })
 
+test('commercial offer autosave uses its new schema guard without preparing consumer terms or changing other drafts',async()=>{
+  for(const form of ['ab04','abt06']){
+    const h=harness({standardTerms:true}),ctx={orgId:id(90),userId:id(91)},before=structuredClone(h.draft)
+    const draft={...h.draft,contractForm:form,contractParties:{...emptyContractParties('Brf Test','brf@example.test'),business:{organizationNumber:'769600-0000',contactName:'Anna Test',signatoryName:'Bo Test'}}}
+    await h.api.saveCustomerOffer(ctx,id(1),{revision:1,draft},'autosave','offer')
+    const written=h.calls.find(row=>row.p_operation==='save')
+    assert.equal(written.name,'write_customer_offer')
+    assert.equal(written.p_data.body.contractForm,form)
+    assert.equal(written.p_data.body.termsAttachmentId,null)
+    assert.deepEqual(written.p_data.body.contractParties.business,draft.contractParties.business)
+    assert.equal(h.calls.filter(row=>row.name==='assert_commercial_contract').length,1)
+    assert.deepEqual(h.prepared,[]);assert.deepEqual(h.sent,[]);assert.deepEqual(h.removed,[])
+    assert.deepEqual(h.draft,before)
+  }
+})
+
 test('accepted contracts cannot acquire a new standard attachment through prepare or autosave', async () => {
   const h = harness({ standardTerms: true, standardAttachmentMissing: true, accepted: true })
   const ctx = { orgId: id(90), userId: id(91) }

@@ -38,7 +38,7 @@ export default function CustomerContractFields({
   fieldKeys?: ContractFieldKey[]
   showAdvice?: boolean
   inline?: boolean
-  contractForm?: 'abs18' | 'hf17' | 'custom'
+  contractForm?: 'abs18' | 'hf17' | 'ab04' | 'abt06' | 'custom'
   disabled?: boolean
 }) {
   const [confirmStandardText, setConfirmStandardText] = useState(false)

@@ -38,18 +38,36 @@ export function standardTermsFor(form: CustomerOfferDraft['contractForm']) {
   return form === 'abs18' ? ABS18_TERMS : form === 'hf17' ? HF17_TERMS : null
 }
 export function contractFormName(form: CustomerOfferDraft['contractForm']) {
-  return form === 'abs18' ? 'ABS 18' : form === 'hf17' ? 'Hantverkarformuläret 17' : 'Egen avtalshandling'
+  return form === 'abs18' ? 'ABS 18' : form === 'hf17' ? 'Hantverkarformuläret 17' : form === 'ab04' ? 'AB 04' : form === 'abt06' ? 'ABT 06' : 'Egen avtalshandling'
 }
+export const commercialContractReferences = {
+  ab04: 'För entreprenaden gäller AB 04. Eventuella avvikelser och kompletteringar anges särskilt i avtalshandlingarna.',
+  abt06: 'För entreprenaden gäller ABT 06. Eventuella avvikelser och kompletteringar anges särskilt i avtalshandlingarna.',
+} as const
 export function standardTermsForFile(file: CustomerOfferFile) {
   return [ABS18_TERMS, HF17_TERMS].find(terms => terms.fileName === file.fileName && terms.size === file.fileSizeBytes) ?? null
+}
+export function selectManualContractTerms(draft: CustomerOfferDraft, file: CustomerOfferFile | undefined, files: CustomerOfferFile[]): Partial<CustomerOfferDraft> {
+  const editable = { ...draft, contractDetails: draft.contractDetails ?? emptyContractDetails() }
+  const previous = assignmentForEditing(editable, files)
+  const documents = previous.documents.filter(doc => doc.fileId !== draft.termsAttachmentId || doc.fileId === file?.id)
+  if (file && !documents.some(doc => doc.fileId === file.id)) documents.push({ fileId: file.id, type: 'Allmänna bestämmelser', name: file.fileName, date: '' })
+  return { ...assignmentPatch(editable, { ...previous, documents }, previous), termsAttachmentId: file?.id ?? null }
 }
 
 // Only called on an explicit form change, never when reading frozen documents.
 export function changeContractForm(draft: CustomerOfferDraft, form: CustomerOfferDraft['contractForm'], files: CustomerOfferFile[] = []): CustomerOfferDraft {
   if (form === draft.contractForm) return draft
   let next = { ...draft, contractForm: form }
+  if (form === 'ab04' || form === 'abt06') next.termsAttachmentId = null
+  if ((draft.contractForm === 'ab04' || draft.contractForm === 'abt06') && draft.termsAttachmentId) {
+    const previous = assignmentForEditing(draft, files)
+    next = { ...next, ...assignmentPatch(next, { ...previous, documents: previous.documents.filter(doc => doc.fileId !== draft.termsAttachmentId) }, previous),
+      attachmentIds: next.attachmentIds.filter(id => id !== draft.termsAttachmentId), termsAttachmentId: null }
+  }
   for (const file of files) if (standardTermsForFile(file) && standardTermsForFile(file) !== standardTermsFor(form)) next = withStandardContractTerms(next, file, files)
-  if ([ABS18_TERMS.reference, HF17_TERMS.reference].some(reference => reference === next.terms)) next.terms = standardTermsFor(form)?.reference ?? ''
+  if (!next.terms.trim() || [ABS18_TERMS.reference, HF17_TERMS.reference, ...Object.values(commercialContractReferences)].some(reference => reference === next.terms))
+    next.terms = standardTermsFor(form)?.reference ?? (form === 'ab04' || form === 'abt06' ? commercialContractReferences[form] : '')
   const editedConditions = next.contractDetails?.assignment?.standardConditions?.text
   if (form !== 'abs18' && editedConditions?.trim() && editedConditions !== ABS18_ASSIGNMENT_CONDITIONS.text && !next.terms.includes(editedConditions)) {
     const terms = [next.terms.trim(), editedConditions].filter(Boolean).join('\n\n')

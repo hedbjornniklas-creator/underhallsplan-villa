@@ -14,6 +14,7 @@ export type ContractContractor = {
 }
 export type ContractParties = {
   version: 1
+  business?: { organizationNumber: string; contactName: string; signatoryName: string } | null
   customers: ContractCustomer[]
   street: string
   postalCode: string
@@ -46,6 +47,14 @@ export function normalizeContractParties(value: unknown): ContractParties {
   })
   const result = emptyContractParties()
   result.customers = customers
+  if (input.business !== undefined) {
+    if (input.business === null) result.business = null
+    else {
+      const business = record(input.business)
+      if (customers.length !== 1 || customers[0].personalNumber) throw new Error('CUSTOMER_OFFER_INVALID')
+      result.business = { organizationNumber: text(business.organizationNumber, 20), contactName: text(business.contactName), signatoryName: text(business.signatoryName) }
+    }
+  }
   for (const key of ['street', 'postalCode', 'city', 'phone', 'mobile', 'email'] as const) result[key] = text(input[key])
   for (const key of ['companyName', 'organizationNumber', 'contactName', 'mobile', 'street', 'postalCode', 'city', 'phone', 'fax', 'email'] as const) result.contractor[key] = text(contractor[key], key === 'street' ? 300 : key === 'email' ? 320 : 250)
   result.contractor.fTax = contractor.fTax as ContractContractor['fTax']
@@ -55,6 +64,10 @@ export function normalizeContractParties(value: unknown): ContractParties {
 export function contractPartiesIssues(parties?: ContractParties, signing: 'online' | 'paper' = 'online'): string[] {
   if (!parties) return []
   const issues: string[] = []
+  if (parties.business) {
+    if (!parties.business.organizationNumber.trim()) issues.push('Ange beställarens organisationsnummer.')
+    if (!parties.business.signatoryName.trim()) issues.push('Ange beställarens undertecknare.')
+  }
   parties.customers.forEach((customer, index) => { if (!customer.name.trim()) issues.push(`Ange namn för beställare ${index + 1}.`) })
   for (const [key, label] of [['street', 'postadress'], ['postalCode', 'postnummer'], ['city', 'ort']] as const) {
     if (!parties[key].trim()) issues.push(`Ange beställarens ${label}.`)
@@ -69,7 +82,7 @@ export function contractPartiesIssues(parties?: ContractParties, signing: 'onlin
 }
 
 export function publicContractParties(parties: ContractParties): ContractParties {
-  return { ...parties, customers: parties.customers.map((customer) => ({ name: customer.name, personalNumber: '' })), contractor: { ...parties.contractor } }
+  return { ...parties, ...(parties.business ? { business: { ...parties.business } } : {}), customers: parties.customers.map((customer) => ({ name: customer.name, personalNumber: '' })), contractor: { ...parties.contractor } }
 }
 
 export function contractPartiesSummary(parties: ContractParties): string {

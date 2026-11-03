@@ -1,14 +1,32 @@
 'use client'
 
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import type { ContractContractor, ContractParties } from '@/lib/action-cases/customerContractParties'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 const button = 'inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold'
 
 export function ContractCustomerEditor({ value, onChange }: { value: ContractParties; onChange: (value: ContractParties) => void }) {
+  const [confirmType, setConfirmType] = useState<'private' | 'business' | null>(null)
+  const changeType = (type: 'private' | 'business') => onChange({ ...value,
+    business: type === 'business' ? { organizationNumber: '', contactName: '', signatoryName: '' } : null,
+    customers: [{ name: value.customers[0]?.name ?? '', personalNumber: '' }] })
   return <div className="space-y-5">
-    {value.customers.map((customer, index) => <fieldset key={index} className="min-w-0 border-b border-slate-200 pb-4">
+    <label className="block text-sm">Beställartyp<select aria-label="Beställartyp" className={field} value={value.business ? 'business' : 'private'} onChange={event => {
+      const type = event.target.value as 'private' | 'business'
+      if (Boolean(value.business) === (type === 'business')) return
+      if (value.business || value.customers.length > 1 || value.customers.some(row => row.personalNumber)) setConfirmType(type)
+      else changeType(type)
+    }}><option value="private">Privatperson</option><option value="business">Företag eller förening</option></select></label>
+    {confirmType && <div role="alertdialog" aria-label="Byt beställartyp" className="border border-amber-300 bg-amber-50 p-3 text-sm">
+      <p>Byta beställartyp? Personnummer, extra beställare och företagets kompletterande uppgifter tas bort från utkastet. Namn och kontaktuppgifter behålls. Kontrollera dem efter bytet.</p>
+      <div className="mt-3 flex gap-2"><button type="button" className={button} onClick={() => setConfirmType(null)}>Avbryt</button><button type="button" className={button} onClick={() => { changeType(confirmType); setConfirmType(null) }}>Byt beställartyp</button></div>
+    </div>}
+    {value.business ? <div className="grid gap-4 sm:grid-cols-2">
+      <label className="min-w-0 text-sm sm:col-span-2">Företagets eller föreningens namn *<input aria-label="Beställare: Företagets eller föreningens namn" className={field} maxLength={250} value={value.customers[0].name} onChange={event => onChange({ ...value, customers: [{ name: event.target.value, personalNumber: '' }] })} /></label>
+      {([['organizationNumber', 'Organisationsnummer'], ['contactName', 'Kontaktperson'], ['signatoryName', 'Behörig undertecknare']] as const).map(([key,label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`Beställare: ${label}`} className={field} maxLength={key === 'organizationNumber' ? 20 : 250} value={value.business![key]} onChange={event => onChange({ ...value, business: { ...value.business!, [key]: event.target.value } })} /></label>)}
+    </div> : value.customers.map((customer, index) => <fieldset key={index} className="min-w-0 border-b border-slate-200 pb-4">
       <legend className="mb-3 text-sm font-semibold">Beställare {index + 1}</legend>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="min-w-0 text-sm">För- och efternamn *<input className={field} aria-label={`Beställare ${index + 1}: För- och efternamn`} autoComplete="name" maxLength={250} value={customer.name}
@@ -18,7 +36,7 @@ export function ContractCustomerEditor({ value, onChange }: { value: ContractPar
       </div>
       {index > 0 && <button className={`${button} mt-3 text-rose-700`} onClick={() => onChange({ ...value, customers: value.customers.filter((_, position) => position !== index) })}><Trash2 size={16} /> Ta bort beställare {index + 1}</button>}
     </fieldset>)}
-    {value.customers.length < 2 && <button className={button} onClick={() => onChange({ ...value, customers: [...value.customers, { name: '', personalNumber: '' }] })}><Plus size={16} /> Lägg till beställare</button>}
+    {!value.business && value.customers.length < 2 && <button className={button} onClick={() => onChange({ ...value, customers: [...value.customers, { name: '', personalNumber: '' }] })}><Plus size={16} /> Lägg till beställare</button>}
     <div className="grid gap-4 sm:grid-cols-2">
       {([['street', 'Gata/Box', true, 'street-address'], ['postalCode', 'Postnummer', true, 'postal-code'], ['city', 'Ort', true, 'address-level2'], ['phone', 'Telefon', false, 'tel'], ['mobile', 'Mobiltelefon', false, 'tel'], ['email', 'E-postadress', true, 'email']] as const).map(([key, label, required, autoComplete]) => <label key={key} className={`min-w-0 text-sm ${key === 'street' ? 'sm:col-span-2' : ''}`}>
         {label}{required ? ' *' : ' (valfritt)'}<input className={field} aria-label={`Beställare: ${label}`} autoComplete={autoComplete} type={key === 'email' ? 'email' : key === 'phone' || key === 'mobile' ? 'tel' : 'text'} maxLength={250} value={value[key]} onChange={(event) => onChange({ ...value, [key]: event.target.value })} />
@@ -51,6 +69,7 @@ export function ContractPartiesDocument({ value }: { value: ContractParties }) {
   const lines = (rows: (string | undefined)[]) => rows.filter(Boolean).map((text, index) => <dd key={index} className="mt-1 break-words">{text}</dd>)
   return <section className="grid gap-6 border-t border-slate-200 py-6 text-sm sm:grid-cols-2">
     <dl><dt className="font-semibold">Beställare</dt>{value.customers.map((customer, index) => <dd key={index} className="mt-2 font-medium">{customer.name}{customer.personalNumber && <span className="ml-2 font-normal">{customer.personalNumber}</span>}</dd>)}
+      {value.business && lines([value.business.organizationNumber && `Org.nr: ${value.business.organizationNumber}`, value.business.contactName && `Kontaktperson: ${value.business.contactName}`, value.business.signatoryName && `Undertecknare: ${value.business.signatoryName}`])}
       {lines([value.street, [value.postalCode, value.city].filter(Boolean).join(' '), value.phone && `Telefon: ${value.phone}`, value.mobile && `Mobil: ${value.mobile}`, value.email])}</dl>
     <dl><dt className="font-semibold">Entreprenör</dt>{lines([value.contractor.companyName, value.contractor.organizationNumber && `Org.nr: ${value.contractor.organizationNumber}`, value.contractor.contactName && `Kontaktperson: ${value.contractor.contactName}`, value.contractor.street,
       [value.contractor.postalCode, value.contractor.city].filter(Boolean).join(' '), value.contractor.phone && `Telefon: ${value.contractor.phone}`, value.contractor.mobile && `Mobil: ${value.contractor.mobile}`, value.contractor.fax && `Fax: ${value.contractor.fax}`, value.contractor.email,

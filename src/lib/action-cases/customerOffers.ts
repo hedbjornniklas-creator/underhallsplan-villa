@@ -41,7 +41,7 @@ export type CustomerOfferDraft = {
   baseAmountOre: number | null
   pricingMode?: 'total' | 'itemized'
   validUntil: string
-  contractForm: 'abs18' | 'hf17' | 'custom'
+  contractForm: 'abs18' | 'hf17' | 'ab04' | 'abt06' | 'custom'
   terms: string
   paymentTerms: string
   schedule: string
@@ -183,7 +183,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     new Set(attachmentIds).size !== attachmentIds.length
   )
     throw new Error('CUSTOMER_OFFER_INVALID')
-  if (!['abs18', 'hf17', 'custom'].includes(String(d.contractForm)))
+  if (!['abs18', 'hf17', 'ab04', 'abt06', 'custom'].includes(String(d.contractForm)))
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (d.signingMethod !== undefined && !['email_code', 'external'].includes(String(d.signingMethod)))
     throw new Error('CUSTOMER_OFFER_INVALID')
@@ -293,6 +293,10 @@ export function offerPublishIssues(
   if (assignment && d.attachmentIds.some((id) => !assignment.documents.some((doc) => doc.fileId === id)))
     issues.push('Komplettera handlingsförteckningen för alla valda bilagor.')
   issues.push(...contractPartiesIssues(d.contractParties, signing))
+  if ((d.contractForm === 'ab04' || d.contractForm === 'abt06') && !d.contractParties?.business)
+    issues.push('Ange företag eller förening som beställare för AB 04/ABT 06.')
+  if (d.contractParties?.business && (d.contractForm === 'abs18' || d.contractForm === 'hf17'))
+    issues.push('Välj avtalsgrund för företag eller förening i stället för konsumentformulär.')
   if (d.items.some((i) => i.scopeAdvice?.trim()) && d.contractDetails?.advice.status !== 'given')
     issues.push('En arbetsdel innehåller avrådan. Kontrollera och dokumentera avrådan under Avtalsuppgifter före utskick.')
   issues.push(...paymentPlanIssues(d.paymentPlan, customerOfferBaseAmount(d), d.contractPricing?.mode))

@@ -74,7 +74,7 @@ export function PaymentPlanDocument({ plan, paymentTerms, conditions, showTerms 
 
 export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, priceMode, contractForm, sources = [], importBlocked = false, onChange, onTermsChange, onConditionsChange }: {
   plan?: CustomerPaymentPlan | null; baseAmount: number | null; paymentTerms: string
-  conditions?: PaymentConditions; priceMode?: string; contractForm: 'abs18' | 'hf17' | 'custom'
+  conditions?: PaymentConditions; priceMode?: string; contractForm: 'abs18' | 'hf17' | 'ab04' | 'abt06' | 'custom'
   sources?: ActionCaseItemView[]; importBlocked?: boolean
   onConditionsChange: (value: PaymentConditions) => void
   onChange: (plan: CustomerPaymentPlan | null) => void; onTermsChange: (text: string) => void

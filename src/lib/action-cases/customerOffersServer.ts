@@ -137,7 +137,7 @@ export async function getCustomerOfferWorkspace(
     ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
     ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
-    standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId, body.contractForm === 'hf17' ? 'hf17' : 'abs18'),
+    standardTermsFile: body.contractForm === 'abs18' || body.contractForm === 'hf17' ? await findStandardTermsFile(ctx.orgId, caseId, body.contractForm) : null,
     propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
@@ -167,10 +167,7 @@ export async function saveCustomerOffer(
     const guard = await createSupabaseAdminClient().rpc('assert_action_case_offer_sender_body', { p_org_id: ctx.orgId, p_case_id: caseId, p_user_id: ctx.userId, p_body: draft })
     checked(guard.error)
   }
-  if (draft.contractForm === 'hf17') {
-    const guard = await createSupabaseAdminClient().rpc('assert_standard_contract_form', { p_body: draft })
-    checked(guard.error)
-  }
+  await checkContractFormSchema(draft)
   let selectedFiles: CustomerOfferFile[] = []
   if (!draft.contractDetails?.assignment && draft.attachmentIds.length) {
     const selected = await createSupabaseAdminClient().from('action_case_attachments')
@@ -193,7 +190,7 @@ export async function saveCustomerOffer(
   const costing = payload.costing === undefined
     ? undefined
     : normalizeCustomerOfferCosting(payload.costing, draft.items)
-  await checkPricingSchema(draft)
+  await checkPricingSchema(draft, false, true)
   if (target === 'contract' && mode === 'manual' && draft.contractParties && 'organization_customer_id' in await requireCase(ctx, caseId)) {
     await writeContractCustomer(ctx, caseId, { ...payload, draft })
     return
@@ -249,7 +246,8 @@ async function assertContractSenderDraft(ctx: Context, caseId: string, draft: Cu
   if (result.error && schemaMissing(result.error.code)) throw new Error('CUSTOMER_SENDER_SCHEMA')
   checked(result.error)
 }
-async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+async function checkPricingSchema(draft: CustomerOfferDraft, complete = false, formChecked = false) {
+  if (!formChecked) await checkContractFormSchema(draft)
   if (draft.contractPricing?.budget !== undefined) {
     const guard = await createSupabaseAdminClient().rpc('assert_contract_budget', { p_body: draft, p_complete: complete })
     checked(guard.error)
@@ -308,6 +306,12 @@ async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
     p_complete: complete
   })
   checked(result.error)
+}
+async function checkContractFormSchema(draft: CustomerOfferDraft) {
+  if (['hf17', 'ab04', 'abt06'].includes(draft.contractForm) || draft.contractParties?.business !== undefined) {
+    const guard = await createSupabaseAdminClient().rpc(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || draft.contractParties?.business !== undefined ? 'assert_commercial_contract' : 'assert_standard_contract_form', { p_body: draft })
+    checked(guard.error)
+  }
 }
 function mailConfig(origin?: string) {
   const from = process.env.ASSIGNMENTS_MAIL_FROM?.trim()

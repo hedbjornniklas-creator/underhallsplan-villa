@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ExternalLink, Loader2, RefreshCw, Tras
 import { Fragment, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { CustomerOfferDraft, CustomerOfferFile } from '@/lib/action-cases/customerOffers'
 import { assignmentForEditing, assignmentPatch, type ContractAssignment } from '@/lib/action-cases/contractAssignment'
-import { contractFormName, standardTermsFor } from '@/lib/action-cases/standardContractTerms'
+import { contractFormName, selectManualContractTerms, standardTermsFor, standardTermsForFile } from '@/lib/action-cases/standardContractTerms'
 import CustomerContractFormSelect from './CustomerContractFormSelect'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
@@ -65,6 +65,9 @@ export default function CustomerContractAssignmentEditor({ draft, files, caseId,
           : termsState === 'error' ? <button type="button" className={tool} onClick={onRetryTerms} title="Försök lägga till standardvillkoren igen" aria-label={`Försök lägga till ${standardName}-villkoren igen`}><RefreshCw size={17} /></button>
             : <a href={draft.contractForm === 'hf17' ? '/hf17-2017.pdf' : '/abs18-2018-06.pdf'} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 text-teal-800 underline"><ExternalLink size={16} />{standardName} · {draft.contractForm === 'hf17' ? 'Originalformulär och allmänna bestämmelser' : 'Standardvillkor 2018.06'}</a>}
       </div>}
+      {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06') && <label className="my-3 block text-sm">Standardbestämmelser (PDF)<select className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {
+        onChange(selectManualContractTerms(draft, files.find(row => row.id === event.target.value), files))
+      }}><option value="">Ingen vald bilaga</option>{files.filter(file => file.contentType === 'application/pdf' && !standardTermsForFile(file)).map(file => <option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>}
       <h3 className="font-semibold">Handlingar som ingår i uppdraget</h3>
       <datalist id="contract-document-types">
         {['Beskrivning', 'Ritning', 'Anbud', 'Administrativa föreskrifter', 'Allmänna bestämmelser, ABS 18', 'Avtalshandling'].map((type) => <option key={type} value={type} />)}

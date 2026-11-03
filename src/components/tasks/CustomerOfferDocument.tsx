@@ -55,7 +55,7 @@ export default function CustomerOfferDocument({
       )
   const baseAmount = customerOfferBaseAmount(s)
   const total = baseAmount === null ? null : customerOfferTotal(s, selection)
-  const files = offer.files.filter((file) => purpose === 'contract' || s.contractForm === 'hf17' || file.id !== s.termsAttachmentId)
+  const files = offer.files.filter((file) => purpose === 'contract' || ['hf17', 'ab04', 'abt06'].includes(s.contractForm) || file.id !== s.termsAttachmentId)
   return (
     <article className="min-w-0 break-words bg-white" aria-label={purpose === 'offer' ? 'Kundoffert' : 'Kundavtal'}>
       <header className="border-b border-slate-200 py-6">
@@ -76,11 +76,12 @@ export default function CustomerOfferDocument({
         <h2 className="mt-2 text-2xl font-semibold">
           {s.title || 'Offertutkast'}
         </h2>
-        {s.contractForm === 'hf17' && <p className="mt-2 text-sm font-medium">Avtalsgrund: Hantverkarformuläret 17</p>}
+        {['hf17', 'ab04', 'abt06'].includes(s.contractForm) && <p className="mt-2 text-sm font-medium">Avtalsgrund: {contractFormName(s.contractForm)}</p>}
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
           {(purpose === 'offer' || !s.contractParties) && <div>
             <dt className="text-slate-500">Beställare</dt>
             <dd className="mt-1 font-semibold">{s.contractParties?.customers.map((row) => row.name).filter(Boolean).join(', ') || s.customerName}</dd>
+            {s.contractParties?.business && <><dd>Org.nr: {s.contractParties.business.organizationNumber}</dd><dd>Kontaktperson: {s.contractParties.business.contactName}</dd><dd>Undertecknare: {s.contractParties.business.signatoryName}</dd></>}
             <dd className="break-all text-slate-600">{s.contractParties?.email || s.customerEmail}</dd>
           </div>}
           {(purpose === 'offer' || !s.contractParties) && <div>
