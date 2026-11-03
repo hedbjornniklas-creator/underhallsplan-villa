@@ -17,7 +17,7 @@ import { legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItem
 import { writeContractCustomer } from './customerRegistryServer'
 import { getContractSigningVersions } from './contractSigningServer'
 import { getProjectPropertyLink } from './propertyRegistryServer'
-import { withStandardContractTerms } from './standardContractTerms'
+import { standardContractForms, standardTermsFor, withStandardContractTerms, type StandardContractForm } from './standardContractTerms'
 import { ensureStandardTermsFile, findStandardTermsFile, standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
 import {
   CUSTOMER_OFFER_BUCKET,
@@ -137,7 +137,7 @@ export async function getCustomerOfferWorkspace(
     ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
     ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
-    standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId),
+    standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId, body.contractForm === 'hf17' ? 'hf17' : 'abs18'),
     propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
@@ -167,21 +167,28 @@ export async function saveCustomerOffer(
     const guard = await createSupabaseAdminClient().rpc('assert_action_case_offer_sender_body', { p_org_id: ctx.orgId, p_case_id: caseId, p_user_id: ctx.userId, p_body: draft })
     checked(guard.error)
   }
-  if (draft.contractForm === 'abs18') {
-    const file = await findStandardTermsFile(ctx.orgId, caseId) ?? await prepareStandardContractTerms(ctx, caseId)
-    let files: CustomerOfferFile[] = []
-    if (!draft.contractDetails?.assignment && draft.attachmentIds.length) {
-      const selected = await createSupabaseAdminClient().from('action_case_attachments')
-        .select('id,file_name,content_type,file_size_bytes').eq('org_id', ctx.orgId)
-        .eq('action_case_id', caseId).in('id', draft.attachmentIds)
-      checked(selected.error)
-      files = (selected.data ?? []).map((row) => ({ id: row.id, fileName: row.file_name,
-        contentType: row.content_type, fileSizeBytes: row.file_size_bytes }))
-    }
-    draft = normalizeCustomerOffer(withStandardContractTerms(draft, file, files))
-  } else {
-    const file = await findStandardTermsFile(ctx.orgId, caseId)
-    if (file) draft = normalizeCustomerOffer(withStandardContractTerms(draft, file))
+  if (draft.contractForm === 'hf17') {
+    const guard = await createSupabaseAdminClient().rpc('assert_standard_contract_form', { p_body: draft })
+    checked(guard.error)
+  }
+  let selectedFiles: CustomerOfferFile[] = []
+  if (!draft.contractDetails?.assignment && draft.attachmentIds.length) {
+    const selected = await createSupabaseAdminClient().from('action_case_attachments')
+      .select('id,file_name,content_type,file_size_bytes').eq('org_id', ctx.orgId)
+      .eq('action_case_id', caseId).in('id', draft.attachmentIds)
+    checked(selected.error)
+    selectedFiles = (selected.data ?? []).map(row => ({ id: row.id, fileName: row.file_name,
+      contentType: row.content_type, fileSizeBytes: row.file_size_bytes }))
+  }
+  // Remove only the known automatic edition; keep its stored file and all history.
+  for (const form of standardContractForms) if (draft.contractForm !== form) {
+    const previous = await findStandardTermsFile(ctx.orgId, caseId, form)
+    if (previous) draft = normalizeCustomerOffer(withStandardContractTerms(draft, previous, selectedFiles))
+  }
+  if (standardTermsFor(draft.contractForm)) {
+    const form = draft.contractForm as StandardContractForm
+    const file = await findStandardTermsFile(ctx.orgId, caseId, form) ?? await prepareStandardContractTerms(ctx, caseId, form)
+    draft = normalizeCustomerOffer(withStandardContractTerms(draft, file, selectedFiles))
   }
   const costing = payload.costing === undefined
     ? undefined
@@ -207,13 +214,14 @@ export async function saveCustomerOffer(
   })
   checked(result.error)
 }
-export async function prepareStandardContractTerms(ctx: Context, caseId: string) {
+export async function prepareStandardContractTerms(ctx: Context, caseId: string, form: unknown = 'abs18') {
+  if (form !== 'abs18' && form !== 'hf17') throw new Error('CUSTOMER_OFFER_INVALID')
   await requireCase(ctx, caseId)
   const result = await createSupabaseAdminClient().from('action_case_customer_offers').select('id')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('status', 'accepted').maybeSingle()
   checked(result.error)
   if (result.data) throw new Error('CUSTOMER_OFFER_ACCEPTED')
-  return ensureStandardTermsFile(ctx, caseId)
+  return ensureStandardTermsFile(ctx, caseId, form)
 }
 export async function bindContractCustomer(ctx: Context, caseId: string, payload: Payload) {
   await requireCase(ctx, caseId)
@@ -366,9 +374,10 @@ export async function publishCustomerOffer(
   if (offerPublishIssues(draft).length)
     throw new Error('CUSTOMER_OFFER_INCOMPLETE')
   await checkPricingSchema(draft, true)
-  if (draft.contractForm === 'abs18') {
-    if (draft.termsAttachmentId !== standardTermsFileId(ctx.orgId, caseId)) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
-    await verifyStandardTermsFile(ctx.orgId, caseId)
+  if (standardTermsFor(draft.contractForm)) {
+    const form = draft.contractForm as StandardContractForm
+    if (draft.termsAttachmentId !== standardTermsFileId(ctx.orgId, caseId, form)) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
+    await verifyStandardTermsFile(ctx.orgId, caseId, form)
   }
   const recipient = await db
     .from('action_case_participants')

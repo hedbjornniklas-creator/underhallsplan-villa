@@ -9,6 +9,7 @@ import { paymentConditionsText } from '@/lib/action-cases/customerPaymentPlan'
 import { ContractPartiesDocument } from './CustomerContractPartiesEditor'
 import { ContractPriceDocument } from './CustomerContractPricing'
 import { OfferHourEstimateDocument } from './CustomerOfferHourEstimate'
+import { contractFormName } from '@/lib/action-cases/standardContractTerms'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -54,7 +55,7 @@ export default function CustomerOfferDocument({
       )
   const baseAmount = customerOfferBaseAmount(s)
   const total = baseAmount === null ? null : customerOfferTotal(s, selection)
-  const files = offer.files.filter((file) => purpose === 'contract' || file.id !== s.termsAttachmentId)
+  const files = offer.files.filter((file) => purpose === 'contract' || s.contractForm === 'hf17' || file.id !== s.termsAttachmentId)
   return (
     <article className="min-w-0 break-words bg-white" aria-label={purpose === 'offer' ? 'Kundoffert' : 'Kundavtal'}>
       <header className="border-b border-slate-200 py-6">
@@ -75,6 +76,7 @@ export default function CustomerOfferDocument({
         <h2 className="mt-2 text-2xl font-semibold">
           {s.title || 'Offertutkast'}
         </h2>
+        {s.contractForm === 'hf17' && <p className="mt-2 text-sm font-medium">Avtalsgrund: Hantverkarformuläret 17</p>}
         <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
           {(purpose === 'offer' || !s.contractParties) && <div>
             <dt className="text-slate-500">Beställare</dt>
@@ -264,7 +266,7 @@ export default function CustomerOfferDocument({
       <section className="py-6">
         {purpose === 'contract' && <><h3 className="font-semibold">
           Villkor ·{' '}
-          {s.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor'}
+          {s.contractForm === 'custom' ? 'Särskilda villkor' : contractFormName(s.contractForm)}
         </h3>
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
           {s.terms || 'Ej angivet'}

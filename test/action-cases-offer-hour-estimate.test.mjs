@@ -7,6 +7,7 @@ import * as offers from '../src/lib/action-cases/customerOffers.ts'
 import * as prices from '../src/lib/action-cases/contractPricing.ts'
 import * as hours from '../src/lib/action-cases/offerHourEstimate.ts'
 import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
+import * as standard from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyCustomerOffer, normalizeCustomerOffer, customerOfferBaseAmount, customerOfferTotal, mapCustomerOffer, offerPublishIssues } from '../src/lib/action-cases/customerOffers.ts'
 import { contractPricingForEditing } from '../src/lib/action-cases/contractPricing.ts'
 import { estimatedLabourRange, normalizeOfferHourEstimate, offerHourEstimateIssues } from '../src/lib/action-cases/offerHourEstimate.ts'
@@ -89,6 +90,7 @@ test('the real offer document prints rates and estimated labour once, never inte
     '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/contractPricing': prices,
     '@/lib/action-cases/offerHourEstimate': hours, '@/lib/action-cases/offerImport': {},
     '@/lib/action-cases/customerPaymentPlan': payments, './CustomerOfferPriceInput': {},
+    '@/lib/action-cases/standardContractTerms': standard,
     './CustomerContractFields': {}, './CustomerPaymentPlan': {}, './CustomerContractSiteFacilities': {}, './CustomerContractPartiesEditor': {} }
   const load = name => {
     const code = ts.transpileModule(readFileSync(new URL(`../src/components/tasks/${name}.tsx`, import.meta.url), 'utf8'), {

@@ -38,7 +38,8 @@ import {
   type CustomerOfferSnapshot,
   type CustomerOfferWorkspace
 } from '@/lib/action-cases/customerOffers'
-import { ABS18_TERMS, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
+import { standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
+import CustomerContractFormSelect from './CustomerContractFormSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
@@ -280,7 +281,7 @@ export default function CustomerOfferEditor({
   ]
   const files = [...actionCase.attachments.filter((f) => !f.isQuoteDocument),
     ...(standardTermsFile && !actionCase.attachments.some((f) => f.id === standardTermsFile.id)
-      ? [{ ...standardTermsFile, type: 'document' as const, title: ABS18_TERMS.name }] : [])]
+      ? [{ ...standardTermsFile, type: 'document' as const, title: standardTermsForFile(standardTermsFile)?.name ?? standardTermsFile.fileName }] : [])]
   const baseAmount = customerOfferBaseAmount(draft)
   const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1
   const offerPdfControl = offerPdfBlocked
@@ -382,12 +383,13 @@ export default function CustomerOfferEditor({
     }
   }
   useEffect(() => {
-    if (!active || !contractView || locked || linkedRevision > workspace.revision || draft.contractForm !== 'abs18' || standardTermsFile) return
+    if (!active || (!contractView && (draftTarget !== 'offer' || draft.contractForm !== 'hf17')) || locked || linkedRevision > workspace.revision || !standardTermsFor(draft.contractForm) ||
+      standardTermsFile && standardTermsForFile(standardTermsFile)?.version === standardTermsFor(draft.contractForm)?.version) return
     let cancelled = false
     setTermsState('loading')
     fetch(`/api/action-cases/${actionCase.id}/customer-offers`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(45000),
-      body: JSON.stringify({ operation: 'prepare_standard_terms' }),
+      body: JSON.stringify({ operation: 'prepare_standard_terms', contractForm: draft.contractForm }),
     }).then(async (response) => {
       const result = await response.json()
       if (!response.ok || !result.file) throw new Error(result.error || 'Standardvillkoren kunde inte förberedas.')
@@ -396,10 +398,11 @@ export default function CustomerOfferEditor({
       if (!cancelled) { setTermsState('error'); toast.error(error, 'Standardvillkoren kunde inte förberedas.') }
     })
     return () => { cancelled = true }
-  }, [active, contractView, locked, draft.contractForm, standardTermsFile, actionCase.id, termsRetry, toast, linkedRevision, workspace.revision])
+  }, [active, contractView, draftTarget, locked, draft.contractForm, standardTermsFile, actionCase.id, termsRetry, toast, linkedRevision, workspace.revision])
   useEffect(() => {
-    if (active && contractView && !locked && linkedRevision <= workspace.revision && standardTermsFile) applyStandardTerms.current(standardTermsFile)
-  }, [active, contractView, locked, draft.contractForm, standardTermsFile, termsRetry, linkedRevision, workspace.revision])
+    if (active && (contractView || draftTarget === 'offer' && draft.contractForm === 'hf17') && !locked && linkedRevision <= workspace.revision && standardTermsFile &&
+      standardTermsForFile(standardTermsFile)?.version === standardTermsFor(draft.contractForm)?.version) applyStandardTerms.current(standardTermsFile)
+  }, [active, contractView, draftTarget, locked, draft.contractForm, standardTermsFile, termsRetry, linkedRevision, workspace.revision])
   useEffect(() => {
     if (embedded || !active || previousView.current === view) return
     previousView.current = view
@@ -850,6 +853,7 @@ export default function CustomerOfferEditor({
             <ProjectEditorRow title="Offertuppgifter" summary={`${parties.customers.map((row) => row.name).filter(Boolean).join(', ') || actionCase.customerName} · ${draft.validUntil ? `Giltig till ${draft.validUntil}` : 'Giltighetsdatum saknas'}`}
               open={expanded === 'offer-info'} onToggle={() => setExpanded(expanded === 'offer-info' ? null : 'offer-info')}>
             <section className="space-y-4">
+              <CustomerContractFormSelect draft={draft} files={files} onChange={update} />
               <h2 className="text-lg">
                 Offert till {parties.customers.map((row) => row.name).filter(Boolean).join(', ') || actionCase.customerName}
               </h2>

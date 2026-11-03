@@ -41,7 +41,7 @@ export type CustomerOfferDraft = {
   baseAmountOre: number | null
   pricingMode?: 'total' | 'itemized'
   validUntil: string
-  contractForm: 'abs18' | 'custom'
+  contractForm: 'abs18' | 'hf17' | 'custom'
   terms: string
   paymentTerms: string
   schedule: string
@@ -183,7 +183,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     new Set(attachmentIds).size !== attachmentIds.length
   )
     throw new Error('CUSTOMER_OFFER_INVALID')
-  if (!['abs18', 'custom'].includes(String(d.contractForm)))
+  if (!['abs18', 'hf17', 'custom'].includes(String(d.contractForm)))
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (d.signingMethod !== undefined && !['email_code', 'external'].includes(String(d.signingMethod)))
     throw new Error('CUSTOMER_OFFER_INVALID')
@@ -330,6 +330,8 @@ export function offerPublishIssues(
   if (!d.schedule.trim()) issues.push('Ange tider och förutsättningar.')
   if (d.contractForm === 'abs18' && !d.termsAttachmentId)
     issues.push('ABS 18:s standardvillkor behöver läggas till innan avtalet skickas.')
+  if (d.contractForm === 'hf17' && !d.termsAttachmentId)
+    issues.push('Hantverkarformuläret 17 med allmänna bestämmelser behöver läggas till innan avtalet skickas.')
   return issues
 }
 export function customerOfferTotal(

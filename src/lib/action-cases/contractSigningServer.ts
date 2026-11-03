@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { CUSTOMER_OFFER_BUCKET, normalizeCustomerOffer, offerId, type ContractSigningVersion, type CustomerOfferDraft, type CustomerOfferSnapshot } from './customerOffers'
 import { activeSigningVersion, signingPdfFilename } from './contractSigning'
 import { standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
+import { standardContractForms } from './standardContractTerms'
 
 type Context = { orgId: string; userId: string }
 type FrozenFile = { id: string; fileName: string; contentType: string; fileSizeBytes: number; path: string; sourcePath: string; sha256: string }
@@ -65,9 +66,8 @@ export async function freezeContractForSigning(ctx: Context, caseId: string, pay
   if (!result.data || result.data.revision !== payload.revision) throw new Error('CUSTOMER_OFFER_STALE')
   const draft = normalizeCustomerOffer(result.data.body)
   if (draft.signingMethod === 'email_code') throw new Error('CUSTOMER_OFFER_SIGNING_METHOD')
-  if (draft.attachmentIds.includes(standardTermsFileId(ctx.orgId, caseId))) {
-    await verifyStandardTermsFile(ctx.orgId, caseId)
-  }
+  for (const form of standardContractForms) if (draft.attachmentIds.includes(standardTermsFileId(ctx.orgId, caseId, form)))
+    await verifyStandardTermsFile(ctx.orgId, caseId, form)
   const state = await db.from('action_case_customer_offers').select('status').eq('org_id', ctx.orgId).eq('action_case_id', caseId).in('status', ['accepted', 'published'])
   checked(state.error)
   if (state.data?.some((s) => s.status === 'accepted')) throw new Error('CUSTOMER_OFFER_ACCEPTED')

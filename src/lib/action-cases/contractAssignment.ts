@@ -1,4 +1,6 @@
 import type { CustomerOfferDraft, CustomerOfferFile } from './customerOffers'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { HF17_TERMS } from './standardContractTerms.ts'
 
 export type ContractDocumentReference = {
   fileId: string
@@ -17,7 +19,8 @@ export const assignmentDocumentsText = 'Avtalshandlingar anges i uppdragets hand
 
 export function assignmentIssues(value: ContractAssignment): string[] {
   return value.documents.flatMap((doc, index) => {
-    const missing = [!doc.type.trim() && 'typ', !doc.name.trim() && 'namn', !doc.date && 'datum'].filter(Boolean)
+    const officialEdition = doc.type === HF17_TERMS.type && doc.name === HF17_TERMS.name
+    const missing = [!doc.type.trim() && 'typ', !doc.name.trim() && 'namn', !doc.date && !officialEdition && 'datum'].filter(Boolean)
     return missing.length ? [`Komplettera handling ${index + 1}: ${missing.join(', ')}.`] : []
   })
 }

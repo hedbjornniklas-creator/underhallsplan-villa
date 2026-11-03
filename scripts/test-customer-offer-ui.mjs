@@ -1,7 +1,7 @@
 // Real components, synthetic HTTP backend. No live database, email or acceptance.
 import assert from 'node:assert/strict'
 import { readFile, mkdir, writeFile } from 'node:fs/promises'
-import { ABS18_TERMS, withStandardContractTerms } from '../src/lib/action-cases/standardContractTerms.ts'
+import { ABS18_TERMS, HF17_TERMS, standardTermsFor, withStandardContractTerms } from '../src/lib/action-cases/standardContractTerms.ts'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
@@ -805,7 +805,8 @@ const server = createServer(async (req, res) => {
         if (failSave) { failSave = false; json({ error: 'Tillfälligt anslutningsfel. Försök igen.' }, 503); return }
         if (body.revision !== estimateState.revision) { json({ error: 'Offerten har ändrats.' }, 409); return }
         try {
-          const next=normalizeCustomerOffer(body.draft)
+          let next=normalizeCustomerOffer(body.draft)
+          if (state.standardTermsFile) next=normalizeCustomerOffer(withStandardContractTerms(next,state.standardTermsFile))
           if(sharedScopeTest){
             const changes=[]
             for(const row of next.items.filter(row=>row.kind!=='option')){
@@ -837,7 +838,9 @@ const server = createServer(async (req, res) => {
       if (body.operation === 'prepare_standard_terms') {
         if (process.argv.includes('--slow-standard-terms')) await new Promise((resolve) => setTimeout(resolve, 2500))
         if (failSave) { failSave = false; json({ error: 'Standardvillkoren kunde inte förberedas. Försök igen.' }, 503); return }
-        state.standardTermsFile = { id: id(140), fileName: ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: ABS18_TERMS.size }
+        const terms=standardTermsFor(body.contractForm??'abs18')
+        if(!terms){json({error:'Ogiltig avtalsgrund'},400);return}
+        state.standardTermsFile = { id: id(terms===HF17_TERMS?141:140), fileName: terms.fileName, contentType: 'application/pdf', fileSizeBytes: terms.size }
         json({ file: state.standardTermsFile }); return
       } else if (body.operation === 'save' || body.operation === 'autosave') {
         if (state.signingVersions?.some((v) => !v.releasedAt)) { json({error:'Versionen är låst för signering.'},409); return }
@@ -940,6 +943,9 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="Fiktivt-tillval.pdf"' }); res.end(bytes); return
   }
   if (path.endsWith('/customer-planning')) { json(state.planning); return }
+  if(path==='/hf17-2017.pdf'||path.endsWith(`/attachments/${id(141)}`)){
+    res.writeHead(200,{'Content-Type':'application/pdf'});res.end(await readFile(HF17_TERMS.assetPath));return
+  }
   if (path === '/abs18-2018-06.pdf' || path.endsWith(`/attachments/${id(140)}`) || (process.argv.includes('--choice-files') && path.endsWith(`/attachments/${id(4)}`))) {
     res.setHeader('Content-Type', 'application/pdf')
     res.end(await readFile(ABS18_TERMS.assetPath)); return

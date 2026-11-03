@@ -290,6 +290,8 @@ function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
 }
 
 export function contractSigningHeading(s: CustomerOfferSnapshot, kind?: 'offer') {
+  if (s.contractForm === 'hf17') return { title: kind === 'offer' ? 'OFFERT' : 'HANTVERKARAVTAL',
+    form: kind === 'offer' ? 'Med hänvisning till Hantverkarformuläret 17' : 'Hantverkarformuläret 17' }
   if (kind === 'offer') return { title: 'OFFERT', form: s.contractForm === 'abs18' ? 'Med hänvisning till ABS 18' : 'Omfattning, pris och villkor' }
   return { title: s.contractForm === 'abs18' ? 'ENTREPRENADKONTRAKT' : 'ENTREPRENADAVTAL',
     form: s.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor' }

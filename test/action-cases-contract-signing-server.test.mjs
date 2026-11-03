@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto'
 import ts from 'typescript'
 import * as domain from '../src/lib/action-cases/customerOffers.ts'
 import * as signing from '../src/lib/action-cases/contractSigning.ts'
+import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { signingDraft, signingId as id } from './fixtures/contract-signing.ts'
 
 const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/contractSigningServer.ts',import.meta.url),'utf8'),{
@@ -14,6 +15,7 @@ function harness(options={}) {
   const draft=options.empty?domain.normalizeCustomerOffer(domain.emptyCustomerOffer()):signingDraft(), sourcePath=`${ctx.orgId}/${caseId}/source.pdf`, stored=[], calls=[], reads=[], removed=[], rendered=[]
   if (!options.empty) draft.attachmentIds=[fileId]
   if (options.abs18) { draft.contractForm='abs18'; draft.termsAttachmentId=fileId }
+  if (options.hf17) { draft.contractForm='hf17'; draft.termsAttachmentId=fileId; delete draft.contractDetails.assignment?.standardConditions }
   const file={id:fileId,file_name:'Ritning.pdf',content_type:'application/pdf',file_size_bytes:1000,storage_bucket:'action-case-files',file_path:sourcePath}
   const blobs=new Map([[sourcePath,Buffer.alloc(1000,1)]])
   const admin={
@@ -51,7 +53,8 @@ function harness(options={}) {
     },
   }
   const deps={ 'server-only':{},'node:crypto':crypto,'@/lib/supabase/admin':{createSupabaseAdminClient:()=>admin},'./customerOffers':domain,'./contractSigning':signing,
-    './standardContractTermsServer':{standardTermsFileId:()=>fileId,async verifyStandardTermsFile(){if(options.corruptTerms)throw Error('CUSTOMER_OFFER_STANDARD_TERMS')}},
+    './standardContractTerms':standardTerms,
+    './standardContractTermsServer':{standardTermsFileId:(_org,_case,form='abs18')=>form===(options.hf17?'hf17':'abs18')?fileId:id(5),async verifyStandardTermsFile(){if(options.corruptTerms)throw Error('CUSTOMER_OFFER_STANDARD_TERMS')}},
     './contractSigningPdf':{async renderContractSigningPdf(input){rendered.push(input);if(options.pdfFailed)throw Error('PDF failed');return Buffer.from('%PDF-'+'.'.repeat(1000))}} }
   const mod={exports:{}};new Function('module','exports','require',code)(mod,mod.exports,(name)=>{assert.ok(name in deps,name);return deps[name]})
   return {...mod.exports,stored,calls,reads,removed,rendered,blobs,draft}
@@ -103,6 +106,17 @@ test('paper locking accepts empty ABS18 contracts and blank names, dates, prices
   partial.draft.contractDetails.advice.reason=''
   partial.draft.contractDetails.assignment={documents:[{fileId,type:'',name:'',date:''}],additionalScope:'',exclusions:'',documentNotes:''}
   await freeze(partial);assert.equal(partial.stored.length,1)
+})
+
+test('HF17 locking verifies its selected original and preserves the frozen form without changing prices',async()=>{
+  const h=harness({hf17:true}),before=structuredClone(h.draft)
+  await freeze(h)
+  assert.equal(h.stored[0].snapshot.contractForm,'hf17')
+  assert.deepEqual(h.stored[0].snapshot.contractPricing,before.contractPricing)
+  assert.deepEqual(h.draft,before)
+  const corrupt=harness({hf17:true,corruptTerms:true})
+  await assert.rejects(freeze(corrupt),/STANDARD_TERMS/)
+  assert.equal(corrupt.rendered.length,0);assert.equal(corrupt.calls.length,0)
 })
 
 test('draft PDF uses only saved contract data and does not archive, lock, send or mutate anything',async()=>{

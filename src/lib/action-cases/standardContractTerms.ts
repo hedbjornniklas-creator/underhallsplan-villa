@@ -3,6 +3,8 @@ import type { CustomerOfferDraft, CustomerOfferFile } from './customerOffers'
 import { assignmentForEditing, assignmentPatch } from './contractAssignment.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { editedContractEntry, emptyContractDetails } from './customerContract.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { abs18PaymentText } from './customerPaymentPlan.ts'
 
 export const ABS18_TERMS = {
   version: 'abs18-2018-06',
@@ -16,6 +18,56 @@ export const ABS18_TERMS = {
   size: 54872,
   reference: 'För entreprenaden gäller bifogade Allmänna bestämmelser för småhusentreprenader, ABS 18 (2018.06).',
 } as const
+
+export const HF17_TERMS = {
+  version: 'hf17-2017',
+  fileName: 'Hantverkarformularet_17_2017.pdf',
+  name: 'Hantverkarformuläret 17 med allmänna bestämmelser (2017)',
+  type: 'Avtalsformulär och allmänna bestämmelser, HF17',
+  date: '',
+  sourceUrl: 'https://publikationer.konsumentverket.se/downloads/bo-2017-03-hantverkarformularet-17/230/view',
+  assetPath: 'public/hf17-2017.pdf',
+  sha256: 'bd580d75e19e19ada7e2144d271e35a055cd119dbf3eb05f904e10203349e4ff',
+  size: 3316217,
+  reference: 'För entreprenaden används Hantverkarformuläret 17 med tillhörande allmänna bestämmelser. Originalhandlingen bifogas.',
+} as const
+
+export type StandardContractForm = 'abs18' | 'hf17'
+export const standardContractForms = ['abs18', 'hf17'] as const
+export function standardTermsFor(form: CustomerOfferDraft['contractForm']) {
+  return form === 'abs18' ? ABS18_TERMS : form === 'hf17' ? HF17_TERMS : null
+}
+export function contractFormName(form: CustomerOfferDraft['contractForm']) {
+  return form === 'abs18' ? 'ABS 18' : form === 'hf17' ? 'Hantverkarformuläret 17' : 'Egen avtalshandling'
+}
+export function standardTermsForFile(file: CustomerOfferFile) {
+  return [ABS18_TERMS, HF17_TERMS].find(terms => terms.fileName === file.fileName && terms.size === file.fileSizeBytes) ?? null
+}
+
+// Only called on an explicit form change, never when reading frozen documents.
+export function changeContractForm(draft: CustomerOfferDraft, form: CustomerOfferDraft['contractForm'], files: CustomerOfferFile[] = []): CustomerOfferDraft {
+  if (form === draft.contractForm) return draft
+  let next = { ...draft, contractForm: form }
+  for (const file of files) if (standardTermsForFile(file) && standardTermsForFile(file) !== standardTermsFor(form)) next = withStandardContractTerms(next, file, files)
+  if ([ABS18_TERMS.reference, HF17_TERMS.reference].some(reference => reference === next.terms)) next.terms = standardTermsFor(form)?.reference ?? ''
+  const editedConditions = next.contractDetails?.assignment?.standardConditions?.text
+  if (form !== 'abs18' && editedConditions?.trim() && editedConditions !== ABS18_ASSIGNMENT_CONDITIONS.text && !next.terms.includes(editedConditions)) {
+    const terms = [next.terms.trim(), editedConditions].filter(Boolean).join('\n\n')
+    if (terms.length > 20000) throw new Error('CUSTOMER_OFFER_FORM_TEXT_LIMIT')
+    next.terms = terms
+  }
+  next = withAbs18AssignmentConditions(next)
+  if (form !== 'abs18') {
+    if (next.contractDetails?.workEnvironmentDefaultVersion && next.contractDetails.fields.workEnvironment.text === ABS18_WORK_ENVIRONMENT.text) {
+      const details = { ...next.contractDetails, fields: { ...next.contractDetails.fields, workEnvironment: editedContractEntry('') } }
+      delete details.workEnvironmentDefaultVersion
+      next = { ...next, contractDetails: details }
+    }
+    if (next.paymentConditions?.standardText === abs18PaymentText) next = { ...next, paymentConditions: { ...next.paymentConditions, standardText: '' } }
+    if (next.paymentTerms === abs18PaymentText) next.paymentTerms = ''
+  }
+  return next
+}
 
 // Entreprenadkontrakt ABS 18, 2018.06, page 2. Separate from the general-terms PDF.
 export const ABS18_ASSIGNMENT_CONDITIONS = {
@@ -66,19 +118,21 @@ export function withAbs18AssignmentConditions(draft: CustomerOfferDraft): Custom
 // Standard terms are a real project attachment and use the existing version-copy flow.
 export function withStandardContractTerms(draft: CustomerOfferDraft, file: CustomerOfferFile, files: CustomerOfferFile[] = []): CustomerOfferDraft {
   const value = assignmentForEditing(draft, files)
-  if (draft.contractForm !== 'abs18') {
+  const terms = standardTermsForFile(file)
+  if (!terms) throw new Error('CUSTOMER_OFFER_STANDARD_TERMS')
+  if (standardTermsFor(draft.contractForm)?.version !== terms.version) {
     if (!draft.attachmentIds.includes(file.id) && !value.documents.some((doc) => doc.fileId === file.id)) return draft
     const next = { ...value, documents: value.documents.filter((doc) => doc.fileId !== file.id) }
     return { ...draft, ...assignmentPatch(draft, next, value),
       attachmentIds: draft.attachmentIds.filter((id) => id !== file.id),
       termsAttachmentId: draft.termsAttachmentId === file.id ? null : draft.termsAttachmentId,
-      terms: draft.terms === ABS18_TERMS.reference ? '' : draft.terms }
+      terms: draft.terms === terms.reference ? '' : draft.terms }
   }
   if (!draft.attachmentIds.includes(file.id) && draft.attachmentIds.length >= 30)
     throw new Error('CUSTOMER_OFFER_TERMS_LIMIT')
   const editable = { ...draft, contractDetails: draft.contractDetails ?? emptyContractDetails() }
-  const documents = [{ fileId: file.id, type: ABS18_TERMS.type, name: ABS18_TERMS.name, date: ABS18_TERMS.date },
+  const documents = [{ fileId: file.id, type: terms.type, name: terms.name, date: terms.date },
     ...value.documents.filter((doc) => doc.fileId !== file.id)]
   return { ...editable, ...assignmentPatch(editable, { ...value, documents }, value),
-    termsAttachmentId: file.id, terms: draft.terms.trim() ? draft.terms : ABS18_TERMS.reference }
+    termsAttachmentId: file.id, terms: draft.terms.trim() ? draft.terms : terms.reference }
 }

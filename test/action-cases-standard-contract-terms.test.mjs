@@ -130,3 +130,17 @@ test('missing/corrupt bytes or foreign metadata fail closed without registering 
   row.file_path='foreign/project/terms.pdf'
   await assert.rejects(h.api.findStandardTermsFile(ctx.orgId,id(1)),/STANDARD_TERMS/)
 })
+
+test('HF17 has its own pinned original, scoped identity and idempotent private attachment', async () => {
+  const bytes=readFileSync(new URL('../public/hf17-2017.pdf',import.meta.url))
+  assert.equal(bytes.length,terms.HF17_TERMS.size)
+  assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),terms.HF17_TERMS.sha256)
+  const h=storageHarness(), hf=await h.api.ensureStandardTermsFile(ctx,id(1),'hf17'), abs=await h.api.ensureStandardTermsFile(ctx,id(1))
+  assert.notEqual(hf.id,abs.id)
+  assert.equal(hf.fileName,terms.HF17_TERMS.fileName)
+  assert.deepEqual(await h.api.ensureStandardTermsFile(ctx,id(1),'hf17'),hf)
+  assert.equal(h.rows.size,2);assert.equal(h.uploads.length,2)
+  await h.api.verifyStandardTermsFile(ctx.orgId,id(1),'hf17')
+  h.objects.set(h.rows.get(hf.id).file_path,h.objects.get(h.rows.get(abs.id).file_path))
+  await assert.rejects(h.api.verifyStandardTermsFile(ctx.orgId,id(1),'hf17'),/STANDARD_TERMS/)
+})

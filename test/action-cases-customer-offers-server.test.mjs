@@ -256,9 +256,9 @@ function harness(options = {}) {
     './customerChoiceFilesServer': { async getCustomerChoiceFiles() { return { filesAvailable: false } } },
     './standardContractTerms': { ...standardTerms, withStandardContractTerms: options.standardTerms ? standardTerms.withStandardContractTerms : (draft) => draft },
     './standardContractTermsServer': {
-      standardTermsFileId: () => id(4),
-      async findStandardTermsFile() { return options.standardTerms && !options.standardAttachmentMissing ? { id: id(4), fileName: standardTerms.ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: standardTerms.ABS18_TERMS.size } : null },
-      async ensureStandardTermsFile() { prepared.push(id(4)); return { id: id(4), fileName: standardTerms.ABS18_TERMS.fileName, contentType: 'application/pdf', fileSizeBytes: standardTerms.ABS18_TERMS.size } },
+      standardTermsFileId: (_org,_case,form='abs18') => id(form==='hf17'?141:4),
+      async findStandardTermsFile(_org,_case,form='abs18') { const terms=standardTerms.standardTermsFor(form); return options.standardTerms && !options.standardAttachmentMissing && (form==='abs18'||options.hf17) ? { id: id(form==='hf17'?141:4), fileName: terms.fileName, contentType: 'application/pdf', fileSizeBytes: terms.size } : null },
+      async ensureStandardTermsFile(_ctx,_case,form='abs18') { const terms=standardTerms.standardTermsFor(form),fileId=id(form==='hf17'?141:4);prepared.push(fileId);return { id:fileId, fileName:terms.fileName, contentType:'application/pdf',fileSizeBytes:terms.size } },
       async verifyStandardTermsFile() { if (options.corruptTerms) throw Error('CUSTOMER_OFFER_STANDARD_TERMS') },
     },
     './customerRegistryServer': { async writeContractCustomer(ctx, caseId, payload, bind) { calls.push({ name: 'writeContractCustomer', ctx, caseId, payload, bind }) } },
@@ -548,6 +548,35 @@ test('a damaged or incorrectly selected standard edition blocks publication befo
   const wrong = harness(); wrong.draft.termsAttachmentId = id(5); wrong.draft.attachmentIds.push(id(5))
   await assert.rejects(wrong.run(), /STANDARD_TERMS/)
   assert.equal(wrong.sent.length, 0); assert.equal(wrong.copies.length, 0)
+})
+
+test('HF17 saves only to the selected draft with its own private edition, preserving legacy names and the old ABS file', async () => {
+  const h=harness({standardTerms:true,files:[{id:id(7),file_name:'Ritning A.pdf',content_type:'application/pdf',file_size_bytes:2345}]}),ctx={orgId:id(90),userId:id(91)}
+  const draft={...h.draft,contractForm:'hf17',attachmentIds:[id(4),id(7)],termsAttachmentId:id(4),terms:standardTerms.ABS18_TERMS.reference}
+  const before=structuredClone(draft)
+  await h.api.saveCustomerOffer(ctx,id(1),{revision:1,draft},'autosave','offer')
+  const written=h.calls.find(c=>c.p_operation==='save')
+  assert.equal(written.name,'write_customer_offer')
+  assert.equal(written.p_data.body.contractForm,'hf17')
+  assert.equal(written.p_data.body.termsAttachmentId,id(141))
+  assert.deepEqual(written.p_data.body.attachmentIds,[id(7),id(141)])
+  assert.equal(written.p_data.body.contractDetails.assignment.documents[1].name,'Ritning A.pdf')
+  assert.equal(written.p_data.body.contractDetails.assignment.documents[0].date,'')
+  assert.deepEqual(draft,before)
+  assert.deepEqual(h.removed,[]);assert.deepEqual(h.sent,[])
+  assert(h.calls.some(c=>c.name==='assert_standard_contract_form'))
+  await assert.rejects(h.api.prepareStandardContractTerms(ctx,id(1),'unknown'),/INVALID/)
+})
+
+test('HF17 publication rejects the ABS edition or corrupt HF17 bytes before sharing anything',async()=>{
+  for(const corruptTerms of [false,true]){
+    const h=harness({hf17:true,corruptTerms})
+    h.draft.contractForm='hf17'
+    h.draft.attachmentIds=corruptTerms?[id(141)]:[id(141),id(4)]
+    h.draft.termsAttachmentId=corruptTerms?id(141):id(4)
+    await assert.rejects(h.run(),/STANDARD_TERMS|INCOMPLETE/)
+    assert.equal(h.sent.length,0);assert.equal(h.copies.length,0)
+  }
 })
 
 test('accepted contracts cannot acquire a new standard attachment through prepare or autosave', async () => {

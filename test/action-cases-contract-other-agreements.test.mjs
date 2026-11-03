@@ -165,6 +165,7 @@ function component(file, extra = {}) {
     '@/lib/properties/identity': properties,
     '@/lib/action-cases/customerOffers': offers,
     '@/lib/action-cases/customerPaymentPlan': payments,
+    './CustomerContractFormSelect': { default: 'contract-form-select' },
     './CustomerPaymentPlan': { PaymentPlanDocument: 'payment-plan' },
     './CustomerContractSiteFacilities': { SiteFacilitiesDocument: 'site-facilities' },
     './CustomerContractPartiesEditor': { ContractPartiesDocument: 'parties' },

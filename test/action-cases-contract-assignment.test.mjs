@@ -117,6 +117,7 @@ function editor() {
     if (name === 'lucide-react') return { ArrowDown:'svg', ArrowUp:'svg', ChevronDown:'svg', ExternalLink:'svg', Trash2:'svg' }
     if (name === '@/lib/action-cases/contractAssignment') return assignment
     if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
+    if (name === './CustomerContractFormSelect') return { default: 'contract-form-select' }
     throw Error(name)
   }, loaded, loaded.exports)
   return (props) => { slot = 0; return loaded.exports.default(props) }
@@ -159,7 +160,8 @@ test('one file picker and PDF row radios replace the duplicate agreement picker,
   const library = [...files, { id: id(7), fileName: 'Foto.jpg', contentType: 'image/jpeg', fileSizeBytes: 10 }]
   const render = () => flatten(editor()({ draft: d, files: library, caseId: id(1), onChange: (p) => { d = { ...d, ...p } } }))
   let nodes = render()
-  assert.equal(nodes.filter((n) => n?.type === 'select').length, 2)
+  assert.equal(nodes.filter((n) => n?.type === 'select').length, 1)
+  assert(nodes.some((n) => n?.type === 'contract-form-select'))
   assert.equal(nodes.includes('Avtalshandling (PDF)'), false)
   const radios = nodes.filter((n) => n?.type === 'input' && n.props.type === 'radio' && n.props['aria-label'].startsWith('Använd handling'))
   assert.equal(radios.length, 2)
@@ -278,6 +280,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='./CustomerOfferHourEstimate') return {OfferHourEstimateDocument:'offer-hours'}
     if(name==='@/lib/action-cases/customerOffers') return offers
     if(name==='@/lib/action-cases/customerPaymentPlan') return payments
+    if(name==='@/lib/action-cases/standardContractTerms') return standardTerms
     throw Error(name)
   },loaded,loaded.exports)
   const d=structured(), view=(body)=>loaded.exports.default({offer:{id:'draft',version:0,status:'published',snapshot:body,files:[],publishedAt:''}, selected:[], purpose:'contract', fileUrl:(id)=>`/file/${id}`})

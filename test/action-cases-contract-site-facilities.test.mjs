@@ -80,6 +80,7 @@ function component(file, extra = {}) {
     '@/lib/action-cases/contractSiteFacilities': facilities,
     '@/lib/action-cases/customerOffers': offers,
     '@/lib/action-cases/customerPaymentPlan': payments,
+    '@/lib/action-cases/standardContractTerms': standard,
     './ProjectEditorRow': { default: ({ children, ...props }) => jsx('section', { ...props, children }) },
     './CustomerContractFields': { CustomerContractDocument: 'contract-details' },
     './CustomerPaymentPlan': { PaymentPlanDocument: 'payment-plan' },

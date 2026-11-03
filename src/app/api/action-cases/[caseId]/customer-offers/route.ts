@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: Params) {
       { caseId } = await params,
       body = await offerRequestBody(request)
     if (body.operation === 'prepare_standard_terms') return NextResponse.json(
-      { file: await prepareStandardContractTerms(ctx, caseId) }, { headers: { 'Cache-Control': 'no-store' } }
+      { file: await prepareStandardContractTerms(ctx, caseId, body.contractForm ?? 'abs18') }, { headers: { 'Cache-Control': 'no-store' } }
     )
     const target = body.draftTarget === 'offer' ? 'offer' : 'contract'
     if (target === 'offer' && !['save', 'autosave'].includes(String(body.operation))) throw new Error('CUSTOMER_OFFER_INVALID')
