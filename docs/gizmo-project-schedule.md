@@ -91,3 +91,26 @@ Klicktestet anvander enbart fiktiva uppgifter och bekraftar massval, avmarkering
 gemensam import utan dubbletter, snabba upp/ned-klick och sparad ordning efter
 omladdning. Datorraderna ar fortsatt 40 px. I mobilramen ar rootens clientWidth
 och scrollWidth bada 375 px; tabellen rullar separat och pilknapparna ar 40x44 px.
+
+## Beslut 2026-11-03: Justerbar Gantt-hojd
+
+Gantt-rutans nederkant har ett draghandtag for mus och pekskarm. Hojden kan
+justeras mellan 180 och 1000 px utan att andra datum eller skalor valjs. Samma
+handtag ar tangentbordsatkomligt: upp/ned justerar 40 px, Shift justerar 100 px,
+Home/End valjer min/max. Escape eller avbruten pekdragning aterstaller dragningens
+utgangspunkt. En aterstallningsikon ger tillbaka den innehallsanpassade
+standardhojden (max 510 px pa dator, 430 px pa mobil).
+
+Hojdvalet ar enbart lokal visningsstatus medan vyn ar oppen. Inget API-anrop,
+autosparning, delning eller andring av avtal, projektmoment eller betalningsplan
+gors. Ingen SQL behovs. Tom tidsplan visar fortfarande sin befintliga tomvy,
+utan ett draghandtag for ett diagram som annu saknar datum.
+
+Verifiering: 777 Uppdragstester, riktad ESLint och rent produktionsbygge inklusive
+typkontroll passerar. Det nya komponenttestet provar pekfangst, mus/pekskarm,
+granser, andra pekare, avbrott, tangentbord, aterstallning och observer-stadning.
+Klicktestet bekraftar faktisk dragning pa dator och i 390 px mobilram,
+tangentbordsjustering samt aterstallning. Mobilens clientWidth/scrollWidth ar
+375/375 px och handtaget ar 44 px hogt. Testserverns revision ar kvar pa 0 med
+8 ursprungliga moment, ingen delad kopia och noll skrivningar efter alla dessa
+visningsandringar. Verifieringen anvander enbart fiktiva uppgifter.

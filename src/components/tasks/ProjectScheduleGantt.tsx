@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { CalendarDays, LocateFixed } from 'lucide-react'
 import { scheduleStatuses, type ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import { scheduleDate, scheduleDateLabel, scheduleDays, scheduleTimeline, type ScheduleScale } from '@/lib/action-cases/scheduleTimeline'
+import ProjectScheduleGanttViewport from './ProjectScheduleGanttViewport'
 
 export default function ProjectScheduleGantt({ rows, selectedId, onSelect }: { rows: ProjectScheduleRow[]; selectedId: string | null; onSelect: (id: string) => void }) {
   const [mode, setMode] = useState<ScheduleScale>('week')
@@ -18,7 +19,7 @@ export default function ProjectScheduleGantt({ rows, selectedId, onSelect }: { r
         <button type="button" className="gizmo-schedule-icon" title="Gå till idag" aria-label="Gå till idag" disabled={todayLeft === null} onClick={() => { const node = viewport.current; if (node && timeline && todayLeft !== null) node.scrollTo({ left: Math.max(0, timeline.width * todayLeft / 100 - (node.clientWidth - 190) / 2) }) }}><LocateFixed size={17} /></button>
       </div>
     </div>
-    {timeline ? <div ref={viewport} className="gizmo-gantt-viewport" role="region" aria-label="Gantt med projektets moment" tabIndex={0}>
+    {timeline ? <ProjectScheduleGanttViewport viewportRef={viewport}>
       <div className="gizmo-gantt-canvas" style={{ width: `calc(var(--schedule-label-width) + ${timeline.width}px)` }}>
         <div className="gizmo-gantt-header"><div className="gizmo-gantt-name">Moment</div><div className="gizmo-gantt-axis">{timeline.bands.map((band, index) => <span className="gizmo-gantt-month" key={index} style={{ left: `${band.left}%`, width: `${band.width}%` }}>{band.label}</span>)}{timeline.ticks.map(tick => <span className="gizmo-gantt-tick" key={tick.date} style={{ left: `${tick.left}%`, width: `${tick.width}%` }}>{tick.label}</span>)}</div></div>
         {rows.map((row, index) => { const bar = timeline.bars[index], days = scheduleDays(row)
@@ -33,7 +34,7 @@ export default function ProjectScheduleGantt({ rows, selectedId, onSelect }: { r
           </div>
         })}
       </div>
-    </div> : <div className="gizmo-gantt-empty"><CalendarDays size={22} /><span>{rows.length ? 'Inga datum planerade' : 'Inga moment planerade'}</span></div>}
+    </ProjectScheduleGanttViewport> : <div className="gizmo-gantt-empty"><CalendarDays size={22} /><span>{rows.length ? 'Inga datum planerade' : 'Inga moment planerade'}</span></div>}
     <div className="gizmo-gantt-legend">{Object.entries(scheduleStatuses).map(([key, label]) => <span key={key}><i className={`is-${key}`} />{label}</span>)}{todayLeft !== null && <span><i className="is-today" />Idag</span>}</div>
   </section>
 }

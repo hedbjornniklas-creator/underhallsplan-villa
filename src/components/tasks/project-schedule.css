@@ -19,7 +19,12 @@
 .uppdrag-scope .gizmo-schedule-segments button:last-child { border-right: 0; }
 .uppdrag-scope .gizmo-schedule-segments button[aria-pressed='true'] { background: var(--uppdrag-selected); box-shadow: inset 0 -2px var(--uppdrag-ink); font-weight: 650; }
 .gizmo-gantt { --schedule-label-width: 200px; margin-top: 10px; }
-.gizmo-gantt-viewport { width: 100%; max-height: 510px; overflow: auto; border: 1px solid var(--uppdrag-line); background: white; scrollbar-gutter: stable; }
+.gizmo-gantt-viewport { width: 100%; min-height: 180px; max-height: 510px; overflow: auto; border: 1px solid var(--uppdrag-line); background: white; scrollbar-gutter: stable; }
+.gizmo-gantt-resize-tools { display: flex; border: 1px solid var(--uppdrag-line); border-top: 0; background: var(--uppdrag-paper); }
+.gizmo-gantt-resizer { display: flex; flex: 1; align-items: center; justify-content: center; min-width: 0; height: 36px; cursor: ns-resize; touch-action: none; user-select: none; color: var(--uppdrag-muted); }
+.gizmo-gantt-resizer:hover { background: var(--uppdrag-selected); color: var(--uppdrag-ink); }
+.gizmo-gantt-resizer:focus-visible { outline: 2px solid var(--uppdrag-link); outline-offset: -2px; background: var(--uppdrag-selected); }
+.uppdrag-scope .gizmo-gantt-reset-height { border: 0; border-left: 1px solid var(--uppdrag-line); border-radius: 0; background: transparent; }
 .gizmo-gantt-canvas { min-width: 100%; }
 .gizmo-gantt-header, .gizmo-gantt-row { display: grid; grid-template-columns: var(--schedule-label-width) minmax(0, 1fr); }
 .gizmo-gantt-header { height: 52px; position: sticky; top: 0; z-index: 4; background: var(--uppdrag-paper); border-bottom: 1px solid var(--uppdrag-line); }
@@ -102,6 +107,7 @@
 @media (max-width: 639px) {
   .gizmo-gantt { --schedule-label-width: 150px; }
   .gizmo-gantt-viewport { max-height: 430px; }
+  .gizmo-gantt-resizer { height: 44px; }
   .uppdrag-scope :is(.gizmo-schedule-button, .gizmo-schedule-icon, .gizmo-schedule-title, .gizmo-schedule-segments button) { min-height: 44px !important; }
   .uppdrag-scope .gizmo-schedule-icon { min-width: 44px; width: 44px; }
   .gizmo-schedule-table td { height: 46px; }
