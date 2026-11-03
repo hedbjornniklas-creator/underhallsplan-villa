@@ -38,6 +38,8 @@ import { normalizePropertyDetails, propertyIdentityKey } from '../src/lib/proper
 import { signingDraft } from '../test/fixtures/contract-signing.ts'
 import { renderContractSigningPdf } from '../src/lib/action-cases/contractSigningPdf.ts'
 import { publicContractParties } from '../src/lib/action-cases/customerContractParties.ts'
+import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
+import { offerProjectDetails } from '../src/lib/action-cases/offerProjectDetails.ts'
 import { emptyQuestion, questionMutation } from '../src/lib/action-cases/projectQuestions.ts'
 import { normalizeCostLine } from '../src/lib/action-cases/costing.ts'
 import { calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
@@ -263,6 +265,14 @@ if (process.argv.includes('--contract-changes')) {
 }
 const estimateState = { draft: structuredClone(state.draft), revision: state.revision, costing: structuredClone(state.costing ?? {}) }
 if (independentContract) { state.offers = []; state.offerDraft = estimateState }
+if (process.argv.includes('--offer-project-details')) {
+  state.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test', '0700000000', { companyName: 'Exempelbygg AB', email: 'bygg@example.test' })
+  Object.assign(state.draft.contractParties, { street: 'Fiktiv kundadress 8', postalCode: '12345', city: 'Teststad' })
+  state.draft.contractDetails = editContractProperty(emptyContractDetails(), { municipality: 'Teststad', cadastralDesignation: 'TESTET 33', street: 'Fiktiv byggplats 47', postalCode: '12346', city: 'Teststad' })
+  estimateState.draft.contractParties = emptyContractParties('Anna Exempel', '', '', state.draft.contractParties.contractor)
+  estimateState.draft.contractDetails = emptyContractDetails()
+  state.offerProjectDetails = offerProjectDetails(state.draft, state.revision)
+}
 if (process.argv.includes('--offer-alternatives')) {
   Object.assign(estimateState.draft, { contractForm: 'custom', items: [], baseAmountOre: null, contractPricing: undefined, attachmentIds: [], termsAttachmentId: null,
     paymentTerms: 'FIKTIVT: 30 dagar netto. Fakturering efter avslutad beställd del.', schedule: 'FIKTIV tidplan efter skriftlig beställning.', terms: 'FIKTIV beställning via mejl.',

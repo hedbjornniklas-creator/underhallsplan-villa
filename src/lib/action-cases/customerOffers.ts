@@ -80,6 +80,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  offerProjectDetails?: import('./offerProjectDetails').OfferProjectDetails
   deliveryAvailable?: boolean
   signingAvailable?: boolean
   signingVersions?: ContractSigningVersion[]

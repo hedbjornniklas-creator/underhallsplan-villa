@@ -73,7 +73,7 @@ test('the editor recovers only an unlocked contract and uses the existing queue 
   assert.match(editor, /if \(!active \|\| !contractView \|\| locked \|\| linkedRevision > workspace.revision \|\| recoveryChecked.current\) return/)
   assert.match(editor, /if \(!automatic\) localEdits.current = true/)
   assert.match(editor, /\(dirty && localEdits.current\)/)
-  assert.match(editor, /operation === 'refresh'\) \{ localEdits.current = false; initialUpgradeQueued.current = false \}/)
+  assert.match(editor, /operation === 'refresh'\) \{ localEdits.current = false; initialUpgradeQueued.current = false; appliedProjectDetails.current = null \}/)
   assert.match(editor, /state === 'restore'\) restoreDocuments\(backup\)/)
   assert.match(editor, /documentConflict.current = backup/)
   assert.match(editor, /if \(!recoveryChecked.current \|\| documentConflict.current\) return/)

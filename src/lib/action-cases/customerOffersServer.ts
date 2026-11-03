@@ -17,6 +17,7 @@ import { legacyChoiceCategories, normalizeChoiceCategories, normalizePlannedItem
 import { writeContractCustomer } from './customerRegistryServer'
 import { getContractSigningVersions } from './contractSigningServer'
 import { getProjectPropertyLink } from './propertyRegistryServer'
+import { offerProjectDetails } from './offerProjectDetails'
 import { standardContractForms, standardTermsFor, withStandardContractTerms, type StandardContractForm } from './standardContractTerms'
 import { ensureStandardTermsFile, findStandardTermsFile, standardTermsFileId, verifyStandardTermsFile } from './standardContractTermsServer'
 import {
@@ -102,6 +103,9 @@ export async function getCustomerOfferWorkspace(
   const estimate = target === 'contract' ? await db.from('action_case_customer_offer_drafts')
     .select('body,revision,internal_costing').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : null
   if (estimate) checked(estimate.error)
+  const contractSource = target === 'offer' ? await db.from('action_case_customer_contract_drafts')
+    .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : null
+  if (contractSource) checked(contractSource.error)
   const offers = await db
     .from('action_case_customer_offers')
     .select(CUSTOMER_OFFER_COLUMNS)
@@ -133,12 +137,17 @@ export async function getCustomerOfferWorkspace(
     checked(linked.error)
     customerNumber = linked.data ? String(linked.data.customer_number) : null
   }
+  const propertyLink = await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c)
+  const projectDetails = offerProjectDetails(target === 'contract' ? body
+    : contractSource?.data ? normalizeCustomerOffer(contractSource.data.body) : emptyCustomerOffer(c.title),
+    target === 'contract' ? savedDraft?.revision ?? 0 : contractSource?.data?.revision ?? 0, propertyLink.property)
   return {
+    offerProjectDetails: projectDetails,
     ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
     ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
     standardTermsFile: body.contractForm === 'abs18' || body.contractForm === 'hf17' ? await findStandardTermsFile(ctx.orgId, caseId, body.contractForm) : null,
-    propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
+    propertyLink,
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
       companyName: recipient.data.company_name, email: recipient.data.email, phone: recipient.data.phone } : null,

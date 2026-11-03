@@ -76,6 +76,8 @@ import CustomerOfferAlternatives from './CustomerOfferAlternatives'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
+import { withOfferProjectDetails, type OfferProjectDetails } from '@/lib/action-cases/offerProjectDetails'
+import { propertyFields } from '@/lib/properties/identity'
 import CustomerContractSigning from './CustomerContractSigning'
 
 const field =
@@ -117,6 +119,7 @@ export default function CustomerOfferEditor({
   linkedRevision = 0,
   contractorSource,
   draftTarget = 'contract',
+  projectDetails,
   projectOperationPending = false,
   offerItems = []
 }: {
@@ -136,12 +139,14 @@ export default function CustomerOfferEditor({
   linkedRevision?: number
   contractorSource?: Partial<ContractContractor>
   draftTarget?: 'contract' | 'offer'
+  projectDetails?: OfferProjectDetails
   projectOperationPending?: boolean
   offerItems?: CustomerOfferItem[]
 }) {
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
-    [draft, setDraft] = useState<CustomerOfferDraft>(() => draftTarget === 'offer' ? initial.draft : ({ ...draftForEditing(initial),
+    [draft, setDraft] = useState<CustomerOfferDraft>(() => draftTarget === 'offer' ? !active || initial.offers.some(offer => offer.status === 'accepted') ? initial.draft : withOfferProjectDetails(initial.draft, projectDetails ?? initial.offerProjectDetails,
+      emptyContractParties(initialCustomer?.name ?? actionCase.customerName, initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })) : ({ ...draftForEditing(initial),
       contractParties: initial.draft.contractParties ?? emptyContractParties(initialCustomer?.name ?? actionCase.customerName,
         initialCustomer?.email ?? '', initialCustomer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
     }))
@@ -157,6 +162,7 @@ export default function CustomerOfferEditor({
   const recoveryChecked = useRef(false)
   const initialUpgradeQueued = useRef(false)
   const applyDraftUpgrade = useRef<() => void>(() => {})
+  const applyProjectDetailsUpgrade = useRef<() => void>(() => {})
   const recoverDocuments = useRef<() => void>(() => {})
   const documentConflict = useRef<ContractDocumentDraft | null>(null)
   const [documentRecovery, setDocumentRecovery] = useState<ContractDocumentDraft | null>(null)
@@ -185,6 +191,10 @@ export default function CustomerOfferEditor({
   useEffect(() => { senderOperation.current = projectOperationPending }, [projectOperationPending])
   const busy = senderPending ? 'sender_profile' : actionBusy
   const [confirmed, setConfirmed] = useState(false)
+  const appliedProjectDetails = useRef<string | null>(null)
+  const offerDetailsSource = projectDetails && projectDetails.revision >= (workspace.offerProjectDetails?.revision ?? 0)
+    ? projectDetails : workspace.offerProjectDetails
+  const offerDetailsKey = JSON.stringify(offerDetailsSource ?? null)
   const [confirmItemized, setConfirmItemized] = useState(false)
   const parties = draft.contractParties ?? emptyContractParties(customer?.name ?? actionCase.customerName, customer?.email ?? '', customer?.phone ?? '', { companyName: issuerName, email: replyEmail, ...contractorSource })
   const contractView = view === 'contract'
@@ -284,7 +294,9 @@ export default function CustomerOfferEditor({
     ...(standardTermsFile && !actionCase.attachments.some((f) => f.id === standardTermsFile.id)
       ? [{ ...standardTermsFile, type: 'document' as const, title: standardTermsForFile(standardTermsFile)?.name ?? standardTermsFile.fileName }] : [])]
   const baseAmount = customerOfferBaseAmount(draft)
-  const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1
+  const offerDetailsPending = draftTarget === 'offer' && !locked && appliedProjectDetails.current !== offerDetailsKey &&
+    JSON.stringify(withOfferProjectDetails(draft, offerDetailsSource, parties)) !== JSON.stringify(draft)
+  const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1 || offerDetailsPending
   const offerPdfControl = offerPdfBlocked
     ? <button type="button" className={`${button} bg-white`} disabled title="Vänta tills offertens ändringar är sparade"><Download size={17} />Offert (PDF)</button>
     : <a className={`${button} bg-white`} href={`/api/action-cases/${actionCase.id}/customer-offers/pdf?revision=${workspace.revision}`} target="_blank" rel="noopener noreferrer"><Download size={17} />Offert (PDF)</a>
@@ -325,6 +337,16 @@ export default function CustomerOfferEditor({
     setConfirmed(false)
   }
   applyDraftUpgrade.current = () => update(currentSnapshot.current.draft, true)
+  applyProjectDetailsUpgrade.current = () => {
+    const next = withOfferProjectDetails(currentSnapshot.current.draft, offerDetailsSource, parties)
+    if (JSON.stringify(next) !== JSON.stringify(acknowledgedDraft.current)) update(next, true)
+  }
+  useEffect(() => {
+    if (draftTarget !== 'offer' || !active || locked || busy || sourcePending || autosave.isPending() || autosave.state?.status === 'error' ||
+      appliedProjectDetails.current === offerDetailsKey) return
+    appliedProjectDetails.current = offerDetailsKey
+    applyProjectDetailsUpgrade.current()
+  }, [draftTarget, active, locked, busy, sourcePending, autosave, offerDetailsKey])
   const updateCosting = (id: string, calculation: CustomerOfferCosting[string]) => {
     if (senderOperation.current) return
     localEdits.current = true
@@ -483,7 +505,7 @@ export default function CustomerOfferEditor({
         costing: operation === 'save' ? retainNewerDraft(currentSnapshot.current.costing, costing, data.costing ?? {}) : data.costing ?? {},
       }
       currentSnapshot.current = next
-      if (operation === 'refresh') { localEdits.current = false; initialUpgradeQueued.current = false }
+      if (operation === 'refresh') { localEdits.current = false; initialUpgradeQueued.current = false; appliedProjectDetails.current = null }
       setDraft(next.draft)
       setCosting(next.costing)
       persistDocuments(next.draft)
@@ -860,6 +882,11 @@ export default function CustomerOfferEditor({
                 <h3 className="font-semibold">Beställare</h3>
                 <ContractCustomerEditor value={parties} onChange={contractParties => update({ contractParties })} />
               </section>
+              {draftTarget === 'offer' && draft.contractDetails?.property && <section className="border-b border-slate-200 pb-4">
+                <h3 className="mb-3 font-semibold">Fastigheten</h3>
+                <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">{propertyFields.filter(({ key }) => draft.contractDetails?.property?.[key]).map(({ key, title }) =>
+                  <div key={key} className="min-w-0"><dt className="text-[#596368]">{title}</dt><dd className="mt-1 break-words">{draft.contractDetails!.property![key]}</dd></div>)}</dl>
+              </section>}
               {draft.offerAlternatives && <section className="space-y-4 border-b border-slate-200 pb-4"><h3 className="font-semibold">Entreprenör</h3><ContractContractorEditor value={parties.contractor} source={contractorSource} companyFieldsReadonly={Boolean(draft.senderProfile)} onChange={contractor => update({ contractParties: { ...parties, contractor } })} /></section>}
               {(draft.contractForm === 'ab04' || draft.contractForm === 'abt06' || parties.business) && <section className="space-y-4 border-b border-slate-200 pb-4">
                 <label className="block text-sm">Standardbestämmelser (PDF)<select aria-label="Standardbestämmelser (PDF)" className={field} value={draft.termsAttachmentId ?? ''} onChange={event => {

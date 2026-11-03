@@ -51,6 +51,20 @@
   och betalningsplan andras inte.
 - Befintlig JSON-lagring ateranvands. Ingen ny SQL-migrering behovs for detta.
 
+## Komplettering av offertuppgifter 2026-11-03
+
+- Nar offertvyn oppnas hamtas saknade bestallar- och fastighetsuppgifter fran
+  projektets sparade avtalsuppgifter. Kopplad fastighet anvands som reserv om
+  avtalsutkastet inte har strukturerade fastighetsuppgifter.
+- Uppgifterna visas i offertutkastet och sparas med dess vanliga revisionsstyrda
+  autosparning innan PDF-knappen blir tillganglig. PDF-mallen gor ingen dold
+  sammanslagning med nyare avtalsdata.
+- Redan ifyllda offertuppgifter behalls. Olika bestallare eller adresser blandas
+  inte. Personnummer, avsandare, priser, omfattning, betalningsplan och villkor
+  kopieras inte. Fastigheten visas aven under offertuppgifter.
+- Kopplingen skriver endast offertutkastet. Avtal, Projektarbete, kundregister,
+  skickade versioner och lasta dokument andras inte. Inga nya SQL-steg kravs.
+
 ## Installation
 
 Kor `docs/db/2026-11-03_01_running_price_budget.sql` och darefter

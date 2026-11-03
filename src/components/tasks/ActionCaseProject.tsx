@@ -234,7 +234,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         </div>
         <div hidden={view !== 'offer' && view !== 'offerReview'}>
           {estimate && <CustomerOfferEditor key={`offer:${senderReset}`} actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource} projectOperationPending={senderPending}
-            embedded draftTarget="offer" active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
+            embedded draftTarget="offer" projectDetails={offer?.offerProjectDetails} active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
             onViewChange={navigateOffer} onWorkspaceChange={receiveEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
         </div>
         <section hidden={view !== 'schedule'}>

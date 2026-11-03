@@ -9,6 +9,7 @@ import * as costingDomain from '../src/lib/action-cases/customerOfferCosting.ts'
 import * as choiceCostingDomain from '../src/lib/action-cases/customerChoiceCosting.ts'
 import * as choiceOfferDomain from '../src/lib/action-cases/choiceOffer.ts'
 import * as planningDomain from '../src/lib/action-cases/customerPlanning.ts'
+import * as projectDetailsDomain from '../src/lib/action-cases/offerProjectDetails.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import { emptyContractDetails } from '../src/lib/action-cases/customerContract.ts'
 import { emptyContractParties } from '../src/lib/action-cases/customerContractParties.ts'
@@ -263,6 +264,7 @@ function harness(options = {}) {
     },
     './customerRegistryServer': { async writeContractCustomer(ctx, caseId, payload, bind) { calls.push({ name: 'writeContractCustomer', ctx, caseId, payload, bind }) } },
     './propertyRegistryServer': { async getProjectPropertyLink(propertyId, available) { return { available, property: propertyId ? { id: propertyId } : null } } },
+    './offerProjectDetails': projectDetailsDomain,
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin },
     '@/lib/assignments/tokens': {
       generateAssignmentToken: () => token,
@@ -330,6 +332,28 @@ test('workspace exposes an independent saved offer alongside the contract, witho
   assert.equal(estimate.draft.title, 'Bara offert')
   assert.equal(estimate.offerDraft, undefined)
   assert.equal(h.sent.length, 0)
+})
+
+test('offer workspace exposes saved project facts separately, with organization filtering and no writes', async () => {
+  const h = harness(), ctx = { orgId: id(90), userId: id(91) }
+  h.draft.contractParties = emptyContractParties('Anna Exempel', 'anna@example.test')
+  Object.assign(h.draft.contractParties, { street: 'Fiktiv adress 10', postalCode: '12345', city: 'Teststad' })
+  h.draft.contractParties.customers[0].personalNumber = '19000101-0000'
+  h.draft.contractDetails = emptyContractDetails()
+  h.draft.contractDetails.property = { municipality: 'Teststad', cadastralDesignation: 'TESTET 1', street: 'Byggplatsen 2', postalCode: '12346', city: 'Teststad' }
+  const before = structuredClone(h.draft)
+  const offer = await h.api.getCustomerOfferWorkspace(ctx, id(1), 'offer')
+  assert.equal(offer.offerProjectDetails.customer.street, 'Fiktiv adress 10')
+  assert.equal(offer.offerProjectDetails.customer.customers[0].personalNumber, '')
+  assert.equal(offer.offerProjectDetails.property.cadastralDesignation, 'TESTET 1')
+  assert.equal(offer.offerProjectDetails.revision, 1)
+  assert.ok(h.reads.filter(read => read.table === 'action_case_customer_contract_drafts').every(read =>
+    read.filters.some(([key, value]) => key === 'org_id' && value === ctx.orgId) && read.filters.some(([key, value]) => key === 'action_case_id' && value === id(1))))
+  assert.deepEqual(h.draft, before)
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.sent.length, 0)
+  const contract = await h.api.getCustomerOfferWorkspace(ctx, id(1))
+  assert.deepEqual(contract.offerProjectDetails, offer.offerProjectDetails)
 })
 
 test('running offer hours save only to the independent offer and never dispatch or update a contract', async () => {
