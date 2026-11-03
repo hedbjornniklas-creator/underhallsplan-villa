@@ -244,7 +244,7 @@ begin
       'budgetOre',null,'hourlyOre',p#>'{running,hourlyOre}','markupPercent',p#>'{running,markupPercent}');
     -- A combined legacy budget cannot be guessed into separate components.
     if m='budget' and p->>'split'='separate' then return null; end if;
-    if m='budget' then c:=c||jsonb_build_object('budgetOre',(select x->'amountOre' from jsonb_array_elements(p#>'{budget,rows}') x where x->'id'=r->'id')); end if;
+    if m='budget' and k='combined' then c:=c||jsonb_build_object('budgetOre',(select x->'amountOre' from jsonb_array_elements(p#>'{budget,rows}') x where x->'id'=r->'id')); end if;
     t:=t||jsonb_build_object(k,c);
   end loop;
   return t;

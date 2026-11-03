@@ -41,6 +41,11 @@ funktionskroppar matchar den testade SQL-filen exakt; tabellerna ar tomma och
 ingen befintlig prisinformation har konverterats. Den rena byggkopians 868
 Uppdragstester och produktionsbygge passerar. Tidigare beslut nedan ar historik.
 
+Uppfoljningen 2026-11-03_04_project_price_candidate_split.sql hindrar att en
+samlad aldre budget kopieras till bada inaktiva delfalten. Byte till separata
+prisformer kraver egna belopp, inte en gissad fordelning. Patchen skriver inte
+om nagra prisvillkor eller dokument och kan koras igen.
+
 ## Beslut 2026-10-29
 
 - Lankade moment delar rubrik, omfattning, forutsattningar, undantag, avradan

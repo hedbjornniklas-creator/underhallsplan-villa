@@ -624,6 +624,16 @@ test('shared components coexist with independent legacy budget rows without losi
   body.contractPricing.running = { hourlyOre: 75000, managementOre: null, markupPercent: 15, approximateOre: null }
   body.contractPricing.budget = { version: 1, rows: [{ id: first, amountOre: 12345678 }, { id: manual, amountOre: 2000000 }], assumptions: 'Tidigare budgetvillkor.', reviewTerms: 'Samrad.' }
   await f.saveOffer(body); await f.save(normalizeCustomerOffer(body))
+  const candidates = (await f.prices()).candidates
+  assert.equal(candidates[0].terms.combined.budgetOre, 12345678)
+  assert.equal(candidates[0].terms.labour.budgetOre, null)
+  assert.equal(candidates[0].terms.material.budgetOre, null)
+  const beforePatch = { offer: await f.offerState(), contract: await f.state() }
+  await db.exec(read('2026-11-03_04_project_price_candidate_split'))
+  await db.exec(read('2026-11-03_04_project_price_candidate_split'))
+  assert.deepEqual(await f.offerState(), beforePatch.offer)
+  assert.deepEqual(await f.state(), beforePatch.contract)
+  assert.deepEqual((await f.prices()).candidates, candidates)
   await f.writePrice(terms())
   for (const saved of [await f.offerState(), await f.state()]) {
     assert.equal(saved.body.baseAmountOre, 25000000)
