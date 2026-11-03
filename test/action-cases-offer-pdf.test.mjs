@@ -69,8 +69,21 @@ test('offers without structured prices omit the empty total but keep real zero a
   assert.equal(contractSigningSections({ ...input, kind: undefined }).some(part => part.group === 'price'), true)
   assert.equal(contractSigningSections({ ...input, kind: undefined }).find(part => part.title === 'Uppdraget').blocks, undefined)
   assert.deepEqual(snapshot, before)
-  assert.equal(contractSigningSections({ ...input, snapshot: { ...snapshot, baseAmountOre: 0 } }).find(part => part.group === 'price').rows.at(-1)[1], offers.money(0))
+  assert.equal(contractSigningSections({ ...input, snapshot: { ...snapshot, baseAmountOre: 0 } }).find(part => part.group === 'price' && part.rows).rows.at(-1)[1], offers.money(0))
   assert.equal(contractSigningSections({ ...input, snapshot: { ...snapshot, items: [{ id: id(10), kind: 'included', title: 'Ofullständig rad', scope: '', amountOre: null }] } }).some(part => part.group === 'price'), true)
+})
+test('legacy fixed offers use the standard compensation text without changing or allocating existing prices', () => {
+  const snapshot = signingSnapshot()
+  delete snapshot.contractPricing
+  const before = structuredClone(snapshot)
+  const parts = contractSigningSections({ snapshot, files: [], kind: 'offer' }).filter(part => part.group === 'price')
+  assert.deepEqual(parts.map(part => part.title), ['Ersättningsmodell', 'Fasta priser'])
+  assert.equal(parts[0].paragraphs[0], 'Fast pris gäller för den omfattning och de leveranser som anges i offerten.')
+  assert.equal(parts[1].rows.at(-1)[1], offers.money(snapshot.baseAmountOre))
+  assert.deepEqual(snapshot, before)
+  const editor = readFileSync(new URL('../src/components/tasks/CustomerOfferEditor.tsx', import.meta.url), 'utf8')
+  assert.match(editor, /onMixed=\{\(\) => \{[\s\S]*?contractPricingForEditing\(draft\), mode: 'mixed'/)
+  assert.match(editor, /onChange=\{onMixed\} \/>Fast \+ löpande/)
 })
 test('mixed offer keeps fixed compensation and running budget separate without a combined cost plan', async () => {
   const snapshot = signingSnapshot()

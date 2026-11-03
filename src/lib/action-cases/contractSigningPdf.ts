@@ -8,7 +8,7 @@ import { customerOfferBaseAmount, money, type CustomerOfferSnapshot, type Custom
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
+import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -144,7 +144,10 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
         { label: 'Uppföljning och samråd', text: price.budget.reviewTerms },
       ]))
     }
-  } else if (kind !== 'offer' || included.length || customerOfferBaseAmount(s) !== null) result.push({ ...section('price', 'Priset'), columns: ['Moment', 'Pris inkl. moms'], numericColumns: [1], columnWidths: [0.68, 0.32], totalRow: true, rows: [...(s.pricingMode === 'itemized' ? included.map((i) => [i.title, pdfMoney(i.amountOre)]) : []), ['Totalsumma', pdfMoney(customerOfferBaseAmount(s))]] })
+  } else if (kind !== 'offer' || included.length || customerOfferBaseAmount(s) !== null) {
+    if (kind === 'offer') result.push(section('price', 'Ersättningsmodell', offerCompensationText(contractPricingForEditing(s))))
+    result.push({ ...section('price', kind === 'offer' ? 'Fasta priser' : 'Priset'), columns: ['Moment', 'Pris inkl. moms'], numericColumns: [1], columnWidths: [0.68, 0.32], totalRow: true, rows: [...(s.pricingMode === 'itemized' ? included.map((i) => [i.title, pdfMoney(i.amountOre)]) : []), ['Totalsumma', pdfMoney(customerOfferBaseAmount(s))]] })
+  }
   const changes = d?.changesPricing
   if (changes) {
     result.push(section('changes', 'Ändringar och tilläggsarbeten', changes.standardText, changes.notes))

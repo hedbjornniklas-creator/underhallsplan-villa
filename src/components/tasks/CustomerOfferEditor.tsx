@@ -85,12 +85,13 @@ const field =
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
-function OfferPriceForm({ onRunning, onBudget }: { onRunning: () => void; onBudget: () => void }) {
+function OfferPriceForm({ onRunning, onBudget, onMixed }: { onRunning: () => void; onBudget: () => void; onMixed: () => void }) {
   const name = useId()
   return <fieldset className="mb-4 min-w-0"><legend className="mb-2 text-sm font-medium">Prisform</legend><div className="gizmo-price-modes">
     <label className="selected"><input type="radio" name={name} checked readOnly />Fast pris</label>
     <label><input type="radio" name={name} checked={false} onChange={onRunning} />Löpande räkning</label>
     <label><input type="radio" name={name} checked={false} onChange={onBudget} />Löpande räkning med budget</label>
+    <label><input type="radio" name={name} checked={false} onChange={onMixed} />Fast + löpande</label>
   </div></fieldset>
 }
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
@@ -664,6 +665,9 @@ export default function CustomerOfferEditor({
       }} onBudget={() => {
         setConfirmItemized(false)
         update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running', budget: { version: 1, rows: [], assumptions: '', reviewTerms: defaultBudgetReviewTerms } }, pricingMode: 'total', baseAmountOre: null })
+      }} onMixed={() => {
+        setConfirmItemized(false)
+        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'mixed' }, pricingMode: 'total' })
       }} />}
     <label className="block text-sm">Prissättning av grundåtagandet
       <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {

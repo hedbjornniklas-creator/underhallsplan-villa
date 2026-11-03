@@ -11,6 +11,7 @@ import { ContractPriceDocument } from './CustomerContractPricing'
 import { OfferHourEstimateDocument } from './CustomerOfferHourEstimate'
 import { OfferAlternativesDocument } from './CustomerOfferAlternatives'
 import { contractFormName } from '@/lib/action-cases/standardContractTerms'
+import { contractPricingForEditing, offerCompensationText } from '@/lib/action-cases/contractPricing'
 import {
   customerOfferBaseAmount,
   customerOfferOptionGroup,
@@ -249,6 +250,7 @@ export default function CustomerOfferDocument({
         <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{s.contractDetails.assignment.standardConditions.text}</p>
       </section>}
       {purpose === 'contract' && <CustomerContractDocument value={s.contractDetails} omitParties={Boolean(s.contractParties)} fileUrl={fileUrl} />}
+      {purpose === 'offer' && !s.contractPricing && <section className="border-t border-slate-200 py-6"><h3 className="text-lg font-semibold">Ersättningsmodell</h3><p className="mt-2 text-sm">{offerCompensationText(contractPricingForEditing(s))}</p></section>}
       {s.contractPricing && <div className="border-t border-slate-200 py-6"><ContractPriceDocument value={s.contractPricing} purpose={purpose} />
         {purpose === 'offer' && <OfferHourEstimateDocument draft={s} />}
       </div>}
