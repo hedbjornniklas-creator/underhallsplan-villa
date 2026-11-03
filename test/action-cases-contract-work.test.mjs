@@ -43,7 +43,7 @@ test('preflight prevents AI and mail side effects for direct, line-derived and g
   assert.equal(h.calls.length,before)
 })
 test('HTTP rejects locked mutations before running AI, writing or emailing, and price revisions map to conflicts',async()=>{
-  const calls=[], deps=Object.fromEntries(['server','costingAiAlerts','quotesServer','quoteRequestsServer','workPartsServer','quotePackagesServer','rfqDeliveryServer','scopeDraft','costCompletionServer'].map(n=>[`@/lib/action-cases/${n}`,{}]))
+  const calls=[], deps=Object.fromEntries(['server','costingAiAlerts','quotesServer','quoteRequestsServer','workPartsServer','quotePackagesServer','rfqDeliveryServer','scopeDraft','costCompletionServer','projectCustomerPricingServer'].map(n=>[`@/lib/action-cases/${n}`,{}]))
   const api=load('src/app/api/action-cases/route.ts',{...deps,'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},'@/lib/access/server':{requireModuleAccess:async()=>{}},'@/lib/assignments/server':{requireOrgContext:async()=>ctx},
     '@/lib/action-cases/costingAiServer':{generateActionCaseCosts:async()=>calls.push('ai')},
     '@/lib/action-cases/contractWorkServer':{assertContractWorkMutation:async(_,action)=>{if(action!=='update_contract_work_price')throw Error('ACTION_CASE_CONTRACT_LOCKED')},writeContractWorkPrice:async()=>{throw Error('CUSTOMER_OFFER_STALE')}}})

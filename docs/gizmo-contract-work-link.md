@@ -1,5 +1,46 @@
 # Gemensamma arbetsuppgifter i Projektarbete och Avtal
 
+Senaste beslutet nedan (2026-11-03) ersatter den tidigare separata hanteringen av
+offertpriser. Gamla utkast och lasta dokument kopplas inte om automatiskt.
+
+## Beslutsandring 2026-11-03: Kundpris Per Moment I Projektarbete
+
+Anvandaren har uttryckligen beslutat att prisform och kundprisvillkor ska anges
+per moment i Projektarbete och anvandas av bade Offert och Avtal. Arbete och
+material far ha olika prisformer. Intern kalkyl ar fortfarande separat.
+
+- En egen flik Kundpris skiljer kundvillkor fran Omfattning och intern Kalkyl.
+  Valen ar samlat pris eller separat arbete/material. Varje aktiv del kan ha
+  fast pris, lopande rakning eller lopande rakning med planeringsbudget.
+  Fasta belopp, timpriser och budget anges inklusive moms; sjalvkostnadspaslag
+  anges exklusive moms och ar inte moms. Noll och tomt belopp ar olika saker.
+- Kundvillkoren lagras en gang per projektmoment i action_case_customer_prices.
+  Dokumentutkast har revisionerade projektioner av samma villkor. Projektionerna
+  uppdateras atomart, medan redan skickade och frysta snapshots aldrig skrivs om.
+  PDF och kundvisning anvander dokumentets sparade version, inte levande kalkyl.
+- Befintliga skillnader maste granskas vid uttrycklig aktivering. Kandidater
+  fran Offert och Avtal visas utan att valjas automatiskt. Intern kalkyl ar
+  aldrig en kandidat. Manuella klumpsummor delas inte upp: byt uttryckligen till
+  radbaserat pris i dokumentet och granska beloppen innan momentet kopplas.
+  En befintlig gemensam timuppskattning maste ocksa hanteras uttryckligen; dess
+  timmar eller timpris fordelas aldrig genom gissning pa de nya delpriserna.
+- Efter aktivering autosparas redigering i Projektarbete. Prisformer och belopp
+  for dessa moment ar skrivskyddade i Offert och Avtal. Dokumentets redovisningsval
+  ar fortfarande separata. Ingen prisandring gor ett kundval till en bestallning.
+- Projektlas, medlemskontroll, CAS-revisioner och idempotenta request-ID skyddar
+  skrivningarna. Fel bevarar anvandarens inmatning. Aldre flikar far inte tappa
+  nya prisvillkor. Lasta moment kan inte anta eller andra den gemensamma modellen.
+  Ett helt last avtalsutkast hoppas over aven vid prisandring pa ett annat moment.
+- Lokevagen 6, andra lasta avtal, signerade kopior och deras underlag far inte
+  migreras eller synkas om. SQL-filen har ingen backfill och andrar inga utkast.
+
+Driftsattning: kor docs/db/2026-11-03_03_project_customer_pricing.sql efter
+budgetmigreringen 2026-11-03_01 och de tidigare arbetskopplingarna. Anvandaren
+begarde publicering 2026-11-03. Produktionskontrollen visar att samtliga tio
+funktionskroppar matchar den testade SQL-filen exakt; tabellerna ar tomma och
+ingen befintlig prisinformation har konverterats. Den rena byggkopians 868
+Uppdragstester och produktionsbygge passerar. Tidigare beslut nedan ar historik.
+
 ## Beslut 2026-10-29
 
 - Lankade moment delar rubrik, omfattning, forutsattningar, undantag, avradan

@@ -157,6 +157,7 @@ test('action-case API keeps technical AI failures private and schedules admin ha
       if (name === '@/lib/action-cases/costingAiServer') return { generateActionCaseCosts: async () => { throw new Error(`ACTION_CASE_AI_${errorCode}`) } }
       if (name === '@/lib/action-cases/costingAiAlerts') return { scheduleActionCaseAiAdminAlert: (code) => alerts.push(code) }
       if (name === '@/lib/action-cases/contractWorkServer') return { assertContractWorkMutation: async () => {} }
+      if (name === '@/lib/action-cases/projectCustomerPricingServer') return {}
       if (['@/lib/action-cases/server', '@/lib/action-cases/quotesServer', '@/lib/action-cases/quoteRequestsServer', '@/lib/action-cases/workPartsServer', '@/lib/action-cases/quotePackagesServer', '@/lib/action-cases/rfqDeliveryServer', '@/lib/action-cases/scopeDraft', '@/lib/action-cases/costCompletionServer'].includes(name)) return {}
       throw new Error(name)
     })

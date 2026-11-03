@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Calculator, Check, ClipboardList, ListChecks, Loader2, LockKeyhole, Mail, MoreHorizontal, Pencil, Plus, Printer, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import { Calculator, Check, ClipboardList, CircleDollarSign, ListChecks, Loader2, LockKeyhole, Mail, MoreHorizontal, Pencil, Plus, Printer, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseCostSuggestion, ActionCaseItemView, ActionCaseView } from '@/lib/action-cases/contracts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
@@ -17,6 +17,9 @@ import type { ScopeSaveState } from './useActionScopeAutosave'
 import ActionCaseCostHelp from './ActionCaseCostHelp'
 import ActionCasePurchaseList from './ActionCasePurchaseList'
 import ActionCaseContractPrice from './ActionCaseContractPrice'
+import ActionCaseCustomerPricing from './ActionCaseCustomerPricing'
+import type { CustomerPricingEntry } from './useProjectCustomerPricingAutosave'
+import type { ProjectCustomerPricing } from '@/lib/action-cases/projectCustomerPricing'
 import { contractWorkFields } from '@/lib/action-cases/contractWork'
 import { overlayCalculation, type CalculationEdit } from '@/lib/action-cases/calculationSave'
 import type { useActionCalculationAutosave, CalculationEntry } from './useActionCalculationAutosave'
@@ -39,6 +42,10 @@ type Props = {
   scopeSave?: ScopeSaveState
   scopeBlocked: boolean
   calculation?: ReturnType<typeof useActionCalculationAutosave>
+  customerPricingEntry?: CustomerPricingEntry
+  onCustomerPricingChange?: (terms: ProjectCustomerPricing, immediate?: boolean) => void
+  onCustomerPricingRetry?: () => void
+  onCustomerPricingReload?: () => void
   onReloadCalculation?: () => Promise<void>
   onScopeChange: (draft: ActionScopeDraft) => void
   onScopeFlush: () => void
@@ -131,13 +138,13 @@ function Proposal({ proposal, stale, busy, onApply }: {
   </section>
 }
 
-export default function ActionCaseItemSheet({ item, caseId, projectTitle, deliveryAddress, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, calculation, onReloadCalculation, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
+export default function ActionCaseItemSheet({ item, caseId, projectTitle, deliveryAddress, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, calculation, customerPricingEntry, onCustomerPricingChange, onCustomerPricingRetry, onCustomerPricingReload, onReloadCalculation, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
   const backdropPress = useRef(false)
   const tabId = useId()
   const deleteConfirmation = useRef<HTMLElement>(null)
   const inFlight = useRef(false)
-  const [tab, setTab] = useState<'scope' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
+  const [tab, setTab] = useState<'scope' | 'price' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
   const draft = scopeSave?.draft ?? actionScopeDraft(item, scopeAttachmentIds(item, attachments))
   const { title, scope, scopeConditions = '', scopeExclusions = '', scopeAdvice = '', scopeAttachmentIds: selectedFiles } = draft
   const locked = Boolean(item.contractWork?.locked)
@@ -211,10 +218,10 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
   }
   const close = () => {
     if (working) return
-    if (costDirty && !window.confirm('Stäng utan att spara kalkyländringarna?')) return
+    if (costDirty && !window.confirm(tab === 'price' ? 'Stäng utan att koppla de påbörjade kundprisvillkoren?' : 'Stäng utan att spara kalkyländringarna?')) return
     onClose()
   }
-  const selectTab = (next: 'scope' | 'cost') => {
+  const selectTab = (next: 'scope' | 'price' | 'cost') => {
     if (next === tab || costDirty || working) return
     onScopeFlush(); setTab(next)
   }
@@ -248,7 +255,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
           <button type="button" className={`${secondary} h-11 w-11 px-0`} aria-label="Stäng åtgärd" title="Stäng" disabled={working} onClick={close}><X size={20} /></button>
         </div>
       </header>
-      <div role="tablist" aria-label="Åtgärdens innehåll" className="gizmo-register-tabs" onKeyDown={(event) => {
+      <div role="tablist" aria-label="Åtgärdens innehåll" className="gizmo-register-tabs gizmo-item-tabs" onKeyDown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
         event.preventDefault()
         const tabs = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]:not(:disabled)'))
@@ -256,10 +263,10 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length
         tabs[next]?.focus(); tabs[next]?.click()
       }}>
-        {([['scope', 'Omfattning', ClipboardList], ['cost', 'Kalkyl', Calculator]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}`} aria-controls={`${tabId}-panel`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} disabled={(costDirty || working) && tab !== key} onClick={() => selectTab(key)} className="gizmo-register-tab"><Icon size={17} aria-hidden="true" />{label}</button>)}
+        {([['scope', 'Omfattning', ClipboardList], ...(onCustomerPricingChange ? [['price', 'Kundpris', CircleDollarSign] as const] : []), ['cost', 'Kalkyl', Calculator]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}`} aria-controls={`${tabId}-panel`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} disabled={(costDirty || working) && tab !== key} onClick={() => selectTab(key)} className="gizmo-register-tab"><Icon size={17} aria-hidden="true" />{label}</button>)}
       </div>
       <div role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-        {item.contractWork && <div className="mb-4 border-l-2 border-[#3D6763] bg-[#EDF1F0] p-3 text-sm" role="status">
+        {item.contractWork && (locked || item.contractWork.price.editable || item.contractWork.customerPricing?.terms) && <div className="mb-4 border-l-2 border-[#3D6763] bg-[#EDF1F0] p-3 text-sm" role="status">
           <strong className="flex items-center gap-2">{locked && <LockKeyhole size={16} />}{locked ? `Ingår i låst avtal · version ${item.contractWork.version}` : 'Kopplad till Avtal'}</strong>
           <p className="mt-1">{locked ? 'Omfattning, avtalat pris och kalkyl är låsta.' : 'Omfattning och avtalat kundpris hålls lika i Projektarbete och Avtal.'}</p>
           {item.contractWork.differences.length > 0 && <p className="mt-2 text-amber-900">Befintlig skillnad mot avtalet: {item.contractWork.differences.map(key => contractWorkFields.find(([field]) => field === key)?.[1] ?? key).join(', ')}. Ingen uppgift har skrivits över.</p>}
@@ -270,7 +277,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
           {dirty && <p className="mt-2 text-sm">Osparade ändringar i åtgärden kastas.</p>}
           <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondary} disabled={working} onClick={() => setConfirmDelete(false)}>Avbryt</button><button type="button" className={`${secondary} text-rose-700`} disabled={working} onClick={() => void run(onDelete)}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Ta bort permanent</button></div>
         </section>}
-        {tab === 'scope' ? <fieldset disabled={mutationBlocked} className="space-y-5">
+        {tab === 'price' && onCustomerPricingChange ? <ActionCaseCustomerPricing item={item} entry={customerPricingEntry} blocked={working} onChange={onCustomerPricingChange} onRetry={() => onCustomerPricingRetry?.()} onReload={() => onCustomerPricingReload?.()} onDraftDirty={setAgreedPriceDirty} /> : tab === 'scope' ? <fieldset disabled={mutationBlocked} className="space-y-5">
           <label className="block text-sm font-semibold">Rubrik *<input className={inputClass} value={title} onChange={(e) => changeScope({ title: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Arbetets omfattning<textarea className={`${inputClass} py-3 leading-6`} rows={5} value={scope} onChange={(e) => changeScope({ scope: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Förutsättningar (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeConditionsAvailable} value={scopeConditions} onChange={(e) => changeScope({ scopeConditions: e.target.value })} /></label>
@@ -284,7 +291,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
             {selectedFiles.some((id) => !attachments.some((file) => file.id === id)) ? <p role="status" className="mt-3 text-sm text-amber-800">En vald fil finns inte längre. <button type="button" className="underline" onClick={() => changeScope({ scopeAttachmentIds: selectedFiles.filter((id) => attachments.some((file) => file.id === id)) })}>Ta bort otillgängliga val</button></p> : null}
           </section>
         </fieldset> : <>
-          {item.contractWork && <ActionCaseContractPrice link={item.contractWork} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || lumpDirty || calculation?.hasUnsaved === true} onDirty={setAgreedPriceDirty} onSave={price => run(() => onCostAction('update_contract_work_price', { revision: item.contractWork!.revision, price }))} />}
+          {!onCustomerPricingChange && item.contractWork && <ActionCaseContractPrice link={item.contractWork} busy={working || dirty || Boolean(editing) || quoteEditing || bulkEditing || partEditing || lumpDirty || calculation?.hasUnsaved === true} onDirty={setAgreedPriceDirty} onSave={price => run(() => onCostAction('update_contract_work_price', { revision: item.contractWork!.revision, price }))} />}
           {item.lumpSum && <div className="gizmo-cost-toolbar"><div><h3>Intern kalkyl</h3><p>Exklusive moms</p></div><ActionCaseCostHelp /></div>}
           {item.lumpSumAvailable && (item.lumpSum || advanced === 'pricing') && <ActionCaseLumpSumEditor key={calculation ? item.id : JSON.stringify(item.lumpSum)} value={item.lumpSum ?? null} busy={mutationBlocked || (!calculation && dirty) || (!calculation && Boolean(editing)) || quoteEditing || bulkEditing || partEditing || !['scope_needed', 'pricing_needed', 'waiting_subcontractor', 'ready_for_quote'].includes(item.status)} onDirty={setLumpDirty}
             auto={calculation ? { entry: calculation.states[`lump:${item.id}`], onRetry: () => calculation.retry(`lump:${item.id}`), onChange: lumpSum => changeCalculation(`lump:${item.id}`, 'lump_sum', { lumpSum }), onModeChange: async lumpSum => {
@@ -359,7 +366,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
         <div role="status" aria-live="polite" aria-atomic="true" data-testid="scope-save-status" className={`${tab === 'cost' ? 'mb-2 ' : ''}flex h-8 min-w-0 items-center gap-2 text-xs text-slate-600`}>
-          {scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
+          {tab === 'price' ? <span>{locked ? 'Kundprisvillkoren är låsta' : customerPricingEntry?.status === 'error' ? 'Kundprisvillkor inte sparade' : customerPricingEntry && customerPricingEntry.status !== 'saved' ? 'Sparar kundprisvillkor…' : customerPricingEntry || item.contractWork?.customerPricing?.terms ? 'Kundprisvillkor sparade' : 'Kundprisvillkor inte kopplade'}</span> : scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
         </div>
         {tab === 'cost' && <>
           {calculation && <div className="mb-2 flex min-h-8 flex-wrap items-center gap-2 text-xs" aria-label="Kalkylens sparstatus" role="status">

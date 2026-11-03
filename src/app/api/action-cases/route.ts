@@ -31,6 +31,7 @@ import { revokeRfqDelivery } from '@/lib/action-cases/rfqDeliveryServer'
 import { scopeSavePayload } from '@/lib/action-cases/scopeDraft'
 import { setCostLineComplete } from '@/lib/action-cases/costCompletionServer'
 import { assertContractWorkMutation, writeContractWorkPrice } from '@/lib/action-cases/contractWorkServer'
+import { saveProjectCustomerPricing } from '@/lib/action-cases/projectCustomerPricingServer'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 90
@@ -57,6 +58,14 @@ function errorResponse(error: unknown) {
   if (code === 'ACTION_CASE_COST_LINE_INVALID') return NextResponse.json({ error: 'Kontrollera kalkylradens beskrivning, mängd, pris och påslag.', code }, { status: 400 })
   if (code === 'ACTION_CASES_SCHEMA_REQUIRED') return NextResponse.json({ error: 'Databasmigrationen för åtgärdsärenden behöver köras.', code }, { status: 503 })
   const quoteErrors: Record<string, [number, string]> = {
+    PROJECT_PRICE_STALE: [409, 'Kundprisvillkoren eller dokumenten har ändrats. Dina ändringar är kvar; hämta aktuellt underlag innan du fortsätter.'],
+    PROJECT_PRICE_READ_ONLY: [409, 'Momentets kundpris ändras i Projektarbete, inte i Offert eller Avtal.'],
+    PROJECT_PRICE_HOURS: [409, 'Offerten har en separat timuppskattning med ett gemensamt timpris. Granska och ta bort den under Priset innan momentens egna prisvillkor kopplas in. Inga timmar eller belopp fördelas automatiskt.'],
+    PROJECT_PRICE_ADOPT_REQUIRED: [409, 'Bekräfta först vilka gemensamma kundprisvillkor som ska användas.'],
+    PROJECT_PRICE_MANUAL_TOTAL: [409, 'Utkastet har en manuell klumpsumma. Välj summan av prisraderna i dokumentets prisinställningar innan du kopplar momentets kundpris. Belopp fördelas inte automatiskt.'],
+    PROJECT_PRICE_APPROXIMATE: [409, 'Utkastet innehåller en ungefärlig prisuppgift. Hantera den i dokumentets prisinställningar innan planeringsbudget kopplas in.'],
+    PROJECT_PRICE_REQUEST_CONFLICT: [409, 'Sparningen kunde inte bekräftas. Dina ändringar är kvar.'],
+    PROJECT_PRICE_UNCONFIRMED: [503, 'Kundpriset kunde inte bekräftas. Försök igen med samma sparning.'],
     ACTION_CASE_CALCULATION_CLIENT_OLD: [409, 'Den här fliken använder en äldre kalkylredigerare. Behåll dina uppgifter och ladda om sidan innan du fortsätter.'],
     ACTION_CASE_CALCULATION_SCHEMA: [503, 'Bakgrundssparning av kalkylen behöver aktiveras i databasen. Dina ändringar är kvar.'],
     ACTION_CASE_CALCULATION_REQUEST_CONFLICT: [409, 'Kalkylen kunde inte bekräftas. Hämta sparade uppgifter innan du fortsätter. Dina ändringar är kvar.'],
@@ -162,10 +171,11 @@ export async function POST(request: Request) {
     const action = typeof body.action === 'string' ? body.action : ''
     const payload = body.payload && typeof body.payload === 'object' ? body.payload as Record<string, unknown> : {}
     const ctx = await context()
-    if (action === 'save_calculation' && request.headers.get('origin') !== new URL(request.url).origin) return NextResponse.json({ error: 'Begäran måste komma från samma webbplats.' }, { status: 403 })
+    if (['save_calculation', 'save_project_customer_pricing'].includes(action) && request.headers.get('origin') !== new URL(request.url).origin) return NextResponse.json({ error: 'Begäran måste komma från samma webbplats.' }, { status: 403 })
     await assertContractWorkMutation(ctx, action, payload)
     if (action === 'save_item_scope') return NextResponse.json(await saveActionCaseScope(ctx, scopeSavePayload(payload)))
     if (action === 'save_calculation') return NextResponse.json(await saveActionCaseCalculation(ctx, payload))
+    if (action === 'save_project_customer_pricing') return NextResponse.json({ ...await saveProjectCustomerPricing(ctx, payload), workspace: await getActionCaseWorkspace(ctx) })
     let accessUrl: string | undefined
     let itemId: string | undefined
     let upload: Awaited<ReturnType<typeof createActionCaseSignedUpload>> | undefined

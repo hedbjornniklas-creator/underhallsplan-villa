@@ -32,6 +32,11 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_PRICE_READ_ONLY: [409, 'Kopplade kundprisvillkor ändras i Projektarbete. Dina övriga ändringar är kvar.'],
+    PROJECT_PRICE_HOURS: [409, 'Offerten har en separat timuppskattning med ett gemensamt timpris. Granska och ta bort den under Priset innan momentens egna prisvillkor används. Inga timmar eller belopp fördelas automatiskt.'],
+    PROJECT_PRICE_STALE: [409, 'Momentets kundprisvillkor har ändrats i Projektarbete. Hämta det sparade underlaget innan du fortsätter.'],
+    PROJECT_PRICE_MANUAL_TOTAL: [409, 'Gemensamma kundprisvillkor kan inte blandas med en manuell klumpsumma. Välj summan av prisraderna och granska beloppen först.'],
+    PROJECT_PRICE_APPROXIMATE: [409, 'Planeringsbudget och ungefärligt pris är olika prisupplägg. Hantera den ungefärliga prisuppgiften innan budgetvillkoren kopplas in.'],
     CUSTOMER_SHARING_INVALID: [400, 'Kontrollera vald flik och dess synlighet.'],
     CUSTOMER_SHARING_FORBIDDEN: [403, 'Endast projektansvarig kan ändra beställarens flikar.'],
     CUSTOMER_SHARING_NOT_FOUND: [404, 'Projektet eller beställaren kunde inte hittas.'],

@@ -1,3 +1,5 @@
+import type { ProjectPricingState } from './projectCustomerPricing'
+
 export const contractWorkFields = [
   ['title', 'Rubrik'], ['scope', 'Arbetets omfattning'], ['scopeConditions', 'Förutsättningar'],
   ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan'],
@@ -12,6 +14,10 @@ export function sharedWorkScopeKey(items: readonly WorkScope[]): string {
     .sort((a, b) => a[0].localeCompare(b[0])))
 }
 
+export function sharedWorkPricingKey(items: readonly { id: string; contractWork?: ContractWorkLink }[]): string {
+  return JSON.stringify(items.map(item => [item.id, item.contractWork?.customerPricing?.revision ?? 0]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
+}
+
 export type ContractWorkPrice = {
   editable: boolean
   split: 'combined' | 'separate'
@@ -21,6 +27,7 @@ export type ContractWorkPrice = {
 }
 
 export type ContractWorkLink = {
+  customerPricing?: ProjectPricingState
   revision: number
   locked: boolean
   version: number | null

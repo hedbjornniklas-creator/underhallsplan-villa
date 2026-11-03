@@ -50,6 +50,7 @@ import { calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts
 import { costCompletionPayload } from '../src/lib/action-cases/costCompletion.ts'
 import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } from '../src/lib/action-cases/customerSharing.ts'
 import { contractSenderFixture } from '../test/fixtures/contract-sender-profile.ts'
+import { customerPricingParts, normalizeProjectCustomerPricing } from '../src/lib/action-cases/projectCustomerPricing.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -388,6 +389,8 @@ if (process.argv.includes('--work-sums')) {
   ]
 }
 const contractWorkTest = process.argv.includes('--contract-work')
+const customerPricingTest = process.argv.includes('--project-customer-pricing')
+const projectPrices = new Map(), projectPriceRequests = new Map()
 const sharedScopeTest = process.argv.includes('--shared-work-scope')
 const projectSenderTest = process.argv.includes('--project-sender')
 const senderRequests = new Set()
@@ -414,7 +417,8 @@ function updateContractWorkView(){
     const part=body.items.find(row=>row.sourceItemId===item.id),price=body.contractPricing?.rows.find(row=>row.sourceItemId===item.id)
     if(!part)continue
     for(const key of ['title','scope','scopeConditions','scopeExclusions','scopeAdvice']) item[key]=part[key]??''
-    item.contractWork={revision:state.revision,locked:Boolean(frozen),version:frozen?.version??null,documentId:frozen?.id??null,price:{editable:true,split:'combined',amountOre:price?.amountOre??null,labourOre:null,materialOre:null},differences:[]}
+    item.contractWork={revision:state.revision,locked:Boolean(frozen),version:frozen?.version??null,documentId:frozen?.id??null,price:{editable:true,split:'combined',amountOre:price?.amountOre??null,labourOre:null,materialOre:null},differences:[],
+      ...(customerPricingTest ? { customerPricing: { revision: projectPrices.get(item.id)?.revision ?? 0, terms: projectPrices.get(item.id)?.terms ?? null, candidates: [], documentRevisions: { offer: estimateState.revision, contract: state.revision } } } : {}) }
   }
   if(sharedScopeTest){
     let changed=false
@@ -427,6 +431,7 @@ function updateContractWorkView(){
   }
 }
 if(sharedScopeTest)estimateState.draft.items=structuredClone(state.draft.items)
+if(customerPricingTest)estimateState.draft=structuredClone(state.draft)
 updateContractWorkView()
 let customerSharing = { revision: 0, tabs: defaultCustomerVisibility(), updatedAt: null, updatedBy: null }
 const sharingRequests = new Map()
@@ -699,6 +704,23 @@ const server = createServer(async (req, res) => {
       const payload = body.payload ?? {}
       if(contractWorkTest && projects.cases[0].items.find(item=>item.id===payload.itemId)?.contractWork?.locked){json({error:'Momentet ingår i ett låst avtal.'},409);return}
       let itemId, caseId
+      if(customerPricingTest && body.action==='save_project_customer_pricing'){
+        const current=projectPrices.get(payload.itemId), cached=projectPriceRequests.get(payload.requestId)
+        if(cached){json({...cached,workspace:projects});return}
+        if((current?.revision??0)!==payload.revision){json({error:'Kundpriset har ändrats.'},409);return}
+        const terms=normalizeProjectCustomerPricing(payload.terms), revision=payload.revision+1
+        projectPrices.set(payload.itemId,{terms,revision})
+        for(const target of [state,estimateState]){
+          const draft=structuredClone(target.draft), p=draft.contractPricing
+          for(const row of p.rows)if(row.sourceItemId===payload.itemId){row.projectPricing={terms,revision};row.kind=customerPricingParts(terms).some(part=>part.charge.mode!=='fixed')?'running':'fixed';row.amountOre=null;row.labourOre=null;row.materialOre=null}
+          const modes=p.rows.flatMap(row=>row.projectPricing?customerPricingParts(row.projectPricing.terms).map(part=>part.charge.mode==='fixed'?'fixed':'running'):[row.kind])
+          p.mode=modes.includes('fixed')?modes.includes('running')?'mixed':'fixed':'running';p.basis='rows';p.split='combined';p.totalOre=null
+          target.draft=normalizeCustomerOffer(draft);target.revision++
+        }
+        updateContractWorkView()
+        const result={requestId:payload.requestId,itemId:payload.itemId,previousRevision:payload.revision,revision,terms}
+        projectPriceRequests.set(payload.requestId,result);writes.push('save_project_customer_pricing');json({...result,workspace:projects});return
+      }
       if(contractWorkTest && body.action==='update_contract_work_price'){
         if(payload.revision!==state.revision){json({error:'Avtalet har ändrats.'},409);return}
         state.draft.contractPricing.rows.find(row=>row.sourceItemId===payload.itemId).amountOre=payload.price.amountOre

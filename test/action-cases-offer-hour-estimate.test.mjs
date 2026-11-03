@@ -88,6 +88,7 @@ test('the real offer document prints rates and estimated labour once, never inte
   const jsx = (type, props) => ({ type, props })
   const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, react: { useId: () => 'test' }, 'lucide-react': {},
     '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/contractPricing': prices,
+    '@/lib/action-cases/projectCustomerPricing': {},
     '@/lib/action-cases/offerHourEstimate': hours, '@/lib/action-cases/offerImport': {},
     '@/lib/action-cases/customerPaymentPlan': payments, './CustomerOfferPriceInput': {},
     '@/lib/action-cases/standardContractTerms': standard,

@@ -59,7 +59,7 @@ import ProjectEditorRow from './ProjectEditorRow'
 import CustomerContractSiteFacilities from './CustomerContractSiteFacilities'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
 import { customerOfferSaveChanges } from '@/lib/action-cases/customerOfferSaveChanges'
-import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
+import { sharedWorkScopeKey, sharedWorkPricingKey } from '@/lib/action-cases/contractWork'
 import type { ProjectScheduleRow } from '@/lib/action-cases/projectSchedule'
 import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 import { ContractCustomerEditor, ContractContractorEditor } from './CustomerContractPartiesEditor'
@@ -256,7 +256,7 @@ export default function CustomerOfferEditor({
   }, [dirty, draft, costing, locked, busy, autosave])
   const linkedRefresh = useRef<() => void>(() => {})
   const refreshingRevision = useRef(0)
-  const linkedScopeKey = sharedWorkScopeKey(actionCase.items)
+  const linkedScopeKey = sharedWorkScopeKey(actionCase.items) + sharedWorkPricingKey(actionCase.items)
   const refreshedOfferScope = useRef(linkedScopeKey)
   const [linkedScopeError, setLinkedScopeError] = useState(false)
   const refreshOfferScope = useRef<() => Promise<boolean>>(async () => false)

@@ -33,6 +33,7 @@ import { projectUrl } from '@/lib/action-cases/projectNavigation'
 import { mergeScopeSave } from '@/lib/action-cases/scopeDraft'
 import { useActionScopeAutosave } from './useActionScopeAutosave'
 import { useActionCalculationAutosave } from './useActionCalculationAutosave'
+import { useProjectCustomerPricingAutosave } from './useProjectCustomerPricingAutosave'
 import { useActionSaveCoordinator } from './useActionSaveCoordinator'
 import { mergeCalculationSave, overlayCalculation, sameCalculationVersion } from '@/lib/action-cases/calculationSave'
 import { workItemSum, workProjectSum } from '@/lib/action-cases/workSums'
@@ -366,6 +367,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     onError: (message) => toast.error(message),
   })
   rebaseScope.current = scopeAutosave.rebase
+  const customerPricing = useProjectCustomerPricingAutosave<Workspace>({ caseId, coordinate, onSaved: receive })
   const savedCase = workspace?.cases.find(item => item.id === caseId) ?? null
   const edits = Object.values(calculation.states).filter(entry => entry.status !== 'saved').map(entry => entry.edit)
   const selectedCase = savedCase ? { ...savedCase, items: savedCase.items.map(item => overlayCalculation(item, edits)) } : null
@@ -373,9 +375,10 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const forgetSavedScope = useRef(scopeAutosave.forgetSaved)
   forgetSavedScope.current = scopeAutosave.forgetSaved
   const forgetSavedCalculation = useRef(calculation.forgetSaved), loadedCustomerRefresh = useRef(0)
+  const forgetSavedCustomerPricing = useRef(customerPricing.forgetSaved); forgetSavedCustomerPricing.current = customerPricing.forgetSaved
   forgetSavedCalculation.current = calculation.forgetSaved
   useEffect(() => {
-    if (!customerRefresh || loadedCustomerRefresh.current === customerRefresh || scopeAutosave.hasUnsaved || calculation.hasUnsaved || itemDirty || uploading || running.current) return
+    if (!customerRefresh || loadedCustomerRefresh.current === customerRefresh || scopeAutosave.hasUnsaved || calculation.hasUnsaved || customerPricing.hasUnsaved || itemDirty || uploading || running.current) return
     const controller = new AbortController()
     running.current = true
     setBusy(true)
@@ -388,6 +391,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
           workspaceRef.current = result.workspace
           forgetSavedScope.current()
           forgetSavedCalculation.current()
+          forgetSavedCustomerPricing.current()
           loadedCustomerRefresh.current = customerRefresh
           setWorkspace(result.workspace)
           onWorkspaceChange?.(result.workspace)
@@ -397,9 +401,9 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       } finally { if (!controller.signal.aborted) { running.current = false; setBusy(false) } }
     })()
     return () => { controller.abort(); running.current = false }
-  }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, calculation.hasUnsaved, itemDirty, uploading])
-  const guarded = busy || uploading || scopeAutosave.hasUnsaved || calculation.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
-  useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving || calculation.isSaving) }, [busy, uploading, scopeAutosave.isSaving, calculation.isSaving, onBusyChange])
+  }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, calculation.hasUnsaved, customerPricing.hasUnsaved, itemDirty, uploading])
+  const guarded = busy || uploading || scopeAutosave.hasUnsaved || calculation.hasUnsaved || customerPricing.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
+  useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving || calculation.isSaving || customerPricing.isSaving) }, [busy, uploading, scopeAutosave.isSaving, calculation.isSaving, customerPricing.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
   useEffect(() => {
     if (!guarded) return
@@ -416,7 +420,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     const before = workspaceRef.current?.cases.flatMap(project => project.items).find(item => item.id === payload.itemId)
     const beforeLine = before?.costLines.find(line => line.id === payload.costLineId)
     try {
-      if (!await scopeAutosave.flushAll() || !await calculation.flushAll()) { toast.error('Komplettera eller återförsök de osparade ändringarna innan du fortsätter.'); return null }
+      if (!await scopeAutosave.flushAll() || !await calculation.flushAll() || !await customerPricing.flushAll()) { toast.error('Komplettera eller återförsök de osparade ändringarna innan du fortsätter.'); return null }
       setBusy(true)
       return await coordinate(async () => {
         const current = workspaceRef.current?.cases.flatMap(project => project.items).find(item => item.id === payload.itemId)
@@ -513,6 +517,17 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       scopeSave={scopeAutosave.states[selectedItem.id]}
       scopeBlocked={scopeAutosave.hasUnsaved}
       calculation={calculation}
+      customerPricingEntry={customerPricing.states[selectedItem.id]}
+      onCustomerPricingChange={(terms, immediate) => { if (selectedItem.contractWork?.customerPricing) customerPricing.change(selectedItem.id, selectedItem.contractWork.customerPricing, terms, immediate) }}
+      onCustomerPricingRetry={() => customerPricing.retry(selectedItem.id)}
+      onCustomerPricingReload={() => {
+        if (customerPricing.isSaving) return
+        void coordinate(async () => {
+          const response = await fetch('/api/action-cases', { cache: 'no-store' }), result = await response.json()
+          if (!response.ok || !result.workspace) { toast.error(result.error || 'Kundprisvillkoren kunde inte hämtas.'); return }
+          if (customerPricing.discard(selectedItem.id)) { receive(result.workspace); setSelectedItemId(null) }
+        }).catch(error => toast.error(error, 'Kundprisvillkoren kunde inte hämtas.'))
+      }}
       onReloadCalculation={async () => {
         if (running.current || calculation.isSaving || scopeAutosave.hasUnsaved || !window.confirm('Ersätta momentets osparade kalkyländringar med den sparade kalkylen?')) return
         running.current = true; setBusy(true)

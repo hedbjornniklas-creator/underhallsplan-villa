@@ -18,6 +18,7 @@ export function normalizeOfferHourEstimate(value: unknown): OfferHourEstimate | 
 export function offerHourEstimateIssues(draft: CustomerOfferDraft): string[] {
   const estimate = draft.offerHourEstimate
   if (!estimate || !draft.contractPricing || draft.contractPricing.mode === 'fixed') return []
+  if (draft.contractPricing.rows.some(row => row.projectPricing)) return ['Den separata timuppskattningen behöver hanteras innan momentens egna prisvillkor används.']
   const { minHours, maxHours } = estimate
   if (minHours === null || maxHours === null) return ['Ange både lägsta och högsta uppskattade timantal.']
   if (minHours > maxHours) return ['Det högsta timantalet får inte vara lägre än det lägsta.']
@@ -28,6 +29,7 @@ export function offerHourEstimateIssues(draft: CustomerOfferDraft): string[] {
 
 export function estimatedLabourRange(draft: CustomerOfferDraft): { minOre: number; maxOre: number } | null {
   const estimate = draft.offerHourEstimate, pricing = draft.contractPricing
+  if (pricing?.rows.some(row => row.projectPricing)) return null
   if (!estimate || !pricing || pricing.mode === 'fixed' || pricing.running.hourlyOre === null ||
     estimate.minHours === null || estimate.maxHours === null || estimate.minHours > estimate.maxHours) return null
   // Multiply hundredths of hours by ore and round once, without floating-point money arithmetic.

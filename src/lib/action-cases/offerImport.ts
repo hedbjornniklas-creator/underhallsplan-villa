@@ -1,5 +1,7 @@
 import type { ActionCaseItemView } from './contracts'
 import type { CustomerOfferItem } from './customerOffers'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { customerPricingParts } from './projectCustomerPricing.ts'
 
 export const offerSourceFields = [
   { key: 'title', label: 'Rubrik' },
@@ -155,6 +157,11 @@ export function importOfferItems(existing: CustomerOfferItem[], selected: Action
 
 // Only customer prices cross into an offer. Internal costs and supplier notes stay private.
 export function importableCustomerPrice(item: ActionCaseItemView): number | null {
+  const terms = item.contractWork?.customerPricing?.terms
+  if (terms) {
+    const parts = customerPricingParts(terms)
+    return parts.some(part => part.charge.mode !== 'fixed' || part.charge.fixedOre === null) ? null : parts.reduce((sum, part) => sum + part.charge.fixedOre!, 0)
+  }
   if (item.lumpSum) return item.lumpSum.verified && item.lumpSum.customerPrice !== null
     ? Math.round(item.lumpSum.customerPrice * (1 + item.lumpSum.vatRate / 100) * 100) : null
   const lines = item.costLines.filter((line) => !line.coveredByQuoteId)

@@ -88,3 +88,7 @@
   .gizmo-cost-table tfoot td, .gizmo-cost-table tfoot [data-number] { grid-column: 1; background: transparent; border: 0; }
   .gizmo-cost-table tfoot .gizmo-cost-total-spacer { display: none; }
 }
+@media (max-width: 400px) {
+  .uppdrag-scope .gizmo-item-tabs[role='tablist'] { padding-inline: 8px; gap: 4px; }
+  .uppdrag-scope.gizmo-dialog-scope .gizmo-item-tabs .gizmo-register-tab[role='tab'] { padding-inline: 10px; gap: 4px; }
+}

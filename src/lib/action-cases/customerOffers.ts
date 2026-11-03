@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { publicProjectPricing } from './projectCustomerPricing.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferDocuments, type OfferDocuments } from './offerDocuments.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferAlternatives, type OfferAlternatives } from './offerAlternatives.ts'
@@ -434,6 +436,7 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
         const next = { ...row }
         delete next.sourceItemId
         const visible = linePrices && (pricing.mode !== 'mixed' || row.kind === 'fixed')
+        if (next.projectPricing) next.projectPricing = publicProjectPricing(next.projectPricing, linePrices)
         next.amountOre = visible && pricing.split === 'combined' ? row.amountOre : null
         next.labourOre = visible && pricing.split === 'separate' ? row.labourOre : null
         next.materialOre = visible && pricing.split === 'separate' ? row.materialOre : null

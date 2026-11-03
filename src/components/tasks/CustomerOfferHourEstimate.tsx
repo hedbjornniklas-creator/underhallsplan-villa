@@ -9,6 +9,7 @@ export default function CustomerOfferHourEstimate({ draft, onChange }: {
   draft: CustomerOfferDraft; onChange: (value: OfferHourEstimate | null) => void
 }) {
   const estimate = draft.offerHourEstimate, range = estimatedLabourRange(draft)
+  if (draft.contractPricing?.rows.some(row => row.projectPricing)) return estimate ? <section className="space-y-3 border-l-2 border-[#AD8529] pl-3 text-sm" aria-label="Tidigare timuppskattning"><p>Den tidigare timuppskattningen använder ett gemensamt timpris och kan inte fördelas automatiskt på momentens egna prisvillkor.</p><button type="button" className="gizmo-button" onClick={() => onChange(null)}>Ta bort tidigare timuppskattning</button></section> : null
   return <section className="space-y-3 border-t border-[#D5DCDD] pt-4" aria-label="Uppskattad tidsåtgång">
     <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={Boolean(estimate)}
       onChange={event => onChange(event.target.checked ? { version: 1, minHours: null, maxHours: null } : null)} />Ange uppskattad tidsåtgång</label>

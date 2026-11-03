@@ -8,7 +8,7 @@ import { customerOfferBaseAmount, money, type CustomerOfferSnapshot, type Custom
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
+import { contractBudgetAmount, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -97,7 +97,10 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
     if (d.advice.work || d.advice.reason) result.push(labelledSection('advice', 'Avrådande', [
       { label: 'Arbeten som avrådandet gäller', text: d.advice.work }, { label: 'På grund av', text: d.advice.reason }]))
   }
-  const price = s.contractPricing
+  const originalPricing = s.contractPricing
+  const price = originalPricing ? contractDisplayPricing(originalPricing) : undefined
+  const sharedPricing = originalPricing?.rows.some(row => row.projectPricing)
+  const legacyRunning = originalPricing?.rows.some(row => !row.projectPricing && (originalPricing.mode === 'running' || row.kind === 'running'))
   if (price) {
     const fixed = contractFixedRows(price), running = price.rows.filter((r) => price.mode === 'running' || r.kind === 'running')
     if (kind === 'offer') result.push(section('price', 'Ersättningsmodell', offerCompensationText(price)))
@@ -111,7 +114,12 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
         numericColumns: price.split === 'separate' && price.display !== 'unpriced' ? [1, 2, 3] : [1], columnWidths: price.split === 'separate' && price.display !== 'unpriced' ? [0.4, 0.2, 0.2, 0.2] : [0.68, 0.32] })
     }
     if (price.mode !== 'fixed') {
-      if (kind === 'offer') result.push({ ...section('price', 'Löpande räkning - prisgrunder',
+      if (sharedPricing) result.push({ ...section('price', 'Momentens prisgrunder för löpande räkning', 'Timpriser inkluderar arvode och moms. Påslag beräknas på självkostnad exklusive moms; moms tillkommer på självkostnad och påslag.'),
+        columns: ['Moment', 'Prisgrund'], columnWidths: [0.55, 0.45], rows: projectRunningPrices(originalPricing!).flatMap(rate => [
+          ...(rate.hourly ? [[rate.title, rate.hourlyOre === null ? '' : `${money(rate.hourlyOre)}/tim inkl. moms`]] : []),
+          ...(rate.markup ? [[rate.title, rate.markupPercent === null ? '' : `Självkostnad + ${rate.markupPercent} % exkl. moms`]] : []),
+        ]) })
+      if ((!sharedPricing || legacyRunning) && kind === 'offer') result.push({ ...section('price', 'Löpande räkning - prisgrunder',
         ...(price.budget ? [] : running.map(row => row.title)),
         'Timpriser anges inklusive arvode och moms. Material, varor, hjälpmedel, överenskomna underentreprenader och övriga kostnader ersätts med självkostnad plus angivet påslag. Moms tillkommer på självkostnad och påslag.',
         price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`),
@@ -120,12 +128,12 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
           ['Arbetsledning, inkl. arvode och moms', (price.running.managementOre ?? price.running.hourlyOre) === null ? '' : `${money(price.running.managementOre ?? price.running.hourlyOre)}/tim`],
           ['Påslag på självkostnad exkl. moms', price.running.markupPercent === null ? '' : `${price.running.markupPercent} %`],
         ] })
-      else result.push(section('price', price.budget ? 'Löpande räkning med budget' : 'Löpande räkning', ...(price.budget ? [] : running.map((r) => r.title)),
+      else if (!sharedPricing || legacyRunning) result.push(section('price', price.budget ? 'Löpande räkning med budget' : 'Löpande räkning', ...(price.budget ? [] : running.map((r) => r.title)),
         `Timpris inklusive arvode och moms: ${pdfMoney(price.running.hourlyOre)}`, `Arbetsledning: ${pdfMoney(price.running.managementOre ?? price.running.hourlyOre)}/timme`,
         `Entreprenörarvode på självkostnader exklusive moms: ${price.running.markupPercent ?? ''} %. Moms tillkommer.`, price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`))
     }
     if (price.budget) {
-      const breakdown = kind === 'offer' ? offerBudgetBreakdown(price) : null
+      const breakdown = kind === 'offer' || sharedPricing ? offerBudgetBreakdown(price) : null
       const partial = Boolean(breakdown?.unbudgetedTitles.length)
       const rows = running.map(row => {
         const amount = price.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null
@@ -133,7 +141,7 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
       })
       const total = contractBudgetAmount(price)
       const incompleteText = partial ? [`Följande poster saknar budget och ingår inte i budgetbeloppet: ${breakdown!.unbudgetedTitles.join(', ')}. Tom budget innebär inte att posten är kostnadsfri.`] : []
-      if (kind === 'offer') rows.push([partial ? 'Summa budgeterade löpande poster inkl. moms' : 'Summa budget, löpande del inkl. moms', pdfMoney(breakdown!.runningOre)])
+      if (kind === 'offer' || sharedPricing) rows.push([partial ? 'Summa budgeterade löpande poster inkl. moms' : 'Summa budget, löpande del inkl. moms', pdfMoney(breakdown!.runningOre)])
       else {
         if (price.mode === 'mixed') rows.push(['Fast del inkl. moms', pdfMoney(contractFixedAmount(price))])
         rows.push(['Planeringsbudget totalt inkl. moms', pdfMoney(total)])

@@ -37,7 +37,7 @@ function sheetHarness(overrides = {}) {
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},
   }
-  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice']) dependencies[`./${name}`] = { default: name }
+  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice', 'ActionCaseCustomerPricing']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
     (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
