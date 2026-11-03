@@ -7,6 +7,7 @@ import * as contracts from '../src/lib/action-cases/customerContract.ts'
 import * as offers from '../src/lib/action-cases/customerOffers.ts'
 import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standard from '../src/lib/action-cases/standardContractTerms.ts'
+import * as pricing from '../src/lib/action-cases/contractPricing.ts'
 
 const complete = () => facilities.editSiteFacility(undefined, 'electricity', {
   providedBy: 'customer', paidBy: 'contractor', details: 'TEST: Byggcentral vid garaget.\nAvtalad anslutning.'
@@ -79,6 +80,7 @@ function component(file, extra = {}) {
     'lucide-react': new Proxy({}, { get: () => 'svg' }),
     '@/lib/action-cases/contractSiteFacilities': facilities,
     '@/lib/action-cases/customerOffers': offers,
+    '@/lib/action-cases/contractPricing': pricing,
     '@/lib/action-cases/customerPaymentPlan': payments,
     '@/lib/action-cases/standardContractTerms': standard,
     './ProjectEditorRow': { default: ({ children, ...props }) => jsx('section', { ...props, children }) },

@@ -10,6 +10,7 @@ import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standard from '../src/lib/action-cases/standardContractTerms.ts'
 import * as properties from '../src/lib/properties/identity.ts'
 import * as offerDocuments from '../src/lib/action-cases/offerDocuments.ts'
+import * as pricing from '../src/lib/action-cases/contractPricing.ts'
 
 function legacy() {
   const details = contracts.emptyContractDetails()
@@ -166,6 +167,7 @@ function component(file, extra = {}) {
     '@/lib/action-cases/offerDocuments': offerDocuments,
     '@/lib/properties/identity': properties,
     '@/lib/action-cases/customerOffers': offers,
+    '@/lib/action-cases/contractPricing': pricing,
     '@/lib/action-cases/customerPaymentPlan': payments,
     './CustomerContractFormSelect': { default: 'contract-form-select' },
     './CustomerPaymentPlan': { PaymentPlanDocument: 'payment-plan' },

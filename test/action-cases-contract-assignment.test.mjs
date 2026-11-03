@@ -11,6 +11,7 @@ import * as offers from '../src/lib/action-cases/customerOffers.ts'
 import * as payments from '../src/lib/action-cases/customerPaymentPlan.ts'
 import * as standardTerms from '../src/lib/action-cases/standardContractTerms.ts'
 import * as offerDocuments from '../src/lib/action-cases/offerDocuments.ts'
+import * as pricing from '../src/lib/action-cases/contractPricing.ts'
 import { id } from './fixtures/customer-offer-data.ts'
 
 const files = [{ id: id(4), fileName: 'Ritning A.pdf', contentType: 'application/pdf', fileSizeBytes: 10 },
@@ -318,6 +319,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='@/lib/action-cases/customerOffers') return offers
     if(name==='@/lib/action-cases/customerPaymentPlan') return payments
     if(name==='@/lib/action-cases/standardContractTerms') return standardTerms
+    if(name==='@/lib/action-cases/contractPricing') return pricing
     throw Error(name)
   },loaded,loaded.exports)
   const d=structured(), view=(body)=>loaded.exports.default({offer:{id:'draft',version:0,status:'published',snapshot:body,files:[],publishedAt:''}, selected:[], purpose:'contract', fileUrl:(id)=>`/file/${id}`})
