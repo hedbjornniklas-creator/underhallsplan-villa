@@ -228,12 +228,29 @@ test('selected profile fields are read-only while personal contact details remai
   assert.equal(nodes(tree).find(node => node.type === 'select')?.props.disabled, undefined)
 })
 
-test('editor keeps profile request state mounted and guards autosave and manual actions while unresolved', () => {
+test('shared project selector stays mounted and guards both document editors while unresolved', () => {
   const editor = source('src/components/tasks/CustomerOfferEditor.tsx')
-  assert.match(editor, /draftTarget === 'contract' && <div hidden=\{!contractView\}/)
+  const project = source('src/components/tasks/ActionCaseProject.tsx')
+  assert.doesNotMatch(editor, /<CustomerContractSenderProfile/)
+  assert.match(project, /senderControls=\{offer && <details/)
+  assert.match(project, /senderLocked \? <p[\s\S]*?: <CustomerContractSenderProfile project/)
+  assert.match(project, /active=\{view === 'overview'\}/)
+  assert.equal((project.match(/projectOperationPending=\{senderPending\}/g) ?? []).length, 2)
+  assert.match(editor, /const senderPending = projectOperationPending/)
   assert.match(editor, /if \(senderOperation\.current \|\| running\.current \|\| autosave\.isPending\(\)\) return false/)
   assert.equal((editor.match(/if \(senderOperation\.current\) return/g) ?? []).length, 2)
   assert.match(editor, /if \(!dirty && !planningDirty && !billingDirty && !senderPending\) return/)
   assert.match(editor, /issuerName: draft\.senderProfile\?\.name \?\? issuerName/)
   assert.match(editor, /companyFieldsReadonly=\{Boolean\(draft\.senderProfile\)\}/)
+})
+
+test('project profile can be selected before either document has been saved', async () => {
+  const ui = harness({ project: true, revision: 0 })
+  await ui.settle(); ui.select(); ui.click('Använd profil')
+  assert.match(text(ui.render()), /projektets offert- och avtalsutkast/)
+  ui.click('Bekräfta profilbyte'); await ui.settle()
+  assert.equal(JSON.parse(ui.calls.find(call => call.init?.method === 'POST')!.init!.body as string).revision, 0)
+  assert.equal(ui.applied.length, 1)
+  assert.match(text(ui.render()), /Offert- och avtalsutkasten har uppdaterats/)
+  ui.dispose()
 })

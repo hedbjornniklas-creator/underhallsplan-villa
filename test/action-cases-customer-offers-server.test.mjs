@@ -192,6 +192,8 @@ function harness(options = {}) {
         return { error: { code: 'PGRST202' } }
       if (name === 'assert_customer_offer_pricing' && options.pricingMissing)
         return { error: { code: '42883' } }
+      if (name === 'assert_contract_budget' && options.budgetMissing)
+        return { error: { code: 'PGRST202' } }
       if (name === 'assert_offer_hour_estimate' && options.hourEstimateMissing)
         return { error: { code: '42883' } }
       if (args.p_operation === 'publish') {
@@ -356,6 +358,28 @@ test('missing hour-estimate database protection blocks new offer writes without 
   }, 'manual', 'offer'), /CUSTOMER_OFFER_SCHEMA/)
   assert(!h.calls.some(call => call.name.startsWith('write_') || call.name.startsWith('save_')))
   assert.deepEqual(h.sent, [])
+})
+
+test('offer budgets require the database guard and save privately without writing contracts or sending mail', async () => {
+  const h = harness(), before = structuredClone(h.draft)
+  const draft = { ...h.draft, contractPricing: { version: 1, mode: 'running', basis: 'rows', display: 'priced', split: 'combined',
+    totalOre: null, labourOre: null, materialOre: null,
+    rows: [{ id: id(100), title: 'Fiktivt budgetmoment', kind: 'running', amountOre: null, labourOre: null, materialOre: null }],
+    running: { hourlyOre: 75000, managementOre: null, markupPercent: 15, approximateOre: null },
+    budget: { version: 1, rows: [{ id: id(100), amountOre: 10000000 }], assumptions: 'Underlag behöver kompletteras.', reviewTerms: 'Samråd vid risk för överskridande.' } } }
+  const ctx = { orgId: id(90), userId: id(91) }
+  await h.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'offer')
+  const guard = h.calls.findIndex(call => call.name === 'assert_contract_budget')
+  const write = h.calls.findIndex(call => call.name === 'write_customer_offer')
+  assert.ok(guard >= 0 && write > guard)
+  assert.deepEqual(h.calls[write].p_data.body.contractPricing.budget, draft.contractPricing.budget)
+  assert.equal(h.calls[write].p_data.body.baseAmountOre, null)
+  assert.ok(!h.calls.some(call => /write_customer_contract|save_customer_contract/.test(call.name)))
+  assert.deepEqual(h.draft, before); assert.deepEqual(h.sent, [])
+  const missing = harness({ budgetMissing: true })
+  await assert.rejects(missing.api.saveCustomerOffer(ctx, id(1), { revision: 1, draft }, 'autosave', 'offer'), /CUSTOMER_OFFER_SCHEMA/)
+  assert.ok(!missing.calls.some(call => call.name.startsWith('write_') || call.name.startsWith('save_')))
+  assert.deepEqual(missing.sent, [])
 })
 
 function choiceFixture() {

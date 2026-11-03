@@ -52,7 +52,7 @@ export function confirmedSenderWorkspace(value: unknown, request: SenderProfileR
   } catch { return false }
 }
 
-export default function CustomerContractSenderProfile({ caseId, organizationId, selected, revision, currentCompanyName, blockedReason,
+export default function CustomerContractSenderProfile({ caseId, organizationId, selected, revision, currentCompanyName, blockedReason, project = false,
   active = true, onPendingChange, onApplied, onReload }: {
   caseId: string
   organizationId?: string
@@ -61,6 +61,7 @@ export default function CustomerContractSenderProfile({ caseId, organizationId, 
   currentCompanyName: string
   blockedReason: string | null
   active?: boolean
+  project?: boolean
   onPendingChange: (pending: boolean) => void
   onApplied: (workspace: CustomerOfferWorkspace) => void
   onReload: () => Promise<boolean>
@@ -105,7 +106,7 @@ export default function CustomerContractSenderProfile({ caseId, organizationId, 
   const disabled = Boolean(blockedReason || loading || pending || !choices?.available || !identityReady)
 
   async function apply() {
-    if (inFlight.current || (!pending && (disabled || !candidate || !changed || revision < 1 || !choices))) return
+    if (inFlight.current || (!pending && (disabled || !candidate || !changed || revision < (project ? 0 : 1) || !choices))) return
     const request = pending ?? { requestId: crypto.randomUUID(), revision, profileId: candidate!.id,
       profileVersion: candidate!.version, legalNameVersion: choices!.organization.legalNameVersion,
       organizationNumber: choices!.organization.organizationNumber!, confirmed: true as const }
@@ -126,15 +127,15 @@ export default function CustomerContractSenderProfile({ caseId, organizationId, 
         const sameSelection = current.profileId === request.profileId && current.profileVersion === request.profileVersion &&
           current.legalNameVersion === request.legalNameVersion && current.organizationNumber === request.organizationNumber
         onApplied(data.workspace); setPending(null); onPendingChange(false); setConfirming(false)
-        setNotice(sameSelection ? 'Avsändarprofilen är vald. Entreprenörens företagsuppgifter har uppdaterats i avtalsutkastet.'
-          : 'Profilbytet sparades. Avtalet har därefter ändrats; de aktuella uppgifterna visas.')
+        setNotice(sameSelection ? project ? 'Projektets avsändarprofil är vald. Offert- och avtalsutkasten har uppdaterats.' : 'Avsändarprofilen är vald. Entreprenörens företagsuppgifter har uppdaterats i avtalsutkastet.'
+          : project ? 'Profilbytet sparades. Projektet har därefter ändrats; de aktuella uppgifterna visas.' : 'Profilbytet sparades. Avtalet har därefter ändrats; de aktuella uppgifterna visas.')
       }
     } catch {
-      if (mounted.current) setError('Profilbytet kunde inte bekräftas. Försök samma byte igen för att kontrollera resultatet. Avtalsutkastet är låst under tiden.')
+      if (mounted.current) setError(project ? 'Profilbytet kunde inte bekräftas. Försök samma byte igen. Projektets dokument är låsta under tiden.' : 'Profilbytet kunde inte bekräftas. Försök samma byte igen för att kontrollera resultatet. Avtalsutkastet är låst under tiden.')
     } finally { inFlight.current = false; if (mounted.current) setPosting(false) }
   }
 
-  return <section className="my-5 min-w-0 rounded-xl border border-slate-200 bg-white p-4 sm:p-5" aria-label="Avsändarprofil">
+  return <section className={project ? 'my-3 min-w-0 border-y border-[#D5DCDD] py-4' : 'my-5 min-w-0 rounded-xl border border-slate-200 bg-white p-4 sm:p-5'} aria-label="Avsändarprofil">
     <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
       <div className="min-w-0"><h3 className="flex items-center gap-2 text-base font-semibold"><Building2 size={18} aria-hidden />Avsändarprofil</h3>
         <p className="mt-2 break-words text-sm font-medium">{selected?.name ?? (currentCompanyName || 'Nuvarande avtalsuppgifter')}</p>
@@ -156,15 +157,15 @@ export default function CustomerContractSenderProfile({ caseId, organizationId, 
             {available.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
           </select>
         </label>
-        <button type="button" className={button} disabled={disabled || !changed || revision < 1} onClick={() => setConfirming(true)}>{choice === selected?.profileId ? 'Uppdatera profiluppgifter' : 'Använd profil'}</button>
+        <button type="button" className={button} disabled={disabled || !changed || revision < (project ? 0 : 1)} onClick={() => setConfirming(true)}>{choice === selected?.profileId ? 'Uppdatera profiluppgifter' : 'Använd profil'}</button>
       </div>
       {!available.length && <p className="mt-3 text-sm text-slate-600">Det finns inga aktiva avsändarprofiler att välja.</p>}
       {blockedReason && !pending && <p className="mt-3 text-sm text-slate-600">{blockedReason}</p>}
       <a className="mt-3 inline-block text-sm underline" href={`/settings/organisation?orgId=${encodeURIComponent(choices.organization.id)}&tab=sender-profiles`} target="_blank" rel="noreferrer">Hantera organisationens avsändarprofiler</a>
     </>}
     {confirming && candidate && !pending && <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4" role="group" aria-label="Bekräfta avsändarprofil">
-      <p className="break-words text-sm font-semibold">Använd {candidate.name} i det här uppdragets avtal?</p>
-      <p className="mt-2 text-sm leading-6">Entreprenörens företagsnamn, organisationsnummer, adress, telefon och kontaktmejl ersätts. Kontaktperson, mobilnummer, F-skatt, beställare, pris och övrigt avtalsinnehåll behålls.</p>
+      <p className="break-words text-sm font-semibold">{project ? `Använd ${candidate.name} i projektets offert- och avtalsutkast?` : `Använd ${candidate.name} i det här uppdragets avtal?`}</p>
+      <p className="mt-2 text-sm leading-6">Entreprenörens företagsnamn, organisationsnummer, adress, telefon och kontaktmejl ersätts. Kontaktperson, mobilnummer, F-skatt, beställare, pris och övrigt {project ? 'dokumentinnehåll' : 'avtalsinnehåll'} behålls.</p>
       <dl className="mt-3 space-y-1 break-words text-sm"><div><dt className="inline font-medium">Juridiskt företag: </dt><dd className="inline">{choices?.organization.legalName}</dd></div>
         <div><dt className="inline font-medium">Organisationsnummer: </dt><dd className="inline">{choices?.organization.organizationNumber}</dd></div>
         <div><dt className="inline font-medium">Adress: </dt><dd className="inline">{[candidate.address, candidate.postalCode, candidate.city].filter(Boolean).join(', ') || 'Saknas i profilen'}</dd></div>
@@ -173,7 +174,7 @@ export default function CustomerContractSenderProfile({ caseId, organizationId, 
         <button type="button" className={button} onClick={() => setConfirming(false)}>Avbryt</button></div>
     </div>}
     {error && <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900" role="alert"><p>{error}</p>
-      {!pending && !blockedReason && <button type="button" className={`${button} mt-3`} disabled={loading} onClick={async () => { if (await onReload()) { setConfirming(false); setReload(value => value + 1) } }}>Hämta aktuellt avtal</button>}
+      {!pending && !blockedReason && <button type="button" className={`${button} mt-3`} disabled={loading} onClick={async () => { if (await onReload()) { setConfirming(false); setReload(value => value + 1) } }}>{project ? 'Hämta aktuella projektuppgifter' : 'Hämta aktuellt avtal'}</button>}
     </div>}
     {pending && <div className="mt-4 flex flex-col items-stretch gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm sm:flex-row sm:items-center">
       <p className="min-w-0 sm:flex-1">{posting ? 'Bekräftar avsändarprofilen…' : 'Det skickade profilbytet behöver kontrolleras innan du fortsätter.'}</p>

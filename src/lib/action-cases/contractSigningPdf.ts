@@ -8,7 +8,7 @@ import { customerOfferBaseAmount, money, type CustomerOfferSnapshot, type Custom
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractFixedAmount, contractFixedRows, contractRowAmount } from './contractPricing.ts'
+import { contractBudgetAmount, contractFixedAmount, contractFixedRows, contractRowAmount } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -18,7 +18,7 @@ import { siteFacilityFields, siteFacilityPartyLabel, siteFacilityUsed } from './
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { propertyFields } from '../properties/identity.ts'
 
-export type SigningPdfInput = { id: string; version: number; draftRevision?: number; createdAt: string; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]; unavailableAttachments?: string[] }
+export type SigningPdfInput = { id: string; version: number; draftRevision?: number; createdAt: string; snapshot: CustomerOfferSnapshot; files: CustomerOfferFile[]; unavailableAttachments?: string[]; kind?: 'offer' }
 type SectionGroup = 'parties' | 'controls' | 'property' | 'assignment' | 'workEnvironment' | 'advice' | 'price' | 'changes' | 'payments' | 'schedule' | 'delay' | 'inspection' | 'insurance' | 'completionProtection' | 'security' | 'other' | 'siteFacilities'
 type ParagraphBlock = { label?: string; text: string }
 export type SigningPdfSection = { group: SectionGroup; title: string; paragraphs: string[]; blocks?: ParagraphBlock[]; columns?: string[]; rows?: string[][]; totalRow?: boolean; numericColumns?: number[]; columnWidths?: number[]; afterTable?: string[] }
@@ -83,9 +83,19 @@ export function contractSigningSections({ snapshot: s, files }: SigningPdfInput)
       result.push({ ...section('price', price.mode === 'mixed' ? 'Fast del av priset' : 'Priset - fast pris'), columns: price.display === 'total' ? price.split === 'combined' ? ['Pris', 'Inkl. moms'] : ['Pris', 'Arbete', 'Material', 'Totalt inkl. moms'] : price.display === 'unpriced' ? ['Moment', ''] : columns, rows, totalRow: true,
         numericColumns: price.split === 'separate' && price.display !== 'unpriced' ? [1, 2, 3] : [1], columnWidths: price.split === 'separate' && price.display !== 'unpriced' ? [0.4, 0.2, 0.2, 0.2] : [0.68, 0.32] })
     }
-    if (price.mode !== 'fixed') result.push(section('price', 'Löpande räkning', ...running.map((r) => r.title),
+    if (price.mode !== 'fixed') result.push(section('price', price.budget ? 'Löpande räkning med budget' : 'Löpande räkning', ...(price.budget ? [] : running.map((r) => r.title)),
       `Timpris inklusive arvode och moms: ${pdfMoney(price.running.hourlyOre)}`, `Arbetsledning: ${pdfMoney(price.running.managementOre ?? price.running.hourlyOre)}/timme`,
       `Entreprenörarvode på självkostnader exklusive moms: ${price.running.markupPercent ?? ''} %. Moms tillkommer.`, price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`))
+    if (price.budget) {
+      const rows = running.map(row => [row.title, pdfMoney(price.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null)])
+      if (price.mode === 'mixed') rows.push(['Fast del inkl. moms', pdfMoney(contractFixedAmount(price))])
+      rows.push(['Planeringsbudget totalt inkl. moms', pdfMoney(contractBudgetAmount(price))])
+      result.push({ ...section('price', 'Planeringsbudget inklusive moms'), columns: ['Moment', 'Budget inkl. moms'], rows, totalRow: true, numericColumns: [1], columnWidths: [0.68, 0.32] })
+      result.push(labelledSection('price', 'Budgetens förutsättningar och uppföljning', [
+        { label: 'Förutsättningar och osäkerheter', text: price.budget.assumptions },
+        { label: 'Uppföljning och samråd', text: price.budget.reviewTerms },
+      ]))
+    }
   } else result.push({ ...section('price', 'Priset'), columns: ['Moment', 'Pris inkl. moms'], numericColumns: [1], columnWidths: [0.68, 0.32], totalRow: true, rows: [...(s.pricingMode === 'itemized' ? s.items.filter((i) => i.kind === 'included').map((i) => [i.title, pdfMoney(i.amountOre)]) : []), ['Totalsumma', pdfMoney(customerOfferBaseAmount(s))]] })
   const changes = d?.changesPricing
   if (changes) {
@@ -259,7 +269,8 @@ function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
   const p = s.contractParties
   if (!p) return h(View, {}, h(View, { style: styles.columns },
     h(View, { style: styles.column }, text('Beställare (konsument)', { style: styles.partyTitle }), fact('Namn', s.customerName), fact('E-post', s.customerEmail)),
-    h(View, { style: styles.column }, text('Entreprenör (näringsidkare)', { style: styles.partyTitle }), fact('Företag', s.issuerName), fact('E-post', s.replyEmail))),
+    h(View, { style: styles.column }, text('Entreprenör (näringsidkare)', { style: styles.partyTitle }), fact('Företag', s.issuerName), fact('E-post', s.replyEmail),
+      ...(s.senderProfile ? [fact('Juridiskt bolag', s.senderProfile.legalName), fact('Organisationsnummer', s.senderProfile.organizationNumber), fact('Adress', [s.senderProfile.address, s.senderProfile.postalCode, s.senderProfile.city].filter(Boolean).join(', ')), fact('Telefon', s.senderProfile.phone ?? '')] : []))),
     ...parts.filter((part) => part.title === 'Parternas kompletterande uppgifter').map((part, i) => h(View, { key: i }, renderSection(part))))
   const c = p.contractor
   return h(View, { style: styles.columns },
@@ -278,7 +289,8 @@ function renderParties(s: CustomerOfferSnapshot, parts: SigningPdfSection[]) {
             h(View, { style: styles.checkbox }), text(label, { style: styles.factValue })))))))
 }
 
-export function contractSigningHeading(s: CustomerOfferSnapshot) {
+export function contractSigningHeading(s: CustomerOfferSnapshot, kind?: 'offer') {
+  if (kind === 'offer') return { title: 'OFFERT', form: s.contractForm === 'abs18' ? 'Med hänvisning till ABS 18' : 'Omfattning, pris och villkor' }
   return { title: s.contractForm === 'abs18' ? 'ENTREPRENADKONTRAKT' : 'ENTREPRENADAVTAL',
     form: s.contractForm === 'abs18' ? 'ABS 18' : 'Särskilda villkor' }
 }
@@ -288,7 +300,8 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
   await Font.load({ fontFamily: 'HusHubManrope', fontWeight: 700 })
   const { snapshot: s } = input
   const customers = s.contractParties?.customers.length ? s.contractParties.customers : [{ name: s.customerName }]
-  const heading = contractSigningHeading(s), parts = contractSigningSections(input)
+  const offer = input.kind === 'offer'
+  const heading = contractSigningHeading(s, input.kind), parts = contractSigningSections(input)
   const groups = groupOrder.filter((group) => parts.some((part) => part.group === group))
   const number = (group: SectionGroup) => groups.indexOf(group) + 1
   // Fresh text nodes keep line height stable during dynamic pagination passes.
@@ -319,22 +332,23 @@ export async function renderContractSigningPdf(input: SigningPdfInput): Promise<
         text(s.contractParties?.contractor.companyName || s.issuerName || 'Entreprenör', { style: styles.issuer })),
       h(View, { style: styles.accent }), text(heading.title, { style: styles.contractType }), text(heading.form, { style: styles.formLabel }),
       ...(s.title ? [text(s.title, { style: styles.title })] : []),
-      h(View, { style: [styles.sectionFrame, styles.coverFrame] }, band(number('parties'), 'Avtalsparter'), renderParties(s, coverParts)),
+      ...(offer && s.validUntil ? [fact('Offerten gäller till och med', s.validUntil)] : []),
+      h(View, { style: [styles.sectionFrame, styles.coverFrame] }, band(number('parties'), offer ? 'Beställare och avsändare' : 'Avtalsparter'), renderParties(s, coverParts)),
       ...(groups.includes('controls') ? [h(View, { style: [styles.sectionFrame, styles.coverFrame], wrap: !compactParticipants },
         ...(compactParticipants ? [band(number('controls'), 'Övriga medverkande'), h(View, { style: styles.columns }, ...contractParticipantFields.map(({ key, title }) => h(View, { key, style: styles.column }, fact(title, participants![key]))))]
           : renderSection(coverParts.find((part) => part.group === 'controls')!, undefined, band(number('controls'), 'Övriga medverkande'))))] : []),
       ...(groups.includes('property') ? [h(View, { style: [styles.sectionFrame, styles.coverFrame], wrap: !property }, band(number('property'), 'Fastigheten'), property
         ? h(View, { style: styles.facts }, ...propertyFields.map(({ key, title }) => fact(title, property[key], { key, style: [styles.fact, styles.halfFact] })))
         : renderSection(coverParts.find((part) => part.group === 'property')!))] : []),
-      header('Avtalsparter, medverkande och fastighet', true), footer()),
-    h(Page, { size: 'A4', style: styles.page, wrap: true }, header('Uppdrag och avtalsvillkor'),
+      header(offer ? 'Offertuppgifter, parter och fastighet' : 'Avtalsparter, medverkande och fastighet', true), footer()),
+    h(Page, { size: 'A4', style: styles.page, wrap: true }, header(offer ? 'Uppdrag och offertvillkor' : 'Uppdrag och avtalsvillkor'),
       ...(assignment.length ? [h(View, { style: styles.sectionFrame },
         ...assignment.map((part, i) => h(React.Fragment, { key: `assignment-${i}` }, ...renderSection(part, part.title === 'Uppdraget' ? undefined : `${number('assignment')}.${++assignmentNumber}. ${part.title}`, i === 0 ? band(number('assignment'), 'Uppdraget') : undefined))))] : []),
       ...body,
-      h(View, { style: [styles.sectionFrame, { paddingBottom: 12 }], wrap: false }, band(groups.length + 1, 'Underskrifter'),
+      ...(offer ? [] : [h(View, { style: [styles.sectionFrame, { paddingBottom: 12 }], wrap: false }, band(groups.length + 1, 'Underskrifter'),
         text('Ort och datum: ____________________________________________________', { style: styles.signingDate }),
         h(View, { style: styles.columns }, ...customers.map((c, i) => h(View, { key: i, style: styles.column }, signature(c.name, `Beställare ${i + 1}`)))),
-        signature(s.contractParties?.contractor.companyName || s.issuerName, 'Entreprenör', s.contractParties?.contractor.contactName)),
+        signature(s.contractParties?.contractor.companyName || s.issuerName, 'Entreprenör', s.contractParties?.contractor.contactName))]),
       ...(s.senderProfile?.website ? [text(s.senderProfile.website, { style: styles.senderNote })] : []),
       ...(s.senderProfile?.reportFooterText ? [text(s.senderProfile.reportFooterText, { style: styles.senderNote })] : []),
       footer())) as React.ReactElement<DocumentProps>

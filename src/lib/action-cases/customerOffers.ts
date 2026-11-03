@@ -2,7 +2,7 @@ import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferHourEstimate, offerHourEstimateIssues, type OfferHourEstimate } from './offerHourEstimate.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
-import { contractFixedAmount, contractFixedRows, contractPricingIssues, normalizeContractPricing, type ContractPricing } from './contractPricing.ts'
+import { contractFixedAmount, contractFixedRows, contractPriceModeLabel, contractPricingIssues, normalizeContractPricing, type ContractPricing } from './contractPricing.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDetailsIssues, normalizeContractDetails, type CustomerContractDetails } from './customerContract.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
@@ -368,9 +368,9 @@ export function money(ore: number | null) {
       }).format(ore / 100)
 }
 export function customerPriceLabel(d: CustomerOfferDraft): string {
-  if (d.contractPricing?.mode === 'running') return 'Löpande räkning'
+  if (d.contractPricing?.mode === 'running') return contractPriceModeLabel(d.contractPricing)
   const amount = money(customerOfferBaseAmount(d))
-  return d.contractPricing?.mode === 'mixed' ? `Fast del ${amount} + löpande räkning` : amount
+  return d.contractPricing?.mode === 'mixed' ? `Fast del ${amount} + löpande räkning${d.contractPricing.budget ? ' med budget' : ''}` : amount
 }
 export function parseKronor(value: string): number | null {
   if (!value.trim()) return null
@@ -405,6 +405,7 @@ export function mapCustomerOffer(row: Record<string, unknown>): CustomerOffer {
     const sum = (key: 'labourOre' | 'materialOre') => fixed.every((row) => row[key] !== null) ? fixed.reduce((n, row) => n + row[key]!, 0) : null
     const linePrices = pricing.mode !== 'running' && pricing.display === 'priced' && pricing.basis === 'rows'
     d.contractPricing = { ...pricing, basis: linePrices ? 'rows' : 'total',
+      ...(pricing.budget ? { budget: { ...pricing.budget, rows: pricing.budget.rows.filter(entry => pricing.rows.some(row => row.id === entry.id && (pricing.mode === 'running' || row.kind === 'running'))) } } : {}),
       totalOre: !linePrices && pricing.split === 'combined' ? d.baseAmountOre : null,
       labourOre: pricing.mode !== 'running' && !linePrices && pricing.split === 'separate' ? pricing.basis === 'rows' ? sum('labourOre') : pricing.labourOre : null,
       materialOre: pricing.mode !== 'running' && !linePrices && pricing.split === 'separate' ? pricing.basis === 'rows' ? sum('materialOre') : pricing.materialOre : null,

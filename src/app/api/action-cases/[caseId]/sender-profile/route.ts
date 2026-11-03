@@ -27,7 +27,7 @@ export async function POST(request: Request, { params }: Params) {
   try {
     const ctx = await customerOfferContext(), { caseId } = await params
     const body = await readOrganizationJson(request)
-    await selectContractSenderProfile(ctx, caseId, body)
+    await selectContractSenderProfile(ctx, caseId, body, true)
     return organizationJson({ saved: true, workspace: await getCustomerOfferWorkspace(ctx, caseId) })
   } catch (error) { return failure(error) }
 }

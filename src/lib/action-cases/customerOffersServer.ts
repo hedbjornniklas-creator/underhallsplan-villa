@@ -109,9 +109,20 @@ export async function getCustomerOfferWorkspace(
     .eq('org_id', ctx.orgId)
     .order('version', { ascending: false })
   checked(offers.error)
-  const body = savedDraft
+  let body = savedDraft
       ? normalizeCustomerOffer(savedDraft.body)
       : emptyCustomerOffer(c.title)
+  const sender = await db.from('action_case_contract_senders').select('snapshot').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  if (sender.error && !schemaMissing(sender.error.code)) checked(sender.error)
+  const offerSender = (draft: CustomerOfferDraft): CustomerOfferDraft => {
+    const profile = sender.data?.snapshot
+    if (!profile) return draft
+    if (profile.organizationId !== ctx.orgId) throw new Error('CUSTOMER_SENDER_IMMUTABLE')
+    return normalizeCustomerOffer({ ...draft, senderProfile: profile,
+      ...(draft.contractParties ? { contractParties: { ...draft.contractParties, contractor: { ...draft.contractParties.contractor,
+        companyName: profile.name, organizationNumber: profile.organizationNumber, street: profile.address ?? '', postalCode: profile.postalCode ?? '', city: profile.city ?? '', email: profile.email ?? '', phone: profile.phone ?? '' } } } : {}) })
+  }
+  if (target === 'offer') body = offerSender(body)
   const recipient = await db.from('action_case_participants').select('id,role,name,company_name,email,phone')
     .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('role', 'customer').maybeSingle()
   checked(recipient.error)
@@ -124,7 +135,7 @@ export async function getCustomerOfferWorkspace(
   }
   return {
     ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
-    ...(estimate ? { offerDraft: { draft: estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title),
+    ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
     standardTermsFile: await findStandardTermsFile(ctx.orgId, caseId),
     propertyLink: await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
@@ -152,6 +163,10 @@ export async function saveCustomerOffer(
   if (target === 'contract' && draft.offerHourEstimate !== undefined) throw new Error('CUSTOMER_OFFER_INVALID')
   await requireCase(ctx, caseId)
   if (target === 'contract') await assertContractSenderDraft(ctx, caseId, draft)
+  else if (draft.senderProfile) {
+    const guard = await createSupabaseAdminClient().rpc('assert_action_case_offer_sender_body', { p_org_id: ctx.orgId, p_case_id: caseId, p_user_id: ctx.userId, p_body: draft })
+    checked(guard.error)
+  }
   if (draft.contractForm === 'abs18') {
     const file = await findStandardTermsFile(ctx.orgId, caseId) ?? await prepareStandardContractTerms(ctx, caseId)
     let files: CustomerOfferFile[] = []
@@ -227,6 +242,10 @@ async function assertContractSenderDraft(ctx: Context, caseId: string, draft: Cu
   checked(result.error)
 }
 async function checkPricingSchema(draft: CustomerOfferDraft, complete = false) {
+  if (draft.contractPricing?.budget !== undefined) {
+    const guard = await createSupabaseAdminClient().rpc('assert_contract_budget', { p_body: draft, p_complete: complete })
+    checked(guard.error)
+  }
   if (draft.offerHourEstimate !== undefined) {
     const guard = await createSupabaseAdminClient().rpc('assert_offer_hour_estimate', { p_body: draft, p_complete: complete })
     checked(guard.error)

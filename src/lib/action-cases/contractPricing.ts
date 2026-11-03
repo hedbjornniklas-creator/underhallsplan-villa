@@ -4,8 +4,16 @@ export type ContractPriceRow = {
   id: string; title: string; sourceItemId?: string; kind: 'fixed' | 'running'
   amountOre: number | null; labourOre: number | null; materialOre: number | null
 }
+export type ContractBudget = {
+  version: 1
+  rows: { id: string; amountOre: number | null }[]
+  assumptions: string
+  reviewTerms: string
+}
+export const defaultBudgetReviewTerms = 'Arbetena ersätts på löpande räkning enligt angivna prisgrunder. Planeringsbudgeten utgår från angivna förutsättningar och osäkerheter och används för uppföljning och samråd. Entreprenören ska följa upp kostnaderna per moment och underrätta beställaren så snart prognosen visar risk för att ett moments budget överskrids. Parterna ska då samråda om omfattning, kostnader och fortsatt arbete innan berörda arbeten fortsätter utöver den överenskomna budgeten. Beslut om ändrad omfattning, reviderad budget eller paus ska dokumenteras skriftligt. Fast pris för ett avgränsat moment gäller först efter en särskild skriftlig överenskommelse som även anger hur redan utfört arbete hanteras.'
 export type ContractPricing = {
   version: 1
+  budget?: ContractBudget | null
   mode: 'fixed' | 'running' | 'mixed'
   display: 'priced' | 'unpriced' | 'total'
   split: 'combined' | 'separate'
@@ -49,6 +57,28 @@ export function normalizeContractPricing(value: unknown): ContractPricing {
     split: choice(p.split, ['combined', 'separate']), basis: choice(p.basis, ['rows', 'total']),
     totalOre: amount(p.totalOre), labourOre: amount(p.labourOre), materialOre: amount(p.materialOre),
     running: { hourlyOre: amount(r.hourlyOre), managementOre: amount(r.managementOre), markupPercent: percent as number | null, approximateOre: amount(r.approximateOre) } }
+  if (p.budget !== undefined) {
+    if (p.budget === null) result.budget = null
+    else {
+      const budget = object(p.budget)
+      if (budget.version !== 1 || !Array.isArray(budget.rows) || budget.rows.length > 200 ||
+        typeof budget.assumptions !== 'string' || budget.assumptions.length > 6000 || typeof budget.reviewTerms !== 'string' || budget.reviewTerms.length > 6000 ||
+        result.mode === 'fixed' || result.running.approximateOre !== null) invalid()
+      const budgetRows = budget.rows.map((input) => {
+        const row = object(input)
+        const id = typeof row.id === 'string' ? row.id.toLowerCase() : invalid()
+        if (!uuid.test(id) || !rows.some(entry => entry.id === id)) invalid()
+        return { id, amountOre: amount(row.amountOre) }
+      })
+      if (new Set(budgetRows.map(row => row.id)).size !== budgetRows.length) invalid()
+      result.budget = { version: 1, rows: budgetRows, assumptions: budget.assumptions.trim(), reviewTerms: budget.reviewTerms.trim() }
+      const knownBudget = budgetRows.filter(entry => rows.some(row => row.id === entry.id && (result.mode === 'running' || row.kind === 'running'))).reduce((sum, row) => sum + (row.amountOre ?? 0), 0)
+        + (result.mode === 'mixed' ? contractFixedAmount(result) ?? 0 : 0)
+      if (!Number.isSafeInteger(knownBudget) || knownBudget > 100_000_000_000) invalid()
+      const budgetTotal = contractBudgetAmount(result)
+      if (budgetTotal !== null && (!Number.isSafeInteger(budgetTotal) || budgetTotal > 100_000_000_000)) invalid()
+    }
+  }
   const total = contractFixedAmount(result)
   if (total !== null && (!Number.isSafeInteger(total) || total > 100_000_000_000)) invalid()
   return result
@@ -71,6 +101,18 @@ export function contractFixedAmount(p: ContractPricing): number | null {
   const rows = contractFixedRows(p), amounts = rows.map((row) => contractRowAmount(p, row))
   return !rows.length || amounts.some((amount) => amount === null) ? null : amounts.reduce<number>((sum, amount) => sum + amount!, 0)
 }
+export function contractBudgetAmount(p: ContractPricing): number | null {
+  if (!p.budget || p.mode === 'fixed') return null
+  const rows = p.rows.filter(row => p.mode === 'running' || row.kind === 'running')
+  const amounts = rows.map(row => p.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null)
+  const fixed = p.mode === 'mixed' ? contractFixedAmount(p) : 0
+  return !rows.length || fixed === null || amounts.some(amount => amount === null) ? null : fixed + amounts.reduce<number>((sum, amount) => sum + amount!, 0)
+}
+export function contractPriceModeLabel(p: ContractPricing): string {
+  if (p.mode === 'fixed') return 'Fast pris'
+  if (p.mode === 'mixed') return p.budget ? 'Fast pris + löpande med budget' : 'Fast + löpande'
+  return p.budget ? 'Löpande räkning med budget' : 'Löpande räkning'
+}
 export function contractPricingIssues(p: ContractPricing): string[] {
   const issues: string[] = []
   if (p.rows.some((row) => !row.title.trim())) issues.push('Ange momentets namn för alla prisrader.')
@@ -84,11 +126,17 @@ export function contractPricingIssues(p: ContractPricing): string[] {
     if (p.running.approximateOre !== null && p.running.approximateOre <= 0) issues.push('Ange ett ungefärligt pris större än noll eller lämna fältet tomt.')
   }
   if (p.basis === 'total' && p.display === 'priced' && p.mode !== 'running') issues.push('För att redovisa delpriser behöver summan beräknas från prisraderna.')
+  if (p.budget) {
+    if (contractBudgetAmount(p) === null) issues.push('Ange planeringsbudget inklusive moms för varje moment på löpande räkning.')
+    if (!p.budget.assumptions.trim()) issues.push('Beskriv budgetens förutsättningar och osäkerheter.')
+    if (!p.budget.reviewTerms.trim()) issues.push('Ange hur budgeten ska följas upp och när samråd ska ske.')
+  }
   return issues
 }
 export function importContractPrices(p: ContractPricing, sources: { id: string; title: string; amountOre: number | null }[], selected: string[], newId = () => crypto.randomUUID()): ContractPricing {
   if (new Set(selected).size !== selected.length) invalid()
   const rows = p.rows.map((row) => ({ ...row }))
+  const budget = p.budget ? { ...p.budget, rows: p.budget.rows.map(row => ({ ...row })) } : p.budget
   for (const id of selected) {
     const source = sources.find((row) => row.id === id)
     if (!source || source.amountOre === null) invalid()
@@ -99,9 +147,15 @@ export function importContractPrices(p: ContractPricing, sources: { id: string; 
       if (matching.length && (matching.length !== 1 || !uniqueSource)) throw new Error('CUSTOMER_CONTRACT_PRICE_AMBIGUOUS')
       if (matching.length === 1) target = matching[0]
     }
-    if (target) { target.sourceItemId = id; target.amountOre = source.amountOre; target.labourOre = null; target.materialOre = null }
-    else rows.push({ id: newId(), sourceItemId: id, title: source.title, kind: p.mode === 'running' ? 'running' : 'fixed', amountOre: source.amountOre, labourOre: null, materialOre: null })
+    if (!target) {
+      target = { id: newId(), sourceItemId: id, title: source.title, kind: p.mode === 'running' || budget ? 'running' : 'fixed', amountOre: null, labourOre: null, materialOre: null }
+      rows.push(target)
+    }
+    target.sourceItemId = id
+    if (budget && (p.mode === 'running' || target.kind === 'running')) {
+      budget.rows = [...budget.rows.filter(row => row.id !== target.id), { id: target.id, amountOre: source.amountOre }]
+    } else { target.amountOre = source.amountOre; target.labourOre = null; target.materialOre = null }
   }
   // Project prices are combined customer amounts; never guess a labour/material split.
-  return normalizeContractPricing({ ...p, rows, basis: 'rows', split: 'combined' })
+  return normalizeContractPricing({ ...p, rows, ...(budget === undefined ? {} : { budget }), basis: 'rows', split: 'combined' })
 }

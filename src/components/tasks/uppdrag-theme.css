@@ -689,6 +689,10 @@
 .gizmo-price-total { display: grid; gap: 4px; padding: 10px; border-bottom: 1px solid #D5DCDD; background: #EDF1F1; }
 .gizmo-price-total-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; }
 .gizmo-price-total-line dd { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gizmo-price-table .gizmo-budget-input { position: relative; display: block; min-width: 0; width: 180px; max-width: 100%; margin-left: auto; }
+.gizmo-budget-input input { text-align: right; min-width: 0; }
+.gizmo-budget-mobile-label { display: none; }
+@media (max-width: 600px) { .gizmo-budget-mobile-label { display: block; text-align: left; font-size: 11px; color: var(--uppdrag-muted); } }
 .gizmo-price-table[data-columns='unpriced'] :is(.gizmo-price-header,.gizmo-price-row) { grid-template-columns: minmax(0, 1fr) 68px; }
 .gizmo-price-table[data-columns='split'] { max-width: 100%; overflow-x: auto; }
 .gizmo-price-table[data-columns='split'] :is(.gizmo-price-header,.gizmo-price-row) { min-width: 680px; grid-template-columns: minmax(160px, 1fr) repeat(3, minmax(110px, auto)) 68px; }

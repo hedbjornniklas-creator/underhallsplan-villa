@@ -18,6 +18,7 @@ import ProjectQuestions, { type QuestionOpenRequest } from './ProjectQuestions'
 import ProjectOverview from './ProjectOverview'
 import ProjectCustomerSharing from './ProjectCustomerSharing'
 import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
+import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -57,6 +58,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
     ...initialOffer, ...initialOffer.offerDraft, offerDraft: undefined,
   } : null)
   const [estimateDirty, setEstimateDirty] = useState(false)
+  const [senderPending, setSenderPending] = useState(false), [senderReset, setSenderReset] = useState(0)
   const [offerDirty, setOfferDirty] = useState(false)
   const [workBusy, setWorkBusy] = useState(false)
   const [workDirty, setWorkDirty] = useState(false)
@@ -127,11 +129,12 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
     finally { renameRunning.current = false; setRenameBusy(false) }
   }
   const navigate = useCallback((next: ProjectView) => {
+    if (senderPending) return
     setView(next)
     if (new URLSearchParams(window.location.search).get('view') !== next) {
       window.history.pushState(null, '', projectUrl(caseId, next))
     }
-  }, [caseId])
+  }, [caseId, senderPending])
   const navigateOffer = useCallback((next: CustomerEditorView) => navigate(projectViews[next]), [navigate])
   useEffect(() => {
     const onBack = () => setView(parseProjectView(new URLSearchParams(window.location.search).get('view')))
@@ -148,6 +151,23 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const accepted = offer?.offers.find((item) => item.status === 'accepted')
   const published = offer?.offers.find((item) => item.status === 'published')
   const paper = activeSigningVersion(offer?.signingVersions)
+  const senderLocked = Boolean(accepted || paper || offer?.signingVersions?.some(version => version.delivery?.signedCopy))
+  const senderBlocked = offerDirty || estimateDirty || workBusy || workDirty || scheduleDirty || renameBusy || renameDirty
+  function applyProjectSender(next: CustomerOfferWorkspace) {
+    receiveContract(next)
+    receiveEstimate({ ...next, ...next.offerDraft, offerDraft: undefined })
+    setSenderReset(value => value + 1)
+  }
+  async function reloadProjectSender() {
+    if (senderBlocked || senderPending) return false
+    try {
+      const response = await fetch(`/api/action-cases/${caseId}/customer-offers`, { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok || !Number.isSafeInteger(result.revision) || !result.draft || !Array.isArray(result.offers)) return false
+      applyProjectSender(result)
+      return true
+    } catch { return false }
+  }
   const contract = accepted ?? published ?? paper
   const currentSection = view === 'review' ? 'contract' : view === 'offerReview' ? 'offer' : view
   const sectionLabel = view === 'customer' ? 'Visa som beställare' : view === 'review' ? 'Granska avtal' : view === 'offerReview' ? 'Granska offert' : sections.find((item) => item.key === view)?.label
@@ -159,7 +179,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
         if (renameOpen) closeRename()
@@ -194,7 +214,13 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
       </nav>
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
         <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh}
-          questionsDirty={questionsDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion} />
+          questionsDirty={questionsDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion}
+          senderControls={offer && <details className="gizmo-home-manager"><summary>Projektets avsändarprofil · {offer.draft.senderProfile?.name ?? issuerName}{senderLocked ? ' · Låst' : ''}</summary>
+            {senderLocked ? <p className="py-3 text-sm">{offer.draft.senderProfile?.legalName ?? issuerName}{offer.draft.senderProfile && <> · {offer.draft.senderProfile.organizationNumber}</>}</p> : <CustomerContractSenderProfile project caseId={caseId} organizationId={offer.customerLink?.organizationId}
+              selected={offer.draft.senderProfile ?? null} revision={offer.revision} currentCompanyName={issuerName} active={view === 'overview'}
+              blockedReason={senderBlocked ? 'Vänta tills pågående ändringar är sparade innan du byter avsändarprofil.' : published ? 'Återkalla det utskickade avtalet innan du byter avsändarprofil.' : null}
+              onPendingChange={setSenderPending} onApplied={applyProjectSender} onReload={reloadProjectSender} />}
+          </details>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
         <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
@@ -202,12 +228,12 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           customerRefresh={customerRefresh}
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
         <div hidden={!offerViews[view] || view === 'offer' || view === 'offerReview'}>
-          {initialOffer ? <CustomerOfferEditor actionCase={project} initial={initialOffer} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
+          {initialOffer ? <CustomerOfferEditor key={`contract:${senderReset}`} actionCase={project} initial={offer ?? initialOffer} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource} projectOperationPending={senderPending}
             embedded draftTarget="contract" linkedRevision={Math.max(0, ...project.items.map(item => item.contractWork?.revision ?? 0))} offerItems={estimate?.draft.items ?? []} active={Boolean(offerViews[view]) && view !== 'offer' && view !== 'offerReview'} view={view !== 'offer' && view !== 'offerReview' ? offerViews[view] ?? 'contract' : 'contract'} onViewChange={navigateOffer} onWorkspaceChange={receiveContract} onCustomerChanged={customerChanged} onDirtyChange={setOfferDirty} sharedSchedule={sharedSchedule} sourcePending={workDirty || workBusy || scheduleDirty} />
             : <section className="gizmo-empty" role="alert"><h2>{sectionLabel}</h2><p>{initialOfferError || 'Offertuppgifterna kunde inte hämtas. Projektarbete och filer är fortfarande tillgängliga.'}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>}
         </div>
         <div hidden={view !== 'offer' && view !== 'offerReview'}>
-          {estimate && <CustomerOfferEditor actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource}
+          {estimate && <CustomerOfferEditor key={`offer:${senderReset}`} actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource} projectOperationPending={senderPending}
             embedded draftTarget="offer" active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
             onViewChange={navigateOffer} onWorkspaceChange={receiveEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
         </div>

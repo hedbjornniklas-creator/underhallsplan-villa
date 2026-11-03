@@ -10,6 +10,7 @@ import {
   CalendarClock,
   Check,
   ChevronDown,
+  Download,
   Eye,
   FilePlus2,
   Loader2,
@@ -67,25 +68,25 @@ import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import CustomerContractDelivery from './CustomerContractDelivery'
-import { contractPricingForEditing } from '@/lib/action-cases/contractPricing'
+import { contractBudgetAmount, contractPricingForEditing, defaultBudgetReviewTerms } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
 import CustomerOfferHourEstimate from './CustomerOfferHourEstimate'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import CustomerContractSigning from './CustomerContractSigning'
-import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
-function OfferPriceForm({ onRunning }: { onRunning: () => void }) {
+function OfferPriceForm({ onRunning, onBudget }: { onRunning: () => void; onBudget: () => void }) {
   const name = useId()
   return <fieldset className="mb-4 min-w-0"><legend className="mb-2 text-sm font-medium">Prisform</legend><div className="gizmo-price-modes">
     <label className="selected"><input type="radio" name={name} checked readOnly />Fast pris</label>
     <label><input type="radio" name={name} checked={false} onChange={onRunning} />Löpande räkning</label>
+    <label><input type="radio" name={name} checked={false} onChange={onBudget} />Löpande räkning med budget</label>
   </div></fieldset>
 }
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
@@ -114,6 +115,7 @@ export default function CustomerOfferEditor({
   linkedRevision = 0,
   contractorSource,
   draftTarget = 'contract',
+  projectOperationPending = false,
   offerItems = []
 }: {
   actionCase: ActionCaseView
@@ -132,6 +134,7 @@ export default function CustomerOfferEditor({
   linkedRevision?: number
   contractorSource?: Partial<ContractContractor>
   draftTarget?: 'contract' | 'offer'
+  projectOperationPending?: boolean
   offerItems?: CustomerOfferItem[]
 }) {
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
@@ -175,8 +178,9 @@ export default function CustomerOfferEditor({
   const [actionBusy, setBusy] = useState(''),
     running = useRef(false),
     toast = useToast()
-  const [senderPending, setSenderPending] = useState(false)
+  const senderPending = projectOperationPending
   const senderOperation = useRef(false)
+  useEffect(() => { senderOperation.current = projectOperationPending }, [projectOperationPending])
   const busy = senderPending ? 'sender_profile' : actionBusy
   const [confirmed, setConfirmed] = useState(false)
   const [confirmItemized, setConfirmItemized] = useState(false)
@@ -278,6 +282,10 @@ export default function CustomerOfferEditor({
     ...(standardTermsFile && !actionCase.attachments.some((f) => f.id === standardTermsFile.id)
       ? [{ ...standardTermsFile, type: 'document' as const, title: ABS18_TERMS.name }] : [])]
   const baseAmount = customerOfferBaseAmount(draft)
+  const offerPdfBlocked = dirty || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error' || sourcePending || workspace.revision < 1
+  const offerPdfControl = offerPdfBlocked
+    ? <button type="button" className={`${button} bg-white`} disabled title="Vänta tills offertens ändringar är sparade"><Download size={17} />Offert (PDF)</button>
+    : <a className={`${button} bg-white`} href={`/api/action-cases/${actionCase.id}/customer-offers/pdf?revision=${workspace.revision}`} target="_blank" rel="noopener noreferrer"><Download size={17} />Offert (PDF)</a>
   const legacyChoices = draft.items.filter((i) => i.kind === 'option')
   const missingPriceCount = draft.items.filter(
     (i) => i.kind === 'included' && i.amountOre === null
@@ -537,17 +545,6 @@ export default function CustomerOfferEditor({
       setBusy('')
     }
   }
-  function applySenderWorkspace(result: CustomerOfferWorkspace) {
-    autosave.reset(result.revision)
-    acknowledgedDraft.current = result.draft
-    const next = { draft: result.draft, costing: result.costing ?? {} }
-    currentSnapshot.current = next
-    setWorkspace(result)
-    setDraft(next.draft)
-    setCosting(next.costing)
-    persistDocuments(next.draft)
-    setConfirmed(false)
-  }
   function move(index: number, delta: number) {
     const items = [...draft.items]
     const peers = items.map((item, position) => ({ item, position })).filter(({ item }) => item.kind === items[index].kind)
@@ -635,6 +632,9 @@ export default function CustomerOfferEditor({
     {draftTarget === 'offer' && <OfferPriceForm onRunning={() => {
         setConfirmItemized(false)
         update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running' }, pricingMode: 'total', baseAmountOre: null })
+      }} onBudget={() => {
+        setConfirmItemized(false)
+        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running', budget: { version: 1, rows: [], assumptions: '', reviewTerms: defaultBudgetReviewTerms } }, pricingMode: 'total', baseAmountOre: null })
       }} />}
     <label className="block text-sm">Prissättning av grundåtagandet
       <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {
@@ -755,20 +755,7 @@ export default function CustomerOfferEditor({
           </button>
         ))}
       </nav>}
-      {draftTarget === 'contract' && <div hidden={!contractView}>
-        <CustomerContractSenderProfile caseId={actionCase.id} organizationId={workspace.customerLink?.organizationId}
-          selected={draft.senderProfile ?? null} revision={workspace.revision} currentCompanyName={parties.contractor.companyName}
-          active={active && contractView} blockedReason={accepted || signingVersion?.delivery?.signedCopy ? 'Avtalet är godkänt eller underskrivet. Avsändaren i det avtalet kan inte ändras.'
-            : locked ? 'Avtalet är låst. Skapa ett nytt avtalsutkast innan avsändarprofilen kan ändras.'
-            : workspace.offers.some(offer => offer.status === 'published') ? 'Återkalla det utskickade avtalet innan du byter avsändarprofil.'
-            : busy ? 'Ett arbete pågår. Vänta tills det är klart.'
-            : autosave.state?.status === 'error' ? 'Sparningen av utkastet behöver kontrolleras innan du byter avsändarprofil.'
-            : dirty || autosave.isSaving || !workspace.revision ? 'Spara avtalsutkastet innan du väljer avsändarprofil.'
-            : documentRecovery ? 'Hantera det lokala handlingsutkastet innan du byter avsändarprofil.'
-            : planningDirty || billingDirty || sourcePending ? 'Spara pågående ändringar i uppdraget innan du byter avsändarprofil.' : null}
-          onPendingChange={pending => { senderOperation.current = pending; setSenderPending(pending) }} onApplied={applySenderWorkspace}
-          onReload={async () => { if (dirty || autosave.isPending() || autosave.state?.status === 'error') return false; return action('refresh') }} />
-      </div>}
+      {(contractView || draftTarget === 'offer') && <p className="my-3 text-sm text-[#596368]">Avsändare: <strong className="text-[#252A2D]">{draft.senderProfile?.name ?? issuerName}</strong>{draft.senderProfile && <> · {draft.senderProfile.organizationNumber}</>}</p>}
       {legacyChoices.length > 0 && !locked && view !== 'customer' && <section className="my-5 border-l-4 border-amber-500 bg-amber-50 p-4">
         <h2 className="text-base font-semibold">{legacyChoices.length} val behöver skiljas från grundavtalet</h2>
         <p className="mt-2 text-sm">Priser, alternativgrupper och interna kalkyler flyttas till Val och tillval. Grundpriset ändras inte och inget delas med kunden.</p>
@@ -843,13 +830,14 @@ export default function CustomerOfferEditor({
               }
             />
           </div>}
-          <div className="py-5 print:hidden">
+          <div className="flex flex-wrap gap-3 py-5 print:hidden">
             <button
               className={`${button} bg-white`}
               onClick={() => setView(view === 'offerDocument' ? 'edit' : 'contract')}
             >
               <ArrowLeft size={17} /> Tillbaka till redigering
             </button>
+            {draftTarget === 'offer' && offerPdfControl}
           </div>
         </>
       ) : (
@@ -943,7 +931,7 @@ export default function CustomerOfferEditor({
                   key={item.id}
                   title={`${visibleIndex + 1}. ${item.title || 'Ny arbetsdel'}`}
                   summary={item.scope.trim() ? 'Omfattning ifylld' : 'Omfattning saknas'}
-                  amount={item.kind === 'excluded' ? 'Ingår inte' : draft.pricingMode === 'itemized' ? item.amountOre === null ? 'Pris saknas' : money(item.amountOre) : 'Ingår i grundpriset'}
+                  amount={item.kind === 'excluded' ? 'Ingår inte' : draft.contractPricing?.budget ? 'Enligt budget- och prisdelen' : draft.pricingMode === 'itemized' ? item.amountOre === null ? 'Pris saknas' : money(item.amountOre) : 'Ingår i grundpriset'}
                   open={expanded === item.id} onToggle={() => setExpanded(expanded === item.id ? null : item.id)}
                 >
                   <div className="flex items-start gap-2">
@@ -1128,6 +1116,7 @@ export default function CustomerOfferEditor({
                   ? 'Summa grundåtagande inklusive moms'
                   : 'Grundpris inklusive moms'}
               </p>
+              {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">Planeringsbudget totalt inkl. moms</dt><dd className="mt-1 font-semibold">{contractBudgetAmount(draft.contractPricing) === null ? 'Budget ej komplett' : money(contractBudgetAmount(draft.contractPricing))}</dd></dl>}
               {draft.pricingMode === 'itemized' && baseAmount === null && (
                 <p className="mt-2 text-sm text-amber-700">
                   {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris
@@ -1176,6 +1165,7 @@ export default function CustomerOfferEditor({
                     <Eye size={17} />
                     {contractView ? 'Granska avtal' : 'Granska offert'}
                   </button>
+                  {draftTarget === 'offer' && <div className="mt-3">{offerPdfControl}</div>}
                   {!contractView && <button className={`${button} mt-3 w-full bg-slate-950 text-white`} onClick={() => { setExpanded('customer'); setView('contract') }}>Gå vidare till avtal <ArrowRight size={17} /></button>}
                   {contractView && signingMethod === 'email_code' && <>
                   {issues.length > 0 && (

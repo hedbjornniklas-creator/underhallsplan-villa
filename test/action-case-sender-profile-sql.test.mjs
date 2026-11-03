@@ -93,6 +93,48 @@ async function fixture() {
   } catch (error) { await db.close(); throw error }
 }
 
+test('project sender selection updates editable documents together and is locked for the whole project', async () => {
+  const f = await fixture()
+  try {
+    await f.db.exec(senderMigration())
+    const p = await f.project(), original = await saved(f.db, p.id)
+    const install = migration('2026-11-03_02_project_sender_profile')
+    await f.db.exec(install); await f.db.exec(install)
+    assert.deepEqual(await saved(f.db,p.id), original)
+    const apply = (project, request) => f.db.query('select select_action_case_project_sender($1,$2,$3,$4::jsonb,null) result', [f.org, project, f.actor, JSON.stringify(request)])
+    const request = selection(f.sender)
+    await apply(p.id, request)
+    const contract = await saved(f.db,p.id)
+    const offer = (await f.db.query('select * from action_case_customer_offer_drafts where action_case_id=$1',[p.id])).rows[0]
+    assert.deepEqual(contract.body.senderProfile, offer.body.senderProfile)
+    assert.equal(contract.revision,2); assert.equal(offer.revision,1)
+    assert.equal(contract.body.baseAmountOre,original.body.baseAmountOre)
+    assert.deepEqual(contract.body.items,original.body.items)
+    assert.deepEqual(normalizeCustomerOffer(offer.body),offer.body)
+    await apply(p.id,request)
+    assert.deepEqual(await saved(f.db,p.id),contract)
+    assert.deepEqual((await f.db.query('select * from action_case_customer_offer_drafts where action_case_id=$1',[p.id])).rows[0],offer)
+    const forged = structuredClone(offer.body); delete forged.senderProfile
+    await assert.rejects(f.db.query('update action_case_customer_offer_drafts set body=$2 where action_case_id=$1',[p.id,forged]),/CUSTOMER_SENDER_IMMUTABLE/)
+    const frozen = await paper(f,p.id)
+    const history = (await f.db.query('select snapshot,pdf_sha256 from action_case_contract_signing_documents where id=$1',[frozen.id])).rows[0]
+    await assert.rejects(apply(p.id,selection(f.sender,2)),/CUSTOMER_OFFER_LOCKED/)
+    await assert.rejects(select(f,p.id,selection(f.sender,2)),/CUSTOMER_OFFER_LOCKED/)
+    assert.deepEqual((await f.db.query('select snapshot,pdf_sha256 from action_case_contract_signing_documents where id=$1',[frozen.id])).rows[0],history)
+    assert.deepEqual(await saved(f.db,p.id),contract)
+    const blank = await f.project()
+    await f.db.query('delete from action_case_customer_contract_drafts where action_case_id=$1',[blank.id])
+    await apply(blank.id,selection(f.sender,0))
+    assert.equal((await saved(f.db,blank.id)).revision,1)
+    assert.equal((await saved(f.db,blank.id)).body.senderProfile.profileId,f.sender)
+    for (const role of ['anon','authenticated']) await asRole(f.db,role,async()=> {
+      await assert.rejects(apply(blank.id,selection(f.sender,1)),/permission denied/)
+      await assert.rejects(f.db.query('select project_sender_body(null,null,\'\',\'\',\'\',\'\')'),/permission denied/)
+    })
+    await assert.rejects(f.db.query('select select_action_case_project_sender($1,$2,$3,$4::jsonb,null)',[f.otherOrg,blank.id,f.actor,selection(f.sender,1)]),/FORBIDDEN|NOT_FOUND/)
+  } finally { await f.db.close() }
+})
+
 test('sender selection SQL preserves authority, immutable document identity and exact retries', async t => {
   const f = await fixture()
   try {

@@ -43,6 +43,7 @@ import { normalizeCostLine } from '../src/lib/action-cases/costing.ts'
 import { calculateActionCaseCostTotals } from '../src/lib/action-cases/domain.ts'
 import { costCompletionPayload } from '../src/lib/action-cases/costCompletion.ts'
 import { defaultCustomerVisibility, projectCustomerPortal, visibilityMutation } from '../src/lib/action-cases/customerSharing.ts'
+import { contractSenderFixture } from '../test/fixtures/contract-sender-profile.ts'
 
 const require = createRequire(import.meta.url),
   { webpack } = require('next/dist/compiled/webpack/webpack')
@@ -352,6 +353,14 @@ if (process.argv.includes('--work-sums')) {
 }
 const contractWorkTest = process.argv.includes('--contract-work')
 const sharedScopeTest = process.argv.includes('--shared-work-scope')
+const projectSenderTest = process.argv.includes('--project-sender')
+const senderRequests = new Set()
+const senderSnapshot = { ...contractSenderFixture(), organizationId: state.customerLink?.organizationId ?? id(100) }
+function applyFakeSender(draft) {
+  draft.senderProfile = structuredClone(senderSnapshot)
+  if (draft.contractParties) Object.assign(draft.contractParties.contractor, { companyName:senderSnapshot.name, organizationNumber:senderSnapshot.organizationNumber,
+    street:senderSnapshot.address ?? '',postalCode:senderSnapshot.postalCode ?? '',city:senderSnapshot.city ?? '',email:senderSnapshot.email ?? '',phone:senderSnapshot.phone ?? '' })
+}
 const contractWorkRequests=[]
 if (contractWorkTest) {
   projects.cases[0].title='TEST: Kopplade avtalsmoment'
@@ -416,8 +425,8 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(body))
   }
   if(contractWorkTest && path==='/__test__/requests'){json(contractWorkRequests);return}
-  if(sharedScopeTest && path.endsWith('/sender-profile') && req.method==='GET'){
-    json({available:true,organization:{id:state.customerLink?.organizationId??id(100),name:'Exempelbygg AB',legalName:'Exempelbygg AB',organizationNumber:'556000-0000',legalNameVersion:1},profiles:[],selected:null});return
+  if((sharedScopeTest || projectSenderTest) && path.endsWith('/sender-profile') && req.method==='GET'){
+    json({available:true,organization:{id:senderSnapshot.organizationId,name:'Exempelbygg AB',legalName:senderSnapshot.legalName,organizationNumber:senderSnapshot.organizationNumber,legalNameVersion:senderSnapshot.legalNameVersion},profiles:projectSenderTest?[{id:senderSnapshot.profileId,orgId:senderSnapshot.organizationId,version:senderSnapshot.profileVersion,name:senderSnapshot.name,address:senderSnapshot.address,postalCode:senderSnapshot.postalCode,city:senderSnapshot.city,email:senderSnapshot.email,phone:senderSnapshot.phone,website:null,logoPath:null,reportFooterText:null,isActive:true}]:[],selected:state.draft.senderProfile??null});return
   }
   if (process.argv.includes('--choice-files') && path.startsWith('/__test__/choice-pdf-upload/') && req.method === 'PUT') {
     const chunks = []; for await (const chunk of req) chunks.push(chunk)
@@ -464,6 +473,13 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition','attachment; filename="TEST-avtalsutkast.pdf"')
     res.end(pdf); return
   }
+  if(projectSenderTest && path.endsWith('/customer-offers/pdf') && req.method==='GET') {
+    const revision=Number(new URL(req.url,'http://localhost').searchParams.get('revision'))
+    if(revision!==estimateState.revision){json({error:'Offerten har andrats.'},409);return}
+    const snapshot={...estimateState.draft,projectTitle:'FIKTIVT TEST',propertyAddress:'Testgatan 1',customerName:'Anna Test',customerEmail:'anna@example.test',issuerName:senderSnapshot.name,replyEmail:senderSnapshot.email}
+    const pdf=await renderContractSigningPdf({kind:'offer',id:id(1),version:0,draftRevision:revision,createdAt:new Date().toISOString(),snapshot,files:[]})
+    res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition','attachment; filename="TEST-offert.pdf"');res.end(pdf);return
+  }
   const signingDownload = path.match(/\/contract-signing\/([^/]+)\/(pdf|customer-pdf)$/)
   if (signingDownload && req.method === 'GET') {
     const version=state.signingVersions.find((v)=>v.id===signingDownload[1])
@@ -502,6 +518,14 @@ const server = createServer(async (req, res) => {
     let raw = ''
     for await (const chunk of req) raw += chunk
     const body = JSON.parse(raw)
+    if(projectSenderTest && path.endsWith('/sender-profile')) {
+      if(state.signingVersions?.some(v=>!v.releasedAt)||state.offers.some(o=>o.status==='accepted')){json({error:'Avtalet ar last.'},409);return}
+      if(!senderRequests.has(body.requestId)){
+        if(body.revision!==state.revision){json({error:'Utkastet har andrats.'},409);return}
+        applyFakeSender(state.draft);applyFakeSender(estimateState.draft);state.revision++;estimateState.revision++;senderRequests.add(body.requestId);writes.push('project_sender_selected')
+      }
+      json({saved:true,workspace:{...state,offerDraft:estimateState}});return
+    }
     if(contractWorkTest){requestInfo.operation=body.operation??body.action;requestInfo.revision=body.revision}
     if (slowSave && (['save', 'autosave'].includes(body.operation) || (path.endsWith('/questions') && ['create','update'].includes(body.operation)) || ['save_item_scope','set_cost_line_complete','create_cost_line','update_cost_line'].includes(body.action) || path.endsWith('/billing') || path.endsWith('/name') || path.endsWith('/sharing'))) { slowSave = false; await new Promise((resolve) => setTimeout(resolve, 5000)) }
     if (path.endsWith('/sharing')) {

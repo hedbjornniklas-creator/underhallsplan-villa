@@ -25,13 +25,13 @@ function checked(error: { code?: string; message?: string } | null) {
   throw new Error('CUSTOMER_SENDER_FAILED')
 }
 
-export function parseContractSenderSelection(value: unknown): ContractSenderSelection {
+export function parseContractSenderSelection(value: unknown, project = false): ContractSenderSelection {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('CUSTOMER_SENDER_INVALID')
   const input = value as Record<string, unknown>
   const keys = ['requestId', 'revision', 'profileId', 'profileVersion', 'legalNameVersion', 'organizationNumber', 'confirmed']
   if (Object.keys(input).length !== keys.length || keys.some(key => !Object.hasOwn(input, key)) || input.confirmed !== true ||
     !isOrganizationUuid(input.requestId) || !isOrganizationUuid(input.profileId) ||
-    ['revision', 'profileVersion', 'legalNameVersion'].some(key => !Number.isSafeInteger(input[key]) || Number(input[key]) < 1) ||
+    ['revision', 'profileVersion', 'legalNameVersion'].some(key => !Number.isSafeInteger(input[key]) || Number(input[key]) < (project && key === 'revision' ? 0 : 1)) ||
     Number(input.revision) > 2147483646 || typeof input.organizationNumber !== 'string' || !/^\d{6}-?\d{4}$/u.test(input.organizationNumber)) throw new Error('CUSTOMER_SENDER_INVALID')
   return { requestId: input.requestId.toLowerCase(), revision: Number(input.revision), profileId: input.profileId.toLowerCase(),
     profileVersion: Number(input.profileVersion), legalNameVersion: Number(input.legalNameVersion), organizationNumber: input.organizationNumber, confirmed: true }
@@ -72,12 +72,12 @@ async function freezeLogo(ctx: Context, path: string): Promise<string> {
   } catch { throw new Error('CUSTOMER_SENDER_MEDIA') }
 }
 
-export async function selectContractSenderProfile(ctx: Context, caseId: string, value: unknown) {
-  const selection = parseContractSenderSelection(value)
+export async function selectContractSenderProfile(ctx: Context, caseId: string, value: unknown, project = false) {
+  const selection = parseContractSenderSelection(value, project)
   await requireCase(ctx, caseId)
   const db = createSupabaseAdminClient()
   const write = async (logo: string | null) => {
-    const result = await db.rpc('select_action_case_contract_sender', { p_org_id: ctx.orgId, p_case_id: offerId(caseId),
+    const result = await db.rpc(project ? 'select_action_case_project_sender' : 'select_action_case_contract_sender', { p_org_id: ctx.orgId, p_case_id: offerId(caseId),
       p_user_id: ctx.userId, p_data: selection, p_logo_data_url: logo })
     checked(result.error)
     if (result.data?.saved !== true) throw new Error('CUSTOMER_SENDER_FAILED')
