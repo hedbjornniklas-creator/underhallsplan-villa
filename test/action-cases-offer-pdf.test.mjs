@@ -82,8 +82,8 @@ test('legacy fixed offers use the standard compensation text without changing or
   assert.equal(parts[1].rows.at(-1)[1], offers.money(snapshot.baseAmountOre))
   assert.deepEqual(snapshot, before)
   const editor = readFileSync(new URL('../src/components/tasks/CustomerOfferEditor.tsx', import.meta.url), 'utf8')
-  assert.match(editor, /onMixed=\{\(\) => \{[\s\S]*?contractPricingForEditing\(draft\), mode: 'mixed'/)
-  assert.match(editor, /onChange=\{onMixed\} \/>Fast \+ löpande/)
+  assert.match(editor, /draftTarget === 'offer' \? <CustomerOfferPricingSummary/)
+  assert.doesNotMatch(editor, /function OfferPriceForm|onMixed=/)
 })
 test('mixed offer keeps fixed compensation and running budget separate without a combined cost plan', async () => {
   const snapshot = signingSnapshot()

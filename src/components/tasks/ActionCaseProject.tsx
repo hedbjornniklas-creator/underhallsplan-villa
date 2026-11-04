@@ -62,6 +62,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [offerDirty, setOfferDirty] = useState(false)
   const [workBusy, setWorkBusy] = useState(false)
   const [workDirty, setWorkDirty] = useState(false)
+  const [workOpenRequest, setWorkOpenRequest] = useState<{ itemId: string; token: string } | null>(null)
   const [scheduleDirty, setScheduleDirty] = useState(false)
   const [questionsDirty, setQuestionsDirty] = useState(false)
   const [sharingDirty, setSharingDirty] = useState(false)
@@ -225,7 +226,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
-          customerRefresh={customerRefresh}
+          customerRefresh={customerRefresh} openWorkRequest={workOpenRequest}
           section={view === 'work' || view === 'files' ? view : 'hidden'} onWorkspaceChange={setWorkspace} onBusyChange={setWorkBusy} onDirtyChange={setWorkDirty} />
         <div hidden={!offerViews[view] || view === 'offer' || view === 'offerReview'}>
           {initialOffer ? <CustomerOfferEditor key={`contract:${senderReset}`} actionCase={project} initial={offer ?? initialOffer} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource} projectOperationPending={senderPending}
@@ -235,6 +236,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         <div hidden={view !== 'offer' && view !== 'offerReview'}>
           {estimate && <CustomerOfferEditor key={`offer:${senderReset}`} actionCase={project} initial={estimate} issuerName={issuerName} replyEmail={replyEmail} contractorSource={contractorSource} projectOperationPending={senderPending}
             embedded draftTarget="offer" projectDetails={offer?.offerProjectDetails} active={view === 'offer' || view === 'offerReview'} view={view === 'offerReview' ? 'offerDocument' : 'edit'}
+            onEditProjectWork={itemId => { if (senderPending || workDirty || workBusy) return; if (itemId) setWorkOpenRequest({ itemId, token: crypto.randomUUID() }); navigate('work') }}
             onViewChange={navigateOffer} onWorkspaceChange={receiveEstimate} onDirtyChange={setEstimateDirty} sourcePending={workDirty || workBusy || scheduleDirty} />}
         </div>
         <section hidden={view !== 'schedule'}>

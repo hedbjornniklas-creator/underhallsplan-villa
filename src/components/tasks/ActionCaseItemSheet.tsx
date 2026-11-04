@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Calculator, Check, ClipboardList, CircleDollarSign, ListChecks, Loader2, LockKeyhole, Mail, MoreHorizontal, Pencil, Plus, Printer, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import { Calculator, Check, ClipboardList, ListChecks, Loader2, LockKeyhole, Mail, MoreHorizontal, Pencil, Plus, Printer, Save, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseCostSuggestion, ActionCaseItemView, ActionCaseView } from '@/lib/action-cases/contracts'
 import { actionCaseCostCoverage, calculateActionCaseCostTotals } from '@/lib/action-cases/domain'
 import { normalizeCostLine } from '@/lib/action-cases/costing'
@@ -34,6 +34,7 @@ type Props = {
   attachments?: ActionCaseView['attachments']
   participants?: ActionCaseView['participants']
   initialCostLineId?: string
+  initialTab?: 'scope' | 'cost'
   onRequest?: (costLineIds: string[]) => void
   onOpenRequest?: (requestId: string) => void
   busy: boolean
@@ -138,13 +139,13 @@ function Proposal({ proposal, stale, busy, onApply }: {
   </section>
 }
 
-export default function ActionCaseItemSheet({ item, caseId, projectTitle, deliveryAddress, attachments = [], participants = [], initialCostLineId, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, calculation, customerPricingEntry, onCustomerPricingChange, onCustomerPricingRetry, onCustomerPricingReload, onReloadCalculation, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
+export default function ActionCaseItemSheet({ item, caseId, projectTitle, deliveryAddress, attachments = [], participants = [], initialCostLineId, initialTab, onRequest, onOpenRequest, busy, onClose, onSave, scopeSave, scopeBlocked, calculation, customerPricingEntry, onCustomerPricingChange, onCustomerPricingRetry, onCustomerPricingReload, onReloadCalculation, onScopeChange, onScopeFlush, onScopeRetry, onDirtyChange, onDelete, onCostAction }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
   const backdropPress = useRef(false)
   const tabId = useId()
   const deleteConfirmation = useRef<HTMLElement>(null)
   const inFlight = useRef(false)
-  const [tab, setTab] = useState<'scope' | 'price' | 'cost'>(initialCostLineId ? 'cost' : 'scope')
+  const [tab, setTab] = useState<'scope' | 'cost'>(initialCostLineId ? 'cost' : initialTab ?? 'scope')
   const draft = scopeSave?.draft ?? actionScopeDraft(item, scopeAttachmentIds(item, attachments))
   const { title, scope, scopeConditions = '', scopeExclusions = '', scopeAdvice = '', scopeAttachmentIds: selectedFiles } = draft
   const locked = Boolean(item.contractWork?.locked)
@@ -218,10 +219,10 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
   }
   const close = () => {
     if (working) return
-    if (costDirty && !window.confirm(tab === 'price' ? 'Stäng utan att koppla de påbörjade kundprisvillkoren?' : 'Stäng utan att spara kalkyländringarna?')) return
+    if (costDirty && !window.confirm(agreedPriceDirty ? 'Stäng utan att använda de påbörjade kundprisvillkoren?' : 'Stäng utan att spara kalkyländringarna?')) return
     onClose()
   }
-  const selectTab = (next: 'scope' | 'price' | 'cost') => {
+  const selectTab = (next: 'scope' | 'cost') => {
     if (next === tab || costDirty || working) return
     onScopeFlush(); setTab(next)
   }
@@ -263,7 +264,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length
         tabs[next]?.focus(); tabs[next]?.click()
       }}>
-        {([['scope', 'Omfattning', ClipboardList], ...(onCustomerPricingChange ? [['price', 'Kundpris', CircleDollarSign] as const] : []), ['cost', 'Kalkyl', Calculator]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}`} aria-controls={`${tabId}-panel`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} disabled={(costDirty || working) && tab !== key} onClick={() => selectTab(key)} className="gizmo-register-tab"><Icon size={17} aria-hidden="true" />{label}</button>)}
+        {([['scope', 'Omfattning', ClipboardList], ['cost', 'Kalkyl', Calculator]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`${tabId}-${key}`} aria-controls={`${tabId}-panel`} aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} disabled={(costDirty || working) && tab !== key} onClick={() => selectTab(key)} className="gizmo-register-tab"><Icon size={17} aria-hidden="true" />{label}</button>)}
       </div>
       <div role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {item.contractWork && (locked || item.contractWork.price.editable || item.contractWork.customerPricing?.terms) && <div className="mb-4 border-l-2 border-[#3D6763] bg-[#EDF1F0] p-3 text-sm" role="status">
@@ -277,7 +278,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
           {dirty && <p className="mt-2 text-sm">Osparade ändringar i åtgärden kastas.</p>}
           <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={secondary} disabled={working} onClick={() => setConfirmDelete(false)}>Avbryt</button><button type="button" className={`${secondary} text-rose-700`} disabled={working} onClick={() => void run(onDelete)}>{working ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}Ta bort permanent</button></div>
         </section>}
-        {tab === 'price' && onCustomerPricingChange ? <ActionCaseCustomerPricing item={item} entry={customerPricingEntry} blocked={working} onChange={onCustomerPricingChange} onRetry={() => onCustomerPricingRetry?.()} onReload={() => onCustomerPricingReload?.()} onDraftDirty={setAgreedPriceDirty} /> : tab === 'scope' ? <fieldset disabled={mutationBlocked} className="space-y-5">
+        {tab === 'scope' ? <fieldset disabled={mutationBlocked} className="space-y-5">
           <label className="block text-sm font-semibold">Rubrik *<input className={inputClass} value={title} onChange={(e) => changeScope({ title: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Arbetets omfattning<textarea className={`${inputClass} py-3 leading-6`} rows={5} value={scope} onChange={(e) => changeScope({ scope: e.target.value })} /></label>
           <label className="block text-sm font-semibold">Förutsättningar (valfritt)<textarea className={`${inputClass} py-3 leading-6`} rows={3} maxLength={6000} disabled={!item.scopeConditionsAvailable} value={scopeConditions} onChange={(e) => changeScope({ scopeConditions: e.target.value })} /></label>
@@ -362,13 +363,17 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
           {incomplete && <p className="gizmo-cost-warning" id={`${tabId}-cost-warning`} role="status"><strong>Ofullständig kalkyl.</strong> {[coverage.missingQuantity ? `${coverage.missingQuantity} ${coverage.missingQuantity === 1 ? 'rad saknar' : 'rader saknar'} mängd` : '', coverage.missingPrice ? `${coverage.missingPrice} ${coverage.missingPrice === 1 ? 'rad saknar' : 'rader saknar'} pris` : ''].filter(Boolean).join(' · ')}. Summan omfattar bara rader med både mängd och pris. {coverage.knownTotals.customerPrice === null ? 'Inga rader kan räknas ut ännu.' : 'Belopp på 0 kr räknas med.'}</p>}
           {editing && !editing.line && <div className="mt-4"><CostLineForm key={`new-${editing.category}`} category={editing.category} busy={mutationBlocked || dirty} onCancel={() => setEditing(null)} onSave={payload => run(async () => { const saved = await onCostAction('create_cost_line', payload); if (saved && payload.pricingMethod === 'quotes') setQuoteLineId(String(payload.costLineId)); return saved })} /></div>}
           </>}
+          {onCustomerPricingChange && <ActionCaseCustomerPricing item={item} entry={customerPricingEntry}
+            blocked={working || dirty || costSaves.length > 0 || Boolean(editing) || quoteEditing || Boolean(quoteLineId) || partEditing || bulkEditing || lumpDirty}
+            onChange={onCustomerPricingChange} onRetry={() => onCustomerPricingRetry?.()} onReload={() => onCustomerPricingReload?.()} onDraftDirty={setAgreedPriceDirty} />}
         </>}
       </div>
       <footer className="shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
         <div role="status" aria-live="polite" aria-atomic="true" data-testid="scope-save-status" className={`${tab === 'cost' ? 'mb-2 ' : ''}flex h-8 min-w-0 items-center gap-2 text-xs text-slate-600`}>
-          {tab === 'price' ? <span>{locked ? 'Kundprisvillkoren är låsta' : customerPricingEntry?.status === 'error' ? 'Kundprisvillkor inte sparade' : customerPricingEntry && customerPricingEntry.status !== 'saved' ? 'Sparar kundprisvillkor…' : customerPricingEntry || item.contractWork?.customerPricing?.terms ? 'Kundprisvillkor sparade' : 'Kundprisvillkor inte kopplade'}</span> : scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
+          {scopeSave?.status === 'error' ? <><span className="min-w-0 truncate" title={scopeSave.error}>Kunde inte spara</span><button type="button" className="h-8 shrink-0 underline" onClick={onScopeRetry}>Försök igen</button></> : !title.trim() ? <span className="truncate">Rubrik saknas. Inte sparat.</span> : scopeSave && scopeSave.status !== 'saved' ? <><Loader2 size={14} className="shrink-0 animate-spin" />Sparar omfattning…</> : <><Check size={14} className="shrink-0" />Omfattning sparad</>}
         </div>
         {tab === 'cost' && <>
+          {onCustomerPricingChange && <p role="status" className="mb-2 text-xs">{locked ? 'Kundprisvillkoren är låsta' : customerPricingEntry?.status === 'error' ? 'Kundprisvillkor inte sparade' : customerPricingEntry && customerPricingEntry.status !== 'saved' ? 'Sparar kundprisvillkor…' : customerPricingEntry || item.contractWork?.customerPricing?.terms ? 'Kundprisvillkor sparade' : 'Kundprisvillkor inte angivna'}</p>}
           {calculation && <div className="mb-2 flex min-h-8 flex-wrap items-center gap-2 text-xs" aria-label="Kalkylens sparstatus" role="status">
             <span>{costSaves.some(entry => entry.status === 'error') ? 'Kunde inte spara kalkylen' : costSaves.some(entry => entry.status === 'invalid') ? 'Ofullständigt utkast · Inte sparat' : costSaves.length ? 'Sparar kalkylen…' : 'Kalkylen sparad'}</span>
             {costSaves.filter(entry => entry.status === 'error').map(entry => <span key={entry.edit.key} className="basis-full text-rose-700"><span role="alert">{entry.error}</span><button type="button" className="ml-2 min-h-8 underline" onClick={() => calculation.retry(entry.edit.key)}>Försök igen</button></span>)}

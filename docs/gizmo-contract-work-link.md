@@ -3,6 +3,53 @@
 Senaste beslutet nedan (2026-11-03) ersatter den tidigare separata hanteringen av
 offertpriser. Gamla utkast och lasta dokument kopplas inte om automatiskt.
 
+## Beslutsandring 2026-11-03: Prisvillkor I Kalkyl Och Offert Som Sammanstallning
+
+Anvandaren har godkant ett enklare arbetsflode. Detta ersatter beslutet nedan
+om en egen Kundpris-flik och dubbla prisredigerare. Inga befintliga priser,
+omfattningar, kalkylrader eller frysta dokument far skrivas om vid installation.
+
+- Projektarbete har Omfattning och Kalkyl. Under kalkylen ligger Sa debiteras
+  kunden med gemensam eller separat prisform for arbete/material, fasta belopp,
+  lopande prisgrunder och planeringsbudget. Befintlig kanonisk lagring ateranvands.
+- Anvand kalkylens belopp ar ett uttryckligt val. Det tar kalkylens beraknade
+  kundpris med paslag, inte intern kostnad. Att oppna en panel eller andra
+  intern kalkyl andrar aldrig ett redan sparat kundpris. Forsta aktiveringen
+  granskas och sparas uttryckligen; senare villkorsandringar autosparas.
+- Beloppsinmatning borjar exklusive moms. Den befintliga lagringen inklusive
+  moms bevaras och raknas bara om vid faktisk inmatning. Byte av visningssatt
+  sparar inget och avrundar inte om gamla belopp. Kalkylens momssats visas.
+- Ofullstandig kalkyl, blandade momssatser och okand fordelning av klumpsumma,
+  ovriga kostnader eller gruppofferter far inte bli ett automatiskt delpris.
+  Noll ar fortfarande ett kant belopp. Timpris och paslag gissas inte fran
+  interna kostnader. Anvandaren kan fortfarande ange kundvillkor manuellt.
+- Offertens prisavsnitt laser dokumentets sparade prisvillkor och visar fasta
+  delsummeringar, planeringsbudget och lopande prisgrunder var for sig. Det
+  innehaller ingen separat prisform, budgetredigerare eller intern kalkyl.
+  Redovisningsval och urval av omfattning/bilagor ar fortfarande dokumentets egna.
+- Pennan vid ett offertmoment oppnar samma moments Kalkyl i Projektarbete.
+  Den aktuella offertversionen behalls tills en ny gemensam revision ar sparad.
+  Befintliga sparfel och osparade utkast far inte forsvinna vid navigering.
+- Aldre fristaende klumpsummor, timuppskattningar och ungefarliga priser
+  visas oforandrade. Overga till momentens prisvillkor ar ett separat,
+  bekraftat val som inte fordelar gamla totalsummor eller timmar och inte
+  omtolkar ungefarligt pris som budget. Saknade momentbelopp forblir tomma.
+- Read-only patchen docs/db/2026-11-03_05_project_billing_candidates.sql gor
+  aldre lopande budgetar med inaktiv totalbas synliga som granskningskandidater.
+  Den andrar inga tabellrader, tidigare utkast eller lasta dokument. Fasta
+  manuella totalsummor ger fortfarande ingen gissad kandidat per moment.
+- Materialflytt mellan moment ar fortsatt pausad enligt anvandarens beslut.
+  Ingen flyttfunktion, omklassificering eller produktionsandring ingar har.
+
+Publiceringskontroll 2026-11-04: anvandaren har begart publicering. Den rena
+releasekopians 883 Uppdragstester och produktionsbygge passerar. Klicktester
+omfattar uttrycklig aktivering, noll/tomt belopp, autosparning, aterforsok efter
+sparfel, separata prisformer, offertens penna, mobilvy och lasta moment. SQL _05
+ar redan installerad i produktion: funktionskroppen matchar den granskade filen,
+anon/authenticated saknar exekveringsratt och service_role behaller sin ratt.
+Ingen SQL-skrivning behovdes vid denna publicering. Kontrollhashar har sparats
+for Gashagas och Lokevagens arbetsdata, priser, utkast och frysta dokument.
+
 ## Beslutsandring 2026-11-03: Kundpris Per Moment I Projektarbete
 
 Anvandaren har uttryckligen beslutat att prisform och kundprisvillkor ska anges

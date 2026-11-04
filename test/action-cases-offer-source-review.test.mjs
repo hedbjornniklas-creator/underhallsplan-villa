@@ -126,7 +126,7 @@ test('editor follows ABS 18 contract sequence, keeps explicit imports and pendin
   const start = editor.indexOf('<ProjectEditorRow title="Offertuppgifter"')
   const layout = editor.slice(start)
   const order = ['title="Beställare"', 'title="Entreprenör"', "contractSection('controls'", 'title="Fastigheten"', 'title="Uppdraget"',
-    "contractSection('work-environment'", "contractSection('advice'", '{priceSection}', 'title="Ändringar och tilläggsarbeten"', 'title="Tid för betalning"',
+    "contractSection('work-environment'", "contractSection('advice'", '{contractView && priceSection}', 'title="Ändringar och tilläggsarbeten"', 'title="Tid för betalning"',
     "title={!contractView && draft.offerAlternatives ? 'Tid' : 'Tid för arbetenas påbörjande och avslutande'}", "contractSection('delay'", "contractSection('inspection'", "contractSection('insurance'", "title={!contractView && draft.offerAlternatives ? 'Beställning' : 'Övrigt'}"]
   let previous = -1
   for (const part of order) { const position = layout.indexOf(part, previous + 1); assert.ok(position > previous, part); previous = position }

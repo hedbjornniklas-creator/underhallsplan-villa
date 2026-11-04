@@ -616,6 +616,26 @@ test('paper locking remains optional and an unrelated new moment never rewrites 
   assert.deepEqual(await f.state(), before)
 })
 
+test('older running total-basis offers expose review candidates without changing prices or allocating fixed lump sums', async () => {
+  const f = await sharedPriceFixture(), body = (await f.offerState()).body
+  body.baseAmountOre = null
+  body.contractPricing.mode = 'running'; body.contractPricing.basis = 'total'
+  body.contractPricing.running = { hourlyOre: 75000, managementOre: null, markupPercent: 15, approximateOre: null }
+  body.contractPricing.budget = { version: 1, rows: [{ id: body.contractPricing.rows[0].id, amountOre: 3125000 }], assumptions: 'Tidigare budget.', reviewTerms: 'Samrad.' }
+  await f.saveOffer(body)
+  const before = { offer: await f.offerState(), contract: await f.state(), documents: (await db.query('select * from action_case_contract_signing_documents order by id')).rows }
+  await db.exec(read('2026-11-03_05_project_billing_candidates'))
+  await db.exec(read('2026-11-03_05_project_billing_candidates'))
+  const candidate = (await f.prices()).candidates.find(entry => entry.source === 'offer').terms
+  assert.equal(candidate.combined.mode, 'budget')
+  assert.equal(candidate.combined.budgetOre, 3125000)
+  assert.equal(candidate.labour.budgetOre, null); assert.equal(candidate.material.budgetOre, null)
+  assert.deepEqual(await f.offerState(), before.offer); assert.deepEqual(await f.state(), before.contract)
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents order by id')).rows, before.documents)
+  const fixed = { ...body, contractPricing: { ...body.contractPricing, mode: 'fixed', totalOre: 99999999 } }
+  assert.equal((await db.query('select legacy_project_price($1,$2) value', [fixed, f.item])).rows[0].value, null)
+})
+
 test('shared components coexist with independent legacy budget rows without losing rates or counting an inactive budget twice', async () => {
   const f = await sharedPriceFixture(), body = (await f.offerState()).body, manual = randomUUID()
   const first = body.contractPricing.rows[0].id

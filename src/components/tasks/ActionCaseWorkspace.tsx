@@ -48,6 +48,7 @@ type Props = {
   onBusyChange?: (busy: boolean) => void
   onDirtyChange?: (dirty: boolean) => void
   customerRefresh?: number
+  openWorkRequest?: { itemId: string; token: string } | null
 }
 
 const ITEM_STATUS: Record<ActionCaseItemView['status'], string> = {
@@ -331,7 +332,7 @@ function costActionMessage(name: string, payload: Record<string, unknown>) {
   return ({ send_quote_request: 'Offertförfrågan har skickats.', generate_cost_suggestions: 'Kalkylförslaget är klart för granskning.', apply_cost_suggestions: 'Valda rader lades till i kalkylen.', delete_cost_line: 'Kalkylraden togs bort.' } as Record<string, string>)[name] ?? 'Kalkylraden sparades.'
 }
 
-export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange, customerRefresh = 0 }: Props) {
+export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange, customerRefresh = 0, openWorkRequest }: Props) {
   const toast = useToast()
   const [createdProjectId, setCreatedProjectId] = useState<string>()
   const [workspace, setWorkspace] = useState(initialWorkspace)
@@ -339,6 +340,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [handledWorkRequest, setHandledWorkRequest] = useState<string | null>(null)
   const [itemDirty, setItemDirty] = useState(false)
   const [initialCostLineId, setInitialCostLineId] = useState<string>()
   const [requestEditor, setRequestEditor] = useState<{ requestId: string | null; preselectedLineIds?: string[]; supplementId?: string } | null>(null)
@@ -371,7 +373,9 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
   const savedCase = workspace?.cases.find(item => item.id === caseId) ?? null
   const edits = Object.values(calculation.states).filter(entry => entry.status !== 'saved').map(entry => entry.edit)
   const selectedCase = savedCase ? { ...savedCase, items: savedCase.items.map(item => overlayCalculation(item, edits)) } : null
-  const selectedItem = selectedCase?.items.find(item => item.id === selectedItemId) ?? null
+  const requestedWork = section === 'work' && openWorkRequest?.token !== handledWorkRequest ? openWorkRequest : null
+  const selectedItem = selectedCase?.items.find(item => item.id === (requestedWork?.itemId ?? selectedItemId)) ?? null
+  const selectWorkItem = (id: string | null) => { setHandledWorkRequest(openWorkRequest?.token ?? null); setSelectedItemId(id) }
   const forgetSavedScope = useRef(scopeAutosave.forgetSaved)
   forgetSavedScope.current = scopeAutosave.forgetSaved
   const forgetSavedCalculation = useRef(calculation.forgetSaved), loadedCustomerRefresh = useRef(0)
@@ -482,7 +486,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
           : calculationEntries.some(entry => entry.status === 'pending' || entry.status === 'saving') ? 'Sparar kalkyl' : null
         const sum = workItemSum(item)
         const excluded = ['cancelled', 'declined'].includes(item.status)
-        return <li key={item.id}><button type="button" onClick={() => setSelectedItemId(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItemId === item.id}>
+        return <li key={item.id}><button type="button" onClick={() => selectWorkItem(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItem?.id === item.id}>
           <strong>{item.title}</strong><span>{item.contractWork?.locked ? item.contractWork.differences.length ? 'Befintlig skillnad mot avtalet' : 'Ingår i låst avtal' : saveIssue === 'Sparar kalkyl' ? 'Ändringar sparas i bakgrunden' : saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{item.contractWork?.locked ? 'Låst' : saveIssue ?? ITEM_STATUS[item.status]}</span>
           <span className="gizmo-work-amount"><span className="gizmo-work-amount-label">Kalkyl inkl. moms</span><b>{sumLabel(sum.amountOre)}</b>{excluded ? <small>Ej i totalsumman</small> : sum.partial && sum.amountOre !== null ? <small>Preliminärt</small> : null}</span><ChevronRight size={18} aria-hidden="true" />
         </button></li>
@@ -493,7 +497,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         event.preventDefault()
         if (busy || !newItemTitle.trim()) return
         void action('add_item', { caseId: selectedCase.id, title: newItemTitle }, 'Åtgärden lades till.').then((result) => {
-          if (result) { setNewItemTitle(''); if (result.itemId) setSelectedItemId(result.itemId) }
+          if (result) { setNewItemTitle(''); if (result.itemId) selectWorkItem(result.itemId) }
         })
       }}><label>Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="gizmo-button">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form>
       <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} />
@@ -503,7 +507,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} onUploading={setUploading} />
     </section>
     {selectedItem && <ActionCaseItemSheet
-      key={`${selectedItem.id}:${initialCostLineId ?? ''}`}
+      key={`${selectedItem.id}:${initialCostLineId ?? ''}:${requestedWork?.token ?? ''}`}
       item={selectedItem}
       caseId={selectedCase.id}
       projectTitle={selectedCase.title}
@@ -511,6 +515,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       attachments={selectedCase.attachments}
       participants={selectedCase.participants}
       initialCostLineId={initialCostLineId}
+      initialTab={requestedWork ? 'cost' : undefined}
       onRequest={(preselectedLineIds) => setRequestEditor({ requestId: null, preselectedLineIds })}
       onOpenRequest={(requestId) => setRequestEditor({ requestId })}
       busy={busy}
@@ -525,7 +530,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         void coordinate(async () => {
           const response = await fetch('/api/action-cases', { cache: 'no-store' }), result = await response.json()
           if (!response.ok || !result.workspace) { toast.error(result.error || 'Kundprisvillkoren kunde inte hämtas.'); return }
-          if (customerPricing.discard(selectedItem.id)) { receive(result.workspace); setSelectedItemId(null) }
+          if (customerPricing.discard(selectedItem.id)) { receive(result.workspace); selectWorkItem(null) }
         }).catch(error => toast.error(error, 'Kundprisvillkoren kunde inte hämtas.'))
       }}
       onReloadCalculation={async () => {
@@ -534,7 +539,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         try {
           const response = await fetch('/api/action-cases', { cache: 'no-store' }), result = await response.json()
           if (!response.ok || !result.workspace) throw new Error(result.error || 'Kalkylen kunde inte hämtas.')
-          if (calculation.discardItem(selectedItem.id)) { receive(result.workspace); calculation.forgetSaved(); setSelectedItemId(null) }
+          if (calculation.discardItem(selectedItem.id)) { receive(result.workspace); calculation.forgetSaved(); selectWorkItem(null) }
         } catch (error) { toast.error(error, 'Kalkylen kunde inte hämtas. Dina ändringar är kvar.') }
         finally { running.current = false; setBusy(false) }
       }}
@@ -542,11 +547,11 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       onScopeChange={(draft) => scopeAutosave.change(selectedItem.id, selectedItem.updatedAt, draft)}
       onScopeFlush={() => scopeAutosave.flush(selectedItem.id)}
       onScopeRetry={() => scopeAutosave.retry(selectedItem.id)}
-      onClose={() => { scopeAutosave.flush(selectedItem.id); setSelectedItemId(null); setInitialCostLineId(undefined) }}
+      onClose={() => { scopeAutosave.flush(selectedItem.id); selectWorkItem(null); setInitialCostLineId(undefined) }}
       onSave={async (payload) => Boolean(await action('update_item', { itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt, ...payload }))}
       onDelete={async () => {
         const deleted = Boolean(await action('delete_item', { caseId: selectedCase.id, itemId: selectedItem.id, expectedUpdatedAt: selectedItem.updatedAt }, 'Åtgärden togs bort.'))
-        if (deleted) { setSelectedItemId(null); setInitialCostLineId(undefined) }
+        if (deleted) { selectWorkItem(null); setInitialCostLineId(undefined) }
         return deleted
       }}
       onCostAction={async (name, payload) => Boolean(await action(name, { caseId: selectedCase.id, itemId: selectedItem.id, ...payload }, costActionMessage(name, payload)))}
@@ -555,7 +560,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       people={people}
       actionCase={selectedCase} {...requestEditor} busy={busy} onClose={() => setRequestEditor(null)}
       onSupplement={(request) => setRequestEditor({ requestId: null, supplementId: request.id })}
-      onOpenWork={(itemId, costLineId) => { setRequestEditor(null); setSelectedItemId(itemId); setInitialCostLineId(costLineId) }}
+      onOpenWork={(itemId, costLineId) => { setRequestEditor(null); selectWorkItem(itemId); setInitialCostLineId(costLineId) }}
       onAction={async (name, data) => Boolean(await action(name, data, name === 'revoke_rfq_delivery' ? 'Länken till offertunderlaget har återkallats.' : name === 'quote_package' ? data.operation === 'accept' ? 'Grupppriset används i kalkylen. Ingen beställning har skickats.' : 'Tidigare prisunderlag har återställts.' : name === 'send_grouped_quote_request' ? 'Den samlade offertförfrågan har skickats.' : data.operation === 'response' ? 'Prisvillkoren har sparats.' : data.operation === 'delete' ? 'Utkastet togs bort.' : 'Förfrågan är sparad. Granska den före utskick.'))}
     />}
   </>

@@ -1,7 +1,7 @@
 'use client'
 
 import PendingLink from '@/components/ui/PendingLink'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowLeft,
@@ -69,9 +69,10 @@ import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import CustomerContractDelivery from './CustomerContractDelivery'
-import { contractPricingForEditing, defaultBudgetReviewTerms, offerBudgetBreakdown } from '@/lib/action-cases/contractPricing'
+import { contractPricingForEditing, offerBudgetBreakdown } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
-import CustomerOfferHourEstimate from './CustomerOfferHourEstimate'
+import CustomerOfferPricingSummary from './CustomerOfferPricingSummary'
+import { offerMomentPricing } from '@/lib/action-cases/projectPricingFlow'
 import CustomerOfferAlternatives from './CustomerOfferAlternatives'
 import CustomerContractChanges from './CustomerContractChanges'
 import { changesForEditing, changesDetails, changesSummary } from '@/lib/action-cases/contractChanges'
@@ -85,15 +86,6 @@ const field =
 const button =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
 export type CustomerEditorView = 'edit' | 'contract' | 'document' | 'offerDocument' | 'customer' | 'planning' | 'payments'
-function OfferPriceForm({ onRunning, onBudget, onMixed }: { onRunning: () => void; onBudget: () => void; onMixed: () => void }) {
-  const name = useId()
-  return <fieldset className="mb-4 min-w-0"><legend className="mb-2 text-sm font-medium">Prisform</legend><div className="gizmo-price-modes">
-    <label className="selected"><input type="radio" name={name} checked readOnly />Fast pris</label>
-    <label><input type="radio" name={name} checked={false} onChange={onRunning} />Löpande räkning</label>
-    <label><input type="radio" name={name} checked={false} onChange={onBudget} />Löpande räkning med budget</label>
-    <label><input type="radio" name={name} checked={false} onChange={onMixed} />Fast + löpande</label>
-  </div></fieldset>
-}
 function draftForEditing(workspace: CustomerOfferWorkspace): CustomerOfferDraft {
   if (activeSigningVersion(workspace.signingVersions)) return workspace.draft
   const details = workspace.draft.contractDetails ?? emptyContractDetails()
@@ -122,7 +114,8 @@ export default function CustomerOfferEditor({
   draftTarget = 'contract',
   projectDetails,
   projectOperationPending = false,
-  offerItems = []
+  offerItems = [],
+  onEditProjectWork
 }: {
   actionCase: ActionCaseView
   initial: CustomerOfferWorkspace
@@ -143,6 +136,7 @@ export default function CustomerOfferEditor({
   projectDetails?: OfferProjectDetails
   projectOperationPending?: boolean
   offerItems?: CustomerOfferItem[]
+  onEditProjectWork?: (itemId?: string) => void
 }) {
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
@@ -656,19 +650,11 @@ export default function CustomerOfferEditor({
   }
   const priceSection = <ProjectEditorRow title="Priset" summary={draft.contractPricing ? customerPriceLabel(draft) : `${draft.pricingMode === 'itemized' ? 'Fast pris per arbetsdel' : 'Fast klumpsumma'} · ${money(baseAmount)}`}
     open={expanded === 'price'} onToggle={() => setExpanded(expanded === 'price' ? null : 'price')}>
-    {draft.contractPricing ? <CustomerContractPricing value={draft.contractPricing} sources={actionCase.items} purpose={draftTarget}
-      runningDetails={draftTarget === 'offer' ? <CustomerOfferHourEstimate draft={draft} onChange={offerHourEstimate => update({ offerHourEstimate })} /> : undefined}
+    {draftTarget === 'offer' ? <CustomerOfferPricingSummary draft={draft} sources={actionCase.items} blocked={locked || Boolean(busy) || sourcePending || dirty || autosave.isSaving}
+      onEditWork={onEditProjectWork} onUseMomentPricing={() => update(offerMomentPricing(draft, actionCase.items))}
+      onDisplayChange={display => { if (draft.contractPricing) update({ contractPricing: { ...draft.contractPricing, display } }) }} />
+    : draft.contractPricing ? <CustomerContractPricing value={draft.contractPricing} sources={actionCase.items} purpose={draftTarget}
       blocked={locked || Boolean(busy)} importBlocked={sourcePending} onChange={(contractPricing) => update({ contractPricing, pricingMode: 'total' })} /> : <>
-    {draftTarget === 'offer' && <OfferPriceForm onRunning={() => {
-        setConfirmItemized(false)
-        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running' }, pricingMode: 'total', baseAmountOre: null })
-      }} onBudget={() => {
-        setConfirmItemized(false)
-        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'running', budget: { version: 1, rows: [], assumptions: '', reviewTerms: defaultBudgetReviewTerms } }, pricingMode: 'total', baseAmountOre: null })
-      }} onMixed={() => {
-        setConfirmItemized(false)
-        update({ contractPricing: { ...contractPricingForEditing(draft), mode: 'mixed' }, pricingMode: 'total' })
-      }} />}
     <label className="block text-sm">Prissättning av grundåtagandet
       <select className={field} value={draft.pricingMode ?? 'total'} onChange={(e) => {
         const pricingMode = e.target.value as CustomerOfferDraft['pricingMode']
@@ -972,7 +958,7 @@ export default function CustomerOfferEditor({
             {!contractView && draft.offerAlternatives && <CustomerOfferAlternatives value={draft.offerAlternatives} onChange={offerAlternatives => update({ offerAlternatives })} />}
             <section hidden={contractView || Boolean(draft.offerAlternatives)}>
               <h2 className="text-lg">Uppdraget</h2>
-              {!contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
+              {!contractView && <CustomerOfferSourcePicker sources={actionCase.items} items={draft.items} itemized={draftTarget !== 'offer' && draft.pricingMode === 'itemized'} blocked={sourcePending || locked || Boolean(busy)}
                 onChange={(items) => { update({ items }); setItemView('included') }} />}
               <div role="tablist" aria-label="Omfattning" className="mt-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
                 {([['included', 'Grundåtagande'], ['excluded', 'Avgränsningar']] as const).map(([key, title]) => <button key={key} role="tab" aria-selected={itemView === key} className={`${button} ${itemView === key ? 'bg-violet-50' : 'bg-white'}`} onClick={() => setItemView(key)}>{title} ({draft.items.filter((i) => i.kind === key).length})</button>)}
@@ -1114,11 +1100,11 @@ export default function CustomerOfferEditor({
                 <Plus size={17} /> {itemView === 'included' ? 'Lägg till arbete' : 'Lägg till avgränsning'}
               </button>
             </section>
-            <div hidden={contractView || Boolean(draft.offerAlternatives)}>{priceSection}</div>
+            {!contractView && !draft.offerAlternatives && priceSection}
             <div hidden={!contractView} className="space-y-5">
             {contractSection('work-environment', 'Arbetsmiljö', ['workEnvironment'])}
             {contractSection('advice', 'Avrådande', [], true)}
-            {priceSection}
+            {contractView && priceSection}
             <ProjectEditorRow title="Ändringar och tilläggsarbeten" summary={changesSummary(draft.contractDetails?.changesPricing)} open={expanded === 'changes'} onToggle={() => setExpanded(expanded === 'changes' ? null : 'changes')}>
               {contractView && <CustomerContractChanges draft={draft} files={files} caseId={actionCase.id} blocked={locked || Boolean(busy)} onChange={update} />}
             </ProjectEditorRow>

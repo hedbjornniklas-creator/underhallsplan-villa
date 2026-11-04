@@ -106,6 +106,22 @@ test('optional conditions sit between scope and exclusions and use the parent au
   assert.equal(changes[0].scope, 'Arbete')
 })
 
+test('billing lives below the unchanged calculation, with two tabs and protection for pending calculations and unadopted terms', () => {
+  const h = sheetHarness({ onCustomerPricingChange() {} })
+  assert.equal(h.nodes().filter(n => n.props?.role === 'tab').length, 2)
+  h.tab('Kalkyl').props.onClick(); h.render()
+  const billing = h.find(n => n.type === 'ActionCaseCustomerPricing')
+  assert.equal(billing.props.blocked, false)
+  assert.ok(h.nodes().findIndex(n => n.type === 'table') < h.nodes().findIndex(n => n.type === 'ActionCaseCustomerPricing'))
+  h.props.calculation = { states: { line: { edit: { itemId: 'test' }, status: 'pending' } } }
+  h.render(); assert.equal(h.find(n => n.type === 'ActionCaseCustomerPricing').props.blocked, true)
+  h.props.calculation = undefined
+  billing.props.onDraftDirty(true); h.render()
+  assert.equal(h.tab('Omfattning').props.disabled, true)
+  h.pointerDown(); h.clickBackdrop()
+  assert.equal(h.result.closes, 0); assert.equal(h.result.confirmations, 1)
+})
+
 test('only a complete backdrop click closes, not clicks or selections that start inside', () => {
   const h = sheetHarness()
   h.pointerDown(true); h.clickBackdrop(true)

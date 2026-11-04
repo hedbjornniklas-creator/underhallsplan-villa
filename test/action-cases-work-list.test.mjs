@@ -13,8 +13,8 @@ function declarations(selector) {
 
 test('action rows remain native buttons in a named list and expose the open dialog', () => {
   assert.match(source, /<ul className="gizmo-work-rows" aria-label="Projektets åtgärder">/)
-  assert.match(source, /<li key=\{item.id\}><button type="button" onClick=\{\(\) => setSelectedItemId\(item.id\)\}/)
-  assert.match(source, /aria-haspopup="dialog" aria-expanded=\{selectedItemId === item.id\}/)
+  assert.match(source, /<li key=\{item.id\}><button type="button" onClick=\{\(\) => selectWorkItem\(item.id\)\}/)
+  assert.match(source, /aria-haspopup="dialog" aria-expanded=\{selectedItem\?\.id === item.id\}/)
   assert.match(source, /saveIssue \? 'Öppna för att spara'/)
   assert.match(source, /saveIssue \?\? ITEM_STATUS\[item.status\]/)
 })
