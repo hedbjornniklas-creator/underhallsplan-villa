@@ -169,12 +169,21 @@ export function offerCompensationText(p: ContractPricing): string {
     ? `${basis} Budgetbeloppen redovisas separat som underlag för planering, kostnadsuppföljning och samråd. Fast pris och budget ska inte läsas som ett fast totalpris för hela uppdraget.`
     : basis
 }
+export function contractBudgetRows(p: ContractPricing) {
+  const view = contractDisplayPricing(p)
+  if (!view.budget) return []
+  // Legacy budgets apply to all legacy running rows. Shared moments opt in
+  // per pricing part; an ordinary running charge is not a missing budget.
+  const legacyBudgetIds = new Set(p.budget ? p.rows.filter(row => !row.projectPricing).map(row => row.id) : [])
+  return view.rows.filter(row => (view.mode === 'running' || row.kind === 'running') &&
+    (legacyBudgetIds.has(row.id) || view.budget!.rows.some(entry => entry.id === row.id)))
+    .map(row => ({ id: row.id, title: row.title, amountOre: view.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null }))
+}
 export function offerBudgetBreakdown(p: ContractPricing) {
-  p = contractDisplayPricing(p)
-  if (!p.budget) return null
-  const running = p.rows.filter(row => p.mode === 'running' || row.kind === 'running')
-  const amounts = running.map(row => p.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null)
-  const unbudgetedTitles = running.filter((_, index) => amounts[index] === null).map(row => row.title)
+  if (!contractDisplayPricing(p).budget) return null
+  const running = contractBudgetRows(p)
+  const amounts = running.map(row => row.amountOre)
+  const unbudgetedTitles = running.filter(row => row.amountOre === null).map(row => row.title)
   const runningOre = amounts.some(amount => amount !== null) ? amounts.reduce<number>((sum, amount) => sum + (amount ?? 0), 0) : null
   return { runningOre, unbudgetedTitles }
 }

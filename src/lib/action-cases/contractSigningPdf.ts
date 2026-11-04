@@ -8,7 +8,7 @@ import { customerOfferBaseAmount, money, type CustomerOfferSnapshot, type Custom
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractBudgetAmount, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
+import { contractBudgetAmount, contractBudgetRows, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -115,10 +115,10 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
     }
     if (price.mode !== 'fixed') {
       if (sharedPricing) result.push({ ...section('price', 'Momentens prisgrunder för löpande räkning', 'Timpriser inkluderar arvode och moms. Påslag beräknas på självkostnad exklusive moms; moms tillkommer på självkostnad och påslag.'),
-        columns: ['Moment', 'Prisgrund'], columnWidths: [0.55, 0.45], rows: projectRunningPrices(originalPricing!).flatMap(rate => [
-          ...(rate.hourly ? [[rate.title, rate.hourlyOre === null ? '' : `${money(rate.hourlyOre)}/tim inkl. moms`]] : []),
-          ...(rate.markup ? [[rate.title, rate.markupPercent === null ? '' : `Självkostnad + ${rate.markupPercent} % exkl. moms`]] : []),
-        ]) })
+        columns: ['Moment', 'Prisgrund'], columnWidths: [0.55, 0.45], rows: projectRunningPrices(originalPricing!).map(rate => [rate.title, [
+          rate.hourly && rate.hourlyOre !== null ? `${money(rate.hourlyOre)}/tim inkl. moms` : '',
+          rate.markup && rate.markupPercent !== null ? `Självkostnad + ${rate.markupPercent} % exkl. moms` : '',
+        ].filter(Boolean).join('\n')]) })
       if ((!sharedPricing || legacyRunning) && kind === 'offer') result.push({ ...section('price', 'Löpande räkning - prisgrunder',
         ...(price.budget ? [] : running.map(row => row.title)),
         'Timpriser anges inklusive arvode och moms. Material, varor, hjälpmedel, överenskomna underentreprenader och övriga kostnader ersätts med självkostnad plus angivet påslag. Moms tillkommer på självkostnad och påslag.',
@@ -133,10 +133,10 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
         `Entreprenörarvode på självkostnader exklusive moms: ${price.running.markupPercent ?? ''} %. Moms tillkommer.`, price.running.approximateOre === null ? '' : `Ungefärligt pris inklusive moms: ${money(price.running.approximateOre)}`))
     }
     if (price.budget) {
-      const breakdown = kind === 'offer' || sharedPricing ? offerBudgetBreakdown(price) : null
+      const breakdown = kind === 'offer' || sharedPricing ? offerBudgetBreakdown(originalPricing!) : null
       const partial = Boolean(breakdown?.unbudgetedTitles.length)
-      const rows = running.map(row => {
-        const amount = price.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null
+      const rows = contractBudgetRows(originalPricing!).map(row => {
+        const amount = row.amountOre
         return [row.title, kind === 'offer' && amount === null ? 'Ej budgeterat' : pdfMoney(amount)]
       })
       const total = contractBudgetAmount(price)

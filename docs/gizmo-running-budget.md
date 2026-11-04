@@ -77,3 +77,24 @@ Installationen omklassificerar inte nagot sparat projekt. Gashagas lokala
 granskningskopia anvander fasta priser for Byggarbeten och Etablering/administration
 med material separat pa lopande rakning. Det ar inte en utskickad offert eller
 en andring av Gashagas sparade avtals- och projektuppgifter.
+
+## Rattning Av Momenttabeller 2026-11-04
+
+Gemensamma prisgrunder fran Projektarbete redovisas med en tabellrad per
+aktiv prisdel. Timpris och sjalvkostnadspaslag far plats i samma cell nar
+arbete/material visas tillsammans. Separata prisdelar behaller var sin rad.
+Saknade varden blir inte noll och befintliga belopp raknas inte om.
+
+For gemensamma momentpriser visar budgettabellen endast de prisdelar dar
+budget uttryckligen valts, aven nar budgetbeloppet ar tomt eller noll.
+Vanlig lopande rakning ar inte en saknad budget. Aldre gemensamma budgetars
+validering och hantering av saknade momentbelopp bevaras. Samma urval anvands
+i dokumentets forhandsgranskning och PDF, for bade offert och avtalsutkast.
+Sparade lasta PDF-filer skrivs inte om.
+
+Anvandaren godkande att Gashagas gamla priskoppling for Golvslipning och
+behandling tas bort enbart fran det olasta avtalsutkastet. Momentets manuella
+omfattning med separat prisoverenskommelse, Projektarbete, intern kalkyl,
+kanoniska kundprisvillkor och ovriga prisrader ska bevaras. Detta ar en riktad
+datarattning med revisionskontroll, inte en generell databasrensning eller
+migrering. Ingen ny SQL-migrering behovs for tabellrattningen.

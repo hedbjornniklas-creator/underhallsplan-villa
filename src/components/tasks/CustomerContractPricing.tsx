@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { Download, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
 import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
-import { contractBudgetAmount, defaultBudgetReviewTerms, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, importContractPrices, offerCompensationText, offerBudgetBreakdown, type ContractPricing, type ContractPriceRow } from '@/lib/action-cases/contractPricing'
+import { contractBudgetAmount, contractBudgetRows, defaultBudgetReviewTerms, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, importContractPrices, offerCompensationText, offerBudgetBreakdown, type ContractPricing, type ContractPriceRow } from '@/lib/action-cases/contractPricing'
 import { customerPricingParts, customerChargeLabels } from '@/lib/action-cases/projectCustomerPricing'
 import { money } from '@/lib/action-cases/customerOffers'
 import PriceInput from './CustomerOfferPriceInput'
@@ -193,7 +193,7 @@ export function ContractPriceDocument({ value, compact = false, purpose = 'contr
   const shared = value.rows.some(row => row.projectPricing)
   const legacyRunning = value.rows.some(row => !row.projectPricing && (value.mode === 'running' || row.kind === 'running'))
   const fixed = contractFixedRows(p), total = contractFixedAmount(p)
-  const budget = purpose === 'offer' || shared ? offerBudgetBreakdown(p) : null
+  const budget = purpose === 'offer' || shared ? offerBudgetBreakdown(value) : null
   const partial = Boolean(budget?.unbudgetedTitles.length)
   const splitTotals = (key: 'labourOre' | 'materialOre') => p.basis === 'total' ? p[key] : fixed.some((row) => row[key] === null) ? null : fixed.reduce((sum, row) => sum + row[key]!, 0)
   return <section aria-label={purpose === 'offer' ? 'Priset enligt offerten' : 'Priset enligt avtalet'} className="space-y-3 text-sm">
@@ -222,7 +222,7 @@ export function ContractPriceDocument({ value, compact = false, purpose = 'contr
     {p.budget && <section aria-label="Planeringsbudget" className="space-y-3">
       <h4 className="font-semibold">{purpose === 'offer' ? 'Planeringsbudget för löpande arbeten och inköp' : 'Planeringsbudget inklusive moms'}</h4>
       <div className="gizmo-price-document"><table className="w-full text-left"><thead><tr><th>Moment</th><th className="text-right">Budget inkl. moms</th></tr></thead><tbody>
-        {p.rows.filter(row => p.mode === 'running' || row.kind === 'running').map(row => { const amount = p.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null; return <tr key={row.id}><td>{row.title}</td><td className="text-right">{purpose === 'offer' && amount === null ? 'Ej budgeterat' : money(amount)}</td></tr> })}
+        {contractBudgetRows(value).map(row => <tr key={row.id}><td>{row.title}</td><td className="text-right">{purpose === 'offer' && row.amountOre === null ? 'Ej budgeterat' : money(row.amountOre)}</td></tr>)}
         {purpose === 'contract' && !shared && p.mode === 'mixed' && <tr><td>Fast del inkl. moms</td><td className="text-right">{money(contractFixedAmount(p))}</td></tr>}
         <tr className="font-semibold"><td>{purpose === 'offer' ? partial ? 'Summa budgeterade löpande poster inkl. moms' : 'Summa budget, löpande del inkl. moms' : 'Planeringsbudget totalt inkl. moms'}</td><td className="text-right">{budget ? money(budget.runningOre) : contractBudgetAmount(p) === null ? 'Budget ej komplett' : money(contractBudgetAmount(p))}</td></tr>
       </tbody></table></div>
