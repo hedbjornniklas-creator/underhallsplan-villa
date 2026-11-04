@@ -6,13 +6,19 @@
   kort arbetsbeskrivning, valfritt moment och hogst atta bilder per anteckning.
 - Projektansvarig aktiverar, skriver ut, byter eller stanger projektets QR-lank.
   Lanken ar avstangd fran borjan och ger aldrig projekt- eller kundbehorighet.
-- QR-formularet verifierar mejladressen med en engangskod. En HttpOnly-session
-  minns webblasaren i hogst 30 dagar. Ny webblasare, utgangen session eller
-  utbytt QR-lank kraver ny verifiering. Delade telefoner har en logga-ut-knapp.
-- Mejlkoden verifierar kontroll over mejladressen, inte namn, narvaro eller
-  att arbetet faktiskt utforts. Namn och foretag ar egenrapporterade uppgifter.
-- QR-besokaren kan bara skicka egna anteckningar och fa sitt eget kvitto.
-  Projektets historik och andra personers bilder ar inte offentliga.
+- QR-formularet oppnas direkt, utan mejlkod, konto eller annan identitetskontroll.
+  Besokaren valjer en person ur projektets lista eller lagger till namn och foretag.
+  Samma namn och foretag, efter normalisering av skiftlage och mellanrum,
+  ateranvands i stallet for att skapa en dublett. Andra stavningar kan inte
+  sakert kopplas till samma verkliga person utan identifiering.
+- Telefonen minns valt person-ID per projekt i localStorage. Byt person ar alltid
+  synlig; pagaende utkast kravs bekraftelse innan de lamnas. Olika personers
+  lokala utkast halls isar. En annan flik far inte byta namn pa ett oppet utkast.
+- Alla med den aktiva QR-lanken kan se projektets namnlista (namn och foretag)
+  och momentens rubriker, men aldrig mejladresser, historik, andra personers
+  bilder, kunduppgifter, priser eller avtalsuppgifter.
+- Namnvalet ar helt sjalvuppgivet: vem som helst med koden kan valja ett annat
+  namn. Nya QR-anteckningar marks som personval, aldrig verifierad identitet.
 - Interna medlemmar med Uppdragsbehorighet kan lasa dagboken och registrera
   anteckningar. Bara projektansvarig kan lagga till en sparad rattelse.
 - Sparade original, bildmanifest och rattelser ar append-only. Arbetsdatum
@@ -23,11 +29,11 @@
 ## Teknisk avgransning
 
 Egen lagring under action_case_diary_* och en egen privat bildbucket.
-Generering/hashning av slumphemligheter, mejlutskick och mejlmall ateranvands;
 Mina uppdrags konton och behorigheter andras inte. QR genereras lokalt av
-qrcode, inte av en extern QR-tjanst. Standardkod: sex siffror, tio minuter,
-hogst fem forsok samt transaktionella begransningar per mejl, klient och projekt.
-Endast verifierade sessioner far reservera uppladdningar. Bilder laddas direkt
+qrcode, inte av en extern QR-tjanst. En slumpmassig HttpOnly-enhetscookie
+avgransar pagaende uppladdningar och aterforsok; den identifierar ingen person.
+Val av samma namn pa en annan telefon ger aldrig tillgang till dess bilder.
+Gamla QR-lankar stoppas vid byte eller stangning. Bilder laddas direkt
 till ett tillfalligt privat objekt, kontrolleras pa servern och arkiveras pa en
 separat, ej overskrivbar sokvag innan de kan knytas till en anteckning.
 JPG, PNG och WebP, hogst 8 MiB per bild. Bildinnehall och storlek kontrolleras,
@@ -40,26 +46,37 @@ Kvitton och request-ID gor aterforsok idempotenta. Ett osakert sparsvar far
 inte skapa en andra anteckning eller kasta texten. Ett pa-borjat formulartutkast
 skiljs fran en inskickad och mottagen dagboksanteckning.
 
-SQL-migreringen ar additiv, utan backfill och utan skrivningar i andra moduler.
-Ingen publicering eller riktig kodutskickning ingar fore separat godkannande.
+SQL-migreringen ar additiv och skriver aldrig om original eller andra moduler.
+Mejlkodsflodet ar borttaget fran applikationen och de gamla RPC-ingangarna
+stangs av i migreringen. Tidigare verifieringsuppgifter och original behalls
+for historik. Namnlistan fylls fran gamla anteckningar utan att skriva om dem.
+Ingen publicering ingar fore separat godkannande.
 
 ## Aktivering och kontroll
 
-1. Kor `docs/db/2026-11-04_01_project_diary.sql` fore publicering.
-2. Anvand befintlig mejlkonfiguration: `RESEND_API_KEY` och
-   `ASSIGNMENTS_MAIL_FROM`. Basadress tas fran `APP_BASE_URL` eller
+1. Grundmigreringen `docs/db/2026-11-04_01_project_diary.sql` behovs forst.
+   Kor sedan `docs/db/2026-11-04_02_project_diary_people.sql` direkt fore den
+   matchande publiceringen. Gamla mejlkodsformular slutar fungera nar den kors.
+2. Mejltjanst behovs inte. Basadress tas fran `APP_BASE_URL` eller
    `NEXT_PUBLIC_APP_URL` och ska vara en HTTPS-adress i produktion.
 3. `PROJECT_DIARY_LINK_SECRET` kan anges som separat hemlighet med minst
    32 tecken. Annars anvands befintlig serverhemlighet. Byte av denna
    hemlighet kraver nya utskrivna QR-koder.
 4. Projektansvarig oppnar Dagbok och aktiverar QR-lanken. Ingen lank
-   aktiveras genom migreringen. Provutskick till en riktig mejladress
-   gors forst efter separat godkannande.
+   aktiveras genom migreringen. Befintliga utskrivna QR-koder behaller adressen,
+   men oppnar det nya personvalet efter publicering.
 
 Lokal fiktiv provvy startas med `node --experimental-strip-types
-scripts/test-project-diary-ui.mjs`. Testkoden ar 123456; ingen e-post eller
-produktionsdatabas anvands. Databastester anvander PGlite och kontrollerar
+scripts/test-project-diary-ui.mjs`. Ingen e-post eller produktionsdatabas
+anvands. Databastester anvander PGlite och kontrollerar
 att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
+
+## Beslutslogg
+
+- 2026-11-04: Forsta versionen anvande mejlkod och 30-dagarssession.
+- 2026-11-04: Anvandaren ersatte uttryckligen mejlkoden med en enkel personlista
+  utan identifiering. Listan ar projektbunden, telefonen minns valet och historik
+  behalls. Detta ersatter, inte kompletterar, det tidigare verifieringskravet.
 
 ## Senare, Inte Bestallt
 

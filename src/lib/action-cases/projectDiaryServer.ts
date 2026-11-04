@@ -1,17 +1,14 @@
 import 'server-only'
-import { createHash, createHmac, randomInt, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import QRCode from 'qrcode'
 import { validateDiaryImage } from './projectDiaryImage'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
-import { sendTaskAccessLinkEmail } from '@/lib/tasks/automation'
-import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
-import { diaryDate, diaryEmail, diaryEntryRequest, diaryPhotoRequest, diaryText, diaryUuid, DIARY_MAX_PHOTO_BYTES, type DiaryEntry, type DiaryPublicState, type DiaryWorkspace } from './projectDiary'
-import { DIARY_CODE_SECONDS, diaryCodeHash, diaryCookie, diaryLinkToken, diarySecret, diarySessionSecret, parseDiaryLink } from './projectDiaryLinks'
+import { diaryDate, diaryPersonEntryRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_MAX_PHOTO_BYTES, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace } from './projectDiary'
+import { diaryDeviceHash, diaryLinkToken, diarySecret, parseDiaryLink } from './projectDiaryLinks'
 
 export const DIARY_BUCKET = 'project-diary-files'
 export type DiaryContext = { orgId: string; userId: string }
-export type DiaryIdentity = { ctx: DiaryContext; caseId: string } | { token: string; session: string | undefined }
+export type DiaryIdentity = { ctx: DiaryContext; caseId: string } | { token: string; device: string | undefined }
 type Actor = { orgId: string; caseId: string; userId: string | null; linkId: string | null; nonce: string | null; sessionHash: string | null; owner: string }
 type Upload = { id: string; org_id: string; action_case_id: string; owner_key: string; name: string; content_type: string; size_bytes: number; state: string; sha256: string | null; expires_at: string }
 function checked(error: { code?: string; message?: string } | null) {
@@ -19,7 +16,6 @@ function checked(error: { code?: string; message?: string } | null) {
   if (['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_DIARY_SCHEMA')
   throw new Error(error.message?.match(/PROJECT_DIARY_[A-Z_]+/)?.[0] || 'PROJECT_DIARY_FAILED')
 }
-function sessionHash(cookie?: string) { return cookie && /^[A-Za-z0-9_-]{43}$/.test(cookie) ? hashAssignmentToken(cookie) : null }
 async function internal(ctx: DiaryContext, caseId: string) {
   if (!diaryUuid(caseId)) throw new Error('PROJECT_DIARY_NOT_FOUND')
   const db = createSupabaseAdminClient()
@@ -34,9 +30,9 @@ async function link(token: string) {
   if (!r.data) throw new Error('PROJECT_DIARY_NOT_FOUND')
   return r.data
 }
-export async function getDiaryPublic(token: string, cookie?: string): Promise<DiaryPublicState> {
+export async function getDiaryPublic(token: string): Promise<DiaryPublicState> {
   const { id, nonce } = parseDiaryLink(token)
-  const r = await createSupabaseAdminClient().rpc('project_diary_public_context', { p_link_id: id, p_nonce: nonce, p_session_hash: sessionHash(cookie) }); checked(r.error)
+  const r = await createSupabaseAdminClient().rpc('project_diary_people_context', { p_link_id: id, p_nonce: nonce }); checked(r.error)
   return r.data as DiaryPublicState
 }
 async function actor(identity: DiaryIdentity): Promise<Actor> {
@@ -44,13 +40,12 @@ async function actor(identity: DiaryIdentity): Promise<Actor> {
     await internal(identity.ctx, identity.caseId)
     return { ...identity.ctx, caseId: identity.caseId, linkId: null, nonce: null, sessionHash: null, owner: `profile:${identity.ctx.userId}` }
   }
-  const l = await link(identity.token), state = await getDiaryPublic(identity.token, identity.session)
-  if (!state.session) throw new Error('PROJECT_DIARY_SESSION')
-  return { orgId: l.org_id, caseId: l.action_case_id, userId: null, linkId: l.id, nonce: l.nonce, sessionHash: sessionHash(identity.session), owner: `session:${state.session.id}` }
+  const l = await link(identity.token), deviceHash = diaryDeviceHash(identity.token, identity.device)
+  return { orgId: l.org_id, caseId: l.action_case_id, userId: null, linkId: l.id, nonce: l.nonce, sessionHash: deviceHash, owner: `qr:${deviceHash}` }
 }
 async function command(a: Omit<Actor, 'owner'>, operation: string, data: Record<string, unknown>) {
-  const r = await createSupabaseAdminClient().rpc('project_diary_command', { p_org_id: a.orgId, p_case_id: a.caseId, p_actor_id: a.userId,
-    p_link_id: a.linkId, p_nonce: a.nonce, p_session_hash: a.sessionHash, p_operation: operation, p_data: data }); checked(r.error)
+  const r = await createSupabaseAdminClient().rpc('project_diary_people_command', { p_org_id: a.orgId, p_case_id: a.caseId, p_actor_id: a.userId,
+    p_link_id: a.linkId, p_nonce: a.nonce, p_device_hash: a.sessionHash, p_operation: operation, p_data: data }); checked(r.error)
   return r.data
 }
 function baseUrl() {
@@ -60,30 +55,9 @@ function baseUrl() {
   if (url.protocol !== 'https:' && !(process.env.NODE_ENV !== 'production' && ['127.0.0.1', 'localhost'].includes(url.hostname))) throw new Error('PROJECT_DIARY_CONFIG')
   return url.origin
 }
-export async function beginDiaryCode(token: string, emailInput: unknown, client: string) {
-  const l = await link(token), state = await getDiaryPublic(token), email = diaryEmail(emailInput)
-  const id = randomUUID(), secret = generateAssignmentToken(), code = randomInt(0, 1_000_000).toString().padStart(6, '0')
-  await command({ orgId: l.org_id, caseId: l.action_case_id, userId: null, linkId: l.id, nonce: l.nonce, sessionHash: null }, 'challenge', {
-    id, email, browserHash: hashAssignmentToken(secret), codeHash: diaryCodeHash(id, secret, code),
-    clientHash: createHmac('sha256', diarySecret()).update(`HusHub:diary-client:v1:${client}`).digest('hex'),
-  })
-  await sendTaskAccessLinkEmail({ to: email, replyTo: null, subject: 'Din kod till projektdagboken',
-    text: `Din kod till projektdagboken är ${code}. Koden gäller i tio minuter. Om du inte begärde koden kan du bortse från mejlet.`,
-    html: buildTaskEmailHtml({ previewText: 'Din engångskod till projektdagboken.', eyebrow: 'HusHub · Dagbok', heading: 'Verifiera din mejladress', recipientName: '',
-      lead: 'Använd koden för att lämna dagboksanteckningar.', taskTitle: state.project.title, itemLabel: 'Projekt', dueLabel: null,
-      instruction: `Din kod: ${code}\nKoden gäller i tio minuter.`, notice: 'Dela inte koden med någon annan. Om du inte begärde den kan du bortse från mejlet.' }), idempotencyKey: `project-diary-code:${id}` })
-  return { cookie: `${id}.${secret}`, response: { phase: 'code', email, expiresInSeconds: DIARY_CODE_SECONDS } }
+export async function addDiaryPerson(identity: DiaryIdentity, data: Record<string, unknown>): Promise<DiaryPerson> {
+  return command(await actor(identity), 'person', diaryPersonInput(data))
 }
-export async function verifyDiaryCode(token: string, cookie: string | undefined, code: unknown) {
-  const [id, secret, extra] = (cookie || '').split('.')
-  if (extra !== undefined || !diaryUuid(id) || !/^[A-Za-z0-9_-]{43}$/.test(secret || '') || typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new Error('PROJECT_DIARY_CODE')
-  const l = await link(token), session = diarySessionSecret(id, secret)
-  const r = await command({ orgId: l.org_id, caseId: l.action_case_id, userId: null, linkId: l.id, nonce: l.nonce, sessionHash: null }, 'verify', {
-    id, browserHash: hashAssignmentToken(secret), codeHash: diaryCodeHash(id, secret, code), sessionHash: hashAssignmentToken(session),
-  })
-  return { result: r as { outcome: string; attemptsRemaining?: number; expiresAt?: string }, session }
-}
-export async function logoutDiary(identity: DiaryIdentity) { await command(await actor(identity), 'logout', {}) }
 export async function setDiaryLink(ctx: DiaryContext, caseId: string, data: Record<string, unknown>) {
   if (typeof data.active !== 'boolean' || !Number.isSafeInteger(data.expectedRevision) || Number(data.expectedRevision) < 0) throw new Error('PROJECT_DIARY_INVALID')
   const a = await actor({ ctx, caseId })
@@ -91,8 +65,11 @@ export async function setDiaryLink(ctx: DiaryContext, caseId: string, data: Reco
   return command(a, data.active ? 'link_enable' : 'link_disable', { expectedRevision: data.expectedRevision })
 }
 export async function submitDiaryEntry(identity: DiaryIdentity, data: Record<string, unknown>) {
-  const request = diaryEntryRequest(data)
-  return command(await actor(identity), 'entry', { ...request, requestHash: createHash('sha256').update(JSON.stringify(request)).digest('hex') })
+  const a = await actor(identity), request = diaryPersonEntryRequest(data)
+  const person = await createSupabaseAdminClient().from('action_case_diary_people').select('id,name,company').eq('id', request.personId).eq('org_id', a.orgId).eq('action_case_id', a.caseId).maybeSingle(); checked(person.error)
+  if (!person.data) throw new Error('PROJECT_DIARY_PERSON')
+  const canonical = { ...request, body: { ...request.body, name: person.data.name, company: person.data.company } }
+  return command(a, 'entry', { ...canonical, requestHash: createHash('sha256').update(JSON.stringify(canonical)).digest('hex') })
 }
 export async function correctDiaryEntry(ctx: DiaryContext, caseId: string, data: Record<string, unknown>) {
   if (!diaryUuid(data.entryId) || !diaryUuid(data.requestId)) throw new Error('PROJECT_DIARY_INVALID')
@@ -173,13 +150,13 @@ export async function getProjectDiary(ctx: DiaryContext, caseId: string, filters
   const corrections = ids.length ? await db.from('action_case_diary_corrections').select('*').in('entry_id', ids).order('created_at').order('id') : { data: [], error: null }; checked(corrections.error)
   const items = await db.from('action_case_items').select('id,title').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('sort_order'); checked(items.error)
   const profile = await db.from('profiles').select('full_name,email').eq('id', ctx.userId).maybeSingle(); checked(profile.error)
+  const people = await db.from('action_case_diary_people').select('id,name,company').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('name_key').order('company_key').order('id'); checked(people.error)
   const url = canManage && l?.active ? `${baseUrl()}/dagbok/${diaryLinkToken(l.id, l.nonce)}` : null
-  const entries: DiaryEntry[] = rows.map(r => ({ id: r.id, body: r.body, itemTitle: r.item_title, authorEmail: r.author_email, actorMethod: r.actor_method, emailVerifiedAt: r.email_verified_at, receivedAt: r.received_at, minutes: r.minutes,
+  const entries: DiaryEntry[] = rows.map(r => ({ id: r.id, personId: r.person_id || null, body: r.body, itemTitle: r.item_title, authorEmail: r.author_email, actorMethod: r.actor_method, emailVerifiedAt: r.email_verified_at, receivedAt: r.received_at, minutes: r.minutes,
     photos: (photos.data || []).filter(f => f.entry_id === r.id).map(f => ({ id: f.id, name: f.name, size: f.size_bytes, contentType: f.content_type, sha256: f.sha256 })),
     corrections: (corrections.data || []).filter(c => c.entry_id === r.id).map(c => ({ id: c.id, text: c.text, actorName: c.actor_name, createdAt: c.created_at })) }))
   const last = rows.at(-1), hasMore = (result.data?.length || 0) > 50
-  return { project: { id: project.id, title: project.title }, canManage, managerAssigned: Boolean(project.manager_profile_id), items: items.data || [], authorId: ctx.userId, authorName: profile.data?.full_name || '', authorEmail: profile.data?.email || '',
+  return { project: { id: project.id, title: project.title }, people: people.data || [], canManage, managerAssigned: Boolean(project.manager_profile_id), items: items.data || [], authorId: ctx.userId, authorName: profile.data?.full_name || '', authorEmail: profile.data?.email || '',
     link: { active: l?.active || false, revision: l?.revision || 0, url, qrDataUrl: url ? await QRCode.toDataURL(url, { width: 360, margin: 4, errorCorrectionLevel: 'M' }) : null }, entries, hasMore,
     nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ date: last.work_date, stamp: last.received_at, id: last.id })).toString('base64url') : null }
 }
-export { diaryCookie }

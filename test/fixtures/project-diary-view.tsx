@@ -27,7 +27,7 @@ async function start() {
   function Preview() {
     const [active, setActive] = useState(true)
     if (location.pathname.startsWith('/dagbok/')) return <ProjectDiaryPublic token={location.pathname.split('/').at(-1)!} initial={data.public} />
-    return <UppdragScope><div style={{ padding: '24px', maxWidth: 1260, margin: 'auto' }}><UppdragBrand /><p className="diary-notice">Fiktivt testprojekt · Inga riktiga mejl skickas · Testkod 123456</p><h1 style={{ fontSize: 26, margin: '24px 0' }}>{data.project.title}</h1><nav style={{ display: 'flex', gap: 8, marginBottom: 24 }}><button className="diary-button" onClick={() => setActive(false)}>Översikt</button><button className="diary-button" onClick={() => setActive(true)}>Dagbok</button><a href={data.publicUrl}>Mobilt QR-formulär</a></nav><ProjectDiary caseId={data.project.id} active={active} />{!active && <h2>Översikt · Fiktivt testprojekt</h2>}</div></UppdragScope>
+    return <UppdragScope><div style={{ padding: '24px', maxWidth: 1260, margin: 'auto' }}><UppdragBrand /><p className="diary-notice">Fiktivt testprojekt · Personlista utan mejlkod</p><h1 style={{ fontSize: 26, margin: '24px 0' }}>{data.project.title}</h1><nav style={{ display: 'flex', gap: 8, marginBottom: 24 }}><button className="diary-button" onClick={() => setActive(false)}>Översikt</button><button className="diary-button" onClick={() => setActive(true)}>Dagbok</button><a href={data.publicUrl}>Mobilt QR-formulär</a></nav><ProjectDiary caseId={data.project.id} active={active} />{!active && <h2>Översikt · Fiktivt testprojekt</h2>}</div></UppdragScope>
   }
   createRoot(document.getElementById('root')!).render(<Preview />)
 }

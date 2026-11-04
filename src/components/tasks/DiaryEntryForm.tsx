@@ -3,11 +3,11 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Send, Trash2 } from 'lucide-react'
-import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryDuration, diaryEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody } from '@/lib/action-cases/projectDiary'
+import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryDuration, diaryPersonEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson } from '@/lib/action-cases/projectDiary'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
 type Photo = { id: string; name: string; size: number; contentType: string; status: 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
-type Attempt = ReturnType<typeof diaryEntryRequest>
+type Attempt = ReturnType<typeof diaryPersonEntryRequest>
 type Receipt = { id: string; receivedAt: string; minutes: number }
 const subscribe = (listener: () => void) => { window.addEventListener('diary-draft', listener); window.addEventListener('storage', listener); return () => { window.removeEventListener('diary-draft', listener); window.removeEventListener('storage', listener) } }
 function cached(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
@@ -15,11 +15,11 @@ function store(key: string, value: unknown) { try { if (value === null) sessionS
 function initial(name: string, company: string): Draft { return { ...emptyDiaryBody(name, company), breakMinutes: '0' } }
 const dateTime = (value: string) => new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' }).format(new Date(value))
 
-export default function DiaryEntryForm({ endpoint, storageKey, items, authorName = '', company = '', onSaved, onDirty, onSessionExpired }: {
-  endpoint: string; storageKey: string; items: { id: string; title: string }[]; authorName?: string; company?: string
-  onSaved?: () => void; onDirty?: (dirty: boolean) => void; onSessionExpired?: () => void
+export default function DiaryEntryForm({ endpoint, storageKey, items, person, onSaved, onDirty, onWorking }: {
+  endpoint: string; storageKey: string; items: { id: string; title: string }[]; person: DiaryPerson
+  onSaved?: () => void; onDirty?: (dirty: boolean) => void; onWorking?: (working: boolean) => void
 }) {
-  const baseline = useRef(initial(authorName, company))
+  const baseline = useRef(initial(person.name, person.company))
   const [draft, setDraft] = useState<Draft>(() => baseline.current), [photos, setPhotos] = useState<Photo[]>([])
   const [attempt, setAttempt] = useState<Attempt | null>(null), [receipt, setReceipt] = useState<Receipt | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
@@ -29,6 +29,8 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, authorName
   const snapshot = useSyncExternalStore(subscribe, useCallback(() => cached(storageKey), [storageKey]), () => null)
   const dirty = !receipt && (attempt !== null || photos.length > 0 || JSON.stringify(draft) !== JSON.stringify(baseline.current))
   useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
+  const working = busy || photos.some(p => p.status === 'uploading')
+  useEffect(() => { onWorking?.(working); return () => onWorking?.(false) }, [working, onWorking])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
@@ -46,7 +48,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, authorName
       const prepared = await fetch(`${endpoint}/photos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
         body: JSON.stringify({ operation: 'prepare', id: photo.id, name: photo.name, size: photo.size, contentType: photo.contentType }) })
       const data = await prepared.json()
-      if (!prepared.ok) { if (prepared.status === 401) onSessionExpired?.(); throw new Error(data.error || 'Bilden kunde inte förberedas.') }
+      if (!prepared.ok) throw new Error(data.error || 'Bilden kunde inte förberedas.')
       if (!data.ready) {
         const url = new URL(data.uploadUrl)
         if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Uppladdningsadressen kunde inte godkännas.')
@@ -55,7 +57,6 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, authorName
       }
       const completed = await fetch(`${endpoint}/photos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ operation: 'complete', id: photo.id }) })
       const result = await completed.json()
-      if (completed.status === 401) onSessionExpired?.()
       if (!completed.ok || result.id !== photo.id) throw new Error(result.error || 'Bilden kunde inte bekräftas.')
       updatePhoto(photo.id, { status: 'ready' })
     } catch (reason) { if (!controller.signal.aborted) updatePhoto(photo.id, { status: 'error', error: reason instanceof Error ? reason.message : 'Bilden kunde inte sparas.' }) }
@@ -71,15 +72,14 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, authorName
   async function submit() {
     if (running.current || photos.some(p => p.status !== 'ready')) return
     let request: Attempt
-    try { request = attempt ?? diaryEntryRequest({ requestId: crypto.randomUUID(), body: { ...draft, breakMinutes: draft.breakMinutes === '' ? 0 : /^\d+$/.test(draft.breakMinutes) ? Number(draft.breakMinutes) : NaN }, photoIds: photos.map(p => p.id) }) }
-    catch { setError('Kontrollera namn, företag, datum och arbetstid. Sluttiden ska vara efter starttiden samma dag, och rasten kortare än tiden på plats.'); return }
+    try { request = attempt ?? diaryPersonEntryRequest({ requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, breakMinutes: draft.breakMinutes === '' ? 0 : /^\d+$/.test(draft.breakMinutes) ? Number(draft.breakMinutes) : NaN }, photoIds: photos.map(p => p.id) }) }
+    catch { setError('Kontrollera datum, arbetstid, rast och arbetsbeskrivning. Sluttiden ska vara efter starttiden samma dag, och rasten kortare än tiden på plats.'); return }
     running.current = true; latest.current.attempt = request; setBusy(true); setAttempt(request); setError(''); persist(draft, photos, request)
     try {
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'entry', ...request }) })
       const result = await response.json()
       if (!response.ok) {
         if (result.definite) { latest.current.attempt = null; setAttempt(null); persist(draft, photos, null) }
-        if (response.status === 401) onSessionExpired?.()
         throw new Error(result.error || 'Inskickningen kunde inte bekräftas.')
       }
       if (result.id !== request.requestId || !Number.isFinite(Date.parse(result.receivedAt)) || !Number.isInteger(result.minutes)) throw new Error('Kvittot kunde inte bekräftas. Försök igen med samma uppgifter.')
@@ -97,15 +97,15 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, authorName
         const restoredDraft: Draft = { name: saved.draft.name, company: saved.draft.company, workDate: saved.draft.workDate, startTime: saved.draft.startTime, endTime: saved.draft.endTime, breakMinutes: saved.draft.breakMinutes, text: saved.draft.text, itemId: saved.draft.itemId || null }
         const restoredPhotos: Photo[] = saved.photos.map((p: Photo) => ({ ...diaryPhotoRequest(p), status: 'ready' }))
         if (new Set(restoredPhotos.map(p => p.id)).size !== restoredPhotos.length) throw new Error()
-        const restoredAttempt = saved.attempt ? diaryEntryRequest(saved.attempt) : null
-        if (restoredAttempt && JSON.stringify(restoredAttempt) !== JSON.stringify(diaryEntryRequest({ requestId: restoredAttempt.requestId, body: { ...restoredDraft, breakMinutes: Number(restoredDraft.breakMinutes) }, photoIds: restoredPhotos.map(p => p.id) }))) throw new Error()
+        if (restoredDraft.name !== person.name || restoredDraft.company !== person.company) throw new Error()
+        const restoredAttempt = saved.attempt ? diaryPersonEntryRequest(saved.attempt) : null
+        if (restoredAttempt && JSON.stringify(restoredAttempt) !== JSON.stringify(diaryPersonEntryRequest({ requestId: restoredAttempt.requestId, personId: person.id, body: { ...restoredDraft, breakMinutes: Number(restoredDraft.breakMinutes) }, photoIds: restoredPhotos.map(p => p.id) }))) throw new Error()
         latest.current = { draft: restoredDraft, photos: restoredPhotos, attempt: restoredAttempt }
         setDraft(restoredDraft); setPhotos(restoredPhotos); setAttempt(restoredAttempt); setError(''); heading.current?.focus()
       }
       catch { setError('Utkastet kunde inte återställas.'); }
     }}><RotateCcw size={16} />Återställ utkast</button></div>}
     <fieldset disabled={busy || Boolean(attempt)}>
-      <div className="diary-form-grid"><label>Namn<input required maxLength={160} autoComplete="name" value={draft.name} onChange={e => change({ name: e.target.value })} /></label><label>Företag<input required maxLength={160} autoComplete="organization" value={draft.company} onChange={e => change({ company: e.target.value })} /></label></div>
       <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från<input required type="time" value={draft.startTime} onChange={e => change({ startTime: e.target.value })} /></label><label>Till<input required type="time" value={draft.endTime} onChange={e => change({ endTime: e.target.value })} /></label><label>Rast (min)<input type="number" min="0" max="1438" step="1" inputMode="numeric" value={draft.breakMinutes} onChange={e => change({ breakMinutes: e.target.value })} /></label></div>
       <label>Moment (valfritt)<select value={draft.itemId || ''} onChange={e => change({ itemId: e.target.value || null })}><option value="">Hela projektet</option>{items.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
       <label>Utfört arbete<textarea required rows={4} maxLength={6000} value={draft.text} onChange={e => change({ text: e.target.value })} /></label>

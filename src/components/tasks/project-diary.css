@@ -67,6 +67,11 @@
 .diary-identity { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0;border-bottom:1px solid #d5dcdd;font-size:13px; }
 .diary-identity span { overflow-wrap:anywhere;min-width:0; }
 .diary-identity button { flex-shrink:0;white-space:nowrap; }
+.diary-person-company { display:block;margin-top:3px;color:#596368; }
+.diary-person-picker { max-width:720px;padding:24px 0;border-bottom:1px solid #d5dcdd; }
+.diary-person-picker h2 { font-size:20px;margin:0 0 18px; }
+.diary-person-picker>button,.diary-person-picker>form { margin-top:16px; }
+.diary-person-picker .diary-confirm-actions { margin-top:12px; }
 .diary-qr-dialog { margin:auto;border:1px solid #b9c3c4;border-radius:8px;max-width:min(520px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:22px;color:#252a2d;overflow-y:auto; }
 .diary-qr-dialog::backdrop { background:rgba(0,0,0,.4); }
 .diary-qr-dialog header { display:flex;justify-content:space-between;align-items:start;gap:12px; }

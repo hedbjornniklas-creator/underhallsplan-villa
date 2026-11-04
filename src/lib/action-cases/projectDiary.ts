@@ -4,19 +4,15 @@ export const DIARY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as co
 export type DiaryBody = { name: string; company: string; workDate: string; startTime: string; endTime: string; breakMinutes: number; text: string; itemId: string | null }
 export type DiaryPhoto = { id: string; name: string; contentType: string; size: number; sha256: string }
 export type DiaryCorrection = { id: string; text: string; actorName: string; createdAt: string }
-export type DiaryEntry = { id: string; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code'; receivedAt: string; emailVerifiedAt: string | null; minutes: number; photos: DiaryPhoto[]; corrections: DiaryCorrection[] }
+export type DiaryPerson = { id: string; name: string; company: string }
+export type DiaryEntry = { id: string; personId: string | null; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code' | 'qr_selection'; receivedAt: string; emailVerifiedAt: string | null; minutes: number; photos: DiaryPhoto[]; corrections: DiaryCorrection[] }
 export type DiaryProject = { id: string; title: string }
-export type DiarySession = { id: string; email: string; name: string; company: string; expiresAt: string }
-export type DiaryPublicState = { project: DiaryProject; session: DiarySession | null; items: { id: string; title: string }[] }
-export type DiaryWorkspace = { project: DiaryProject; canManage: boolean; managerAssigned: boolean; link: { active: boolean; revision: number; url: string | null; qrDataUrl: string | null }; entries: DiaryEntry[]; hasMore: boolean; items: { id: string; title: string }[]; authorId: string; authorName: string; authorEmail: string }
+export type DiaryPublicState = { project: DiaryProject; people: DiaryPerson[]; items: { id: string; title: string }[] }
+export type DiaryWorkspace = DiaryPublicState & { canManage: boolean; managerAssigned: boolean; link: { active: boolean; revision: number; url: string | null; qrDataUrl: string | null }; entries: DiaryEntry[]; hasMore: boolean; authorId: string; authorName: string; authorEmail: string }
 export const diaryUuid = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 function invalid(): never { throw new Error('PROJECT_DIARY_INVALID') }
 export const diaryToday = (now = new Date()) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Stockholm', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
-export function diaryEmail(value: unknown) {
-  const email = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (email.length > 254 || !/^[^\s@\x00-\x1f<>]+@[^\s@\x00-\x1f<>]+\.[^\s@\x00-\x1f<>]+$/.test(email)) invalid()
-  return email
-}
+export function diaryPersonInput(input: Record<string, unknown>) { return { name: diaryText(input.name, 160).replace(/\s+/g, ' '), company: diaryText(input.company, 160).replace(/\s+/g, ' ') } }
 export function diaryText(value: unknown, max: number, required = true) {
   if (typeof value !== 'string' || value.length > max || /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) invalid()
   const text = value.trim()
@@ -46,6 +42,10 @@ export function normalizeDiaryBody(input: unknown, today = diaryToday()): DiaryB
 export function diaryEntryRequest(input: Record<string, unknown>, today = diaryToday()) {
   if (!diaryUuid(input.requestId) || !Array.isArray(input.photoIds) || input.photoIds.length > DIARY_MAX_PHOTOS || input.photoIds.some(id => !diaryUuid(id)) || new Set(input.photoIds).size !== input.photoIds.length) invalid()
   return { requestId: input.requestId.toLowerCase(), body: normalizeDiaryBody(input.body, today), photoIds: input.photoIds.map(id => String(id).toLowerCase()) }
+}
+export function diaryPersonEntryRequest(input: Record<string, unknown>, today = diaryToday()) {
+  if (!diaryUuid(input.personId)) throw new Error('PROJECT_DIARY_PERSON')
+  return { ...diaryEntryRequest(input, today), personId: input.personId.toLowerCase() }
 }
 export function diaryPhotoRequest(input: Record<string, unknown>) {
   if (!diaryUuid(input.id) || !DIARY_IMAGE_TYPES.includes(input.contentType as typeof DIARY_IMAGE_TYPES[number]) || !Number.isInteger(input.size) || Number(input.size) <= 0 || Number(input.size) > DIARY_MAX_PHOTO_BYTES) throw new Error('PROJECT_DIARY_PHOTO')

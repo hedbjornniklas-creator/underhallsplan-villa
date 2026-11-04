@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { diaryCookie, DIARY_CODE_SECONDS, DIARY_SESSION_SECONDS } from './projectDiaryLinks'
+import { generateAssignmentToken } from '@/lib/assignments/tokens'
+import { diaryCookie, DIARY_DEVICE_SECONDS, validDiaryDevice } from './projectDiaryLinks'
 
 export const diaryHeaders = { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' }
 export function diaryJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: diaryHeaders }) }
@@ -11,9 +12,10 @@ export function diaryError(error: unknown) {
     PROJECT_DIARY_FORBIDDEN: [403, 'Du saknar behörighet till dagboken.'],
     PROJECT_DIARY_MANAGER: [403, 'Endast projektansvarig kan hantera QR-länken och lägga till rättelser.'],
     PROJECT_DIARY_STALE: [409, 'QR-länken har ändrats. Hämta det sparade läget innan du fortsätter.'],
-    PROJECT_DIARY_SESSION: [401, 'Verifiera din mejladress igen. Ditt utkast finns kvar.'],
+    PROJECT_DIARY_DEVICE: [401, 'Besöket kunde inte kännas igen. Öppna dagboken igen och tillåt cookies. Ditt utkast finns kvar.'],
+    PROJECT_DIARY_PERSON: [400, 'Välj en person från projektets lista, eller lägg till namn och företag.'],
+    PROJECT_DIARY_RELOAD: [410, 'Dagboken har förenklats. Ladda om sidan för att välja person utan mejlkod.'],
     PROJECT_DIARY_RATE_LIMITED: [429, 'För många försök. Vänta en stund innan du försöker igen.'],
-    PROJECT_DIARY_CODE: [400, 'Ange den sexsiffriga koden från mejlet. Begär en ny kod om den har gått ut.'],
     PROJECT_DIARY_INVALID: [400, 'Kontrollera namn, företag, arbetsdatum, arbetstid, rast och beskrivning. Tiderna ska vara inom samma dag och arbetsdatum får inte ligga framåt i tiden.'],
     PROJECT_DIARY_ITEM: [400, 'Momentet är inte tillgängligt i detta projekt. Välj ett annat moment eller lämna det tomt.'],
     PROJECT_DIARY_PHOTO: [400, 'En bild kunde inte godkännas. Använd JPG, PNG eller WebP, högst 8 MB per bild och åtta bilder per anteckning. En uppladdning gäller i 24 timmar.'],
@@ -22,7 +24,6 @@ export function diaryError(error: unknown) {
     PROJECT_DIARY_ORIGIN: [403, 'Begäran kunde inte godkännas. Öppna formuläret via projektets QR-kod.'],
     PROJECT_DIARY_TOO_LARGE: [413, 'Begäran är för stor. Bilder ska laddas upp med bildknappen.'],
     PROJECT_DIARY_CONFIG: [503, 'Dagbokslänkarna behöver konfigureras av administratören.'],
-    TASK_EMAIL_PROVIDER_NOT_CONFIGURED: [503, 'Mejlkoder behöver aktiveras av administratören. Kontakta projektansvarig.'],
     UNAUTHORIZED: [401, 'Logga in igen. Ditt utkast finns kvar.'],
     MODULE_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Uppdrag.'],
     PRODUCT_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Uppdrag.'],
@@ -52,8 +53,8 @@ export async function diaryRequestBody(request: Request) {
     return body as Record<string, unknown>
   } catch (error) { if (error instanceof Error && error.message === 'PROJECT_DIARY_TOO_LARGE') throw error; throw new Error('PROJECT_DIARY_INVALID') }
 }
-export function diaryRequestCookie(request: NextRequest, token: string, kind: 'code' | 'session') { return request.cookies.get(diaryCookie(token, kind))?.value }
-export function setDiaryCookie(response: NextResponse, token: string, kind: 'code' | 'session', value: string | null, expiresAt?: string) {
-  const maxAge = value === null ? 0 : kind === 'code' ? DIARY_CODE_SECONDS : Math.max(0, Math.min(DIARY_SESSION_SECONDS, Math.floor((Date.parse(expiresAt || '') - Date.now()) / 1000)))
-  response.cookies.set(diaryCookie(token, kind), value || '', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: Number.isFinite(maxAge) ? maxAge : 0 })
+export function diaryRequestCookie(request: NextRequest, token: string) { return request.cookies.get(diaryCookie(token))?.value }
+export function rememberDiaryDevice(response: NextResponse, request: NextRequest, token: string) {
+  const old = diaryRequestCookie(request, token), value = validDiaryDevice(old) ? old : generateAssignmentToken()
+  response.cookies.set(diaryCookie(token), value, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: DIARY_DEVICE_SECONDS })
 }
