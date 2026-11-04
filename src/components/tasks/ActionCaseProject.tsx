@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PendingLink from '@/components/ui/PendingLink'
-import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, Loader2, MapPin, MessageSquare, Pencil, Save, Share2, WalletCards, Wrench, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, Loader2, MapPin, MessageSquare, NotebookPen, Pencil, Save, Share2, WalletCards, Wrench, X } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import type { ActionCaseWorkspace, ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
@@ -17,6 +17,7 @@ import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import ProjectQuestions, { type QuestionOpenRequest } from './ProjectQuestions'
 import ProjectOverview from './ProjectOverview'
 import ProjectCustomerSharing from './ProjectCustomerSharing'
+import ProjectDiary from './ProjectDiary'
 import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 
@@ -29,6 +30,7 @@ const sections = [
   { key: 'payments', label: 'Betalning och fakturering', icon: WalletCards },
   { key: 'schedule', label: 'Tidsplan', icon: CalendarClock },
   { key: 'questions', label: 'Frågor och beslut', icon: MessageSquare },
+  { key: 'diary', label: 'Dagbok', icon: NotebookPen },
   { key: 'files', label: 'Bilder och filer', icon: FolderOpen },
   { key: 'sharing', label: 'Delning', icon: Share2 },
 ] as const
@@ -65,6 +67,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [workOpenRequest, setWorkOpenRequest] = useState<{ itemId: string; token: string } | null>(null)
   const [scheduleDirty, setScheduleDirty] = useState(false)
   const [questionsDirty, setQuestionsDirty] = useState(false)
+  const [diaryDirty, setDiaryDirty] = useState(false)
   const [sharingDirty, setSharingDirty] = useState(false)
   const [questionsRefresh, setQuestionsRefresh] = useState(0)
   const [questionOpenRequest, setQuestionOpenRequest] = useState<QuestionOpenRequest | null>(null)
@@ -180,7 +183,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
         if (renameOpen) closeRename()
@@ -224,6 +227,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           </details>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
         <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
+        <ProjectDiary key={caseId} caseId={caseId} active={view === 'diary'} refreshKey={questionsRefresh} onDirty={setDiaryDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
           customerRefresh={customerRefresh} openWorkRequest={workOpenRequest}

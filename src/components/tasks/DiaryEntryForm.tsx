@@ -1,0 +1,121 @@
+'use client'
+/* eslint-disable @next/next/no-img-element -- Local camera previews use revocable blob URLs. */
+
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Send, Trash2 } from 'lucide-react'
+import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryDuration, diaryEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody } from '@/lib/action-cases/projectDiary'
+
+type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
+type Photo = { id: string; name: string; size: number; contentType: string; status: 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
+type Attempt = ReturnType<typeof diaryEntryRequest>
+type Receipt = { id: string; receivedAt: string; minutes: number }
+const subscribe = (listener: () => void) => { window.addEventListener('diary-draft', listener); window.addEventListener('storage', listener); return () => { window.removeEventListener('diary-draft', listener); window.removeEventListener('storage', listener) } }
+function cached(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
+function store(key: string, value: unknown) { try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); window.dispatchEvent(new Event('diary-draft')) } catch { /* Network submission remains available if device storage is unavailable. */ } }
+function initial(name: string, company: string): Draft { return { ...emptyDiaryBody(name, company), breakMinutes: '0' } }
+const dateTime = (value: string) => new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' }).format(new Date(value))
+
+export default function DiaryEntryForm({ endpoint, storageKey, items, authorName = '', company = '', onSaved, onDirty, onSessionExpired }: {
+  endpoint: string; storageKey: string; items: { id: string; title: string }[]; authorName?: string; company?: string
+  onSaved?: () => void; onDirty?: (dirty: boolean) => void; onSessionExpired?: () => void
+}) {
+  const baseline = useRef(initial(authorName, company))
+  const [draft, setDraft] = useState<Draft>(() => baseline.current), [photos, setPhotos] = useState<Photo[]>([])
+  const [attempt, setAttempt] = useState<Attempt | null>(null), [receipt, setReceipt] = useState<Receipt | null>(null)
+  const [busy, setBusy] = useState(false), [error, setError] = useState('')
+  const running = useRef(false), uploads = useRef(new Set<string>()), controllers = useRef(new Set<AbortController>()), previews = useRef(new Set<string>())
+  const heading = useRef<HTMLHeadingElement>(null), input = useRef<HTMLInputElement>(null), camera = useRef<HTMLInputElement>(null)
+  const latest = useRef({ draft, photos, attempt }); latest.current = { draft, photos, attempt }
+  const snapshot = useSyncExternalStore(subscribe, useCallback(() => cached(storageKey), [storageKey]), () => null)
+  const dirty = !receipt && (attempt !== null || photos.length > 0 || JSON.stringify(draft) !== JSON.stringify(baseline.current))
+  useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
+  useEffect(() => {
+    if (!dirty) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
+  }, [dirty])
+  useEffect(() => { const active = controllers.current, urls = previews.current; return () => { active.forEach(c => c.abort()); urls.forEach(url => URL.revokeObjectURL(url)) } }, [])
+  const persist = (nextDraft: Draft, nextPhotos: Photo[], nextAttempt: Attempt | null) => store(storageKey, { draft: nextDraft, photos: nextPhotos.filter(p => p.status === 'ready').map(({ id, name, size, contentType }) => ({ id, name, size, contentType, status: 'ready' })), attempt: nextAttempt })
+  const change = (patch: Partial<Draft>) => { const next = { ...latest.current.draft, ...patch }; latest.current.draft = next; setDraft(next); setError(''); persist(next, latest.current.photos, latest.current.attempt) }
+  const updatePhoto = (id: string, patch: Partial<Photo>) => { const next = latest.current.photos.map(p => p.id === id ? { ...p, ...patch } : p); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }
+  async function upload(photo: Photo) {
+    if (!photo.file || uploads.current.has(photo.id)) return
+    const controller = new AbortController(); controllers.current.add(controller); uploads.current.add(photo.id)
+    updatePhoto(photo.id, { status: 'uploading', error: '' })
+    try {
+      const prepared = await fetch(`${endpoint}/photos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+        body: JSON.stringify({ operation: 'prepare', id: photo.id, name: photo.name, size: photo.size, contentType: photo.contentType }) })
+      const data = await prepared.json()
+      if (!prepared.ok) { if (prepared.status === 401) onSessionExpired?.(); throw new Error(data.error || 'Bilden kunde inte förberedas.') }
+      if (!data.ready) {
+        const url = new URL(data.uploadUrl)
+        if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Uppladdningsadressen kunde inte godkännas.')
+        const uploaded = await fetch(url, { method: 'PUT', body: photo.file, signal: controller.signal, redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer', headers: { 'Content-Type': photo.contentType, 'x-upsert': 'false' } })
+        if (!uploaded.ok && ![400, 409].includes(uploaded.status)) throw new Error('Bilden kunde inte laddas upp. Försök igen.')
+      }
+      const completed = await fetch(`${endpoint}/photos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal, body: JSON.stringify({ operation: 'complete', id: photo.id }) })
+      const result = await completed.json()
+      if (completed.status === 401) onSessionExpired?.()
+      if (!completed.ok || result.id !== photo.id) throw new Error(result.error || 'Bilden kunde inte bekräftas.')
+      updatePhoto(photo.id, { status: 'ready' })
+    } catch (reason) { if (!controller.signal.aborted) updatePhoto(photo.id, { status: 'error', error: reason instanceof Error ? reason.message : 'Bilden kunde inte sparas.' }) }
+    finally { uploads.current.delete(photo.id); controllers.current.delete(controller) }
+  }
+  function addFiles(files: File[]) {
+    if (latest.current.attempt || busy || running.current) return
+    if (latest.current.photos.length + files.length > DIARY_MAX_PHOTOS) { setError('Välj högst åtta bilder per anteckning.'); return }
+    if (files.some(f => !DIARY_IMAGE_TYPES.includes(f.type as typeof DIARY_IMAGE_TYPES[number]) || f.size < 1 || f.size > DIARY_MAX_PHOTO_BYTES)) { setError('Välj JPG, PNG eller WebP, högst 8 MB per bild.'); return }
+    const added: Photo[] = files.map(file => { const preview = URL.createObjectURL(file); previews.current.add(preview); return { id: crypto.randomUUID(), name: file.name, size: file.size, contentType: file.type, file, preview, status: 'uploading' } })
+    const next = [...latest.current.photos, ...added]; latest.current.photos = next; setPhotos(next); setError(''); persist(latest.current.draft, next, null); added.forEach(photo => void upload(photo))
+  }
+  async function submit() {
+    if (running.current || photos.some(p => p.status !== 'ready')) return
+    let request: Attempt
+    try { request = attempt ?? diaryEntryRequest({ requestId: crypto.randomUUID(), body: { ...draft, breakMinutes: draft.breakMinutes === '' ? 0 : /^\d+$/.test(draft.breakMinutes) ? Number(draft.breakMinutes) : NaN }, photoIds: photos.map(p => p.id) }) }
+    catch { setError('Kontrollera namn, företag, datum och arbetstid. Sluttiden ska vara efter starttiden samma dag, och rasten kortare än tiden på plats.'); return }
+    running.current = true; latest.current.attempt = request; setBusy(true); setAttempt(request); setError(''); persist(draft, photos, request)
+    try {
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'entry', ...request }) })
+      const result = await response.json()
+      if (!response.ok) {
+        if (result.definite) { latest.current.attempt = null; setAttempt(null); persist(draft, photos, null) }
+        if (response.status === 401) onSessionExpired?.()
+        throw new Error(result.error || 'Inskickningen kunde inte bekräftas.')
+      }
+      if (result.id !== request.requestId || !Number.isFinite(Date.parse(result.receivedAt)) || !Number.isInteger(result.minutes)) throw new Error('Kvittot kunde inte bekräftas. Försök igen med samma uppgifter.')
+      setReceipt(result); store(storageKey, null); onSaved?.()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Inskickningen kunde inte bekräftas. Försök igen.') }
+    finally { running.current = false; setBusy(false) }
+  }
+  if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p><p>{diaryDuration(receipt.minutes)}</p><p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
+  return <form className="diary-entry-form" aria-label="Ny dagboksanteckning" onSubmit={event => { event.preventDefault(); void submit() }}>
+    <h3 ref={heading} tabIndex={-1}>Ny anteckning</h3>
+    {snapshot && !dirty && <div className="diary-notice"><span>Det finns ett lokalt utkast på den här enheten.</span><button type="button" onClick={() => {
+      try {
+        const saved = JSON.parse(snapshot)
+        if (!saved.draft || !Array.isArray(saved.photos) || saved.photos.length > DIARY_MAX_PHOTOS || ['name','company','workDate','startTime','endTime','breakMinutes','text'].some(key => typeof saved.draft[key] !== 'string')) throw new Error()
+        const restoredDraft: Draft = { name: saved.draft.name, company: saved.draft.company, workDate: saved.draft.workDate, startTime: saved.draft.startTime, endTime: saved.draft.endTime, breakMinutes: saved.draft.breakMinutes, text: saved.draft.text, itemId: saved.draft.itemId || null }
+        const restoredPhotos: Photo[] = saved.photos.map((p: Photo) => ({ ...diaryPhotoRequest(p), status: 'ready' }))
+        if (new Set(restoredPhotos.map(p => p.id)).size !== restoredPhotos.length) throw new Error()
+        const restoredAttempt = saved.attempt ? diaryEntryRequest(saved.attempt) : null
+        if (restoredAttempt && JSON.stringify(restoredAttempt) !== JSON.stringify(diaryEntryRequest({ requestId: restoredAttempt.requestId, body: { ...restoredDraft, breakMinutes: Number(restoredDraft.breakMinutes) }, photoIds: restoredPhotos.map(p => p.id) }))) throw new Error()
+        latest.current = { draft: restoredDraft, photos: restoredPhotos, attempt: restoredAttempt }
+        setDraft(restoredDraft); setPhotos(restoredPhotos); setAttempt(restoredAttempt); setError(''); heading.current?.focus()
+      }
+      catch { setError('Utkastet kunde inte återställas.'); }
+    }}><RotateCcw size={16} />Återställ utkast</button></div>}
+    <fieldset disabled={busy || Boolean(attempt)}>
+      <div className="diary-form-grid"><label>Namn<input required maxLength={160} autoComplete="name" value={draft.name} onChange={e => change({ name: e.target.value })} /></label><label>Företag<input required maxLength={160} autoComplete="organization" value={draft.company} onChange={e => change({ company: e.target.value })} /></label></div>
+      <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från<input required type="time" value={draft.startTime} onChange={e => change({ startTime: e.target.value })} /></label><label>Till<input required type="time" value={draft.endTime} onChange={e => change({ endTime: e.target.value })} /></label><label>Rast (min)<input type="number" min="0" max="1438" step="1" inputMode="numeric" value={draft.breakMinutes} onChange={e => change({ breakMinutes: e.target.value })} /></label></div>
+      <label>Moment (valfritt)<select value={draft.itemId || ''} onChange={e => change({ itemId: e.target.value || null })}><option value="">Hela projektet</option>{items.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+      <label>Utfört arbete<textarea required rows={4} maxLength={6000} value={draft.text} onChange={e => change({ text: e.target.value })} /></label>
+      <div className="diary-photo-tools"><span>Bilder · {photos.length}/{DIARY_MAX_PHOTOS}</span><div><button type="button" disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => camera.current?.click()}><Camera size={18} />Ta bild</button><button type="button" disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => input.current?.click()}><ImagePlus size={18} />Välj bilder</button></div></div>
+      <input ref={camera} type="file" capture="environment" accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
+      <input ref={input} type="file" multiple accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
+    </fieldset>
+    {photos.length > 0 && <ul className="diary-upload-list">{photos.map(photo => <li key={photo.id}><div className="diary-upload-image">{photo.preview ? <img src={photo.preview} alt={photo.name} /> : <ImagePlus size={22} />}</div><div><strong>{photo.name}</strong><span>{photo.status === 'uploading' ? 'Laddar upp…' : photo.status === 'ready' ? 'Bilden är sparad' : photo.error}</span>{photo.status === 'error' && photo.file && <button type="button" disabled={busy || Boolean(attempt)} onClick={() => void upload(photo)}><RotateCcw size={15} />Försök igen</button>}</div><button type="button" className="diary-icon" aria-label={`Ta bort ${photo.name} från anteckningen`} title="Ta bort från anteckningen" disabled={busy || Boolean(attempt) || photo.status === 'uploading'} onClick={() => { if (photo.preview) { URL.revokeObjectURL(photo.preview); previews.current.delete(photo.preview) } const next = latest.current.photos.filter(p => p.id !== photo.id); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }}><Trash2 size={17} /></button></li>)}</ul>}
+    {error && <p role="alert" className="diary-error">{error}</p>}
+    {attempt && !busy && <p className="diary-notice" role="status">Inskickningen är inte bekräftad. Försök igen med samma uppgifter.</p>}
+    <div className="diary-form-footer"><button type="submit" className="diary-primary" disabled={busy || photos.some(p => p.status !== 'ready')}>{busy ? <Loader2 size={18} className="animate-spin" /> : attempt ? <RotateCcw size={18} /> : <Send size={18} />}{busy ? 'Skickar…' : attempt ? 'Försök igen' : 'Skicka anteckning'}</button></div>
+  </form>
+}
