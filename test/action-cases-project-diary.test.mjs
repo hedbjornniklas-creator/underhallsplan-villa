@@ -44,7 +44,7 @@ test('printed diary sign contains Swedish instructions and limits, but no logo o
   assert.match(html, /Fiktivt projekt &amp; &lt;script&gt;inte kod&lt;\/script&gt;/)
   assert.match(html, /<html lang="sv">/)
   assert.match(html, /Välj ditt namn och företag/); assert.match(html, /ungefärlig tid på plats/); assert.match(html, /Skicka anteckning/)
-  assert.match(html, /Högst 8 bilder per anteckning · 8 MB per bild/)
+  assert.match(html, /Högst 20 bilder per anteckning · 8 MB per bild/)
   assert.equal((html.match(/<img /g) || []).length, 1)
   assert.equal(html.includes(url), false); assert.doesNotMatch(html, /logo\.svg|HusHub Uppdrag|class="url"/)
   const { data, info } = await sharp(Buffer.from(qr.split(',')[1], 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
@@ -65,6 +65,16 @@ test('QR capabilities and anonymous upload owners are project-bound, without ass
     assert.notEqual(links.diaryDeviceHash(token, device), links.diaryDeviceHash(token, 'b'.repeat(43)))
     assert.throws(() => links.diaryDeviceHash(token, undefined), /DIARY_DEVICE/)
   } finally { if (old === undefined) delete process.env.PROJECT_DIARY_LINK_SECRET; else process.env.PROJECT_DIARY_LINK_SECRET = old }
+})
+
+test('diary requests accept twenty distinct photos and reject twenty-one without changing file limits', () => {
+  const photoIds = Array.from({ length: 20 }, id)
+  const request = { requestId: id(), personId: id(), body: body(), photoIds }
+  assert.equal(domain.DIARY_MAX_PHOTOS, 20)
+  assert.equal(domain.diaryPersonEntryRequest(request).photoIds.length, 20)
+  assert.throws(() => domain.diaryPersonEntryRequest({ ...request, photoIds: [...photoIds, id()] }), /DIARY_INVALID/)
+  assert.throws(() => domain.diaryPersonEntryRequest({ ...request, photoIds: [...photoIds.slice(0,19), photoIds[0]] }), /DIARY_INVALID/)
+  assert.equal(domain.DIARY_MAX_PHOTO_BYTES, 8 * 1024 * 1024)
 })
 test('the actual QR PNG is nonblank and decodes to exactly the private project link', async () => {
   const url = `https://hushub.se/dagbok/${links.diaryLinkToken(id(), id(), key)}`
@@ -87,7 +97,7 @@ test('real image decoding rejects HTML, disguised formats, truncated files, inco
   await assert.rejects(validateDiaryImage(big, 'image/png', big.length), /DIARY_PHOTO/)
 })
 test('HTTP boundaries reject cross-origin requests, malformed JSON and unbounded streaming bodies', async () => {
-  const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': { NextResponse: { json: (body, init) => ({ body, ...init }) } }, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links })
+  const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': { NextResponse: { json: (body, init) => ({ body, ...init }) } }, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links, './projectDiary': domain })
   const request = (value, origin = 'https://hushub.se') => new Request('https://hushub.se/api/dagbok/test', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: value })
   assert.deepEqual(await http.diaryRequestBody(request('{"operation":"entry"}')), { operation: 'entry' })
   await assert.rejects(http.diaryRequestBody(request('{}', 'https://other.invalid')), /DIARY_ORIGIN/)
@@ -95,11 +105,12 @@ test('HTTP boundaries reject cross-origin requests, malformed JSON and unbounded
   await assert.rejects(http.diaryRequestBody(request('{"text":"' + 'x'.repeat(33000) + '"}')), /DIARY_TOO_LARGE/)
   assert.equal(http.diaryError(new Error('private provider details')).body.error.includes('provider'), false)
   assert.equal(http.diaryError(new Error('PROJECT_DIARY_SCHEMA')).status, 503)
+  assert.match(http.diaryError(new Error('PROJECT_DIARY_PHOTO')).body.error, /20 bilder per anteckning/)
 })
 test('technical device cookie contains no name or email and preserves an existing upload owner', () => {
   const oldKey = process.env.PROJECT_DIARY_LINK_SECRET; process.env.PROJECT_DIARY_LINK_SECRET = key
   try {
-    const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': {}, '@/lib/assignments/tokens': { generateAssignmentToken: () => 'a'.repeat(43) }, './projectDiaryLinks': links }), calls = []
+    const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': {}, '@/lib/assignments/tokens': { generateAssignmentToken: () => 'a'.repeat(43) }, './projectDiaryLinks': links, './projectDiary': domain }), calls = []
     const response = { cookies: { set: (...args) => calls.push(args) } }, token = links.diaryLinkToken(id(), id())
     http.rememberDiaryDevice(response, { cookies: { get: () => undefined } }, token)
     assert.equal(calls[0][2].httpOnly, true); assert.equal(calls[0][2].sameSite, 'lax'); assert.equal(calls[0][1], 'a'.repeat(43))
@@ -161,7 +172,7 @@ test('internal diary mutations require organization and module context before an
   for (const deny of ['UNAUTHORIZED','MODULE_ACCESS_REQUIRED',null]) {
     const calls = [], next = { NextResponse: { json: (body, init) => ({ body, ...init }) }, after: fn => calls.push(['cleanup', fn]) }
     const ctx = { orgId: id(), userId: id() }, caseId = id()
-    const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': next, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links })
+    const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': next, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links, './projectDiary': domain })
     const context = load('../src/lib/action-cases/customerOffersHttp.ts', { 'next/server': next, '@/lib/assignments/server': { async requireOrgContext() { if (deny === 'UNAUTHORIZED') throw Error(deny); return ctx } }, '@/lib/access/server': { async requireModuleAccess() { if (deny === 'MODULE_ACCESS_REQUIRED') throw Error(deny) } } })
     const route = load('../src/app/api/action-cases/[caseId]/diary/route.ts', { 'next/server': next, '@/lib/action-cases/customerOffersHttp': context, '@/lib/action-cases/projectDiaryHttp': http, '@/lib/action-cases/projectDiaryServer': { async submitDiaryEntry(...args) { calls.push(args); return { id: id() } }, async cleanupDiaryUploads() {}, async correctDiaryEntry() {}, async getProjectDiary() {}, async setDiaryLink() {} } })
     const request = new Request(`https://hushub.se/api/action-cases/${caseId}/diary`, { method: 'POST', headers: { origin: 'https://hushub.se', 'content-type': 'application/json' }, body: '{"operation":"entry"}' })

@@ -6,7 +6,7 @@ import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Send, Trash2
 import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryPersonEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson } from '@/lib/action-cases/projectDiary'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
-type Photo = { id: string; name: string; size: number; contentType: string; status: 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
+type Photo = { id: string; name: string; size: number; contentType: string; status: 'queued' | 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
 type Attempt = ReturnType<typeof diaryPersonEntryRequest>
 type Receipt = { id: string; receivedAt: string; minutes: number }
 const subscribe = (listener: () => void) => { window.addEventListener('diary-draft', listener); window.addEventListener('storage', listener); return () => { window.removeEventListener('diary-draft', listener); window.removeEventListener('storage', listener) } }
@@ -24,23 +24,34 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
   const [attempt, setAttempt] = useState<Attempt | null>(null), [receipt, setReceipt] = useState<Receipt | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const running = useRef(false), uploads = useRef(new Set<string>()), controllers = useRef(new Set<AbortController>()), previews = useRef(new Set<string>())
+  const pendingUploads = useRef<Photo[]>([]), mounted = useRef(true)
   const heading = useRef<HTMLHeadingElement>(null), input = useRef<HTMLInputElement>(null), camera = useRef<HTMLInputElement>(null)
   const timeHelp = useId(), photoHelp = useId()
   const latest = useRef({ draft, photos, attempt }); latest.current = { draft, photos, attempt }
   const snapshot = useSyncExternalStore(subscribe, useCallback(() => cached(storageKey), [storageKey]), () => null)
   const dirty = !receipt && (attempt !== null || photos.length > 0 || JSON.stringify(draft) !== JSON.stringify(baseline.current))
   useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
-  const working = busy || photos.some(p => p.status === 'uploading')
+  const working = busy || photos.some(p => p.status === 'queued' || p.status === 'uploading')
   useEffect(() => { onWorking?.(working); return () => onWorking?.(false) }, [working, onWorking])
   useEffect(() => {
     if (!dirty) return
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
-  useEffect(() => { const active = controllers.current, urls = previews.current; return () => { active.forEach(c => c.abort()); urls.forEach(url => URL.revokeObjectURL(url)) } }, [])
+  useEffect(() => { const active = controllers.current, urls = previews.current, pending = pendingUploads.current; mounted.current = true; return () => { mounted.current = false; pending.length = 0; active.forEach(c => c.abort()); urls.forEach(url => URL.revokeObjectURL(url)) } }, [])
   const persist = (nextDraft: Draft, nextPhotos: Photo[], nextAttempt: Attempt | null) => store(storageKey, { draft: nextDraft, photos: nextPhotos.filter(p => p.status === 'ready').map(({ id, name, size, contentType }) => ({ id, name, size, contentType, status: 'ready' })), attempt: nextAttempt })
   const change = (patch: Partial<Draft>) => { const next = { ...latest.current.draft, ...patch }; latest.current.draft = next; setDraft(next); setError(''); persist(next, latest.current.photos, latest.current.attempt) }
   const updatePhoto = (id: string, patch: Partial<Photo>) => { const next = latest.current.photos.map(p => p.id === id ? { ...p, ...patch } : p); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }
+  function drainUploads() {
+    while (mounted.current && uploads.current.size < 3 && pendingUploads.current.length) void upload(pendingUploads.current.shift()!)
+  }
+  function queueUploads(photos: Photo[]) {
+    for (const photo of photos) {
+      if (!photo.file || uploads.current.has(photo.id) || pendingUploads.current.some(p => p.id === photo.id)) continue
+      updatePhoto(photo.id, { status: 'queued', error: '' }); pendingUploads.current.push(photo)
+    }
+    drainUploads()
+  }
   async function upload(photo: Photo) {
     if (!photo.file || uploads.current.has(photo.id)) return
     const controller = new AbortController(); controllers.current.add(controller); uploads.current.add(photo.id)
@@ -61,14 +72,14 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
       if (!completed.ok || result.id !== photo.id) throw new Error(result.error || 'Bilden kunde inte bekräftas.')
       updatePhoto(photo.id, { status: 'ready' })
     } catch (reason) { if (!controller.signal.aborted) updatePhoto(photo.id, { status: 'error', error: reason instanceof Error ? reason.message : 'Bilden kunde inte sparas.' }) }
-    finally { uploads.current.delete(photo.id); controllers.current.delete(controller) }
+    finally { uploads.current.delete(photo.id); controllers.current.delete(controller); drainUploads() }
   }
   function addFiles(files: File[]) {
     if (latest.current.attempt || busy || running.current) return
-    if (latest.current.photos.length + files.length > DIARY_MAX_PHOTOS) { setError('Välj högst åtta bilder per anteckning.'); return }
+    if (latest.current.photos.length + files.length > DIARY_MAX_PHOTOS) { setError(`Välj högst ${DIARY_MAX_PHOTOS} bilder per anteckning.`); return }
     if (files.some(f => !DIARY_IMAGE_TYPES.includes(f.type as typeof DIARY_IMAGE_TYPES[number]) || f.size < 1 || f.size > DIARY_MAX_PHOTO_BYTES)) { setError('Välj JPG, PNG eller WebP, högst 8 MB per bild.'); return }
-    const added: Photo[] = files.map(file => { const preview = URL.createObjectURL(file); previews.current.add(preview); return { id: crypto.randomUUID(), name: file.name, size: file.size, contentType: file.type, file, preview, status: 'uploading' } })
-    const next = [...latest.current.photos, ...added]; latest.current.photos = next; setPhotos(next); setError(''); persist(latest.current.draft, next, null); added.forEach(photo => void upload(photo))
+    const added: Photo[] = files.map(file => { const preview = URL.createObjectURL(file); previews.current.add(preview); return { id: crypto.randomUUID(), name: file.name, size: file.size, contentType: file.type, file, preview, status: 'queued' } })
+    const next = [...latest.current.photos, ...added]; latest.current.photos = next; setPhotos(next); setError(''); persist(latest.current.draft, next, null); queueUploads(added)
   }
   async function submit() {
     if (running.current || photos.some(p => p.status !== 'ready')) return
@@ -115,7 +126,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
       <input ref={camera} type="file" capture="environment" accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
       <input ref={input} type="file" multiple accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
     </fieldset>
-    {photos.length > 0 && <ul className="diary-upload-list">{photos.map(photo => <li key={photo.id}><div className="diary-upload-image">{photo.preview ? <img src={photo.preview} alt={photo.name} /> : <ImagePlus size={22} />}</div><div><strong>{photo.name}</strong><span>{photo.status === 'uploading' ? 'Laddar upp…' : photo.status === 'ready' ? 'Bilden är sparad' : photo.error}</span>{photo.status === 'error' && photo.file && <button type="button" disabled={busy || Boolean(attempt)} onClick={() => void upload(photo)}><RotateCcw size={15} />Försök igen</button>}</div><button type="button" className="diary-icon" aria-label={`Ta bort ${photo.name} från anteckningen`} title="Ta bort från anteckningen" disabled={busy || Boolean(attempt) || photo.status === 'uploading'} onClick={() => { if (photo.preview) { URL.revokeObjectURL(photo.preview); previews.current.delete(photo.preview) } const next = latest.current.photos.filter(p => p.id !== photo.id); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }}><Trash2 size={17} /></button></li>)}</ul>}
+    {photos.length > 0 && <ul className="diary-upload-list">{photos.map(photo => <li key={photo.id}><div className="diary-upload-image">{photo.preview ? <img src={photo.preview} alt={photo.name} /> : <ImagePlus size={22} />}</div><div><strong>{photo.name}</strong><span>{photo.status === 'queued' ? 'Väntar på uppladdning…' : photo.status === 'uploading' ? 'Laddar upp…' : photo.status === 'ready' ? 'Bilden är sparad' : photo.error}</span>{photo.status === 'error' && photo.file && <button type="button" disabled={busy || Boolean(attempt)} onClick={() => queueUploads([photo])}><RotateCcw size={15} />Försök igen</button>}</div><button type="button" className="diary-icon" aria-label={`Ta bort ${photo.name} från anteckningen`} title="Ta bort från anteckningen" disabled={busy || Boolean(attempt) || photo.status === 'queued' || photo.status === 'uploading'} onClick={() => { if (photo.preview) { URL.revokeObjectURL(photo.preview); previews.current.delete(photo.preview) } const next = latest.current.photos.filter(p => p.id !== photo.id); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }}><Trash2 size={17} /></button></li>)}</ul>}
     {error && <p role="alert" className="diary-error">{error}</p>}
     {attempt && !busy && <p className="diary-notice" role="status">Inskickningen är inte bekräftad. Försök igen med samma uppgifter.</p>}
     <div className="diary-form-footer"><button type="submit" className="diary-primary" disabled={busy || photos.some(p => p.status !== 'ready')}>{busy ? <Loader2 size={18} className="animate-spin" /> : attempt ? <RotateCcw size={18} /> : <Send size={18} />}{busy ? 'Skickar…' : attempt ? 'Försök igen' : 'Skicka anteckning'}</button></div>

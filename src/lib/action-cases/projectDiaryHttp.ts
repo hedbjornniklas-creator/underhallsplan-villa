@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { generateAssignmentToken } from '@/lib/assignments/tokens'
 import { diaryCookie, DIARY_DEVICE_SECONDS, validDiaryDevice } from './projectDiaryLinks'
+import { DIARY_MAX_PHOTOS } from './projectDiary'
 
 export const diaryHeaders = { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' }
 export function diaryJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: diaryHeaders }) }
@@ -18,7 +19,7 @@ export function diaryError(error: unknown) {
     PROJECT_DIARY_RATE_LIMITED: [429, 'För många försök. Vänta en stund innan du försöker igen.'],
     PROJECT_DIARY_INVALID: [400, 'Kontrollera person, arbetsdatum, tider och beskrivning. Tiderna ska vara inom samma dag och arbetsdatum får inte ligga framåt i tiden.'],
     PROJECT_DIARY_ITEM: [400, 'Momentet är inte tillgängligt i detta projekt. Välj ett annat moment eller lämna det tomt.'],
-    PROJECT_DIARY_PHOTO: [400, 'En bild kunde inte godkännas. Använd JPG, PNG eller WebP, högst 8 MB per bild och åtta bilder per anteckning. En uppladdning gäller i 24 timmar.'],
+    PROJECT_DIARY_PHOTO: [400, `En bild kunde inte godkännas. Använd JPG, PNG eller WebP, högst 8 MB per bild och ${DIARY_MAX_PHOTOS} bilder per anteckning. En uppladdning gäller i 24 timmar.`],
     PROJECT_DIARY_REQUEST_CONFLICT: [409, 'Detta försök har redan registrerats med andra uppgifter. Ändra inte ett pågående inskickningsförsök. Kontakta projektansvarig om kvittot saknas.'],
     PROJECT_DIARY_UPLOAD: [503, 'Bilden kunde inte sparas. Dina uppgifter finns kvar. Försök igen.'],
     PROJECT_DIARY_ORIGIN: [403, 'Begäran kunde inte godkännas. Öppna formuläret via projektets QR-kod.'],

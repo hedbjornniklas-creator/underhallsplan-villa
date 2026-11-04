@@ -37,6 +37,7 @@ before(async () => {
   const verified = (await db.query('select * from action_case_diary_entries where id=$1', [verifiedId])).rows[0]
   const old = (await db.query('select * from action_case_diary_entries where id=$1', [legacyId])).rows[0], others = await unchanged()
   await db.exec(sql('2026-11-04_02_project_diary_people.sql')); await db.exec(sql('2026-11-04_02_project_diary_people.sql'))
+  await db.exec(sql('2026-11-04_03_project_diary_twenty_photos.sql')); await db.exec(sql('2026-11-04_03_project_diary_twenty_photos.sql'))
   const current = (await db.query('select * from action_case_diary_entries where id=$1', [legacyId])).rows[0]
   assert.equal(current.person_id, null); delete current.person_id; assert.deepEqual(current, old)
   const currentVerified = (await db.query('select * from action_case_diary_entries where id=$1', [verifiedId])).rows[0]
@@ -133,4 +134,34 @@ test('internal entry, correction and cleanup still work without touching busines
   await db.query("update action_case_diary_uploads set expires_at=now()-interval '20 minutes' where id=$1", [file])
   assert.deepEqual((await command(f, 'cleanup')).ids, [file]); await command(f, 'cleanup_done', { ids: [file] })
   assert.deepEqual(await unchanged(), before)
+})
+
+test('twenty-photo migration preserves attachment order, ownership, retry receipts and the 8 MiB file limit', async () => {
+  for (const isPublic of [true, false]) {
+    const f = await fixture(), p = await command(f, 'person', { name: 'Bildtest', company: 'Test AB' }), before = await unchanged(), photos = Array.from({ length: 21 }, id)
+    const options = { public: isPublic }
+    await assert.rejects(command(f, 'reserve_photo', { id: id(), name: 'stor.png', contentType: 'image/png', size: 8388609 }, options), /DIARY_PHOTO/)
+    for (const file of photos) {
+      await command(f, 'reserve_photo', { id: file, name: 'bild.png', contentType: 'image/png', size: 100 }, options)
+      await command(f, 'seal_photo', { id: file, sha256: hash('a') }, options)
+    }
+    const req = { requestId: id(), requestHash: hash('d'), personId: p.id, body: body(p), photoIds: photos }
+    await assert.rejects(command(f, 'entry', req, options), /DIARY_PHOTO/)
+    assert.equal((await db.query('select count(*) n from action_case_diary_entries where action_case_id=$1', [f.caseId])).rows[0].n, 0)
+    assert.equal((await db.query("select count(*) n from action_case_diary_uploads where action_case_id=$1 and state='ready'", [f.caseId])).rows[0].n, 21)
+    const accepted = { ...req, photoIds: photos.slice(0,20).reverse() }
+    const receipt = await command(f, 'entry', accepted, options)
+    assert.deepEqual(await command(f, 'entry', accepted, options), receipt)
+    assert.deepEqual((await db.query('select id from action_case_diary_photos where entry_id=$1 order by position', [req.requestId])).rows.map(p => p.id), accepted.photoIds)
+    await assert.rejects(command(f, 'entry', { ...accepted, requestId: id() }, options), /DIARY_PHOTO/)
+    assert.deepEqual(await unchanged(), before)
+  }
+})
+
+test('photo-limit migration refuses an unexpected server definition instead of editing a different guard', async () => {
+  const original = (await db.query("select pg_get_functiondef('public.project_diary_people_command(uuid,uuid,uuid,uuid,uuid,text,text,jsonb)'::regprocedure) definition")).rows[0].definition
+  assert.ok(original.includes("jsonb_array_length(p_data->'photoIds')>20"))
+  await db.exec(original.replace("jsonb_array_length(p_data->'photoIds')>20", "jsonb_array_length(p_data->'photoIds')>19"))
+  try { await assert.rejects(db.exec(sql('2026-11-04_03_project_diary_twenty_photos.sql')), /MIGRATION_SOURCE_MISMATCH/) }
+  finally { await db.exec('rollback'); await db.exec(original) }
 })

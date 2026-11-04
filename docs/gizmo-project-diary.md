@@ -3,7 +3,7 @@
 ## Godkant 2026-11-04
 
 - En egen Dagbok i Uppdrag. Datum, ungefarlig tid fran/till, namn, foretag,
-  kort arbetsbeskrivning, valfritt moment och hogst atta bilder per anteckning.
+  kort arbetsbeskrivning, valfritt moment och hogst 20 bilder per anteckning.
 - QR-lappen ar pa svenska med rubriken Dagbok pa arbetsplatsen, projektnamn,
   kort instruktion och bildgranser. Ingen logga eller utskriven lank visas.
 - Tider skrivs som siffror i stallet for telefonens klockvaljare; exempelvis
@@ -43,8 +43,10 @@ Val av samma namn pa en annan telefon ger aldrig tillgang till dess bilder.
 Gamla QR-lankar stoppas vid byte eller stangning. Bilder laddas direkt
 till ett tillfalligt privat objekt, kontrolleras pa servern och arkiveras pa en
 separat, ej overskrivbar sokvag innan de kan knytas till en anteckning.
-JPG, PNG och WebP, hogst 8 MiB per bild. Bildinnehall och storlek kontrolleras,
-inte bara filnamnet. Orphan-uppladdningar forfaller efter 24 timmar och rensas
+JPG, PNG och WebP, hogst 8 MiB per bild och 20 bilder per anteckning.
+Bildinnehall och storlek kontrolleras, inte bara filnamnet. Uppladdningar koas
+med hogst tre samtidiga bildfloden per formular. Befintliga dygnskvoter och
+agarskydd behalls. Orphan-uppladdningar forfaller efter 24 timmar och rensas
 begransat vid projektansvarigs besok, efter 15 minuters sakerhetsmarginal for
 pagaende bildanrop (servergrans 60 sekunder). En kvitterad rensning gar vidare
 till nasta batch; lagringsfel kan provas igen. Bifogade bilder rensas aldrig.
@@ -64,6 +66,8 @@ Ingen publicering ingar fore separat godkannande.
 1. Grundmigreringen `docs/db/2026-11-04_01_project_diary.sql` behovs forst.
    Kor sedan `docs/db/2026-11-04_02_project_diary_people.sql` direkt fore den
    matchande publiceringen. Gamla mejlkodsformular slutar fungera nar den kors.
+   For 20 bilder behovs aven `docs/db/2026-11-04_03_project_diary_twenty_photos.sql`.
+   Den hojer bara antalsgransen, inte filstorlek eller dygnskvoter.
 2. Mejltjanst behovs inte. Basadress tas fran `APP_BASE_URL` eller
    `NEXT_PUBLIC_APP_URL` och ska vara en HTTPS-adress i produktion.
 3. `PROJECT_DIARY_LINK_SECRET` kan anges som separat hemlighet med minst
@@ -87,6 +91,8 @@ att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
 - 2026-11-04: QR-lappen forenklas till svensk instruktion utan varumarkeslogga
   eller synlig lank. Tid avser ungefarlig narvaro; rastfalt tas bort och
   bildgranser visas direkt i formularet. Ingen andring av sparade original.
+- 2026-11-04: Anvandaren hojer gransen till 20 bilder per anteckning.
+  Gransen galler formular, QR-lapp, API och databas. Hogst 8 MiB per bild kvarstar.
 
 ## Senare, Inte Bestallt
 

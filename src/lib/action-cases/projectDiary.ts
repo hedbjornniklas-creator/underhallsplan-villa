@@ -1,4 +1,4 @@
-export const DIARY_MAX_PHOTOS = 8
+export const DIARY_MAX_PHOTOS = 20
 export const DIARY_MAX_PHOTO_BYTES = 8 * 1024 * 1024
 export const DIARY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 export type DiaryBody = { name: string; company: string; workDate: string; startTime: string; endTime: string; breakMinutes: number; text: string; itemId: string | null }

@@ -17,7 +17,8 @@ const globals = (await readFile('src/app/globals.css', 'utf8')).replace('@import
 const { css: base } = await postcss([tailwind({ base: resolve('src') })]).process(globals, { from: resolve('src/app/globals.css') })
 const css = base + await readFile('src/components/tasks/uppdrag-theme.css', 'utf8') + await readFile('src/components/tasks/project-diary.css', 'utf8'), js = await readFile(resolve(output, 'view.js'))
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, project = { id: id(1), title: 'Björkängen · Fiktivt dagboksprojekt' }, items = [{ id: id(2), title: 'Mark och grund' }, { id: id(3), title: 'Invändiga arbeten' }]
-let active = true, revision = 1, token = randomUUID(), member = false, fail = false
+let active = true, revision = 1, token = randomUUID(), member = false, fail = false, failPhoto = false
+const transferring = new Set(), metrics = { prepared: 0, completed: 0, maxConcurrent: 0 }
 const people = [{ id: id(8), name: 'Anna Exempel', company: 'Exempelbygg AB' }, { id: id(9), name: 'Erik Test', company: 'Testmontage AB' }]
 const uploads = new Map(), entries = [{ id: id(20), body: { name: 'Anna Exempel', company: 'Exempelbygg AB', workDate: diaryToday(), startTime: '07:00', endTime: '15:30', breakMinutes: 30, text: 'Förberett underlag i hallen och monterat reglar. Avstämt placering av genomföringar med arbetsledaren.', itemId: id(3) }, itemTitle: 'Invändiga arbeten', authorEmail: 'anna@example.invalid', actorMethod: 'email_code', emailVerifiedAt: new Date().toISOString(), receivedAt: new Date().toISOString(), minutes: 480, photos: [], corrections: [] }]
 const requests = new Map()
@@ -31,7 +32,8 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/style.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css) }
     if (url.pathname.startsWith('/uppdrag/brand/')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml' }); return res.end(await readFile(resolve('public', url.pathname.slice(1)))) }
     if (url.pathname === '/fixture') return send({ project, public: state, publicUrl })
-    if (url.pathname === '/test/control' && req.method === 'POST') { const d = JSON.parse(await body(req)); fail = Boolean(d.fail); member = Boolean(d.member); return send({ ok: true }) }
+    if (url.pathname === '/test/control' && req.method === 'POST') { const d = JSON.parse(await body(req)); fail = Boolean(d.fail); failPhoto = Boolean(d.failPhoto); member = Boolean(d.member); return send({ ok: true }) }
+    if (url.pathname === '/test/metrics') return send({ ...metrics, transferring: transferring.size, entryCount: entries.length, latestPhotoCount: entries[0].photos.length })
     const internal = url.pathname.startsWith(`/api/action-cases/${project.id}/diary`), external = url.pathname.startsWith(`/api/dagbok/${token}`)
     if (internal || external) {
       if (external && !active) return send({ error: 'QR-länken är stängd.' }, 404)
@@ -47,8 +49,13 @@ const server = createServer(async (req, res) => {
       if (external && !device) return send({ error: 'Öppna dagboken igen.' }, 401)
       if (d.operation === 'person') { const p = diaryPersonInput(d); let found = people.find(old => old.name.toLocaleLowerCase('sv') === p.name.toLocaleLowerCase('sv') && old.company.toLocaleLowerCase('sv') === p.company.toLocaleLowerCase('sv')); if (!found) { found = { id: randomUUID(), ...p }; people.push(found) } return send(found) }
       if (d.operation === 'link' && internal && !member) { if (d.expectedRevision !== revision) return send({ error: 'QR-länken har ändrats.' }, 409); active = d.active; revision++; token = randomUUID(); return send({ active, revision }) }
-      if (d.operation === 'prepare') { const p = diaryPhotoRequest(d); uploads.set(p.id, { ...p }); return send({ uploadUrl: `${origin}/upload/${p.id}`, ready: false }) }
-      if (d.operation === 'complete') { const p = uploads.get(d.id); await validateDiaryImage(p.bytes, p.contentType, p.size); p.sha256 = createHash('sha256').update(p.bytes).digest('hex'); return send({ id: p.id, name: p.name }) }
+      if (d.operation === 'prepare') { const p = diaryPhotoRequest(d); uploads.set(p.id, { ...p }); transferring.add(p.id); metrics.prepared++; metrics.maxConcurrent = Math.max(metrics.maxConcurrent,transferring.size); return send({ uploadUrl: `${origin}/upload/${p.id}`, ready: false }) }
+      if (d.operation === 'complete') {
+        try {
+          if (failPhoto) { failPhoto = false; throw Error('Simulerat bildfel. Försök igen.') }
+          const p = uploads.get(d.id); await validateDiaryImage(p.bytes, p.contentType, p.size); p.sha256 = createHash('sha256').update(p.bytes).digest('hex'); metrics.completed++; return send({ id: p.id, name: p.name })
+        } finally { transferring.delete(d.id) }
+      }
       if (d.operation === 'entry') {
         const normalized = diaryPersonEntryRequest(d), p = people.find(p => p.id === normalized.personId); if (!p) return send({ error: 'Välj person.' }, 400); normalized.body.name = p.name; normalized.body.company = p.company; const key = JSON.stringify(normalized)
         if (requests.has(normalized.requestId)) { const old = requests.get(normalized.requestId); if (old.key !== key) return send({ error: 'Konflikt' }, 409); return send(old.receipt) }
