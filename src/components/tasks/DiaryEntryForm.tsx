@@ -1,9 +1,9 @@
 'use client'
 /* eslint-disable @next/next/no-img-element -- Local camera previews use revocable blob URLs. */
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Send, Trash2 } from 'lucide-react'
-import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryDuration, diaryPersonEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson } from '@/lib/action-cases/projectDiary'
+import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryPersonEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson } from '@/lib/action-cases/projectDiary'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
 type Photo = { id: string; name: string; size: number; contentType: string; status: 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
@@ -25,6 +25,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const running = useRef(false), uploads = useRef(new Set<string>()), controllers = useRef(new Set<AbortController>()), previews = useRef(new Set<string>())
   const heading = useRef<HTMLHeadingElement>(null), input = useRef<HTMLInputElement>(null), camera = useRef<HTMLInputElement>(null)
+  const timeHelp = useId(), photoHelp = useId()
   const latest = useRef({ draft, photos, attempt }); latest.current = { draft, photos, attempt }
   const snapshot = useSyncExternalStore(subscribe, useCallback(() => cached(storageKey), [storageKey]), () => null)
   const dirty = !receipt && (attempt !== null || photos.length > 0 || JSON.stringify(draft) !== JSON.stringify(baseline.current))
@@ -72,8 +73,8 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
   async function submit() {
     if (running.current || photos.some(p => p.status !== 'ready')) return
     let request: Attempt
-    try { request = attempt ?? diaryPersonEntryRequest({ requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, breakMinutes: draft.breakMinutes === '' ? 0 : /^\d+$/.test(draft.breakMinutes) ? Number(draft.breakMinutes) : NaN }, photoIds: photos.map(p => p.id) }) }
-    catch { setError('Kontrollera datum, arbetstid, rast och arbetsbeskrivning. Sluttiden ska vara efter starttiden samma dag, och rasten kortare än tiden på plats.'); return }
+    try { request = attempt ?? diaryPersonEntryRequest({ requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, startTime: diaryTimeInput(draft.startTime) ?? draft.startTime, endTime: diaryTimeInput(draft.endTime) ?? draft.endTime, breakMinutes: 0 }, photoIds: photos.map(p => p.id) }) }
+    catch { setError('Kontrollera datum, tider och arbetsbeskrivning. Till-tiden ska vara efter från-tiden samma dag.'); return }
     running.current = true; latest.current.attempt = request; setBusy(true); setAttempt(request); setError(''); persist(draft, photos, request)
     try {
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'entry', ...request }) })
@@ -87,7 +88,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Inskickningen kunde inte bekräftas. Försök igen.') }
     finally { running.current = false; setBusy(false) }
   }
-  if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p><p>{diaryDuration(receipt.minutes)}</p><p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
+  if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p><p>Tid på plats {attempt?.body.startTime}–{attempt?.body.endTime}</p><p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
   return <form className="diary-entry-form" aria-label="Ny dagboksanteckning" onSubmit={event => { event.preventDefault(); void submit() }}>
     <h3 ref={heading} tabIndex={-1}>Ny anteckning</h3>
     {snapshot && !dirty && <div className="diary-notice"><span>Det finns ett lokalt utkast på den här enheten.</span><button type="button" onClick={() => {
@@ -106,10 +107,11 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
       catch { setError('Utkastet kunde inte återställas.'); }
     }}><RotateCcw size={16} />Återställ utkast</button></div>}
     <fieldset disabled={busy || Boolean(attempt)}>
-      <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från<input required type="time" value={draft.startTime} onChange={e => change({ startTime: e.target.value })} /></label><label>Till<input required type="time" value={draft.endTime} onChange={e => change({ endTime: e.target.value })} /></label><label>Rast (min)<input type="number" min="0" max="1438" step="1" inputMode="numeric" value={draft.breakMinutes} onChange={e => change({ breakMinutes: e.target.value })} /></label></div>
+      <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från (ca)<input required type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="07:00" aria-describedby={timeHelp} value={draft.startTime} onChange={e => change({ startTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ startTime: time }) }} /></label><label>Till (ca)<input required type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="16:00" aria-describedby={timeHelp} value={draft.endTime} onChange={e => change({ endTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ endTime: time }) }} /></label></div>
+      <p id={timeHelp} className="diary-muted diary-field-help">Ungefärlig tid på plats. Skriv till exempel 0700 för 07:00.</p>
       <label>Moment (valfritt)<select value={draft.itemId || ''} onChange={e => change({ itemId: e.target.value || null })}><option value="">Hela projektet</option>{items.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
       <label>Utfört arbete<textarea required rows={4} maxLength={6000} value={draft.text} onChange={e => change({ text: e.target.value })} /></label>
-      <div className="diary-photo-tools"><span>Bilder · {photos.length}/{DIARY_MAX_PHOTOS}</span><div><button type="button" disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => camera.current?.click()}><Camera size={18} />Ta bild</button><button type="button" disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => input.current?.click()}><ImagePlus size={18} />Välj bilder</button></div></div>
+      <div className="diary-photo-tools"><div className="diary-photo-caption"><span>Bilder · {photos.length}/{DIARY_MAX_PHOTOS}</span><p id={photoHelp}>Högst {DIARY_MAX_PHOTOS} bilder per anteckning, 8 MB per bild. JPG, PNG eller WebP.</p></div><div><button type="button" aria-describedby={photoHelp} disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => camera.current?.click()}><Camera size={18} />Ta bild</button><button type="button" aria-describedby={photoHelp} disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => input.current?.click()}><ImagePlus size={18} />Välj bilder</button></div></div>
       <input ref={camera} type="file" capture="environment" accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
       <input ref={input} type="file" multiple accept={DIARY_IMAGE_TYPES.join(',')} hidden onChange={e => { addFiles(Array.from(e.currentTarget.files || [])); e.currentTarget.value = '' }} />
     </fieldset>

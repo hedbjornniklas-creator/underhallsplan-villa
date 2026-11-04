@@ -29,6 +29,17 @@ export function diaryMinutes(body: Pick<DiaryBody, 'startTime' | 'endTime' | 'br
   if (!Number.isInteger(body.breakMinutes) || body.breakMinutes < 0 || span <= 0 || body.breakMinutes >= span) invalid()
   return span - body.breakMinutes
 }
+export function diaryTimeInput(value: string): string | null {
+  const text = value.trim()
+  const parts = /^(\d{1,2})[:.](\d{2})$/.exec(text)
+  let hours: number, minutes: number
+  if (parts) { hours = Number(parts[1]); minutes = Number(parts[2]) }
+  else if (/^\d{1,4}$/.test(text)) {
+    hours = Number(text.length <= 2 ? text : text.slice(0, -2))
+    minutes = text.length <= 2 ? 0 : Number(text.slice(-2))
+  } else return null
+  return hours < 24 && minutes < 60 ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}` : null
+}
 export function normalizeDiaryBody(input: unknown, today = diaryToday()): DiaryBody {
   if (!input || typeof input !== 'object' || Array.isArray(input)) invalid()
   const b = input as Record<string, unknown>

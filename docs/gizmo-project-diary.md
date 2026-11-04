@@ -2,8 +2,15 @@
 
 ## Godkant 2026-11-04
 
-- En egen Dagbok i Uppdrag. Datum, tid fran/till, rast, namn, foretag,
+- En egen Dagbok i Uppdrag. Datum, ungefarlig tid fran/till, namn, foretag,
   kort arbetsbeskrivning, valfritt moment och hogst atta bilder per anteckning.
+- QR-lappen ar pa svenska med rubriken Dagbok pa arbetsplatsen, projektnamn,
+  kort instruktion och bildgranser. Ingen logga eller utskriven lank visas.
+- Tider skrivs som siffror i stallet for telefonens klockvaljare; exempelvis
+  0700 blir 07:00. Det ar tid pa plats, inte en arbetstids- eller lonerapport.
+  Rast finns inte i nya formular och nya anteckningar har inget rastavdrag.
+  Aldre original och pagaende aterforsok behaller sitt ursprungliga innehall.
+  Aldre rastuppgifter finns under Registreringsuppgifter, inte i huvudvyn.
 - Projektansvarig aktiverar, skriver ut, byter eller stanger projektets QR-lank.
   Lanken ar avstangd fran borjan och ger aldrig projekt- eller kundbehorighet.
 - QR-formularet oppnas direkt, utan mejlkod, konto eller annan identitetskontroll.
@@ -77,6 +84,9 @@ att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
 - 2026-11-04: Anvandaren ersatte uttryckligen mejlkoden med en enkel personlista
   utan identifiering. Listan ar projektbunden, telefonen minns valet och historik
   behalls. Detta ersatter, inte kompletterar, det tidigare verifieringskravet.
+- 2026-11-04: QR-lappen forenklas till svensk instruktion utan varumarkeslogga
+  eller synlig lank. Tid avser ungefarlig narvaro; rastfalt tas bort och
+  bildgranser visas direkt i formularet. Ingen andring av sparade original.
 
 ## Senare, Inte Bestallt
 

@@ -29,6 +29,29 @@ test('normalization distinguishes work date, real calendar dates, same-day worki
   assert.throws(() => domain.diaryPhotoRequest({ id: photo, name: 'x.svg', contentType: 'image/svg+xml', size: 10 }))
   assert.equal(domain.diaryPhotoRequest({ id: photo, name: '../x.jpg', contentType: 'image/jpeg', size: 10 }).name, '.._x.jpg')
 })
+
+test('simple numeric time entry accepts hours and compact times without silently fixing invalid times', () => {
+  for (const [input, expected] of [['7','07:00'],['07','07:00'],['730','07:30'],['0700','07:00'],['1600','16:00'],['7:30','07:30'],['7.30','07:30'],['00','00:00'],['2359','23:59'],[' 0830 ','08:30']]) assert.equal(domain.diaryTimeInput(input), expected)
+  for (const input of ['','24','2400','1260','-1','7:3','abc','07000','7:30:00']) assert.equal(domain.diaryTimeInput(input), null)
+})
+
+test('printed diary sign contains Swedish instructions and limits, but no logo or visible private link', async () => {
+  const { diaryQrPrintHtml } = load('../src/lib/action-cases/projectDiaryPrint.ts', { './projectDiary': domain })
+  const url = `https://hushub.se/dagbok/${links.diaryLinkToken(id(), id(), key)}`
+  const qr = await QRCode.toDataURL(url, { width: 360, margin: 4, errorCorrectionLevel: 'M' })
+  const html = diaryQrPrintHtml('Fiktivt projekt & <script>inte kod</script>', url, qr, 'https://hushub.se')
+  assert.match(html, /<h1>Dagbok på arbetsplatsen<\/h1>/)
+  assert.match(html, /Fiktivt projekt &amp; &lt;script&gt;inte kod&lt;\/script&gt;/)
+  assert.match(html, /<html lang="sv">/)
+  assert.match(html, /Välj ditt namn och företag/); assert.match(html, /ungefärlig tid på plats/); assert.match(html, /Skicka anteckning/)
+  assert.match(html, /Högst 8 bilder per anteckning · 8 MB per bild/)
+  assert.equal((html.match(/<img /g) || []).length, 1)
+  assert.equal(html.includes(url), false); assert.doesNotMatch(html, /logo\.svg|HusHub Uppdrag|class="url"/)
+  const { data, info } = await sharp(Buffer.from(qr.split(',')[1], 'base64')).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  assert.equal(jsQR(new Uint8ClampedArray(data), info.width, info.height)?.data, url)
+  assert.throws(() => diaryQrPrintHtml('Test', 'javascript:alert(1)', qr, 'https://hushub.se'))
+  assert.throws(() => diaryQrPrintHtml('Test', url, 'data:image/svg+xml;base64,PHN2Zz4=', 'https://hushub.se'))
+})
 test('QR capabilities and anonymous upload owners are project-bound, without asserting a person identity', () => {
   const a = id(), nonce = id(), token = links.diaryLinkToken(a, nonce, key)
   assert.deepEqual(links.parseDiaryLink(token, key), { id: a, nonce })

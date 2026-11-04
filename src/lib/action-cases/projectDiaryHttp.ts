@@ -16,7 +16,7 @@ export function diaryError(error: unknown) {
     PROJECT_DIARY_PERSON: [400, 'Välj en person från projektets lista, eller lägg till namn och företag.'],
     PROJECT_DIARY_RELOAD: [410, 'Dagboken har förenklats. Ladda om sidan för att välja person utan mejlkod.'],
     PROJECT_DIARY_RATE_LIMITED: [429, 'För många försök. Vänta en stund innan du försöker igen.'],
-    PROJECT_DIARY_INVALID: [400, 'Kontrollera namn, företag, arbetsdatum, arbetstid, rast och beskrivning. Tiderna ska vara inom samma dag och arbetsdatum får inte ligga framåt i tiden.'],
+    PROJECT_DIARY_INVALID: [400, 'Kontrollera person, arbetsdatum, tider och beskrivning. Tiderna ska vara inom samma dag och arbetsdatum får inte ligga framåt i tiden.'],
     PROJECT_DIARY_ITEM: [400, 'Momentet är inte tillgängligt i detta projekt. Välj ett annat moment eller lämna det tomt.'],
     PROJECT_DIARY_PHOTO: [400, 'En bild kunde inte godkännas. Använd JPG, PNG eller WebP, högst 8 MB per bild och åtta bilder per anteckning. En uppladdning gäller i 24 timmar.'],
     PROJECT_DIARY_REQUEST_CONFLICT: [409, 'Detta försök har redan registrerats med andra uppgifter. Ändra inte ett pågående inskickningsförsök. Kontakta projektansvarig om kvittot saknas.'],
