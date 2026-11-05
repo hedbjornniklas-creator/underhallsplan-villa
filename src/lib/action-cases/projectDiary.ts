@@ -1,11 +1,13 @@
 export const DIARY_MAX_PHOTOS = 20
+export const DIARY_EDIT_HOURS = 48
 export const DIARY_MAX_PHOTO_BYTES = 8 * 1024 * 1024
 export const DIARY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 export type DiaryBody = { name: string; company: string; workDate: string; startTime: string; endTime: string; breakMinutes: number; text: string; itemId: string | null }
 export type DiaryPhoto = { id: string; name: string; contentType: string; size: number; sha256: string }
 export type DiaryCorrection = { id: string; text: string; actorName: string; createdAt: string }
 export type DiaryPerson = { id: string; name: string; company: string }
-export type DiaryEntry = { id: string; personId: string | null; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code' | 'qr_selection'; receivedAt: string; emailVerifiedAt: string | null; minutes: number; photos: DiaryPhoto[]; corrections: DiaryCorrection[] }
+export type DiaryRevision = { revision: number; body: DiaryBody; itemTitle: string; minutes: number; photos: DiaryPhoto[]; actorName: string; createdAt: string }
+export type DiaryEntry = { id: string; personId: string | null; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code' | 'qr_selection'; receivedAt: string; emailVerifiedAt: string | null; minutes: number; photos: DiaryPhoto[]; corrections: DiaryCorrection[]; revision?: number; canEdit?: boolean; editUntil?: string; editedAt?: string | null; editedBy?: string | null }
 export type DiaryProject = { id: string; title: string }
 export type DiaryPublicState = { project: DiaryProject; people: DiaryPerson[]; items: { id: string; title: string }[] }
 export type DiaryWorkspace = DiaryPublicState & { canManage: boolean; managerAssigned: boolean; link: { active: boolean; revision: number; url: string | null; qrDataUrl: string | null }; entries: DiaryEntry[]; hasMore: boolean; authorId: string; authorName: string; authorEmail: string }
@@ -57,6 +59,10 @@ export function diaryEntryRequest(input: Record<string, unknown>, today = diaryT
 export function diaryPersonEntryRequest(input: Record<string, unknown>, today = diaryToday()) {
   if (!diaryUuid(input.personId)) throw new Error('PROJECT_DIARY_PERSON')
   return { ...diaryEntryRequest(input, today), personId: input.personId.toLowerCase() }
+}
+export function diaryRevisionRequest(input: Record<string, unknown>, today = diaryToday()) {
+  if (!diaryUuid(input.entryId) || !Number.isSafeInteger(input.expectedRevision) || Number(input.expectedRevision) < 0 || Number(input.expectedRevision) >= 2147483647) invalid()
+  return { ...diaryEntryRequest(input, today), entryId: input.entryId.toLowerCase(), expectedRevision: Number(input.expectedRevision) }
 }
 export function diaryPhotoRequest(input: Record<string, unknown>) {
   if (!diaryUuid(input.id) || !DIARY_IMAGE_TYPES.includes(input.contentType as typeof DIARY_IMAGE_TYPES[number]) || !Number.isInteger(input.size) || Number(input.size) <= 0 || Number(input.size) > DIARY_MAX_PHOTO_BYTES) throw new Error('PROJECT_DIARY_PHOTO')

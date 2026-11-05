@@ -30,6 +30,18 @@
   anteckningar. Bara projektansvarig kan lagga till en sparad rattelse.
 - Sparade original, bildmanifest och rattelser ar append-only. Arbetsdatum
   skiljs fran serverns mottagningstid; bilder far en SHA-256-kontrollsumma.
+- Inloggad projektansvarig kan redigera datum, tider, arbetsbeskrivning, moment
+  och bilder under 48 timmar fran serverns ursprungliga mottagningstid.
+  Varje sparning skapar en ny version; original, tidigare bilder, andringstid
+  och den inloggade redigerarens namn bevaras. Senaste versionen visas normalt.
+  Efter tidsgransen anvands befintlig rattelsefunktion. Person/foretag och
+  ursprunglig registreringsmetod andras inte genom redigeringen.
+- QR-sidan har ingen lasning eller redigering av sparade anteckningar, inte
+  heller for den som skickade in dem. Ingen telefonkoppling anvands for
+  redigeringsbehorighet. Befintlig enhetscookie skyddar bara uppladdningar
+  och aterforsok som tidigare.
+- Anteckningar visas minimerade med datum, person och foretag pa raden.
+  Innehall, bilder, historik och interna kommandon visas nar raden oppnas.
 - Inga anteckningar skapar timmar i kalkyl, bestallningar, fakturor, ATA,
   betalplaner eller andringar i avtal. Ingen kunddelning sker automatiskt.
 
@@ -68,6 +80,10 @@ Ingen publicering ingar fore separat godkannande.
    matchande publiceringen. Gamla mejlkodsformular slutar fungera nar den kors.
    For 20 bilder behovs aven `docs/db/2026-11-04_03_project_diary_twenty_photos.sql`.
    Den hojer bara antalsgransen, inte filstorlek eller dygnskvoter.
+   For intern 48-timmarsredigering behovs darefter
+   `docs/db/2026-11-05_01_project_diary_revisions.sql` fore matchande publicering.
+   Den lagger till versionshistorik och en intern aktuell-vy utan att skriva om
+   original eller ge QR-besokare las-/redigeringsbehorighet.
 2. Mejltjanst behovs inte. Basadress tas fran `APP_BASE_URL` eller
    `NEXT_PUBLIC_APP_URL` och ska vara en HTTPS-adress i produktion.
 3. `PROJECT_DIARY_LINK_SECRET` kan anges som separat hemlighet med minst
@@ -93,6 +109,11 @@ att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
   bildgranser visas direkt i formularet. Ingen andring av sparade original.
 - 2026-11-04: Anvandaren hojer gransen till 20 bilder per anteckning.
   Gransen galler formular, QR-lapp, API och databas. Hogst 8 MiB per bild kvarstar.
+- 2026-11-05: Anvandaren godkanner 48 timmars versionsbevarande redigering,
+  men endast for inloggad projektansvarig i Hushub. Forslaget om redigering
+  fran avsandarens telefon avvisas; QR ar enbart for inlamning. Ingen annan
+  projektroll far redigeringsratt genom detta beslut. Rader ar minimerade
+  fran borjan. Original och andra modulers uppgifter skrivs inte om.
 
 ## Senare, Inte Bestallt
 

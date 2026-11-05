@@ -1,8 +1,10 @@
 'use client'
 /* eslint-disable @next/next/no-img-element -- Diary images require the signed-in viewer's cookies. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, Copy, Filter, Loader2, LockKeyhole, Plus, PowerOff, Printer, QrCode, RotateCcw, X } from 'lucide-react'
+import { Camera, ChevronDown, Copy, Filter, Loader2, LockKeyhole, Pencil, Plus, PowerOff, Printer, QrCode, RotateCcw, X } from 'lucide-react'
 import DiaryPersonEntry from './DiaryPersonEntry'
+import DiaryEntryForm from './DiaryEntryForm'
+import DiaryHistory from './DiaryHistory'
 import { diaryDuration, type DiaryEntry, type DiaryWorkspace } from '@/lib/action-cases/projectDiary'
 import { printDiaryQr } from '@/lib/action-cases/projectDiaryPrint'
 import './project-diary.css'
@@ -36,12 +38,40 @@ function QrDialog({ data, endpoint, onClose }: { data: Workspace; endpoint: stri
     {error && <p role="alert" className="diary-error">{error}</p>}<div className="diary-qr-actions"><button type="button" disabled={busy} onClick={() => { setBusy(true); setError(''); void current().then(value => navigator.clipboard.writeText(value.link.url!)).then(() => setCopied(true)).catch(reason => setError(reason instanceof Error ? reason.message : 'Länken kunde inte kopieras.')).finally(() => setBusy(false)) }}><Copy size={17} />{copied ? 'Kopierad' : 'Kopiera länk'}</button><button type="button" disabled={busy} onClick={() => { setBusy(true); setError(''); void current().then(value => printDiaryQr(value.project.title, value.link.url!, value.link.qrDataUrl!)).catch(reason => setError(reason instanceof Error ? reason.message : 'Utskriften kunde inte öppnas.')).finally(() => setBusy(false)) }}><Printer size={17} />Skriv ut QR-kod</button></div></dialog>
 }
 function Record({ entry, endpoint, canManage, onSaved, onDirty }: { entry: DiaryEntry; endpoint: string; canManage: boolean; onSaved: () => void; onDirty: (dirty: boolean) => void }) {
-  return <article className="diary-record"><header><div><h3>{entry.body.workDate} · {entry.body.name}</h3><p>{entry.body.company}</p></div></header><div className="diary-record-body"><div className="diary-record-meta"><span>Tid på plats {entry.body.startTime}–{entry.body.endTime}</span>{entry.itemTitle && <span>{entry.itemTitle}</span>}{entry.photos.length > 0 && <span><Camera size={14} className="inline" /> {entry.photos.length}</span>}</div><p className="diary-record-text">{entry.body.text}</p>
+  const [editing, setEditing] = useState(false), [editDirty, setEditDirty] = useState(false), [correctionDirty, setCorrectionDirty] = useState(false), [now, setNow] = useState(() => Date.now())
+  useEffect(() => { onDirty(editDirty || correctionDirty); return () => onDirty(false) }, [editDirty, correctionDirty, onDirty])
+  useEffect(() => { if (!entry.canEdit || !entry.editUntil) return; const timer = setTimeout(() => setNow(Date.now()), Math.max(0, Date.parse(entry.editUntil) - Date.now())); return () => clearTimeout(timer) }, [entry.canEdit, entry.editUntil])
+  const editable = canManage && entry.canEdit && entry.editUntil && now < Date.parse(entry.editUntil)
+  return <details className="diary-record"><summary className="diary-record-heading"><time dateTime={entry.body.workDate}>{entry.body.workDate}</time><strong title={entry.body.name}>{entry.body.name}</strong><span title={entry.body.company}>{entry.body.company}</span><ChevronDown size={17} aria-hidden="true" /></summary><div className="diary-record-body"><div className="diary-record-person"><strong>{entry.body.name}</strong><span>{entry.body.company}</span></div><div className="diary-record-meta"><span>Tid på plats {entry.body.startTime}–{entry.body.endTime}</span>{entry.itemTitle && <span>{entry.itemTitle}</span>}{entry.photos.length > 0 && <span><Camera size={14} className="inline" /> {entry.photos.length}</span>}</div><p className="diary-record-text">{entry.body.text}</p>
     {entry.photos.length > 0 && <div className="diary-record-photos">{entry.photos.map(photo => <a key={photo.id} href={`${endpoint}/photos/${photo.id}`} target="_blank" rel="noreferrer" title={photo.name}><img src={`${endpoint}/photos/${photo.id}`} alt={photo.name} loading="lazy" /></a>)}</div>}
     <div className="diary-record-audit"><p>Mottagen {displayTime(entry.receivedAt)} · {entry.actorMethod === 'qr_selection' ? 'Person vald via QR' : entry.actorMethod === 'email_code' ? 'Mejl verifierad' : 'Intern inloggning'}{entry.authorEmail ? ` · ${entry.authorEmail}` : ''}</p><details><summary>Registreringsuppgifter</summary><p>Kvitto {entry.id}</p>{entry.body.breakMinutes > 0 && <p>Ursprunglig registrering: rast {entry.body.breakMinutes} min · {diaryDuration(entry.minutes)}</p>}{entry.emailVerifiedAt && <p>Mejladress verifierad {displayTime(entry.emailVerifiedAt)}</p>}{entry.photos.map(photo => <p key={photo.id}>{photo.name} · SHA-256 {photo.sha256}</p>)}</details></div>
+    {entry.editedAt && <p className="diary-muted">Ändrad {displayTime(entry.editedAt)} · {entry.editedBy}</p>}
+    {(entry.revision ?? 0) > 0 && <DiaryHistory key={`${entry.id}:${entry.revision}`} endpoint={endpoint} entryId={entry.id} revision={entry.revision!} />}
     {entry.corrections.length > 0 && <div className="diary-corrections">{entry.corrections.map(correction => <div className="diary-correction" key={correction.id}><strong>Rättelse · {correction.actorName}</strong><p>{correction.text}</p><span className="diary-muted">{displayTime(correction.createdAt)}</span></div>)}</div>}
-    {canManage && <div className="mt-3"><Correction endpoint={endpoint} entryId={entry.id} onSaved={onSaved} onDirty={onDirty} /></div>}
-  </div></article>
+    {canManage && <div className="diary-record-actions">{editable && <button type="button" disabled={correctionDirty} onClick={() => setEditing(true)}><Pencil size={16} />Redigera</button>}<Correction endpoint={endpoint} entryId={entry.id} onSaved={onSaved} onDirty={setCorrectionDirty} /></div>}
+    {editing && canManage && <EditDiaryDialog entry={entry} endpoint={endpoint} onDirty={setEditDirty} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onSaved() }} />}
+  </div></details>
+}
+function EditDiaryDialog({ entry, endpoint, onSaved, onClose, onDirty }: { entry: DiaryEntry; endpoint: string; onSaved: () => void; onClose: () => void; onDirty: (dirty: boolean) => void }) {
+  const dialog = useRef<HTMLDialogElement>(null), [items, setItems] = useState<{ id: string; title: string }[]>([]), [error, setError] = useState('')
+  const [isWorking, setIsWorking] = useState(false), [confirmClose, setConfirmClose] = useState(false), confirmHeading = useRef<HTMLHeadingElement>(null)
+  const working = useRef(false), dirty = useRef(false)
+  const reportDirty = useCallback((value: boolean) => { dirty.current = value; onDirty(value) }, [onDirty])
+  const reportWorking = useCallback((value: boolean) => { working.current = value; setIsWorking(value) }, [])
+  const close = () => { if (!working.current) { if (dirty.current) setConfirmClose(true); else onClose() } }
+  useEffect(() => { if (confirmClose) confirmHeading.current?.focus() }, [confirmClose])
+  useEffect(() => {
+    const node = dialog.current, old = document.activeElement as HTMLElement | null, controller = new AbortController()
+    node?.showModal()
+    void fetch(endpoint, { cache: 'no-store', signal: controller.signal }).then(async response => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Momenten kunde inte hämtas.'); setItems(data.items) }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Momenten kunde inte hämtas.') })
+    return () => { controller.abort(); node?.close(); old?.focus() }
+  }, [endpoint])
+  return <dialog ref={dialog} className="diary-edit-dialog" aria-labelledby="diary-edit-heading" onCancel={event => { event.preventDefault(); close() }}>
+    <header><h3 id="diary-edit-heading">Redigera anteckning</h3><button type="button" className="diary-icon" disabled={isWorking} title="Stäng" aria-label="Stäng redigering" onClick={close}><X size={18} /></button></header>
+    {confirmClose && <div className="diary-notice" role="alertdialog" aria-labelledby="diary-edit-close-heading"><h3 id="diary-edit-close-heading" ref={confirmHeading} tabIndex={-1}>Stäng redigeringen?</h3><p>Utkastet bevaras på den här datorn. En ändring som redan skickats kan ha sparats även om svar saknas.</p><div className="diary-confirm-actions"><button type="button" onClick={() => setConfirmClose(false)}>Fortsätt redigera</button><button type="button" onClick={onClose}><X size={16} />Stäng och behåll utkast</button></div></div>}
+    {error && <p className="diary-error" role="alert">{error}</p>}
+    <div inert={confirmClose}><DiaryEntryForm endpoint={endpoint} storageKey={`diary-edit:${endpoint}:${entry.id}:${entry.revision ?? 0}`} person={{ id: entry.personId ?? entry.id, name: entry.body.name, company: entry.body.company }} items={items.length ? items : entry.body.itemId ? [{ id: entry.body.itemId, title: entry.itemTitle }] : []} editing={entry} onSaved={onSaved} onDirty={reportDirty} onWorking={reportWorking} onCancel={close} /></div>
+  </dialog>
 }
 export default function ProjectDiary({ caseId, active, refreshKey = 0, onDirty }: { caseId: string; active: boolean; refreshKey?: number; onDirty?: (dirty: boolean) => void }) {
   const [data, setData] = useState<Workspace | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('')

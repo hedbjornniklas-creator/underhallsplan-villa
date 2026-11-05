@@ -130,7 +130,7 @@ test('public routes allow person selection, retire old code requests and never e
   const response = await route.POST(request('person'), params)
   assert.equal(people, 1); assert.equal(response.body.code, undefined); assert.equal(response.body.cookie, undefined)
   for (const operation of ['request_code','verify_code','logout']) assert.equal((await route.POST(request(operation), params)).status, 410)
-  for (const operation of ['correction', 'link', 'cleanup']) assert.equal((await route.POST(request(operation), params)).status, 400)
+  for (const operation of ['correction', 'link', 'cleanup', 'revision', 'history']) assert.equal((await route.POST(request(operation), params)).status, 400)
   assert.equal(submits, 0)
 })
 
@@ -180,4 +180,98 @@ test('internal diary mutations require organization and module context before an
     if (deny) { assert.equal(result.status, deny === 'UNAUTHORIZED' ? 401 : 403); assert.equal(calls.length, 0) }
     else { assert.equal(result.status, 200); assert.deepEqual(calls[0][0], { ctx, caseId }); assert.equal(calls.length, 1) }
   }
+})
+
+test('revision normalization preserves zero-version CAS and rejects malformed versions and photo manifests', () => {
+  const request = { requestId: id(), entryId: id(), expectedRevision: 0, body: body(), photoIds: [] }
+  assert.equal(domain.diaryRevisionRequest(request).expectedRevision, 0)
+  for (const value of [null, -1, 1.1, '0', 2147483647]) assert.throws(() => domain.diaryRevisionRequest({ ...request, expectedRevision: value }))
+  assert.throws(() => domain.diaryRevisionRequest({ ...request, entryId: 'not-an-id' }))
+  assert.throws(() => domain.diaryRevisionRequest({ ...request, photoIds: Array.from({ length: 21 }, id) }))
+})
+
+test('revision server uses only authenticated manager context and a dedicated internal RPC', async () => {
+  const orgId = id(), caseId = id(), userId = id(), calls = []
+  let manager = userId
+  const db = { from(table) { assert.ok(['action_cases','org_members'].includes(table)); const q = { select() { return q }, eq() { return q }, async maybeSingle() { return { data: table === 'action_cases' ? { id: caseId, manager_profile_id: manager } : { profile_id: userId } } } }; return q },
+    async rpc(name, args) { calls.push({ name, args }); return { data: { id: args.p_data.requestId, revision: 1 } } } }
+  const server = serverWith(db), payload = { requestId: id(), entryId: id(), expectedRevision: 0, body: body(), photoIds: [], orgId: id(), userId: id(), device: 'not-authority' }
+  await server.reviseDiaryEntry({ orgId, userId }, caseId, payload)
+  assert.equal(calls[0].name, 'revise_project_diary_entry')
+  assert.equal(calls[0].args.p_org_id, orgId); assert.equal(calls[0].args.p_actor_id, userId); assert.equal(calls[0].args.p_case_id, caseId)
+  assert.deepEqual(Object.keys(calls[0].args.p_data).sort(), ['body','entryId','expectedRevision','photoIds','requestId'])
+  manager = id()
+  await assert.rejects(server.reviseDiaryEntry({ orgId, userId }, caseId, payload), /DIARY_MANAGER/)
+  assert.equal(calls.length, 1)
+})
+
+test('current diary projection filters and paginates current values without exposing original ownership data', async () => {
+  const orgId = id(), caseId = id(), userId = id(), entryId = id(), itemId = id(), photoId = id(), calls = []
+  const stamp = new Date().toISOString(), row = { id: entryId, person_id: null, body: { ...body(), text: 'Original' }, current_body: { ...body(), text: 'Latest', workDate: '2026-01-03', itemId },
+    current_work_date: '2026-01-03', current_source_item_id: itemId, current_item_title: 'Moment', current_photo_ids: [photoId], current_minutes: 480,
+    author_email: '', actor_method: 'qr_selection', email_verified_at: null, received_at: stamp, revision: 1, edited_at: stamp, edited_by: 'Manager', owner_key: 'private', request_hash: 'private' }
+  const db = { from(table) {
+    const data = { action_cases: { id: caseId, title: 'Test', manager_profile_id: userId }, org_members: { profile_id: userId }, action_case_diary_links: null,
+      action_case_diary_current: [row], action_case_diary_photos: [{ id: photoId, entry_id: entryId, name: 'Bild', size_bytes: 100, content_type: 'image/png', sha256: 'a'.repeat(64) }],
+      action_case_diary_corrections: [], action_case_items: [{ id: itemId, title: 'Moment' }], profiles: { full_name: 'Manager', email: 'test@example.invalid' }, action_case_diary_people: [] }
+    assert.ok(table in data, table)
+    const q = { then(resolve) { return Promise.resolve({ data: data[table] }).then(resolve) }, async maybeSingle() { return { data: data[table] } } }
+    for (const method of ['select','eq','gte','lte','ilike','or','order','limit','in']) q[method] = (...args) => { calls.push([table, method, ...args]); return q }
+    return q
+  } }
+  const result = await serverWith(db).getProjectDiary({ orgId, userId }, caseId, new URLSearchParams({ from: '2026-01-01', person: 'Anna', item: itemId }))
+  assert.equal(result.entries[0].body.text, 'Latest'); assert.equal(result.entries[0].receivedAt, stamp)
+  assert.equal(result.entries[0].canEdit, true); assert.equal(result.entries[0].revision, 1)
+  assert.equal(Date.parse(result.entries[0].editUntil) - Date.parse(stamp), 48 * 3600000)
+  assert.doesNotMatch(JSON.stringify(result), /owner_key|request_hash|private/)
+  assert.ok(calls.some(c => c[0] === 'action_case_diary_current' && c[1] === 'gte' && c[2] === 'current_work_date'))
+  assert.ok(calls.some(c => c[1] === 'eq' && c[2] === 'current_source_item_id' && c[3] === itemId))
+  assert.ok(calls.some(c => c[0] === 'action_case_diary_photos' && c[1] === 'in' && c[2] === 'id' && c[3][0] === photoId))
+})
+
+test('closed and stale revision responses are definitive so text is retained without a frozen retry', () => {
+  const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': { NextResponse: { json: (body, init) => ({ body, ...init }) } }, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links, './projectDiary': domain })
+  for (const code of ['PROJECT_DIARY_EDIT_CLOSED','PROJECT_DIARY_REVISION_STALE']) {
+    const response = http.diaryError(Error(code)); assert.equal(response.status, 409); assert.equal(response.body.definite, true)
+  }
+  assert.equal(http.diaryError(Error('network')).body.definite, false)
+})
+
+test('history uses a bounded cursor and projects only the scoped immutable version snapshots', async () => {
+  const orgId = id(), caseId = id(), userId = id(), entryId = id(), photoId = id(), calls = []
+  const versions = Array.from({ length: 21 }, (_, index) => ({ revision: 20-index, body: body(), photo_ids: [photoId], item_title: '', minutes: 480, actor_name: 'Manager', created_at: new Date().toISOString() }))
+  const db = { from(table) {
+    const filters = [], q = { select() { return q }, eq(...args) { filters.push(args); calls.push([table,'eq',...args]); return q }, lt(...args) { filters.push(['before',...args]); return q }, order() { return q }, limit(n) { calls.push([table,'limit',n]); return q }, in() { return q },
+      async maybeSingle() { return { data: table === 'action_cases' ? { id: caseId, manager_profile_id: userId } : table === 'org_members' ? { profile_id: userId } : filters.some(([key, value]) => key === 'id' && value !== entryId) ? null : { id: entryId, body: body(), received_at: new Date().toISOString() } } },
+      then(resolve) { return Promise.resolve({ data: table === 'action_case_diary_revisions' ? versions.filter(v => !filters.some(([key, field, value]) => key === 'before' && field === 'revision' && v.revision >= value)) : [{ id: photoId, entry_id: entryId, name: 'Bild', size_bytes: 100, content_type: 'image/png', sha256: 'a'.repeat(64) }] }).then(resolve) } }
+    return q
+  } }
+  const server = serverWith(db), ctx = { orgId, userId }, first = await server.getDiaryHistory(ctx, caseId, entryId)
+  assert.equal(first.versions.length, 20); assert.equal(first.nextBeforeRevision, 1)
+  assert.equal(first.versions[0].photos[0].id, photoId)
+  assert.deepEqual(Object.keys(first.versions[0]).sort(), ['actorName','body','createdAt','itemTitle','minutes','photos','revision'])
+  const last = await server.getDiaryHistory(ctx, caseId, entryId, '1')
+  assert.deepEqual(last.versions.map(v => v.revision), [0]); assert.equal(last.nextBeforeRevision, null)
+  assert.ok(calls.some(c => c[0] === 'action_case_diary_entries' && c[1] === 'eq' && c[2] === 'org_id' && c[3] === orgId))
+  assert.ok(calls.some(c => c[0] === 'action_case_diary_revisions' && c[1] === 'limit' && c[2] === 21))
+  await assert.rejects(server.getDiaryHistory(ctx, caseId, id()), /DIARY_NOT_FOUND/)
+  for (const cursor of ['-1','1.2','x','2147483648']) await assert.rejects(server.getDiaryHistory(ctx, caseId, entryId, cursor), /DIARY_INVALID/)
+})
+
+test('internal history and revision routes reject missing access and cross-origin writes before dispatch', async () => {
+  const ctx = { orgId: id(), userId: id() }, caseId = id(), entryId = id(), calls = []
+  const next = { NextResponse: { json: (body, init) => ({ body, ...init }) }, after() {} }
+  const http = load('../src/lib/action-cases/projectDiaryHttp.ts', { 'next/server': next, '@/lib/assignments/tokens': {}, './projectDiaryLinks': links, './projectDiary': domain })
+  for (const denied of [false, true]) {
+    const route = load('../src/app/api/action-cases/[caseId]/diary/route.ts', { 'next/server': next, '@/lib/action-cases/projectDiaryHttp': http,
+      '@/lib/action-cases/customerOffersHttp': { async customerOfferContext() { if (denied) throw Error('MODULE_ACCESS_REQUIRED'); return ctx } },
+      '@/lib/action-cases/projectDiaryServer': { async reviseDiaryEntry(...args) { calls.push(['revision',...args]); return { saved: true } }, async getDiaryHistory(...args) { calls.push(['history',...args]); return { versions: [] } } } })
+    const parameters = { params: Promise.resolve({ caseId }) }, url = `https://hushub.se/api/action-cases/${caseId}/diary`
+    const get = await route.GET(new Request(`${url}?history=${entryId}`), parameters)
+    assert.equal(get.status, denied ? 403 : 200)
+    const post = origin => route.POST(new Request(url, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{"operation":"revision"}' }), parameters)
+    assert.equal((await post('https://hushub.se')).status, denied ? 403 : 200)
+    const before = calls.length; assert.equal((await post('https://other.invalid')).status, 403); assert.equal(calls.length, before)
+  }
+  assert.deepEqual(calls.map(call => call[0]), ['history','revision'])
 })

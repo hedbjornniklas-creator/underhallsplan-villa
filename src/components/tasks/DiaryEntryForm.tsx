@@ -2,12 +2,12 @@
 /* eslint-disable @next/next/no-img-element -- Local camera previews use revocable blob URLs. */
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
-import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Send, Trash2 } from 'lucide-react'
-import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryPersonEntryRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson } from '@/lib/action-cases/projectDiary'
+import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Save, Send, Trash2, X } from 'lucide-react'
+import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryPersonEntryRequest, diaryRevisionRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson, type DiaryEntry } from '@/lib/action-cases/projectDiary'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
 type Photo = { id: string; name: string; size: number; contentType: string; status: 'queued' | 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string }
-type Attempt = ReturnType<typeof diaryPersonEntryRequest>
+type Attempt = ReturnType<typeof diaryPersonEntryRequest> | ReturnType<typeof diaryRevisionRequest>
 type Receipt = { id: string; receivedAt: string; minutes: number }
 const subscribe = (listener: () => void) => { window.addEventListener('diary-draft', listener); window.addEventListener('storage', listener); return () => { window.removeEventListener('diary-draft', listener); window.removeEventListener('storage', listener) } }
 function cached(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
@@ -15,21 +15,25 @@ function store(key: string, value: unknown) { try { if (value === null) sessionS
 function initial(name: string, company: string): Draft { return { ...emptyDiaryBody(name, company), breakMinutes: '0' } }
 const dateTime = (value: string) => new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' }).format(new Date(value))
 
-export default function DiaryEntryForm({ endpoint, storageKey, items, person, onSaved, onDirty, onWorking }: {
+export default function DiaryEntryForm({ endpoint, storageKey, items, person, onSaved, onDirty, onWorking, editing, onCancel }: {
   endpoint: string; storageKey: string; items: { id: string; title: string }[]; person: DiaryPerson
   onSaved?: () => void; onDirty?: (dirty: boolean) => void; onWorking?: (working: boolean) => void
+  editing?: DiaryEntry; onCancel?: () => void
 }) {
-  const baseline = useRef(initial(person.name, person.company))
-  const [draft, setDraft] = useState<Draft>(() => baseline.current), [photos, setPhotos] = useState<Photo[]>([])
+  const baseline = useRef(editing ? { ...editing.body, breakMinutes: String(editing.body.breakMinutes) } : initial(person.name, person.company))
+  const [draft, setDraft] = useState<Draft>(() => baseline.current), [photos, setPhotos] = useState<Photo[]>(() => editing?.photos.map(photo => ({ ...photo, status: 'ready', preview: `${endpoint}/photos/${photo.id}` })) ?? [])
   const [attempt, setAttempt] = useState<Attempt | null>(null), [receipt, setReceipt] = useState<Receipt | null>(null)
   const [busy, setBusy] = useState(false), [error, setError] = useState('')
   const running = useRef(false), uploads = useRef(new Set<string>()), controllers = useRef(new Set<AbortController>()), previews = useRef(new Set<string>())
   const pendingUploads = useRef<Photo[]>([]), mounted = useRef(true)
   const heading = useRef<HTMLHeadingElement>(null), input = useRef<HTMLInputElement>(null), camera = useRef<HTMLInputElement>(null)
   const timeHelp = useId(), photoHelp = useId()
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { if (!editing?.editUntil) return; const timer = setTimeout(() => setNow(Date.now()), Math.max(0, Date.parse(editing.editUntil) - Date.now())); return () => clearTimeout(timer) }, [editing?.editUntil])
+  const expired = Boolean(editing?.editUntil && now >= Date.parse(editing.editUntil))
   const latest = useRef({ draft, photos, attempt }); latest.current = { draft, photos, attempt }
   const snapshot = useSyncExternalStore(subscribe, useCallback(() => cached(storageKey), [storageKey]), () => null)
-  const dirty = !receipt && (attempt !== null || photos.length > 0 || JSON.stringify(draft) !== JSON.stringify(baseline.current))
+  const dirty = !receipt && (attempt !== null || photos.map(p => p.id).join(',') !== (editing?.photos ?? []).map(p => p.id).join(',') || JSON.stringify(draft) !== JSON.stringify(baseline.current))
   useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
   const working = busy || photos.some(p => p.status === 'queued' || p.status === 'uploading')
   useEffect(() => { onWorking?.(working); return () => onWorking?.(false) }, [working, onWorking])
@@ -39,7 +43,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
   useEffect(() => { const active = controllers.current, urls = previews.current, pending = pendingUploads.current; mounted.current = true; return () => { mounted.current = false; pending.length = 0; active.forEach(c => c.abort()); urls.forEach(url => URL.revokeObjectURL(url)) } }, [])
-  const persist = (nextDraft: Draft, nextPhotos: Photo[], nextAttempt: Attempt | null) => store(storageKey, { draft: nextDraft, photos: nextPhotos.filter(p => p.status === 'ready').map(({ id, name, size, contentType }) => ({ id, name, size, contentType, status: 'ready' })), attempt: nextAttempt })
+  const persist = (nextDraft: Draft, nextPhotos: Photo[], nextAttempt: Attempt | null) => store(storageKey, { draft: nextDraft, photos: nextPhotos.filter(p => p.status === 'ready').map(({ id, name, size, contentType }) => ({ id, name, size, contentType, status: 'ready' })), attempt: nextAttempt, ...(editing ? { entryId: editing.id, revision: editing.revision ?? 0 } : {}) })
   const change = (patch: Partial<Draft>) => { const next = { ...latest.current.draft, ...patch }; latest.current.draft = next; setDraft(next); setError(''); persist(next, latest.current.photos, latest.current.attempt) }
   const updatePhoto = (id: string, patch: Partial<Photo>) => { const next = latest.current.photos.map(p => p.id === id ? { ...p, ...patch } : p); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }
   function drainUploads() {
@@ -82,36 +86,44 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
     const next = [...latest.current.photos, ...added]; latest.current.photos = next; setPhotos(next); setError(''); persist(latest.current.draft, next, null); queueUploads(added)
   }
   async function submit() {
-    if (running.current || photos.some(p => p.status !== 'ready')) return
+    if (running.current || photos.some(p => p.status !== 'ready') || expired && !attempt) return
     let request: Attempt
-    try { request = attempt ?? diaryPersonEntryRequest({ requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, startTime: diaryTimeInput(draft.startTime) ?? draft.startTime, endTime: diaryTimeInput(draft.endTime) ?? draft.endTime, breakMinutes: 0 }, photoIds: photos.map(p => p.id) }) }
+    try {
+      const input = { requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, startTime: diaryTimeInput(draft.startTime) ?? draft.startTime, endTime: diaryTimeInput(draft.endTime) ?? draft.endTime, breakMinutes: editing?.body.breakMinutes ?? 0 }, photoIds: photos.map(p => p.id) }
+      request = attempt ?? (editing ? diaryRevisionRequest({ ...input, entryId: editing.id, expectedRevision: editing.revision ?? 0 }) : diaryPersonEntryRequest(input))
+    }
     catch { setError('Kontrollera datum, tider och arbetsbeskrivning. Till-tiden ska vara efter från-tiden samma dag.'); return }
     running.current = true; latest.current.attempt = request; setBusy(true); setAttempt(request); setError(''); persist(draft, photos, request)
     try {
-      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'entry', ...request }) })
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: editing ? 'revision' : 'entry', ...request }) })
       const result = await response.json()
       if (!response.ok) {
         if (result.definite) { latest.current.attempt = null; setAttempt(null); persist(draft, photos, null) }
         throw new Error(result.error || 'Inskickningen kunde inte bekräftas.')
       }
       if (result.id !== request.requestId || !Number.isFinite(Date.parse(result.receivedAt)) || !Number.isInteger(result.minutes)) throw new Error('Kvittot kunde inte bekräftas. Försök igen med samma uppgifter.')
+      if (editing && (result.entryId !== editing.id || !('expectedRevision' in request) || result.revision !== request.expectedRevision + 1)) throw new Error('Ändringen kunde inte bekräftas. Försök igen med samma uppgifter.')
       setReceipt(result); store(storageKey, null); onSaved?.()
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Inskickningen kunde inte bekräftas. Försök igen.') }
     finally { running.current = false; setBusy(false) }
   }
   if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p><p>Tid på plats {attempt?.body.startTime}–{attempt?.body.endTime}</p><p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
-  return <form className="diary-entry-form" aria-label="Ny dagboksanteckning" onSubmit={event => { event.preventDefault(); void submit() }}>
-    <h3 ref={heading} tabIndex={-1}>Ny anteckning</h3>
+  return <form className="diary-entry-form" aria-label={editing ? 'Redigera dagboksanteckning' : 'Ny dagboksanteckning'} onSubmit={event => { event.preventDefault(); void submit() }}>
+    <h3 ref={heading} tabIndex={-1}>{editing ? `${person.name} · ${person.company}` : 'Ny anteckning'}</h3>
+    {editing?.editUntil && <p className="diary-muted">Redigerbar till {dateTime(editing.editUntil)}</p>}
+    {expired && <p className="diary-notice" role="status">Redigeringstiden har gått ut. Lägg till en rättelse i stället.</p>}
     {snapshot && !dirty && <div className="diary-notice"><span>Det finns ett lokalt utkast på den här enheten.</span><button type="button" onClick={() => {
       try {
         const saved = JSON.parse(snapshot)
+        if (editing && (saved.entryId !== editing.id || saved.revision !== (editing.revision ?? 0))) throw new Error()
         if (!saved.draft || !Array.isArray(saved.photos) || saved.photos.length > DIARY_MAX_PHOTOS || ['name','company','workDate','startTime','endTime','breakMinutes','text'].some(key => typeof saved.draft[key] !== 'string')) throw new Error()
         const restoredDraft: Draft = { name: saved.draft.name, company: saved.draft.company, workDate: saved.draft.workDate, startTime: saved.draft.startTime, endTime: saved.draft.endTime, breakMinutes: saved.draft.breakMinutes, text: saved.draft.text, itemId: saved.draft.itemId || null }
-        const restoredPhotos: Photo[] = saved.photos.map((p: Photo) => ({ ...diaryPhotoRequest(p), status: 'ready' }))
+        const restoredPhotos: Photo[] = saved.photos.map((p: Photo) => ({ ...diaryPhotoRequest(p), status: 'ready', ...(editing?.photos.some(photo => photo.id === p.id) ? { preview: `${endpoint}/photos/${p.id}` } : {}) }))
         if (new Set(restoredPhotos.map(p => p.id)).size !== restoredPhotos.length) throw new Error()
         if (restoredDraft.name !== person.name || restoredDraft.company !== person.company) throw new Error()
-        const restoredAttempt = saved.attempt ? diaryPersonEntryRequest(saved.attempt) : null
-        if (restoredAttempt && JSON.stringify(restoredAttempt) !== JSON.stringify(diaryPersonEntryRequest({ requestId: restoredAttempt.requestId, personId: person.id, body: { ...restoredDraft, breakMinutes: Number(restoredDraft.breakMinutes) }, photoIds: restoredPhotos.map(p => p.id) }))) throw new Error()
+        const restoredAttempt = saved.attempt ? editing ? diaryRevisionRequest(saved.attempt) : diaryPersonEntryRequest(saved.attempt) : null
+        const input = { requestId: restoredAttempt?.requestId, personId: person.id, body: { ...restoredDraft, breakMinutes: Number(restoredDraft.breakMinutes) }, photoIds: restoredPhotos.map(p => p.id) }
+        if (restoredAttempt && JSON.stringify(restoredAttempt) !== JSON.stringify(editing ? diaryRevisionRequest({ ...input, entryId: editing.id, expectedRevision: editing.revision ?? 0 }) : diaryPersonEntryRequest(input))) throw new Error()
         latest.current = { draft: restoredDraft, photos: restoredPhotos, attempt: restoredAttempt }
         setDraft(restoredDraft); setPhotos(restoredPhotos); setAttempt(restoredAttempt); setError(''); heading.current?.focus()
       }
@@ -128,7 +140,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
     </fieldset>
     {photos.length > 0 && <ul className="diary-upload-list">{photos.map(photo => <li key={photo.id}><div className="diary-upload-image">{photo.preview ? <img src={photo.preview} alt={photo.name} /> : <ImagePlus size={22} />}</div><div><strong>{photo.name}</strong><span>{photo.status === 'queued' ? 'Väntar på uppladdning…' : photo.status === 'uploading' ? 'Laddar upp…' : photo.status === 'ready' ? 'Bilden är sparad' : photo.error}</span>{photo.status === 'error' && photo.file && <button type="button" disabled={busy || Boolean(attempt)} onClick={() => queueUploads([photo])}><RotateCcw size={15} />Försök igen</button>}</div><button type="button" className="diary-icon" aria-label={`Ta bort ${photo.name} från anteckningen`} title="Ta bort från anteckningen" disabled={busy || Boolean(attempt) || photo.status === 'queued' || photo.status === 'uploading'} onClick={() => { if (photo.preview) { URL.revokeObjectURL(photo.preview); previews.current.delete(photo.preview) } const next = latest.current.photos.filter(p => p.id !== photo.id); latest.current.photos = next; setPhotos(next); persist(latest.current.draft, next, latest.current.attempt) }}><Trash2 size={17} /></button></li>)}</ul>}
     {error && <p role="alert" className="diary-error">{error}</p>}
-    {attempt && !busy && <p className="diary-notice" role="status">Inskickningen är inte bekräftad. Försök igen med samma uppgifter.</p>}
-    <div className="diary-form-footer"><button type="submit" className="diary-primary" disabled={busy || photos.some(p => p.status !== 'ready')}>{busy ? <Loader2 size={18} className="animate-spin" /> : attempt ? <RotateCcw size={18} /> : <Send size={18} />}{busy ? 'Skickar…' : attempt ? 'Försök igen' : 'Skicka anteckning'}</button></div>
+    {attempt && !busy && <p className="diary-notice" role="status">{editing ? 'Ändringen' : 'Inskickningen'} är inte bekräftad. Försök igen med samma uppgifter.</p>}
+    <div className="diary-form-footer">{editing && onCancel && <button type="button" disabled={working} onClick={onCancel}><X size={18} />Stäng</button>}<button type="submit" className="diary-primary" disabled={busy || photos.some(p => p.status !== 'ready') || Boolean(editing && !dirty) || expired && !attempt}>{busy ? <Loader2 size={18} className="animate-spin" /> : attempt ? <RotateCcw size={18} /> : editing ? <Save size={18} /> : <Send size={18} />}{busy ? editing ? 'Sparar…' : 'Skickar…' : attempt ? 'Försök igen' : editing ? 'Spara ändring' : 'Skicka anteckning'}</button></div>
   </form>
 }

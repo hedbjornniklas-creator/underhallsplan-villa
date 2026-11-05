@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import QRCode from 'qrcode'
 import { validateDiaryImage } from './projectDiaryImage'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { diaryDate, diaryPersonEntryRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_MAX_PHOTO_BYTES, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace } from './projectDiary'
+import { diaryDate, diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_EDIT_HOURS, DIARY_MAX_PHOTO_BYTES, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace, type DiaryRevision } from './projectDiary'
 import { diaryDeviceHash, diaryLinkToken, diarySecret, parseDiaryLink } from './projectDiaryLinks'
 
 export const DIARY_BUCKET = 'project-diary-files'
@@ -75,6 +75,40 @@ export async function correctDiaryEntry(ctx: DiaryContext, caseId: string, data:
   if (!diaryUuid(data.entryId) || !diaryUuid(data.requestId)) throw new Error('PROJECT_DIARY_INVALID')
   return command(await actor({ ctx, caseId }), 'correction', { entryId: data.entryId, requestId: data.requestId, text: diaryText(data.text, 3000) })
 }
+export async function reviseDiaryEntry(ctx: DiaryContext, caseId: string, data: Record<string, unknown>) {
+  const project = await internal(ctx, caseId)
+  if (project.manager_profile_id !== ctx.userId) throw new Error('PROJECT_DIARY_MANAGER')
+  const request = diaryRevisionRequest(data)
+  const result = await createSupabaseAdminClient().rpc('revise_project_diary_entry', {
+    p_org_id: ctx.orgId, p_case_id: caseId, p_actor_id: ctx.userId, p_data: request,
+  }); checked(result.error)
+  return result.data
+}
+export async function getDiaryHistory(ctx: DiaryContext, caseId: string, entryId: string, before: string | null = null) {
+  await internal(ctx, caseId)
+  if (!diaryUuid(entryId) || before !== null && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)) || Number(before) > 2147483647)) throw new Error('PROJECT_DIARY_INVALID')
+  const db = createSupabaseAdminClient()
+  const original = await db.from('action_case_diary_entries').select('*').eq('id', entryId).eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle(); checked(original.error)
+  if (!original.data) throw new Error('PROJECT_DIARY_NOT_FOUND')
+  let query = db.from('action_case_diary_revisions').select('revision,body,photo_ids,item_title,minutes,actor_name,created_at').eq('entry_id', entryId)
+  if (before !== null) query = query.lt('revision', Number(before))
+  const result = await query.order('revision', { ascending: false }).limit(21); checked(result.error)
+  let rows = (result.data || []).slice(0, 20)
+  if (!rows.length && before === null) {
+    const photos = await db.from('action_case_diary_photos').select('id').eq('entry_id', entryId).order('position'); checked(photos.error)
+    rows = [{ revision: 0, body: original.data.body, photo_ids: (photos.data || []).map(photo => photo.id), item_title: original.data.item_title,
+      minutes: original.data.minutes, actor_name: original.data.actor_name, created_at: original.data.received_at }]
+  }
+  const ids = [...new Set(rows.flatMap(row => row.photo_ids as string[]))]
+  const photos = ids.length ? await db.from('action_case_diary_photos').select('*').eq('entry_id', entryId).in('id', ids) : { data: [], error: null }; checked(photos.error)
+  const versions: DiaryRevision[] = rows.map(row => ({ revision: row.revision, body: row.body, itemTitle: row.item_title, minutes: row.minutes,
+    actorName: row.actor_name, createdAt: row.created_at, photos: row.photo_ids.map((id: string) => {
+      const photo = photos.data?.find(p => p.id === id)
+      if (!photo) throw new Error('PROJECT_DIARY_PHOTO')
+      return { id: photo.id, name: photo.name, size: photo.size_bytes, contentType: photo.content_type, sha256: photo.sha256 }
+    }) }))
+  return { versions, nextBeforeRevision: (result.data?.length || 0) > 20 ? rows.at(-1)!.revision : null }
+}
 const photoPath = (a: Pick<Actor, 'orgId' | 'caseId'>, id: string, incoming = false) => `${a.orgId}/${a.caseId}/${incoming ? 'incoming' : 'images'}/${id}`
 export async function prepareDiaryPhoto(identity: DiaryIdentity, data: Record<string, unknown>) {
   const a = await actor(identity), meta = diaryPhotoRequest(data), stored = await command(a, 'reserve_photo', meta) as Upload
@@ -131,32 +165,39 @@ export async function getProjectDiary(ctx: DiaryContext, caseId: string, filters
   const canManage = project.manager_profile_id === ctx.userId
   const linkResult = await db.from('action_case_diary_links').select('id,nonce,active,revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle(); checked(linkResult.error)
   const l = linkResult.data
-  let query = db.from('action_case_diary_entries').select('*').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
-  if (filters.get('from')) query = query.gte('work_date', diaryDate(filters.get('from')))
-  if (filters.get('to')) query = query.lte('work_date', diaryDate(filters.get('to')))
-  if (filters.get('person')) query = query.ilike('body->>name', `%${diaryText(filters.get('person'), 160).replace(/[\\%_]/g, c => `\\${c}`)}%`)
-  if (filters.get('item')) { if (!diaryUuid(filters.get('item'))) throw new Error('PROJECT_DIARY_INVALID'); query = query.eq('source_item_id', filters.get('item')) }
+  let query = db.from('action_case_diary_current').select('*').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
+  if (filters.get('from')) query = query.gte('current_work_date', diaryDate(filters.get('from')))
+  if (filters.get('to')) query = query.lte('current_work_date', diaryDate(filters.get('to')))
+  if (filters.get('person')) query = query.ilike('current_body->>name', `%${diaryText(filters.get('person'), 160).replace(/[\\%_]/g, c => `\\${c}`)}%`)
+  if (filters.get('item')) { if (!diaryUuid(filters.get('item'))) throw new Error('PROJECT_DIARY_INVALID'); query = query.eq('current_source_item_id', filters.get('item')) }
   if (filters.get('cursor')) {
     try {
       const c = JSON.parse(Buffer.from(filters.get('cursor')!, 'base64url').toString('utf8'))
       diaryDate(c.date)
       if (!diaryUuid(c.id) || typeof c.stamp !== 'string' || !/^[0-9T:.+Z-]{15,40}$/.test(c.stamp) || !Number.isFinite(Date.parse(c.stamp))) throw new Error()
-      query = query.or(`work_date.lt.${c.date},and(work_date.eq.${c.date},received_at.lt.${c.stamp}),and(work_date.eq.${c.date},received_at.eq.${c.stamp},id.lt.${c.id})`)
+      query = query.or(`current_work_date.lt.${c.date},and(current_work_date.eq.${c.date},received_at.lt.${c.stamp}),and(current_work_date.eq.${c.date},received_at.eq.${c.stamp},id.lt.${c.id})`)
     } catch { throw new Error('PROJECT_DIARY_INVALID') }
   }
-  const result = await query.order('work_date', { ascending: false }).order('received_at', { ascending: false }).order('id', { ascending: false }).limit(51); checked(result.error)
+  const result = await query.order('current_work_date', { ascending: false }).order('received_at', { ascending: false }).order('id', { ascending: false }).limit(51); checked(result.error)
   const rows = (result.data || []).slice(0, 50), ids = rows.map(r => r.id)
-  const photos = ids.length ? await db.from('action_case_diary_photos').select('*').in('entry_id', ids).order('position') : { data: [], error: null }; checked(photos.error)
+  const photoIds = [...new Set(rows.flatMap(row => row.current_photo_ids as string[]))]
+  const photos = photoIds.length ? await db.from('action_case_diary_photos').select('*').in('entry_id', ids).in('id', photoIds).order('position') : { data: [], error: null }; checked(photos.error)
   const corrections = ids.length ? await db.from('action_case_diary_corrections').select('*').in('entry_id', ids).order('created_at').order('id') : { data: [], error: null }; checked(corrections.error)
   const items = await db.from('action_case_items').select('id,title').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('sort_order'); checked(items.error)
   const profile = await db.from('profiles').select('full_name,email').eq('id', ctx.userId).maybeSingle(); checked(profile.error)
   const people = await db.from('action_case_diary_people').select('id,name,company').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('name_key').order('company_key').order('id'); checked(people.error)
   const url = canManage && l?.active ? `${baseUrl()}/dagbok/${diaryLinkToken(l.id, l.nonce)}` : null
-  const entries: DiaryEntry[] = rows.map(r => ({ id: r.id, personId: r.person_id || null, body: r.body, itemTitle: r.item_title, authorEmail: r.author_email, actorMethod: r.actor_method, emailVerifiedAt: r.email_verified_at, receivedAt: r.received_at, minutes: r.minutes,
-    photos: (photos.data || []).filter(f => f.entry_id === r.id).map(f => ({ id: f.id, name: f.name, size: f.size_bytes, contentType: f.content_type, sha256: f.sha256 })),
+  const entries: DiaryEntry[] = rows.map(r => ({ id: r.id, personId: r.person_id || null, body: r.current_body, itemTitle: r.current_item_title, authorEmail: r.author_email, actorMethod: r.actor_method, emailVerifiedAt: r.email_verified_at, receivedAt: r.received_at, minutes: r.current_minutes,
+    revision: r.revision, editUntil: new Date(Date.parse(r.received_at) + DIARY_EDIT_HOURS * 3600000).toISOString(),
+    canEdit: canManage && Date.now() < Date.parse(r.received_at) + DIARY_EDIT_HOURS * 3600000, editedAt: r.edited_at, editedBy: r.edited_by,
+    photos: r.current_photo_ids.map((id: string) => {
+      const f = photos.data?.find(photo => photo.id === id && photo.entry_id === r.id)
+      if (!f) throw new Error('PROJECT_DIARY_PHOTO')
+      return { id: f.id, name: f.name, size: f.size_bytes, contentType: f.content_type, sha256: f.sha256 }
+    }),
     corrections: (corrections.data || []).filter(c => c.entry_id === r.id).map(c => ({ id: c.id, text: c.text, actorName: c.actor_name, createdAt: c.created_at })) }))
   const last = rows.at(-1), hasMore = (result.data?.length || 0) > 50
   return { project: { id: project.id, title: project.title }, people: people.data || [], canManage, managerAssigned: Boolean(project.manager_profile_id), items: items.data || [], authorId: ctx.userId, authorName: profile.data?.full_name || '', authorEmail: profile.data?.email || '',
     link: { active: l?.active || false, revision: l?.revision || 0, url, qrDataUrl: url ? await QRCode.toDataURL(url, { width: 360, margin: 4, errorCorrectionLevel: 'M' }) : null }, entries, hasMore,
-    nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ date: last.work_date, stamp: last.received_at, id: last.id })).toString('base64url') : null }
+    nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ date: last.current_work_date, stamp: last.received_at, id: last.id })).toString('base64url') : null }
 }
