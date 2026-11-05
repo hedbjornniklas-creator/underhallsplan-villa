@@ -8,7 +8,7 @@
 .gizmo-question-date-label { display:none; }
 .gizmo-question-table-row>* { min-width:0; overflow-wrap:anywhere; }
 .gizmo-question-table-head { min-height:36px; background:#EDF1F1; font-size:12px; font-weight:600; }
-.gizmo-question-table-row { min-height:60px; font-size:14px; }
+.gizmo-question-table-row { min-height:60px; font-size:14px; cursor:pointer; }
 .gizmo-question-table-row:hover { background:#F1F6F5; }
 .gizmo-question-open { display:flex; width:100%; flex-direction:column; align-items:flex-start; gap:3px; text-align:left; min-height:44px; overflow-wrap:anywhere; }
 .gizmo-question-empty { display:flex; align-items:center; gap:12px; padding:24px 12px; color:#596368; }
@@ -24,7 +24,18 @@
 .gizmo-question-panel h2 { font-size:20px; font-weight:600; overflow-wrap:anywhere; }
 .gizmo-question-panel h3 { font-size:14px; font-weight:600; }
 .gizmo-question-panel>footer { border-top:1px solid #D5DCDD; border-bottom:0; font-size:13px; color:#596368; }
+.gizmo-question-footer-actions { display:flex; flex-wrap:wrap; gap:8px; min-width:0; }
 .gizmo-question-panel-body { overflow-y:auto; min-height:0; flex:1; padding:16px 24px; }
+.uppdrag-scope .gizmo-question-tabs[role=tablist] { overflow-x:auto; overflow-y:hidden; padding-inline:20px; }
+.uppdrag-scope.gizmo-dialog-scope .gizmo-question-tabs .gizmo-register-tab[role=tab] { padding-inline:16px; gap:7px; }
+.gizmo-question-dispatch { border-block:1px solid #D5DCDD; padding:10px 0; }
+.gizmo-question-dispatch>summary { cursor:pointer; min-height:36px; font-weight:600; }
+.gizmo-question-dispatch>.gizmo-question-pair { margin-top:14px; }
+.gizmo-question-audience { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
+.gizmo-question-audience label { display:flex; gap:8px; align-items:center; min-height:44px; }
+.gizmo-question-audience legend { font-weight:600; }
+.gizmo-question-new-contact { margin:16px 0; border-block:1px solid #D5DCDD; padding:16px 0; }
+.gizmo-question-new-contact h4 { font-weight:600; margin-bottom:12px; }
 .gizmo-question-modes { display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid #D5DCDD; padding-bottom:12px; margin-bottom:16px; }
 .gizmo-question-modes [aria-pressed=true] { background:#F2D76A; border-color:#252A2D; }
 .gizmo-question-form { display:grid; gap:14px; min-width:0; }

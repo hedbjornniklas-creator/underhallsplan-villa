@@ -817,14 +817,14 @@ export default function TaskRecipientClient({
                   : canStart
                     ? task.status === 'waiting'
                       ? 'Återuppta uppdraget när du kan fortsätta'
-                      : 'Bekräfta att du börjar med uppdraget'
+                      : 'Bekräfta att du har tagit emot uppdraget'
                     : 'Dokumentera arbetet och skicka det för kontroll'}
               </h2>
               <p className="mt-2 text-sm leading-6 text-indigo-900">
                 {prestartBlocked
                   ? 'Ladda upp offert eller annat efterfrågat dokument. Uppdragsansvarig kontrollerar underlaget innan arbetet får starta.'
                   : canStart
-                    ? 'När du startar ser uppdragsansvarig att uppgiften är omhändertagen. Du kan fortfarande lägga till bilder, dokument och kommentarer.'
+                    ? 'När du bekräftar mottagandet ser uppdragsansvarig att uppgiften är omhändertagen. Status ändras till Pågår. Du kan fortfarande lägga till bilder, dokument och kommentarer.'
                     : 'Lägg till foto, dokument, text eller röstmeddelande. Välj sedan Klar för kontroll när uppgiften är färdig.'}
               </p>
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -841,11 +841,11 @@ export default function TaskRecipientClient({
                   <button
                     type="button"
                     disabled={isBusy}
-                    onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Uppgiften är startad.')}
+                    onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Mottagandet är bekräftat. Uppgiften är omhändertagen.')}
                     className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
-                    {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Starta uppdraget'}
+                    {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
                   </button>
                 ) : (
                   <button

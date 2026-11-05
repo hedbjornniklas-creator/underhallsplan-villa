@@ -11,7 +11,39 @@ function load(path, deps) {
   new Function('require','module','exports',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(key=>{ assert.ok(key in deps,key); return deps[key] },m,m.exports)
   return m.exports
 }
-const base = { 'server-only': {}, './projectQuestions': { questionUuid }, '@/lib/tasks/automation': {}, '@/lib/tasks/emailTemplates': {}, './questionDialogue': {}, './questionDialogueLinks': {} }
+const base = { 'server-only': {}, './projectQuestions': { questionUuid }, '@/lib/tasks/server': {}, '@/lib/tasks/automation': {}, '@/lib/tasks/emailTemplates': {}, './questionDialogue': {}, './questionDialogueLinks': {} }
+
+test('new question contacts use the task contact service only after participant and project-manager checks, without sharing or delivery', async () => {
+  let participant = true, manager = false
+  const writes = [], db = { async rpc() { return { data: participant } }, from(table) { assert.equal(table, 'action_cases'); const query = { select() { return query }, eq() { return query }, async maybeSingle() { return { data: { manager_profile_id: manager ? ctx.userId : id(90) } } } }; return query } }
+  const server = load('../src/lib/action-cases/questionDialogueServer.ts', { ...base, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async createTaskContact(input) { writes.push(input); return { id: input.requestId, name: input.contact.name, email: input.contact.email } } } })
+  const input = { requestId: id(40), contact: { name: 'Ny Testperson', email: 'test@example.invalid', companyName: 'Test AB', phone: '' } }
+  await assert.rejects(server.createQuestionContact(ctx, caseId, questionId, input), /FORBIDDEN/)
+  participant = false; manager = true
+  await assert.rejects(server.createQuestionContact(ctx, caseId, questionId, input), /NOT_FOUND/)
+  participant = true
+  await assert.rejects(server.createQuestionContact(ctx, caseId, questionId, { ...input, contact: { ...input.contact, email: 'invalid' } }), /INVALID/)
+  assert.equal(writes.length, 0)
+  const result = await server.createQuestionContact(ctx, caseId, questionId, input)
+  assert.equal(result.kind, 'contact'); assert.equal(result.id, input.requestId)
+  assert.deepEqual(writes, [{ orgId: ctx.orgId, requestId: input.requestId, contact: input.contact }])
+})
+
+test('the shared task contact creator reuses its request id and cannot change another organization or an existing contact', async () => {
+  const contacts = new Map(), writes = []
+  const db = { from(table) { assert.equal(table, 'organization_contacts'); let org, id, record; const query = { select() { return query }, eq(key, value) { if (key === 'org_id') org = value; if (key === 'id') id = value; return query }, async maybeSingle() { const row = contacts.get(id); return { data: row?.org_id === org ? row : null } }, insert(value) { record = value; return query }, async single() { if (contacts.has(record.id)) return { error: { code: '23505' } }; writes.push(record); contacts.set(record.id, record); return { data: { id: record.id } } } }; return query } }
+  const source = readFileSync(new URL('../src/lib/tasks/server.ts', import.meta.url), 'utf8'), module = { exports: {} }
+  new Function('require', 'module', 'exports', ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText)(name => name === '@/lib/supabase/admin' ? { createSupabaseAdminClient: () => db } : name === './domain' ? { DEFAULT_TASK_AUTOMATION_LIMITS: {} } : {}, module, module.exports)
+  const input = { orgId: ctx.orgId, requestId: id(40), contact: { name: ' Testperson ', email: 'TEST@example.invalid', companyName: '', phone: '' } }
+  const first = await module.exports.createTaskContact(input)
+  assert.equal(first.name, 'Testperson'); assert.equal(first.email, 'test@example.invalid')
+  assert.deepEqual(await module.exports.createTaskContact(input), first); assert.equal(writes.length, 1)
+  await assert.rejects(module.exports.createTaskContact({ ...input, orgId: id(99) }), /CREATE_FAILED/)
+  await assert.rejects(module.exports.createTaskContact({ ...input, contact: { ...input.contact, name: 'Annan person' } }), /CREATE_FAILED/)
+  contacts.get(input.requestId).is_active = false
+  await assert.rejects(module.exports.createTaskContact(input), /CREATE_FAILED/)
+  assert.equal(writes.length, 1)
+})
 
 test('nonparticipants cannot read dialog or sign a shared file even with valid project and file identifiers',async()=>{
   const calls=[],db={ async rpc(name,args){ calls.push({name,args});return {data:false} },from(){throw Error('private read before authorization')} }

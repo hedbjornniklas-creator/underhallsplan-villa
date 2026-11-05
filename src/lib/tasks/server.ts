@@ -1210,6 +1210,29 @@ async function recordEvent(input: {
   return { id: String(data.id), actorName }
 }
 
+export async function createTaskContact(input: { orgId: string; contact: Record<string, unknown>; requestId?: string }) {
+  const admin = createSupabaseAdminClient(), source = input.contact
+  const name = asText(source.name), email = optionalText(source.email)?.toLowerCase() ?? null
+  const phone = optionalText(source.phone), companyName = optionalText(source.companyName)
+  if (!name) throw new Error('TASK_CONTACT_NAME_REQUIRED')
+  if (!email) throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
+  const record = { org_id: input.orgId, name, company_name: companyName, email, phone, whatsapp_number: phone, preferred_channel: 'email', is_active: true }
+  async function existing() {
+    if (!input.requestId) return null
+    const result = await admin.from('organization_contacts').select('id,name,email,company_name,phone,is_active').eq('org_id', input.orgId).eq('id', input.requestId).maybeSingle()
+    if (result.error) throw new Error('TASK_CONTACT_CREATE_FAILED')
+    if (!result.data) return null
+    if (!result.data.is_active || result.data.name !== name || result.data.email !== email || result.data.company_name !== companyName || result.data.phone !== phone) throw new Error('TASK_CONTACT_CREATE_FAILED')
+    return String(result.data.id)
+  }
+  const previous = await existing()
+  if (previous) return { id: previous, name, email }
+  const result = await admin.from('organization_contacts').insert({ ...record, ...(input.requestId ? { id: input.requestId } : {}) }).select('id').single()
+  if (result.error?.code === '23505' && input.requestId) { const id = await existing(); if (id) return { id, name, email } }
+  if (result.error || !result.data) throw new Error('TASK_CONTACT_CREATE_FAILED')
+  return { id: String(result.data.id), name, email }
+}
+
 async function resolveAssignee(input: {
   orgId: string
   assigneeRef: string
@@ -1255,31 +1278,12 @@ async function resolveAssignee(input: {
   }
   if (input.assigneeRef === 'new_contact') {
     const source = input.newContact ?? {}
-    const name = asText(source.name)
-    const email = optionalText(source.email)?.toLowerCase() ?? null
     const phone = optionalText(source.phone)
-    const companyName = optionalText(source.companyName)
-    if (!name) throw new Error('TASK_CONTACT_NAME_REQUIRED')
-    if (!email) throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
-    const { data, error } = await admin
-      .from('organization_contacts')
-      .insert({
-        org_id: input.orgId,
-        name,
-        company_name: companyName,
-        email,
-        phone,
-        whatsapp_number: phone,
-        preferred_channel: email ? 'email' : 'whatsapp',
-        is_active: true,
-      })
-      .select('id')
-      .single()
-    if (error || !data) throw new Error('TASK_CONTACT_CREATE_FAILED')
+    const contact = await createTaskContact({ orgId: input.orgId, contact: source })
     return {
       assignee_profile_id: null,
-      assignee_contact_id: String(data.id),
-      contactEmail: email,
+      assignee_contact_id: contact.id,
+      contactEmail: contact.email,
       contactPhone: phone,
     }
   }

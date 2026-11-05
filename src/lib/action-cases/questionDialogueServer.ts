@@ -1,6 +1,7 @@
 import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { sendTaskAccessLinkEmail } from '@/lib/tasks/automation'
+import { createTaskContact } from '@/lib/tasks/server'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
 import { dialogueMutation, type QuestionDialogue, type DialogueMessage } from './questionDialogue'
 import { parseQuestionLink, questionLinkToken } from './questionDialogueLinks'
@@ -9,6 +10,15 @@ import { questionUuid, type QuestionParticipant } from './projectQuestions'
 type Context = { orgId: string; userId: string }
 type Member = { id: string; org_id: string; action_case_id: string; question_id: string; person_kind: 'profile' | 'contact' | 'customer'; person_id: string; name: string; email: string | null; contact_id: string | null; shared: boolean; link_nonce: string; link_expires_at: string | null }
 type ErrorRow = { code?: string; message?: string }
+export async function createQuestionContact(ctx: Context, caseId: string, questionId: string, body: Record<string, unknown>) {
+  await requireQuestionParticipant(ctx, caseId, questionId)
+  const project = await createSupabaseAdminClient().from('action_cases').select('manager_profile_id').eq('org_id', ctx.orgId).eq('id', caseId).maybeSingle()
+  checked(project.error)
+  if (project.data?.manager_profile_id !== ctx.userId) throw new Error('PROJECT_QUESTION_FORBIDDEN')
+  const contact = body.contact as Record<string, unknown> | undefined
+  if (!questionUuid(body.requestId) || !contact || typeof contact !== 'object' || typeof contact.name !== 'string' || !contact.name.trim() || contact.name.length > 250 || typeof contact.email !== 'string' || contact.email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email.trim()) || ['companyName', 'phone'].some(key => typeof contact[key] !== 'string' || String(contact[key]).length > 250) || Object.values(contact).some(value => typeof value !== 'string' || /[\u0000-\u001f\u007f]/.test(value))) throw new Error('PROJECT_QUESTION_INVALID')
+  return { ...(await createTaskContact({ orgId: ctx.orgId, contact, requestId: body.requestId })), kind: 'contact' as const }
+}
 function checked(error: ErrorRow | null) {
   if (!error) return
   if (['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_QUESTION_SCHEMA')

@@ -28,6 +28,7 @@ import type {
 } from '@/lib/tasks/contracts'
 import { parseTaskEstimate } from '@/lib/tasks/timeEstimate'
 import TaskTimeEstimateInput from './TaskTimeEstimateInput'
+import TaskContactFields from './TaskContactFields'
 import {
   addTaskDateInputDays,
   formatTaskDateTime,
@@ -1524,34 +1525,7 @@ export default function TaskComposerSheet({
 
               {isNewContact ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Namn</span>
-                    <input required value={contactName} onChange={(event) => {
-                      setContactName(event.target.value)
-                      setConfirmedSharedAssignment(false)
-                    }} className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Företag</span>
-                    <input value={contactCompany} onChange={(event) => {
-                      setContactCompany(event.target.value)
-                      setConfirmedSharedAssignment(false)
-                    }} className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">E-post för Mina uppdrag</span>
-                    <input type="email" value={contactEmail} onChange={(event) => {
-                      setContactEmail(event.target.value)
-                      setConfirmedSharedAssignment(false)
-                    }} className={inputClass} />
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-semibold text-slate-600">Telefon / WhatsApp</span>
-                    <input type="tel" value={contactPhone} onChange={(event) => {
-                      setContactPhone(event.target.value)
-                      setConfirmedSharedAssignment(false)
-                    }} className={inputClass} />
-                  </label>
+                  <div className="sm:col-span-2"><TaskContactFields className={inputClass} value={{ name: contactName, companyName: contactCompany, email: contactEmail, phone: contactPhone }} onChange={value => { setContactName(value.name); setContactCompany(value.companyName); setContactEmail(value.email); setContactPhone(value.phone); setConfirmedSharedAssignment(false) }} /></div>
                   <p className="sm:col-span-2 text-xs leading-5 text-slate-500">
                     Med en personlig e-postadress kan mottagaren aktivera sitt konto och samla alla uppdrag på en sida. Delade adresser ger alla som kan läsa inkorgen samma portalåtkomst.
                   </p>

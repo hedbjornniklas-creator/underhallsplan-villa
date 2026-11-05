@@ -597,6 +597,11 @@ const server = createServer(async (req, res) => {
       if (failSave) { failSave = false; json({ error: 'Tillfälligt sparfel. Dina uppgifter är kvar.' }, 503); return }
       const q = questionData.questions.find(q => q.id === dialogueId), d = q && getDialogue(q)
       if (!d) { json({ error: 'Saknas' }, 404); return }
+      if (body.operation === 'contact') {
+        let person = questionData.assignees.find(p => p.id === body.requestId)
+        if (!person) { person = { id: body.requestId, kind: 'contact', name: body.contact.name.trim(), email: body.contact.email.trim().toLowerCase() }; questionData.assignees.push(person) }
+        json({ person }); return
+      }
       if (d.messages.some(m => m.id === body.requestId)) { json({ messageId: body.requestId, questionId: q.id }); return }
       if (body.operation !== 'reply' && body.version !== d.version) { json({ error: 'Ändrat i annan flik.' }, 409); return }
       if (body.operation === 'participants') {
