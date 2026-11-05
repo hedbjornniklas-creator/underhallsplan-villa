@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { questionUuid } from '../src/lib/action-cases/projectQuestions.ts'
+import { questionUuid, questionTaskReplyMutation } from '../src/lib/action-cases/projectQuestions.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ctx = { orgId: id(1), userId: id(2) }, caseId = id(3), questionId = id(4)
@@ -11,7 +11,78 @@ function load(path, deps) {
   new Function('require','module','exports',ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(key=>{ assert.ok(key in deps,key); return deps[key] },m,m.exports)
   return m.exports
 }
-const base = { 'server-only': {}, './projectQuestions': { questionUuid }, '@/lib/tasks/server': {}, '@/lib/tasks/automation': {}, '@/lib/tasks/emailTemplates': {}, './questionDialogue': {}, './questionDialogueLinks': {} }
+const base = { 'server-only': {}, './projectQuestions': { questionUuid, questionTaskReplyMutation }, '@/lib/tasks/server': {}, '@/lib/tasks/automation': {}, '@/lib/tasks/emailTemplates': {}, './questionDialogue': {}, './questionDialogueLinks': {} }
+
+test('question-to-task reply validates trusted scope and recipient and leaves retry identity to the atomic RPC', async () => {
+  let member=true
+  const calls=[],db={ async rpc(name,args){calls.push({name,args});return {data:name==='project_question_internal_participant'?member:args.p_request_id}} }
+  const server=load('../src/lib/action-cases/questionDialogueServer.ts',{...base,'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db}})
+  const payload={operation:'task_reply',taskId:id(20),requestId:id(21),recipient:{kind:'contact',id:id(22),email:'recipient@example.invalid'},text:'Test',fileIds:[],actorId:id(99)}
+  member=false;await assert.rejects(server.replyQuestionTask(ctx,caseId,questionId,payload),/NOT_FOUND/)
+  assert.equal(calls.filter(c=>c.name==='reply_project_question_task').length,0)
+  member=true
+  assert.deepEqual(await server.replyQuestionTask(ctx,caseId,questionId,payload),{messageId:payload.requestId,questionId})
+  assert.equal(calls.at(-1).args.p_actor_id,ctx.userId)
+  assert.equal(calls.at(-1).args.p_task_id,payload.taskId)
+  assert.deepEqual(calls.at(-1).args.p_recipient,payload.recipient)
+  await assert.rejects(server.replyQuestionTask(ctx,caseId,questionId,{...payload,fileIds:[id(25)]}),/INVALID/)
+  await assert.rejects(server.replyQuestionTask(ctx,caseId,questionId,{...payload,text:''}),/INVALID/)
+})
+test('individual reply route uses module context and the task outbox, not group publication', async () => {
+  const calls=[],after=[]
+  let conflict=false
+  const next={NextResponse:{json:(body,options={})=>({body,...options})},after:fn=>after.push(fn)}
+  const http=load('../src/lib/action-cases/customerOffersHttp.ts',{'next/server':next,'@/lib/assignments/server':{async requireOrgContext(){return ctx}},'@/lib/access/server':{async requireModuleAccess(){}}})
+  const route=load('../src/app/api/action-cases/[caseId]/questions/[questionId]/dialogue/route.ts',{'next/server':next,'@/lib/action-cases/customerOffersHttp':http,'@/lib/action-cases/questionDialogueServer':{async replyQuestionTask(...args){if(conflict)throw Error('PROJECT_QUESTION_TASK_RECIPIENT_CHANGED');calls.push(args);return {messageId:id(21),questionId}},async writeQuestionDialogue(){throw Error('must not share')},async deliverQuestionMessages(){throw Error('must not notify group')}},'@/lib/tasks/automation':{async runTaskFollowupBatch(){calls.push('task outbox')}}})
+  const request=origin=>new Request(`https://hushub.se/api/action-cases/${caseId}/questions/${questionId}/dialogue`,{method:'POST',headers:{origin},body:JSON.stringify({operation:'task_reply'})})
+  const result=await route.POST(request('https://hushub.se'),{params:Promise.resolve({caseId,questionId})})
+  assert.deepEqual(calls[0].slice(0,3),[ctx,caseId,questionId])
+  assert.equal(result.body.messageId,id(21));assert.equal(after.length,1)
+  await after[0]();assert.equal(calls.at(-1),'task outbox')
+  const before=calls.length
+  const blocked=await route.POST(request('https://foreign.invalid'),{params:Promise.resolve({caseId,questionId})})
+  assert.equal(blocked.status,410);assert.equal(calls.length,before)
+  conflict=true
+  const rejected=await route.POST(request('https://hushub.se'),{params:Promise.resolve({caseId,questionId})})
+  assert.equal(rejected.status,409)
+  assert.equal(rejected.body.code,'PROJECT_QUESTION_TASK_RECIPIENT_CHANGED')
+  assert.equal(after.length,1)
+})
+test('group email identifies the project and question without including private communication', async () => {
+  const previous=process.env.APP_BASE_URL;process.env.APP_BASE_URL='https://hushub.test'
+  try {
+    const sent=[],finished=[];let claimed=false
+    const member={id:id(10),person_kind:'profile',person_id:ctx.userId,org_id:ctx.orgId,action_case_id:caseId,question_id:questionId,email:'test@example.invalid'}
+    const delivery={id:id(11),participant_id:member.id,link_nonce:id(12),recipient_name:'Test',recipient_email:member.email,question_title:'Fiktiv fraga',body_text:'Open the question to read the reply.',attempts:1}
+    const db={async rpc(name,args){if(name==='claim_project_question_delivery'){const data=claimed?[]:[delivery];claimed=true;return {data}}if(name==='finish_project_question_delivery'){finished.push(args);return {data:null}}return {data:true}},from(table){const q={select(){return q},eq(){return q},async maybeSingle(){return {data:table==='action_case_question_participants'?member:table==='action_cases'?{title:'TEST project'}:{number:13}}}};return q}}
+    const server=load('../src/lib/action-cases/questionDialogueServer.ts',{...base,'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/tasks/automation':{async sendTaskAccessLinkEmail(value){sent.push(value);return {providerMessageId:'provider-id'}}},'@/lib/tasks/emailTemplates':{buildTaskEmailHtml:value=>`${value.contextLabel}|${value.taskTitle}`}})
+    assert.equal((await server.deliverQuestionMessages(questionId)).sent,1)
+    assert.match(sent[0].subject,/F-013.*TEST project/)
+    assert.match(sent[0].html,/TEST project\|F-013/)
+    assert.match(sent[0].text,/Projekt: TEST project/)
+    assert.equal(finished[0].p_provider_id,'provider-id')
+    assert.equal(sent[0].to,member.email)
+  }finally{if(previous===undefined)delete process.env.APP_BASE_URL;else process.env.APP_BASE_URL=previous}
+})
+test('individual mail obtains question project context read-only without changing versions or reminder scheduling', async () => {
+  const calls=[];let failure=null
+  const db={from(table){const filters=[],query={select(){return query},eq(...args){filters.push(args);return query},async maybeSingle(){calls.push({table,filters});return failure?{error:failure}:{data:table==='action_case_question_events'?{action_case_id:caseId}:{title:'TEST project'}}}};return query}}
+  const automation=load('../src/lib/tasks/automation.ts',{'node:crypto':{},'@/lib/supabase/admin':{},'@/lib/tasks/domain':{DEFAULT_TASK_CALENDAR_POLICY:{},DEFAULT_TASK_REMINDER_POLICY:{}},'@/lib/tasks/dateTime':{},'@/lib/tasks/emailTemplates':{},'@/lib/tasks/internalAccess':{},'@/lib/tasks/branding':{},'@/lib/tasks/recipientAuth':{}})
+  const task={id:id(30),org_id:ctx.orgId,context_label:'Projektfråga',version:7,next_followup_at:'2026-11-10T08:00:00Z'}
+  const result=await automation.withProjectQuestionContext(db,task)
+  assert.equal(result.context_label,'TEST project')
+  assert.equal(result.version,7);assert.equal(result.next_followup_at,task.next_followup_at)
+  assert.equal(task.context_label,'Projektfråga')
+  assert.deepEqual(calls[0].filters,[['org_id',ctx.orgId],['task_id',task.id],['operation','send']])
+  assert.deepEqual(calls[1].filters,[['org_id',ctx.orgId],['id',caseId]])
+  calls.length=0
+  assert.equal((await automation.withProjectQuestionContext(db,{...task,context_label:'Other task'})).context_label,'Other task')
+  assert.equal(calls.length,0)
+  failure={code:'42P01'}
+  assert.equal(await automation.withProjectQuestionContext(db,task),task)
+  failure={code:'500'}
+  await assert.rejects(automation.withProjectQuestionContext(db,task),/QUESTION_CONTEXT_READ_FAILED/)
+})
 
 test('new question contacts use the task contact service only after participant and project-manager checks, without sharing or delivery', async () => {
   let participant = true, manager = false

@@ -79,6 +79,71 @@ knappen heter Bekräfta mottaget. Användaren valde uttryckligen enbart textbyte
 befintlig övergång till Pågår och uppföljningslogik ändras inte. Det framgår
 även i mottagarens förklaring.
 
+## Testuppföljning 2026-11-05, etapp 1
+
+Arbetskopian kompletteras efter de manuella testerna F-002 och F-003. Denna
+etapp ändrar inte mottagarnas befintliga länkar eller separata dialogflöden.
+Att samla själva kommunikationen är nästa etapp, inte en bieffekt av denna.
+
+- En öppen fråga hämtar uppgiftssvar och status i bakgrunden var tjugonde sekund
+  och när fönstret åter får fokus. Kommunikationens hämtningsknapp läser också
+  de kopplade uppgifterna. Påbörjad frågetext och meddelandeutkast ersätts inte.
+- Äldre lässvar ignoreras om en senare hämtning redan har startat. Läsfel visas
+  separat, utan att ett tidigare skrivfel tyst försvinner vid nästa hämtning.
+- Ny fråga har även kommandot Skapa fråga. Spara och skapa nästa finns kvar.
+  Befintlig autosparning behålls; skapa och återförsök använder samma kö och id.
+- Utskick visar vilka uppgifter som saknas: ansvarig, mottagarens e-post när den
+  behövs, svarsdatum, uppföljning och granskningsbekräftelse. Uppföljning efter
+  svarsdatumet spärrar också utskick. Under pågående anrop visas inte Försök igen.
+- Historik visar oföränderliga sparade deltagarurval och delningar i tidsordning
+  tillsammans med frågans tidigare historik. Skillnader visas mellan två sparade
+  urval. Första urvalet får ingen påhittad före-bild. Det är urvalsändringar, inte
+  ett rekonstruerat register över all automatisk behörighetsstyrning.
+- Äldre urval innehåller personreferenser, inte frysta namn. Därför markeras att
+  namn hämtas från frågans kontaktuppgifter. Delningar visar däremot sitt sparade
+  underlag, filnamn och mottagarnamn från de registrerade utskicken.
+- Utskick märks köat, skickas, överlämnat till e-posttjänsten, misslyckat eller
+  återkallat. Överlämnat är inte ett påstående om leverans eller läsning.
+
+Ingen SQL-migrering behövs: endast befintlig lagring läses. Historik och
+mottagaruppgifter lämnas enbart till interna, aktiva deltagare i respektive
+fråga. Avtal, offert, kalkyl och betalningsplaner skrivs inte av ändringen.
+
+## Gemensam kommunikationsvy, etapp 2
+
+Kommunikationsvyn låter den individuella uppgiftens parter skriva direkt under
+Kommunikation. Den befintliga personliga länken och mottagarens sida behålls.
+Ingen äldre text kopieras till gruppdialogen. Samma tidslinje visar båda
+källorna, med märkning av enskild dialog, delat meddelande och intern anteckning.
+
+Om frågan enbart skickats individuellt är den enskilda mottagaren förvald.
+En delad gruppfråga behåller gruppen som standard. Om både en äldre individuell
+uppgift och en grupp finns kan användaren uttryckligen välja den enskilda
+uppgiften. Varje skrivläge har ett separat lokalt utkast. Ett oskickat utkast
+får inte byta mottagare tyst, och återförsök behåller exakt begäran och mottagare.
+En uttrycklig mottagarkonflikt från databasen betyder att försöket inte har
+sparats. Då släpps den avvisade begäran, texten behålls och aktuell mottagare
+måste bekräftas före ett nytt försök. Vid osäkert nätverksfel behålls däremot
+den ursprungliga begäran för ett exakt, dubblettsäkert återförsök.
+
+Den individuella svarsfunktionen kräver
+`docs/db/2026-11-05_03_project_question_task_replies.sql` före publicering.
+Funktionen låser den kopplade frågan och uppgiften, kontrollerar aktivt
+deltagarskap och uppgiftens ordinarie parter samt mottagarens id och e-post.
+Meddelande och Uppdrags befintliga notifieringskö sparas i samma transaktion.
+Samma begärande-id skapar inte flera meddelanden. En återkallad eller ändrad
+mottagare kan inte nås genom ett gammalt, ännu oskickat utkast.
+
+Gruppdialogens filbilagor och interna anteckningar fungerar fortsatt. Svar i den
+enskilda uppgiften från frågevyn är textmeddelanden; uppgiftens övriga underlag
+ligger kvar på dess befintliga sida. Svar avslutar inte frågan. Projektansvarig
+behåller ensam deltagarhantering, och statusflödet för Uppdrag ändras inte.
+
+Individuella frågeuppgifter hämtar projektnamnet som mejlkontext i stället för
+den generiska etiketten Projektfråga när meddelandet byggs. Uppgiftens lagrade
+version, status och uppföljningsdatum ändras inte för detta. Gruppaviseringar visar projektnamn och
+frågenummer. Den nya SQL-filen ändrar inga befintliga meddelanden eller avtal.
+
 ## Aktivering
 
 Kör `docs/db/2026-10-19_03_project_question_customers.sql` efter den befintliga
@@ -92,3 +157,7 @@ redigeraren anger då att beställarlistan behöver aktiveras.
 - 2026-10-19: Användaren godkände direkt återanvändning av beställare utan extra
   bock. Utskick och ÄTA-godkännande hålls separata. Databaskopplingen godkändes
   uttryckligen; avtalsuppgifter ska inte ändras.
+- 2026-11-05: Användaren godkände förbättringsplanen efter manuella tester av
+  individuell uppgift och gruppdialog: aktuell status, tydligare sparning och
+  utskick, synlig deltagarhistorik samt svar direkt i Kommunikation. Äldre
+  interna och individuella meddelanden får inte bli gruppmeddelanden i efterhand.

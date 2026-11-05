@@ -11,6 +11,7 @@ import {
   ChevronsUpDown,
   CircleDot,
   Clock3,
+  FileText,
   ListFilter,
   MessageCircle,
   Plus,
@@ -39,13 +40,14 @@ import TaskComposerSheet from './TaskComposerSheet'
 import TaskDetailSheet from './TaskDetailSheet'
 import TaskIssuerAnalyticsPanel from './TaskIssuerAnalyticsPanel'
 import ActionCaseWorkspace from './ActionCaseWorkspace'
+import SupplierInvoiceWorkspace from './SupplierInvoiceWorkspace'
 import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
 import UppdragScope from './UppdragScope'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 import { compareTaskEstimates, parseTaskEstimate, taskEstimateLabel, taskHasMyBall, taskIsTimeCandidate, TASK_ESTIMATE_PRESETS } from '@/lib/tasks/timeEstimate'
 
 type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
-type WorkspaceView = 'current' | 'action_cases' | 'statistics'
+type WorkspaceView = 'current' | 'action_cases' | 'supplier_invoices' | 'statistics'
 type TaskListMode = 'grouped' | 'all' | 'attention'
 type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated' | 'estimate'
 type SortDirection = 'asc' | 'desc'
@@ -827,7 +829,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="gizmo-eyebrow">Gizmo</p>
-              <h1>{workspaceView === 'action_cases' ? 'Projekt' : workspaceView === 'statistics' ? 'Statistik' : 'Aktuellt'}</h1>
+              <h1>{workspaceView === 'action_cases' ? 'Projekt' : workspaceView === 'statistics' ? 'Statistik' : workspaceView === 'supplier_invoices' ? 'Leverantörsfakturor' : 'Aktuellt'}</h1>
             </div>
             <button
               type="button"
@@ -863,7 +865,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           ) : (
             <>
               <div
-                className="mt-6 inline-flex w-full rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:w-auto"
+                className="mt-6 inline-flex w-full flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:w-auto"
                 role="tablist"
                 aria-label="Välj uppdragsvy"
               >
@@ -888,6 +890,15 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 <button
                   type="button"
                   role="tab"
+                  aria-selected={workspaceView === 'supplier_invoices'}
+                  onClick={() => setWorkspaceView('supplier_invoices')}
+                  className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'supplier_invoices' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                >
+                  <FileText size={17} aria-hidden="true" /> Leverantörsfakturor
+                </button>
+                <button
+                  type="button"
+                  role="tab"
                   aria-selected={workspaceView === 'statistics'}
                   onClick={() => setWorkspaceView('statistics')}
                   className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'statistics' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
@@ -905,6 +916,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 />
               ) : workspaceView === 'action_cases' ? (
                 <ActionCaseWorkspace initialWorkspace={initialActionCases} initialError={initialActionCasesError} people={workspace.people} />
+              ) : workspaceView === 'supplier_invoices' ? (
+                <SupplierInvoiceWorkspace cases={initialActionCases?.cases ?? []} />
               ) : (
                 <>
                   <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">

@@ -62,6 +62,14 @@ before(async()=>{
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_04_project_question_dialogue.sql',import.meta.url),'utf8'))
   await db.exec(readFileSync(new URL('../docs/db/2026-10-19_05_project_question_participants.sql',import.meta.url),'utf8'))
   await db.query('select set_project_manager($1,$2,$3,$3,null)',[org,caseId,actor])
+  await db.exec(`alter table operational_tasks add column issuer_profile_id uuid,add column assignee_profile_id uuid,add column context_label text;
+    create table task_events(id uuid primary key,org_id uuid,task_id uuid,event_type text,actor_type text,actor_profile_id uuid,actor_name text,message text,metadata jsonb,created_at timestamptz default now());
+    create table test_comment_outbox(event_id uuid primary key);
+    create function enqueue_test_comment() returns trigger language plpgsql as $$begin
+      if current_setting('test.fail_comment_queue',true)='yes' then raise exception 'queue failed';end if;
+      insert into test_comment_outbox values(new.id);return new;end$$;
+    create trigger trg_enqueue_task_event_notification after insert on task_events for each row execute function enqueue_test_comment();`)
+  await db.exec(readFileSync(new URL('../docs/db/2026-11-05_03_project_question_task_replies.sql',import.meta.url),'utf8'))
 })
 after(()=>db.close())
 const write=(v,o=org,c=caseId,a=actor)=>db.query('select mutate_project_question($1,$2,$3,$4::jsonb)',[o,c,a,JSON.stringify(questionMutation(v))])
@@ -360,4 +368,47 @@ test('conclusion cleanup refuses nonempty data before changing it and restores h
       await assert.rejects(isolated.exec("update action_case_question_events set body='{}'"),/IMMUTABLE/)
     } finally { await isolated.close() }
   }
+})
+
+test('individual replies from the question are scoped, retry-safe and atomically queued without sharing old dialogue', async () => {
+  const q=id(410), recipient=id(411), requestId=id(412)
+  await db.query("insert into organization_contacts(id,org_id,name,email,is_active) values($1,$2,'Reply Test','reply@example.invalid',true)",[recipient,org])
+  await write(mutation(q,0,'create',{body:{...body(),assignee:{id:recipient,kind:'contact',name:''}}}))
+  await write(mutation(q,1,'send',{confirmed:true,dueAt:'2026-11-10T15:00:00Z',followupAt:'2026-11-09T08:00:00Z'}))
+  const task=(await db.query('select t.* from operational_tasks t join action_case_question_events e on e.task_id=t.id where e.question_id=$1',[q])).rows[0]
+  assert.equal(task.context_label,null)
+  await db.query('update operational_tasks set issuer_profile_id=$1 where id=$2',[actor,task.id])
+  const run=(overrides={})=>{
+    const input={org,caseId,q,taskId:task.id,user:actor,requestId,recipient:{kind:'contact',id:recipient,email:'reply@example.invalid'},text:'Fiktivt svar',...overrides}
+    return db.query('select reply_project_question_task($1,$2,$3,$4,$5,$6,$7::jsonb,$8)',[input.org,input.caseId,input.q,input.taskId,input.user,input.requestId,input.recipient,input.text])
+  }
+  await run();await run()
+  assert.equal((await db.query('select count(*)::int n from task_events where task_id=$1',[task.id])).rows[0].n,1)
+  assert.equal((await db.query('select count(*)::int n from test_comment_outbox where event_id=$1',[requestId])).rows[0].n,1)
+  assert.equal((await db.query('select count(*)::int n from action_case_question_messages where question_id=$1',[q])).rows[0].n,0)
+  await assert.rejects(run({text:'Changed on retry'}),/STALE/)
+  await assert.rejects(run({requestId:id(413),recipient:{kind:'contact',id:contact}}),/RECIPIENT_CHANGED/)
+  await assert.rejects(run({requestId:id(413),q:id(140)}),/NOT_FOUND/)
+  await assert.rejects(run({requestId:id(413),org:other}),/NOT_FOUND/)
+  await assert.rejects(run({requestId:id(413),user:id(101)}),/NOT_FOUND/)
+  await chat(q,dialogue(q,await version(q),'participants',{participants:[{kind:'profile',id:id(101)}]}))
+  await assert.rejects(run({requestId:id(413),user:id(101)}),/FORBIDDEN/)
+  assert.equal((await row(q)).body.status,'investigating')
+  await db.query('update organization_contacts set email=$1 where id=$2',['changed@example.invalid',recipient])
+  await assert.rejects(run({requestId:id(413)}),/RECIPIENT_CHANGED/)
+  await db.query('update organization_contacts set email=$1 where id=$2',['reply@example.invalid',recipient])
+  await db.exec("set test.fail_comment_queue='yes'")
+  await assert.rejects(run({requestId:id(413)}),/queue failed/)
+  await db.exec("set test.fail_comment_queue='no'")
+  assert.equal((await db.query('select count(*)::int n from task_events where id=$1',[id(413)])).rows[0].n,0)
+  await db.query("update operational_tasks set status='approved' where id=$1",[task.id])
+  await write(mutation(q,2,'close',{text:'Fiktivt test avslutat'}))
+  await run() // An acknowledged request remains safe to retry after closure.
+  await assert.rejects(run({requestId:id(414)}),/CLOSED/)
+  await db.exec('set role authenticated')
+  await assert.rejects(run({requestId:id(415)}),/permission denied/)
+  await db.exec('reset role')
+  const before=(await db.query('select count(*)::int n from task_events')).rows[0].n
+  await db.exec(readFileSync(new URL('../docs/db/2026-11-05_03_project_question_task_replies.sql',import.meta.url),'utf8'))
+  assert.equal((await db.query('select count(*)::int n from task_events')).rows[0].n,before)
 })

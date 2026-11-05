@@ -2,13 +2,35 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
-import { emptyQuestion, questionMutation, questionUuid } from '../src/lib/action-cases/projectQuestions.ts'
+import { emptyQuestion, questionMutation, questionUuid, questionParticipantSelection, questionParticipantDifference } from '../src/lib/action-cases/projectQuestions.ts'
+import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ctx={orgId:id(1),userId:id(2)},caseId=id(3)
 function load(path,deps) {
   const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
-  const m={exports:{}};new Function('require','module','exports',code)(key=>{assert.ok(key in deps,key);return deps[key]},m,m.exports);return m.exports
+  const m={exports:{}};new Function('require','module','exports',code)(key=>{assert.ok(key in deps,key);return key === './projectQuestions' ? { ...questionModel, ...deps[key] } : deps[key]},m,m.exports);return m.exports
 }
+test('dispatch requirements distinguish missing fields, recipient email and invalid follow-up order', () => {
+  const { questionSendRequirements } = questionModel
+  const empty = { assignee: null, dueAt: null, followupAt: null, confirmed: false }
+  assert.deepEqual(questionSendRequirements(empty).map(item => item.field), ['assignee', 'due', 'followup', 'confirmation'])
+  const complete = { assignee: { id: id(8), kind: 'contact', name: 'Test', email: 'test@example.invalid' }, dueAt: '2026-11-09T15:00:00Z', followupAt: '2026-11-06T08:00:00Z', confirmed: true }
+  assert.deepEqual(questionSendRequirements(complete), [])
+  assert.match(questionSendRequirements({ ...complete, assignee: { ...complete.assignee, email: '' } })[0].message, /e-post/)
+  assert.deepEqual(questionSendRequirements({ ...complete, assignee: { ...complete.assignee, kind: 'profile', email: null } }), [])
+  assert.equal(questionSendRequirements({ ...complete, followupAt: '2026-11-10T08:00:00Z' })[0].field, 'followup')
+})
+test('participant history never invents a first baseline or changes the saved selection', () => {
+  const person = { kind: 'contact', id: id(8) }, key = `contact:${person.id}`
+  const names = new Map([[key, 'Testperson']]), request = [person, person]
+  const selected = questionParticipantSelection(request, names)
+  assert.deepEqual(selected, [{ key, name: 'Testperson' }])
+  assert.equal(request.length, 2)
+  assert.deepEqual(questionParticipantDifference(null, selected), { added: null, removed: null })
+  assert.deepEqual(questionParticipantDifference(selected, []), { added: [], removed: selected })
+  assert.equal(questionParticipantSelection([{ ...person, kind: 'unknown' }], names), null)
+  assert.equal(questionParticipantSelection(null, names), null)
+})
 test('questions route requires session/module and same-origin body before mutation; only sends enqueue followup',async()=>{
   for(const deny of ['UNAUTHORIZED','MODULE_ACCESS_REQUIRED',null]) {
     const calls=[],followups=[]
@@ -58,7 +80,7 @@ test('creation dates come from the immutable create event, never the latest upda
     const call = { table, filters: [] }; calls.push(call)
     const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, in(...args) { call.filters.push(args); return q }, order() { return q },
       async maybeSingle() { return { data: { id: caseId, manager_profile_id: ctx.userId } } },
-      async range(from, to) { return { data: (table === 'action_case_questions' ? questions : table === 'action_case_attachments' ? [] : table === 'action_case_question_participants' ? questions.map(row => ({ id: id(100 + row.number), question_id: row.id, person_kind: 'profile', person_id: ctx.userId, name: 'Test', active: true })) : events).slice(from, to + 1) } } }
+      async range(from, to) { return { data: (table === 'action_case_questions' ? questions : table === 'action_case_attachments' || table === 'action_case_question_messages' ? [] : table === 'action_case_question_participants' ? questions.map(row => ({ id: id(100 + row.number), question_id: row.id, person_kind: 'profile', person_id: ctx.userId, name: 'Test', active: true })) : events).slice(from, to + 1) } } }
     return q
   } }
   const server = load('../src/lib/action-cases/projectQuestionsServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async getTaskPeople() { return [] } }, '@/lib/tasks/attachments': {}, './projectQuestions': { questionMutation, questionUuid } })
@@ -66,7 +88,53 @@ test('creation dates come from the immutable create event, never the latest upda
   assert.equal(result.questions[0].createdAt, created)
   assert.equal(result.questions[0].updatedAt, updated)
   assert.equal(result.questions[1].createdAt, null)
-  for (const call of calls) assert.ok(call.filters.some(([key, value]) => key === 'org_id' && value === ctx.orgId))
+  for (const call of calls) assert.ok(call.table === 'action_case_question_messages' ? call.filters.some(([key, value]) => key === 'question_id' && value.every(q => questions.some(row => row.id === q))) : call.filters.some(([key, value]) => key === 'org_id' && value === ctx.orgId))
+})
+
+test('history reads immutable participant selections and dispatch evidence only for questions the actor participates in', async () => {
+  const questionId = id(4), foreign = id(5)
+  const manager = { kind: 'profile', id: ctx.userId }, jn = { kind: 'contact', id: id(6) }, nh = { kind: 'contact', id: id(7) }
+  const request = participants => ({ participants, privateToken: 'NEVER EXPOSE' })
+  const rows = {
+    action_case_question_participants: [manager, jn, nh].map((p, i) => ({ id: id(20 + i), org_id: ctx.orgId, action_case_id: caseId, question_id: questionId, person_kind: p.kind, person_id: p.id, name: ['Manager', 'jn', 'nh'][i], active: i !== 2, shared: true })),
+    action_case_questions: [questionId, foreign].map(q => ({ id: q, number: 1, revision: 1, org_id: ctx.orgId, action_case_id: caseId, body: { ...emptyQuestion(), title: 'Test', description: 'Body' }, updated_at: '2026-11-05T10:00:00Z' })),
+    action_case_question_events: [], action_case_attachments: [],
+    action_case_question_messages: [
+      { id: id(30), question_id: questionId, operation: 'participants', actor_name: 'Manager', created_at: '2026-11-05T10:01:00Z', request: request([manager, jn]) },
+      { id: id(31), question_id: questionId, operation: 'participants', actor_name: 'Manager', created_at: '2026-11-05T10:02:00Z', request: request([manager, jn, nh]) },
+      { id: id(32), question_id: questionId, operation: 'share', actor_name: 'Manager', created_at: '2026-11-05T10:03:00Z', snapshot: { title: 'Shared title', description: 'Shared body' }, files: [{ attachment_id: id(60), file_name: 'Original.pdf' }] },
+      { id: id(33), question_id: questionId, operation: 'participants', actor_name: 'Manager', created_at: '2026-11-05T10:04:00Z', request: request([manager, jn]) },
+      { id: id(34), question_id: foreign, operation: 'participants', actor_name: 'PRIVATE', created_at: '2026-11-05T10:04:00Z', request: request([manager]) }
+    ],
+    action_case_question_deliveries: [{ id: id(40), message_id: id(32), recipient_name: 'nh', status: 'sent', sent_at: '2026-11-05T10:03:10Z', provider_message_id: 'PRIVATE' }]
+  }
+  const calls = []
+  const db = { async rpc() { return { data: [] } }, from(table) {
+    const filters = [], call = { table, filters }; calls.push(call)
+    const query = { select() { return query }, eq(key, value) { filters.push([key, value]); return query }, in(key, value) { filters.push([key, value]); return query }, order() { return query },
+      async maybeSingle() { return { data: { id: caseId, manager_profile_id: ctx.userId } } },
+      async range(from, to) { return { data: (rows[table] || []).filter(row => filters.every(([key, value]) => Array.isArray(value) ? value.includes(row[key]) : row[key] === value)).slice(from, to + 1) } }
+    }
+    return query
+  } }
+  const server = load('../src/lib/action-cases/projectQuestionsServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/tasks/server': { async getTaskPeople() { return [] } }, '@/lib/tasks/attachments': {}, './projectQuestions': questionModel })
+  const result = await server.getProjectQuestions(ctx, caseId)
+  assert.equal(result.questions.length, 1)
+  const q = result.questions[0], history = q.dialogueHistory
+  assert.equal(q.participants.some(p => p.name === 'nh'), false)
+  assert.equal(history.length, 4)
+  assert.equal(history[0].added, null)
+  assert.deepEqual(history[1].added.map(p => p.name), ['nh'])
+  assert.deepEqual(history[3].removed.map(p => p.name), ['nh'])
+  assert.deepEqual(history[2].snapshot, { title: 'Shared title', description: 'Shared body' })
+  assert.equal(history[2].files[0].name, 'Original.pdf')
+  assert.equal(history[2].deliveries[0].status, 'sent')
+  assert.doesNotMatch(JSON.stringify(result), /NEVER EXPOSE|PRIVATE|link_nonce|request/)
+  for (const call of calls.filter(c => c.table === 'action_case_question_messages')) assert.ok(call.filters.some(([key, value]) => key === 'question_id' && value.length === 1 && value[0] === questionId))
+  // No membership means no reads of question history, messages or deliveries.
+  rows.action_case_question_participants.forEach(p => { p.active = false }); calls.length = 0
+  assert.equal((await server.getProjectQuestions(ctx, caseId)).questions.length, 0)
+  assert.equal(calls.some(c => ['action_case_question_messages', 'action_case_question_deliveries', 'action_case_question_events'].includes(c.table)), false)
 })
 
 test('customer directory is read-only and missing migration preserves existing contacts without hiding other failures', async () => {

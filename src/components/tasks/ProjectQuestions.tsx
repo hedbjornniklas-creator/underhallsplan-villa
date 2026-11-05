@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { ClipboardList, ExternalLink, History, Loader2, MessageSquare, Plus, RefreshCw, Save, Search, Send, Upload, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { taskDateTimeInputToIso, formatTaskDateTime } from '@/lib/tasks/dateTime'
-import { emptyQuestion, questionAssigneeOptions, questionStatuses, type ProjectQuestion, type QuestionBody, type QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
+import { emptyQuestion, questionAssigneeOptions, questionStatuses, questionSendRequirements, questionTaskEventText, questionDeliveryLabels, type ProjectQuestion, type QuestionBody, type QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import './project-questions.css'
 import QuestionDialogue from './QuestionDialogue'
@@ -21,6 +21,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   caseId: string; active: boolean; refreshKey?: number; openRequest?: QuestionOpenRequest | null; files: ActionCaseAttachmentView[]; onFiles: (files: ActionCaseAttachmentView[]) => void; onDirty: (dirty: boolean) => void
 }) {
   const [data, setData] = useState<QuestionWorkspace | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
   const [selected, setSelected] = useState<string | null>(null), [search, setSearch] = useState(''), [filter, setFilter] = useState('active')
   const [draft, setDraft] = useState<QuestionBody>(emptyQuestion), [fileIds, setFileIds] = useState<string[]>([])
   const [mode, setMode] = useState('details'), [message, setMessage] = useState(''), [reportedBy, setReportedBy] = useState('')
@@ -28,6 +29,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const [dueTime, setDueTime] = useState('16:00'), [followupTime, setFollowupTime] = useState('09:00')
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState('')
   const [dialogueDirty, setDialogueDirty] = useState(false)
+  const [dialogueSaveStatus, setDialogueSaveStatus] = useState('')
   const [dialogueFooter, setDialogueFooter] = useState<HTMLDivElement | null>(null)
   const [localError, setLocalError] = useState('')
   const compositionEdited = useRef(false)
@@ -39,6 +41,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const headingId = useId(), focusBefore = useRef<HTMLElement | null>(null), initialized = useRef(false)
   const loadedKey = useRef<number | null>(null)
   const handledOpen = useRef<number | null>(null)
+  const readSequence = useRef(0), canBackgroundRefresh = useRef(false)
   const question = data?.questions.find(q => q.id === selected)
   const openSaved = useRef<string | null>(null)
   openSaved.current = question?.id || null
@@ -60,21 +63,37 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       void refresh()
     },
   })
+  canBackgroundRefresh.current = active && !busy && !autosave.busy
   const dirty = Boolean(selected && (dialogueDirty || autosave.dirty || localError))
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true)
+  const refresh = useCallback(async (signal?: AbortSignal, background = false) => {
+    const sequence = ++readSequence.current
+    if (!background) setLoading(true)
     try {
       const r = await fetch(`/api/action-cases/${caseId}/questions`, { signal, cache: 'no-store' }), next = await r.json()
       if (!r.ok) throw new Error(next.error || 'Frågorna kunde inte hämtas.')
-      if (signal?.aborted) return
+      if (signal?.aborted || sequence !== readSequence.current) return
       if (openSaved.current && !next.questions.some((q: ProjectQuestion) => q.id === openSaved.current)) { setSelected(null); setDraft(emptyQuestion()); setMessage(''); setFileIds([]); setDialogueDirty(false) }
-      setData(current => ({ ...next, questions: next.questions.map((q: ProjectQuestion) => { const old = current?.questions.find(p => p.id === q.id); return old && old.revision > q.revision ? old : q }) })); setError(''); initialized.current = true
+      setData(current => ({ ...next, questions: next.questions.map((q: ProjectQuestion) => { const old = current?.questions.find(p => p.id === q.id); return old && old.revision > q.revision ? old : q }) })); setRefreshError(''); initialized.current = true
       return next as QuestionWorkspace
-    } catch (e) { if (!signal?.aborted) setError(e instanceof Error ? e.message : 'Frågorna kunde inte hämtas.') }
-    finally { if (!signal?.aborted) setLoading(false) }
+    } catch (e) { if (!signal?.aborted && sequence === readSequence.current) setRefreshError(e instanceof Error ? e.message : 'Frågorna kunde inte hämtas.') }
+    finally { if (sequence === readSequence.current) setLoading(false) }
   }, [caseId])
   const dialogueChanged = useCallback(() => { void refresh() }, [refresh])
+  const refreshLinkedTasks = useCallback(async () => { await refresh(undefined, true) }, [refresh])
   useEffect(() => { if (!active || (openRequest && handledOpen.current !== openRequest.token) || (initialized.current && loadedKey.current === refreshKey)) return; loadedKey.current = refreshKey; const c = new AbortController(); void refresh(c.signal); return () => c.abort() }, [active, refresh, refreshKey, openRequest])
+  useEffect(() => {
+    if (!active || !selected) return
+    const controller = new AbortController()
+    let reading = false
+    const update = async () => {
+      if (reading || document.visibilityState !== 'visible' || !canBackgroundRefresh.current) return
+      reading = true
+      try { await refresh(controller.signal, true) } finally { reading = false }
+    }
+    const timer = window.setInterval(() => void update(), 20000)
+    window.addEventListener('focus', update)
+    return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', update) }
+  }, [active, selected, refresh])
   useEffect(() => { onDirty(busy || Boolean(localError) || dialogueDirty || (autosave.dirty && !autosave.local)) }, [busy, localError, dialogueDirty, autosave.dirty, autosave.local, onDirty])
   useEffect(() => {
     if ((!dirty || (autosave.local && !localError && !dialogueDirty)) && !busy && !autosave.busy) return
@@ -166,6 +185,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     if (['create', 'update'].includes(operation)) {
       if (!await (autosave.error ? autosave.retry() : autosave.flush())) { setError('Komplettera rubrik och fråga, eller återförsök sparningen.'); return }
       if (createNext) { open(); setNotice('Frågan är sparad. Nästa fråga är tom.'); await refresh() }
+      else { setNotice('Frågan är sparad internt. Inget utskick har gjorts.'); await refresh() }
       return
     }
     if (!await autosave.flush()) { setError('Frågans uppgifter behöver sparas innan du fortsätter.'); return }
@@ -220,7 +240,10 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const choices = [...new Map([...sendFiles.map(f => ({ id: f.id, fileName: f.name })), ...availableFiles].map(f => [f.id, f])).values()]
   const closed = question?.body.status === 'closed'
   const taskOpen = Boolean(question?.tasks.some(t => t.active ?? !['approved', 'cancelled'].includes(t.status)))
+  const taskReply = (question?.tasks.find(t => t.active && t.replyTarget) || question?.tasks.filter(t => t.replyTarget).at(-1))?.replyTarget || undefined
   const detailsDisabled = busy || autosave.busy || !draft.title.trim() || !draft.description.trim()
+  const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), confirmed })
+  const history = [...question?.events || [], ...question?.dialogueHistory || []].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   const availablePeople = (data?.assignees || []).filter(p => data?.canManageParticipants || (p.kind === 'profile' && [data?.userId, data?.managerId].includes(p.id)) || question?.participants?.some(m => m.kind === p.kind && m.personId === p.id))
   const assignees = questionAssigneeOptions(availablePeople, draft.assignee)
   const selectedTab = ['send', 'close', 'reopen'].includes(mode) ? 'details' : mode
@@ -244,6 +267,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       }}>{tabs.map(([key, label, Icon]) => <button type="button" role="tab" className="gizmo-register-tab" key={key} id={`${headingId}-${key}`} aria-controls={`${headingId}-panel`} aria-selected={selectedTab === key} tabIndex={selectedTab === key ? 0 : -1} disabled={busy} onClick={() => void switchMode(key)}><Icon size={17} aria-hidden="true" />{label}</button>)}</div>}
       <div className="gizmo-question-panel-body" role={question ? 'tabpanel' : undefined} id={`${headingId}-panel`} aria-labelledby={question ? `${headingId}-${selectedTab}` : undefined}>
         {error && <p role="alert" className="gizmo-question-error">{error}</p>}
+        {refreshError && <p role="alert" className="gizmo-question-error">{refreshError}</p>}
         {autosave.error && <div role="alert" className="gizmo-question-error"><p>{autosave.error}</p><button type="button" className={button} disabled={autosave.busy} onClick={() => void autosave.retry()}><RefreshCw size={16} />Försök spara igen</button><button type="button" className={button} disabled={autosave.busy} onClick={() => { if (!selected || !window.confirm('Ersätt det lokala frågeutkastet med den sparade frågan?')) return; const body = question?.body || emptyQuestion(); autosave.seed(draftKey(selected, 'details'), { questionId: selected, body, fileIds: [] }, question?.revision || 0, true); setDraft(body); setFileIds([]) }}>Hämta sparad fråga</button></div>}
         {localError && <p role="alert" className="gizmo-question-error">{localError}</p>}
         {notice && <p role="status">{notice}</p>}
@@ -266,27 +290,53 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
           </>}</details>}
           {!['history', 'dialogue', 'participants'].includes(mode) && !closed && <section className="gizmo-question-files"><h3>{mode === 'send' ? 'Bilagor till mottagaren' : 'Bilagor till denna historikpost'}</h3><ul>{choices.map(f => <li key={f.id}><label><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => changeFiles(e.target.checked ? [...fileIds, f.id] : fileIds.filter(id => id !== f.id))} />{f.fileName}</label><a href={`/api/action-cases/${caseId}/attachments/${f.id}`} target="_blank" rel="noreferrer" aria-label={`Öppna ${f.fileName}`} title="Öppna i ny flik"><ExternalLink size={16} /></a></li>)}</ul>{mode !== 'send' && <><button className={button} type="button" onClick={() => uploadInput.current?.click()} disabled={!question || fileIds.length >= 20} title={question ? 'Ladda upp bilaga' : 'Spara frågan före uppladdning'}><Upload size={16} /> Ladda upp bilaga</button><input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} /></>}</section>}
           {mode === 'send' && <label className="gizmo-question-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Jag har granskat mottagaren, frågetexten och de valda bilagorna inför utskick.</label>}
+          {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <section className="gizmo-question-callout" aria-label="Kvar inför utskick" id={`${headingId}-send-requirements`}><h3>Kvar inför utskick</h3><ul className="gizmo-question-requirements">{sendRequirements.map(item => <li key={item.field}>{item.message}</li>)}</ul></section>}
         </fieldset>
-        {question && ['dialogue', 'participants'].includes(mode) && <QuestionDialogue key={`${question.id}:${mode}`} endpoint={`/api/action-cases/${caseId}/questions/${question.id}/dialogue`} fileBase={`/api/action-cases/${caseId}/questions/${question.id}/files`} mode={mode as 'dialogue' | 'participants'} footerTarget={mode === 'participants' ? dialogueFooter : undefined} storageKey={draftKey(question.id, 'dialogue')} onFlush={registerDialogueFlush} people={questionAssigneeOptions(data?.assignees || [], question.body.assignee)} files={questionFiles} responsible={question.body.assignee} preview={{ title: question.body.title, description: question.body.description }} internalEvents={[...question.events.filter(e => e.operation === 'note').map(e => ({ id: e.id, actorName: e.actorName, text: e.text, createdAt: e.createdAt, label: 'Intern anteckning', files: e.files.map(f => ({ ...f, href: `/api/action-cases/${caseId}/attachments/${f.id}` })) })), ...question.tasks.flatMap(task => task.events.map(e => ({ id: e.id, actorName: e.actorName, text: e.text, createdAt: e.createdAt, label: 'Via Uppdrag · visas internt', files: [] })))]} noteRevision={question.revision} onNote={async attempt => {
+        {question && ['dialogue', 'participants'].includes(mode) && <QuestionDialogue key={`${question.id}:${mode}`}
+          endpoint={`/api/action-cases/${caseId}/questions/${question.id}/dialogue`} fileBase={`/api/action-cases/${caseId}/questions/${question.id}/files`}
+          mode={mode as 'dialogue' | 'participants'} footerTarget={mode === 'participants' ? dialogueFooter : undefined}
+          storageKey={draftKey(question.id, 'dialogue')} onFlush={registerDialogueFlush} onRefresh={refreshLinkedTasks}
+          taskReply={taskReply} hasSharedDialogue={question.dialogueHistory?.some(e => e.operation === 'share')}
+          people={questionAssigneeOptions(data?.assignees || [], question.body.assignee)} files={questionFiles} responsible={question.body.assignee}
+          preview={{ title: question.body.title, description: question.body.description }} internalEvents={[
+            ...question.events.filter(e => e.operation === 'note').map(e => ({ id: e.id, actorName: e.actorName, text: e.text, createdAt: e.createdAt, label: 'Intern anteckning', files: e.files.map(f => ({ ...f, href: `/api/action-cases/${caseId}/attachments/${f.id}` })) })),
+            ...question.tasks.flatMap(task => task.events.map(e => ({ id: e.id, actorName: e.actorName, text: questionTaskEventText(e), createdAt: e.createdAt, label: 'Enskild uppdragsdialog · inte delad med övriga deltagare', files: [] }))),
+          ]} noteRevision={question.revision} onNote={async attempt => {
           if (!await autosave.flush()) throw new Error('Frågan behöver sparas före anteckningen.')
           const response = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'note', questionId: question.id, requestId: attempt.requestId, revision: attempt.revision, text: attempt.text, fileIds: attempt.fileIds, reportedBy: '' }) })
           const result = await response.json()
           if (!response.ok || result.questionId !== question.id) throw new Error(result.error || 'Anteckningen kunde inte bekräftas sparad.')
           autosave.acknowledge(attempt.revision + 1)
           await refresh()
-        }} onBusy={setBusy} onDirty={setDialogueDirty} onChanged={dialogueChanged} />}
-        {mode === 'history' && <ol className="gizmo-question-history">{question?.events.map(e => <li key={e.id}><h3>{labels[e.operation] || e.operation}</h3><p className="gizmo-secondary">{e.actorName} · {stamp(e.createdAt)}</p>{e.reportedBy && <p>Återgivet svar från {e.reportedBy}, registrerat av {e.actorName}</p>}{e.text && <p className="whitespace-pre-wrap">{e.text}</p>}<details><summary>Frågans version {e.revision}</summary><p><strong>{e.body.title}</strong></p><p className="whitespace-pre-wrap">{e.body.description}</p><p>{e.body.source} {e.body.meetingDate}</p><p>Ansvarig: {e.body.assignee?.name || 'Ej tilldelad'} · {questionStatuses[e.body.status]}</p></details>{e.files.map(f => <a key={f.id} className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/attachments/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}{e.taskId && <a className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/uppdrag?task=${e.taskId}`}><ExternalLink size={16} />Öppna uppgiften</a>}</li>)}</ol>}
+        }} onBusy={setBusy} onDirty={setDialogueDirty} onChanged={dialogueChanged} onStatus={setDialogueSaveStatus} />}
+        {mode === 'history' && <>
+          {question?.dialogueHistory?.some(e => e.operation === 'participants') && <p className="gizmo-secondary gizmo-question-notice">Äldre deltagarurval sparades med personreferenser. Namnen visas enligt kontaktregistret.</p>}
+          <ol className="gizmo-question-history">{history.map(e => 'revision' in e ? <li key={e.id}><h3>{labels[e.operation] || e.operation}</h3><p className="gizmo-secondary">{e.actorName} · {stamp(e.createdAt)}</p>{e.reportedBy && <p>Återgivet svar från {e.reportedBy}, registrerat av {e.actorName}</p>}{e.text && <p className="whitespace-pre-wrap">{e.text}</p>}<details><summary>Frågans version {e.revision}</summary><p><strong>{e.body.title}</strong></p><p className="whitespace-pre-wrap">{e.body.description}</p><p>{e.body.source} {e.body.meetingDate}</p><p>Ansvarig: {e.body.assignee?.name || 'Ej tilldelad'} · {questionStatuses[e.body.status]}</p></details>{e.files.map(f => <a key={f.id} className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/attachments/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}{e.taskId && <a className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/uppdrag?task=${e.taskId}`}><ExternalLink size={16} />Öppna uppgiften</a>}</li> : <li key={e.id}>
+            <h3>{e.operation === 'participants' ? 'Deltagarurval sparat' : 'Frågan delad med deltagarna'}</h3><p className="gizmo-secondary">{e.actorName} · {stamp(e.createdAt)}</p>
+            {e.operation === 'participants' ? <>
+              {e.added === null || e.removed === null ? <p>Tidigare urval saknas som jämförelseunderlag.</p> : <>{e.added.length > 0 && <p>Tillagda i urvalet: {e.added.map(p => p.name).join(', ')}</p>}{e.removed.length > 0 && <p>Borttagna ur urvalet: {e.removed.map(p => p.name).join(', ')}</p>}{!e.added.length && !e.removed.length && <p>Oförändrat urval.</p>}</>}
+              <details><summary>Sparat deltagarurval</summary><ul>{e.selected.map(p => <li key={p.key}>{p.name}</li>)}</ul></details>
+            </> : <>
+              {e.snapshot && <details><summary>Underlaget som delades</summary><strong>{e.snapshot.title}</strong><p className="whitespace-pre-wrap">{e.snapshot.description}</p></details>}
+              {e.files.map(f => <a key={f.id} className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/questions/${question?.id}/files/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}
+              <ul className="gizmo-question-deliveries">{e.deliveries.map(d => <li key={d.id}><strong>{d.name}</strong>: {questionDeliveryLabels[d.status] || d.status}{d.sentAt && <> · {stamp(d.sentAt)}</>}</li>)}</ul>
+              {!e.deliveries.length && <p>Inga mejlutskick registrerade för delningen.</p>}
+            </>}
+          </li>)}</ol>
+        </>}
         {question && historicalFiles.length > 0 && mode === 'details' && <section className="gizmo-question-files"><h3>Sparade bilagor</h3>{historicalFiles.map(f => <a className="gizmo-question-file-link" key={f.id} target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/attachments/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}</section>}
         {['details', 'send'].includes(mode) && question?.tasks.map(task => <section className="gizmo-question-task" key={task.id}><div className="flex flex-wrap justify-between gap-2"><h3>Uppgift till {task.assigneeName}</h3><a className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/uppdrag?task=${task.id}`}><ExternalLink size={16} />Öppna Uppdrag</a></div><p>{taskLabels[task.status] || task.status} · Svar senast {stamp(task.dueAt)}</p>{task.files.map(f => f.text !== null ? <div className="gizmo-question-task-event" key={f.id}><h4>{f.name}</h4><p className="whitespace-pre-wrap">{f.text}</p></div> : <a className="gizmo-question-file-link" key={f.id} target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/questions/tasks/${task.id}/files/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}</section>)}
       </div>
       <footer>
-        <span role="status">{busy ? 'Arbetar…' : autosave.busy ? 'Sparar…' : autosave.error || localError ? 'Sparfel · utkastet finns kvar' : autosave.dirty || !['details', 'history', 'participants', 'dialogue'].includes(mode) ? 'Utkast sparat på den här enheten' : question ? 'Sparat internt' : 'Ny fråga'}</span>
+        <span role="status">{busy ? 'Arbetar…' : autosave.busy ? 'Sparar…' : autosave.error || localError ? 'Sparfel · utkastet finns kvar' : ['dialogue', 'participants'].includes(mode) && dialogueSaveStatus ? dialogueSaveStatus : mode === 'send' ? pending.current ? 'Utskicket kunde inte bekräftas' : 'Inte skickat · utkast på den här enheten' : autosave.dirty || !['details', 'history', 'participants', 'dialogue'].includes(mode) ? 'Utkast sparat på den här enheten' : question ? 'Sparat internt' : 'Ny fråga'}</span>
         <div className="flex flex-wrap gap-2">
           {question && mode === 'details' && <button className={button} disabled={busy || dirty || (!closed && taskOpen)} title={taskOpen ? 'Hantera den aktiva uppgiften i Uppdrag först' : undefined} onClick={() => switchMode(closed ? 'reopen' : 'close')}>{closed ? 'Återöppna' : 'Avsluta fråga'}</button>}
           <button className={button} onClick={close} disabled={busy}>Stäng</button>
           {mode === 'participants' && <div ref={setDialogueFooter} className="gizmo-question-footer-actions" />}
+          {mode === 'details' && !question && <button className={`${button} gizmo-question-primary`} disabled={detailsDisabled} onClick={() => void write('create')}><Save size={16} />{autosave.busy ? 'Skapar…' : autosave.error ? 'Försök skapa igen' : 'Skapa fråga'}</button>}
           {mode === 'details' && !closed && <button className={button} disabled={detailsDisabled} onClick={() => void write(question ? 'update' : 'create', true)}><Plus size={16} />Spara och skapa nästa</button>}
-          {!['details', 'history', 'dialogue', 'participants'].includes(mode) && !(mode === 'send' && taskOpen) && <button className={`${button} gizmo-question-primary`} disabled={busy || autosave.busy || (!pending.current && (mode === 'send' ? !draft.assignee || !due || !followup || !confirmed : !message.trim()))} onClick={() => void write(mode)}>{busy ? <Loader2 size={16} className="animate-spin" /> : mode === 'send' ? <Send size={16} /> : <Save size={16} />}{pending.current ? 'Försök igen' : mode === 'send' ? 'Skicka uppgift' : mode === 'note' ? 'Publicera intern anteckning' : mode === 'close' ? 'Avsluta fråga' : mode === 'reopen' ? 'Återöppna fråga' : 'Skicka svar'}</button>}
+          {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <span className="gizmo-secondary">{sendRequirements.length} {sendRequirements.length === 1 ? 'uppgift' : 'uppgifter'} kvar inför utskick</span>}
+          {!['details', 'history', 'dialogue', 'participants'].includes(mode) && !(mode === 'send' && taskOpen) && <button className={`${button} gizmo-question-primary`} aria-describedby={mode === 'send' && sendRequirements.length && !pending.current ? `${headingId}-send-requirements` : undefined} disabled={busy || autosave.busy || (!pending.current && (mode === 'send' ? sendRequirements.length > 0 : !message.trim()))} onClick={() => void write(mode)}>{busy ? <Loader2 size={16} className="animate-spin" /> : mode === 'send' ? <Send size={16} /> : <Save size={16} />}{busy ? mode === 'send' ? 'Skickar…' : 'Sparar…' : pending.current ? 'Försök igen' : mode === 'send' ? 'Skicka uppgift' : mode === 'note' ? 'Publicera intern anteckning' : mode === 'close' ? 'Avsluta fråga' : mode === 'reopen' ? 'Återöppna fråga' : 'Skicka svar'}</button>}
         </div>
       </footer>
     </div>
@@ -294,6 +344,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   return <section className="gizmo-questions" aria-label="Frågor och beslut" hidden={!active}>
     <div className="gizmo-section-heading"><h2>Frågor och beslut</h2><div className="flex gap-2"><button className={`${button} gizmo-icon-button`} disabled={loading || busy} title="Hämta sparade frågor och svar" aria-label="Hämta sparade frågor och svar" onClick={() => void refresh()}><RefreshCw size={17} /></button><button className={button} disabled={!data || loading} onClick={() => open()}><Plus size={17} />Ny fråga</button></div></div>
     {!selected && error && <p role="alert" className="gizmo-question-error">{error}</p>}{!selected && notice && <p role="status">{notice}</p>}
+    {!selected && refreshError && <p role="alert" className="gizmo-question-error">{refreshError}</p>}
     <div className="gizmo-question-toolbar"><label className="gizmo-question-search"><Search size={17} /><input className={field} placeholder="Sök frågor" aria-label="Sök frågor" value={search} onChange={e => setSearch(e.target.value)} /></label><label>Visa<select className={field} aria-label="Filtrera frågor" value={filter} onChange={e => setFilter(e.target.value)}><option value="active">Aktiva</option><option value="all">Alla</option><option value="closed">Avslutade</option></select></label><span className="gizmo-secondary" role="status">{loading ? 'Hämtar…' : `${rows.length} ${rows.length === 1 ? 'fråga' : 'frågor'}`}</span></div>
     <div className="gizmo-question-table" role="table" aria-label="Projektfrågor">
       <div role="row" className="gizmo-question-table-head"><span role="columnheader">Nr / Fråga</span><span role="columnheader">Ansvarig</span><span role="columnheader">Status</span><span role="columnheader">Skapad</span><span role="columnheader">Uppdaterad</span></div>

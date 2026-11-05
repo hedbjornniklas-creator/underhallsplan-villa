@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { emptyQuestion, questionAssigneeOptions, questionStatuses } from '../src/lib/action-cases/projectQuestions.ts'
+import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const content = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(content).join('') : node?.props ? content(node.props.children) : ''
@@ -10,8 +11,8 @@ function nodes(tree) { return !tree || typeof tree !== 'object' ? [] : Array.isA
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
 function harness() {
-  const states = [], refs = [], requests = []
-  let stateIndex = 0, refIndex = 0, tree, failRefresh = false
+  const states = [], refs = [], requests = [], reads = []
+  let stateIndex = 0, refIndex = 0, tree, failRefresh = false, deferReads = false
   const customer = { id: id(2), kind: 'customer', name: 'Testbeställare', email: 'test@example.invalid' }
   const workspace = { questions: [], assignees: [customer], customersAvailable: true, userId: id(9), managerId: id(9), canManageParticipants: true }
   const original = { fetch: globalThis.fetch, document: globalThis.document, raf: globalThis.requestAnimationFrame, storage: globalThis.localStorage }
@@ -20,7 +21,11 @@ function harness() {
   globalThis.document = { body: {}, activeElement: null }
   globalThis.requestAnimationFrame = fn => fn()
   globalThis.fetch = async (_url, options) => {
-    if (!options?.method) return { ok: !failRefresh, json: async () => failRefresh ? { error: 'Listan kunde inte hämtas.' } : workspace }
+    if (!options?.method) {
+      const body = structuredClone(workspace)
+      if (deferReads) return new Promise(resolve => reads.push({ body, resolve }))
+      return { ok: !failRefresh, json: async () => failRefresh ? { error: 'Listan kunde inte hämtas.' } : body }
+    }
     return new Promise(resolve => requests.push({ body: JSON.parse(options.body), resolve }))
   }
   const react = {
@@ -35,7 +40,7 @@ function harness() {
   const dependencies = {
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': {}, './project-questions.css': {},
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso: () => null, formatTaskDateTime: value => value },
-    '@/lib/action-cases/projectQuestions': { emptyQuestion, questionAssigneeOptions, questionStatuses },
+    '@/lib/action-cases/projectQuestions': questionModel,
     './QuestionDialogue': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
   }
@@ -51,7 +56,7 @@ function harness() {
   const button = name => { const b = nodes(tree).find(n => n.type === 'button' && (content(n) === name || n.props['aria-label'] === name)); assert.ok(b, name); return b }
   const field = label => { const n = nodes(tree).find(n => n.type === 'label' && content(n).startsWith(label)); assert.ok(n, label); return nodes(n).find(child => ['input', 'textarea', 'select'].includes(child.type)) }
   render()
-  return { requests, customer, workspace, render, button, field, nodes: () => nodes(tree), text: () => content(tree),
+  return { requests, reads, customer, workspace, render, button, field, nodes: () => nodes(tree), text: () => content(tree),
     async click(name) { button(name).props.onClick(); await tick(); render() },
     input(label, value) { field(label).props.onChange({ target: { value } }); render() },
     async start() { button('Hämta sparade frågor och svar').props.onClick(); await tick(); render(); button('Ny fråga').props.onClick(); render() },
@@ -65,6 +70,8 @@ function harness() {
       requests[index].resolve({ ok: !error, json: async () => error ? { error } : { questionId: questionId || request.questionId } }); await tick(); render()
     },
     failRefresh() { failRefresh = true },
+    deferReads() { deferReads = true },
+    async read(index) { reads[index].resolve({ ok: true, json: async () => reads[index].body }); await tick(); render() },
     dispose() { globalThis.fetch = original.fetch; globalThis.document = original.document; globalThis.requestAnimationFrame = original.raf; globalThis.localStorage = original.storage }
   }
 }
@@ -95,6 +102,87 @@ test('save and create next keeps text on failure, reuses retry identity and open
     assert.deepEqual(h.requests[2].body.fileIds, [])
     assert.equal(h.requests[2].body.body.assignee, null)
     await h.reply(2)
+  } finally { h.dispose() }
+})
+
+test('create question saves the current question without opening another one or sending it', async () => {
+  const h = harness()
+  try {
+    await h.start(); h.input('Rubrik', 'En fråga'); h.input('Fråga', 'Underlag')
+    await h.click('Skapa fråga')
+    assert.equal(h.requests[0].body.operation, 'create')
+    await h.reply(0)
+    assert.equal(h.field('Rubrik').props.value, 'En fråga')
+    assert.equal(h.workspace.questions.length, 1)
+    assert.match(h.text(), /Inget utskick har gjorts/)
+    assert.equal(h.requests.length, 1)
+  } finally { h.dispose() }
+})
+test('create question preserves text and the exact request identity for retry', async () => {
+  const h = harness()
+  try {
+    await h.start(); h.input('Rubrik', 'Behåll mig'); h.input('Fråga', 'Underlag')
+    await h.click('Skapa fråga'); const first = h.requests[0].body
+    await h.reply(0, 'Tillfälligt fel')
+    assert.equal(h.field('Rubrik').props.value, 'Behåll mig')
+    await h.click('Försök skapa igen')
+    assert.deepEqual(h.requests[1].body, first)
+    await h.reply(1)
+    assert.equal(h.workspace.questions.length, 1)
+  } finally { h.dispose() }
+})
+test('history interleaves question events, participant changes and shared evidence without claiming email delivery', async () => {
+  const h = harness()
+  try {
+    const body = { ...emptyQuestion(), title: 'Test', description: 'Underlag' }
+    h.workspace.questions.push({ id: id(60), number: 1, revision: 1, body, createdAt: '2026-11-05T10:00:00Z', updatedAt: '2026-11-05T11:00:00Z', participants: [], tasks: [],
+      events: [{ id: id(70), operation: 'create', actorName: 'Manager', createdAt: '2026-11-05T10:00:00Z', text: '', reportedBy: '', body, files: [], revision: 1, taskId: null }],
+      dialogueHistory: [
+        { id: id(71), operation: 'participants', actorName: 'Manager', createdAt: '2026-11-05T10:01:00Z', selected: [{ key: 'a', name: 'jn' }], added: null, removed: null, snapshot: null, files: [], deliveries: [] },
+        { id: id(72), operation: 'participants', actorName: 'Manager', createdAt: '2026-11-05T10:02:00Z', selected: [], added: [], removed: [{ key: 'a', name: 'jn' }], snapshot: null, files: [], deliveries: [] },
+        { id: id(73), operation: 'share', actorName: 'Manager', createdAt: '2026-11-05T10:03:00Z', selected: [], added: null, removed: null, snapshot: { title: 'Sparat underlag', description: 'Delad beskrivning' }, files: [{ id: id(74), name: 'Test.pdf' }], deliveries: [{ id: id(75), name: 'nh', status: 'sent', sentAt: '2026-11-05T10:04:00Z' }] }
+      ] })
+    await h.click('Hämta sparade frågor och svar')
+    h.nodes().find(n => n.props?.className === 'gizmo-question-open').props.onClick(); h.render()
+    h.nodes().find(n => n.props?.role === 'tab' && content(n) === 'Historik').props.onClick(); await tick(); h.render()
+    assert.match(h.text(), /Tidigare urval saknas/)
+    assert.match(h.text(), /Borttagna ur urvalet: jn/)
+    assert.match(h.text(), /Sparat underlag/)
+    assert.match(h.text(), /Test.pdf/)
+    assert.match(h.text(), /nh: Överlämnad till e-posttjänsten/)
+    assert.doesNotMatch(h.text(), /Mejlet har levererats|Läst av/)
+    assert.ok(h.text().indexOf('Fråga registrerad') < h.text().indexOf('Deltagarurval sparat'))
+  } finally { h.dispose() }
+})
+
+test('refreshing linked tasks keeps unsaved question text and ignores an older out-of-order read', async () => {
+  const h = harness()
+  try {
+    const q = { id: id(60), number: 13, revision: 1, body: { ...emptyQuestion(), title: 'Test', description: 'Frågan' }, createdAt: '2026-11-05T10:00:00Z', updatedAt: '2026-11-05T10:00:00Z', events: [], participants: [], tasks: [{ id: id(61), status: 'assigned', active: true, dueAt: '2026-11-09T15:00:00Z', assigneeName: 'Testperson', events: [], files: [] }] }
+    h.workspace.questions.push(q)
+    await h.click('Hämta sparade frågor och svar')
+    h.nodes().find(n => n.props?.className === 'gizmo-question-open').props.onClick(); h.render()
+    h.input('Sammanhang / möte', 'Min påbörjade text')
+    // Exercise the same callback that the dialog refresh button invokes.
+    const dialogTab = h.nodes().find(n => n.props?.role === 'tab' && content(n) === 'Kommunikation')
+    dialogTab.props.onClick(); await tick(); h.render()
+    await h.reply(0)
+    h.deferReads()
+    const dialogue = () => h.nodes().find(n => n.props?.onRefresh)
+    const older = dialogue().props.onRefresh()
+    await tick()
+    q.tasks[0].status = 'in_progress'
+    q.tasks[0].events.push({ id: id(62), actorName: 'Testperson', type: 'comment', text: 'Nytt svar', createdAt: '2026-11-05T11:00:00Z' })
+    const newer = dialogue().props.onRefresh()
+    await tick()
+    await h.read(1); await newer
+    assert.equal(dialogue().props.internalEvents[0].text, 'Nytt svar')
+    await h.read(0); await older
+    assert.equal(dialogue().props.internalEvents[0].text, 'Nytt svar')
+    const details = h.nodes().find(n => n.props?.role === 'tab' && content(n) === 'Fråga')
+    details.props.onClick(); await tick(); h.render()
+    assert.equal(h.field('Sammanhang / möte').props.value, 'Min påbörjade text')
+    assert.equal(h.requests.length, 1)
   } finally { h.dispose() }
 })
 

@@ -753,6 +753,20 @@ function parseDigestOperationalTask(value: unknown): DigestOperationalTask | nul
   }
 }
 
+export async function withProjectQuestionContext(admin: AdminClient, task: OperationalTask): Promise<OperationalTask> {
+  if (task.context_label !== 'Projektfråga') return task
+  const event = await admin.from('action_case_question_events').select('action_case_id').eq('org_id', task.org_id).eq('task_id', task.id).eq('operation', 'send').maybeSingle()
+  if (event.error) {
+    if (['42P01', 'PGRST205'].includes(event.error.code || '')) return task
+    throw automationError('TASK_AUTOMATION_QUESTION_CONTEXT_READ_FAILED')
+  }
+  if (!event.data) return task
+  const project = await admin.from('action_cases').select('title').eq('org_id', task.org_id).eq('id', event.data.action_case_id).maybeSingle()
+  if (project.error) throw automationError('TASK_AUTOMATION_QUESTION_CONTEXT_READ_FAILED')
+  // Rendering context must not update task.version or reschedule its follow-up.
+  return project.data?.title?.trim() ? { ...task, context_label: project.data.title } : task
+}
+
 async function loadTask(admin: AdminClient, job: AutomationJob) {
   const { data, error } = await admin
     .from('operational_tasks')
@@ -766,7 +780,7 @@ async function loadTask(admin: AdminClient, job: AutomationJob) {
   if (!data) return null
   const task = parseOperationalTask(data)
   if (!task) throw automationError('TASK_AUTOMATION_TASK_INVALID')
-  return task
+  return withProjectQuestionContext(admin, task)
 }
 
 async function loadPendingDeadlineRequestId(admin: AdminClient, task: OperationalTask) {

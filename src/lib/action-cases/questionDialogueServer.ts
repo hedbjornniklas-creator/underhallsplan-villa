@@ -5,7 +5,7 @@ import { createTaskContact } from '@/lib/tasks/server'
 import { buildTaskEmailHtml } from '@/lib/tasks/emailTemplates'
 import { dialogueMutation, type QuestionDialogue, type DialogueMessage } from './questionDialogue'
 import { parseQuestionLink, questionLinkToken } from './questionDialogueLinks'
-import { questionUuid, type QuestionParticipant } from './projectQuestions'
+import { questionUuid, questionTaskReplyMutation, type QuestionParticipant } from './projectQuestions'
 
 type Context = { orgId: string; userId: string }
 type Member = { id: string; org_id: string; action_case_id: string; question_id: string; person_kind: 'profile' | 'contact' | 'customer'; person_id: string; name: string; email: string | null; contact_id: string | null; shared: boolean; link_nonce: string; link_expires_at: string | null }
@@ -92,6 +92,13 @@ export async function writeQuestionDialogue(ctx: Context, caseId: string, questi
   checked(result.error)
   return { messageId: String(result.data), questionId }
 }
+export async function replyQuestionTask(ctx: Context, caseId: string, questionId: string, body: Record<string, unknown>) {
+  const request = questionTaskReplyMutation(body)
+  await requireQuestionParticipant(ctx, caseId, questionId)
+  const result = await createSupabaseAdminClient().rpc('reply_project_question_task', { p_org_id: ctx.orgId, p_case_id: caseId, p_question_id: questionId, p_task_id: request.taskId, p_actor_id: ctx.userId, p_request_id: request.requestId, p_recipient: request.recipient, p_message: request.text })
+  checked(result.error)
+  return { messageId: String(result.data), questionId }
+}
 export async function writePublicQuestionDialogue(token: string, body: Record<string, unknown>) {
   const member = await publicMember(token), request = dialogueMutation(body)
   if (request.operation !== 'reply' || request.fileIds.length) throw new Error('PROJECT_QUESTION_FORBIDDEN')
@@ -146,8 +153,12 @@ export async function deliverQuestionMessages(questionId?: string) {
       if (member.person_kind === 'profile') await requireQuestionParticipant({ orgId: member.org_id, userId: member.person_id }, member.action_case_id, member.question_id)
       const path = member.person_kind === 'profile' ? `/uppdrag/${member.action_case_id}?view=questions` : `/fraga/${questionLinkToken(member.id, member.link_nonce)}`
       if (member.person_kind !== 'profile') await publicMember(questionLinkToken(member.id, member.link_nonce))
+      const project = await db.from('action_cases').select('title').eq('org_id', member.org_id).eq('id', member.action_case_id).maybeSingle(); checked(project.error)
+      const question = await db.from('action_case_questions').select('number').eq('org_id', member.org_id).eq('action_case_id', member.action_case_id).eq('id', member.question_id).maybeSingle(); checked(question.error)
+      if (!project.data || !question.data) throw new Error('PROJECT_QUESTION_NOT_FOUND')
+      const title = `F-${String(question.data.number).padStart(3, '0')}: ${delivery.question_title}`
       const url = `${baseUrl()}${path}`
-      const mailed = await sendTaskAccessLinkEmail({ to: delivery.recipient_email, replyTo: null, subject: `Projektfråga: ${delivery.question_title}`, text: `${delivery.body_text}\n\n${delivery.question_title}\n\nÖppna frågan: ${url}\n\nPersonlig länk. Vidarebefordra den inte.`, html: buildTaskEmailHtml({ previewText: delivery.body_text, eyebrow: 'Frågor och beslut', heading: delivery.question_title, recipientName: delivery.recipient_name, lead: delivery.body_text, taskTitle: delivery.question_title, itemLabel: 'Fråga', dueLabel: null, actionUrl: url, actionLabel: 'Öppna frågan', notice: 'Den personliga länken ger bara åtkomst till denna fråga. Vidarebefordra den inte.' }), idempotencyKey: `project-question:${delivery.id}` })
+      const mailed = await sendTaskAccessLinkEmail({ to: delivery.recipient_email, replyTo: null, subject: `${title} · ${project.data.title}`, text: `Projekt: ${project.data.title}\n\n${delivery.body_text}\n\n${title}\n\nÖppna frågan: ${url}\n\nPersonlig länk. Vidarebefordra den inte.`, html: buildTaskEmailHtml({ previewText: delivery.body_text, eyebrow: 'Frågor och beslut', heading: title, recipientName: delivery.recipient_name, lead: delivery.body_text, taskTitle: title, contextLabel: project.data.title, itemLabel: 'Fråga', dueLabel: null, actionUrl: url, actionLabel: 'Öppna frågan', notice: 'Den personliga länken ger bara åtkomst till denna fråga. Vidarebefordra den inte.' }), idempotencyKey: `project-question:${delivery.id}` })
       providerId = mailed.providerMessageId; sent++
     } catch { failed++ }
     const finished = await db.rpc('finish_project_question_delivery', { p_id: delivery.id, p_attempt: delivery.attempts, p_provider_id: providerId }); checked(finished.error)
