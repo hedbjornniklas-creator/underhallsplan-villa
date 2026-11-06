@@ -31,7 +31,7 @@ export type EbDashboardBooking = {
   href: string
   startsAt: string
   address?: string
-  status?: 'confirmed' | 'tentative'
+  status?: 'confirmed' | 'tentative' | 'completed'
   confirmationStatus?: string
 }
 export type EbDashboardSummary = {
@@ -126,6 +126,14 @@ export function buildEbDashboard(orgId: string, projects: EbDashboardProject[], 
       const title = `${inspection.variantLabel} · ${project.title}`
       const subtitle = joined(inspection.clientName || project.clientName, project.address)
       const inspectionHref = `${href}/inspections/${encodeURIComponent(inspection.inspectionId)}/perform`
+      // A completed visit remains calendar history. Reopening its report is
+      // authoring work, not a new visit; the unlock audit proves it was done.
+      if (lifecycle.workStatus === 'completed' || lifecycle.isReopened) {
+        const startsAt = bookingStart(inspection.date, inspection.inspectionTime || inspection.startMeetingTime)
+        if (startsAt) bookings.push({ id: `eb:${inspection.inspectionId}`, moduleId: 'eb', title,
+          href: inspectionHref, startsAt, status: 'completed',
+          ...(project.address ? { address: [project.address, project.postalCode, project.city].filter(Boolean).join(', ') } : {}) })
+      }
       if (!lifecycle.isOpen) {
         if (lifecycle.deliveryAction) actions.push(action({ id: `eb:${inspection.inspectionId}:delivery`, moduleId: 'eb', title, subtitle,
           nextStep: lifecycle.deliveryAction, category: 'other', href: `${href}/inspections/${encodeURIComponent(inspection.inspectionId)}/report`, actionLabel: 'Hantera leverans' }, undefined, today))

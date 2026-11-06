@@ -25,6 +25,18 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
   Vald dag styr uppdragslista och karta. Tider och datum visas i Europe/Stockholm.
   Besök utan registrerad tid visas med ”Tid ej angiven”. Uppgiftsdeadlines
   skapar inte kalenderbesök.
+- Utförda ÖB-, EB- och TU-besiktningar ligger kvar på sitt faktiska besöksdatum
+  i kalendern och dagslistan. De visas gröna med bock och texten ”Utförd”,
+  räknas separat och tas bort från aktiva uppdrag och besiktningsuppgifter.
+  Historik använder aldrig ett föreslaget datum från uppdragsbekräftelsen eller
+  datumet när utlåtandet låstes. Saknas registrerad besöksdag skapas ingen
+  påhittad historikpost. Arkiverade och avbokade besiktningar förblir dolda.
+  ÖB läser även avslutade poster genom samma behörighetskontroller och
+  paginering som tidigare. Äldre TU-bekräftelser som hör till samma utredning
+  skapar inte nya dubbletter.
+- Kvarstående leveransproblem eller uttryckligt återöppnat redigeringsarbete
+  i EB kan fortfarande behöva hanteras. Ett sådant nästa steg skapar ingen ny
+  resa: det tidigare besöket ligger kvar som utförd historik.
 - Uppdrag-modulens åtgärdsärenden med ”Datum för platsbesök” visas preliminärt
   som ”Planerat platsbesök”. Ärendets orderstatus bekräftar inte själva
   platsbesöket. Avslutade och avbrutna ärenden visas inte. Kalendern läser
@@ -34,10 +46,15 @@ entreprenadbesiktning, tekniska utredningar, fuktsäkerhet och Uppdrag.
   Preliminära uppdrag visas med gula klockmarkörer och tydlig status när de
   öppnas. Kartan anpassas för att visa båda typerna. Den streckade linjen visar
   de bekräftade stoppens ordning.
+  Utförda besiktningar ingår inte i kartans stopp, adressuppslag eller resväg.
+  Om alla besök den valda dagen är utförda förklarar karta och restid att
+  historiken finns kvar i kalendern.
 - ”Restid från företaget” visar beräknad körtid och sträcka från organisationens
   registrerade företagsadress till första uppdraget och sedan mellan uppdragen
   i kalenderns tidsordning. Även en dag med ett enda uppdrag får en restid.
   Preliminära uppdrag ingår som standard och kan väljas bort i beräkningen.
+  Utförda besök utesluts från restid och köranvisningar, även vid direkta
+  anrop till kartans och restidens API:er.
   Tiderna använder vägnätet, utan aktuell trafik eller återresa till företaget.
   Generella gatpositioner märks som ungefärliga. Saknad företagsadress eller
   olokaliserade stopp ger ett tydligt meddelande, ingen ofullständig totalsumma.
@@ -122,6 +139,7 @@ node --experimental-strip-types --test test/dashboard-routing.test.ts test/dashb
 node --experimental-strip-types --test test/organization-create-proxy.test.ts test/dashboard-access-recovery.test.ts
 node scripts/preview-session-recovery.mjs --test
 node scripts/preview-dashboard.mjs --test
+node scripts/preview-dashboard.mjs --test-completed
 ```
 
 Förhandsvisningen använder riktiga UI-komponenter med syntetiska uppdrag.

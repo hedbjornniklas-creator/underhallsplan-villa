@@ -39,17 +39,26 @@ const draftBookings = [
   { id: 'booking-draft-case', moduleId: 'tasks' as const, title: 'Platsbesök · Brf Syrenen', startsAt: '2026-10-12T13:00:00.000Z', href: '/uppdrag/test-draft-case', address: 'Syrenvägen 9, Bromma', status: 'tentative' as const, confirmationStatus: 'Planerat platsbesök' },
 ]
 
+const completedBookings = [
+  { id: 'booking-completed-ob', moduleId: 'ob' as const, title: 'Utförd villa · Granvägen 4', startsAt: '2026-10-12T06:00:00.000Z', href: scoped('/ob/inspections/test-completed-ob'), address: 'Granvägen 4, Nacka', status: 'completed' as const },
+  { id: 'booking-completed-eb', moduleId: 'eb' as const, title: 'Utförd slutbesiktning · Kvarteret Eken', startsAt: '2026-10-12T09:00:00.000Z', href: scoped('/eb/projects/test-completed-eb'), address: 'Ekvägen 6, Stockholm', status: 'completed' as const },
+  { id: 'booking-completed-tu', moduleId: 'tu' as const, title: 'Utförd utredning · Lönnvägen 8', startsAt: '2026-10-12T12:00:00.000Z', href: scoped('/tu/investigations/test-completed-tu'), address: 'Lönnvägen 8, Solna', status: 'completed' as const },
+]
+const historicalBooking = { ...completedBookings[0], id: 'booking-completed-history', title: 'Utförd förra veckan', startsAt: '2026-10-05T07:00:00.000Z' }
+
 const state = new URLSearchParams(location.search).get('state')
 const data = {
-  organizationId, today: '2026-10-12', modules,
-  actions: state === 'empty' ? [] : state === 'long' ? [...actions, ...Array.from({ length: 7 }, (_, index) => ({
+  organizationId, today: '2026-10-12', modules: state === 'completed-only' ? modules.map(module => ({ ...module, activeCount: 0, actionCount: 0 })) : modules,
+  actions: state === 'empty' || state === 'completed-only' ? [] : state === 'long' ? [...actions, ...Array.from({ length: 7 }, (_, index) => ({
     ...actions[0], id: `extra-${index}`, title: `Exempeluppdrag ${index + 1}`, priority: 'normal' as const,
   }))] : actions,
-  bookings: state === 'empty' ? [] : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : state === 'travel-known-coordinates' ? bookings.map(booking => ({ ...booking, latitude: 59.3107, longitude: 18.1817 })) : bookings,
+  bookings: state === 'empty' ? [] : state === 'completed-only' ? [...completedBookings, historicalBooking]
+    : state === 'completed-visits' ? [...bookings.filter(booking => booking.id !== 'booking-lastweek'), ...completedBookings, historicalBooking]
+      : state === 'multi-module-drafts' ? draftBookings : state === 'tentative-only' ? bookings.filter(booking => booking.id === 'booking-tentative') : state === 'travel-known-coordinates' ? bookings.map(booking => ({ ...booking, latitude: 59.3107, longitude: 18.1817 })) : bookings,
   issues: [],
 }
-declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; authSignOuts: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean; travelFail: boolean; travelWrongOrg: boolean; travelWrongDate: boolean; travelDelay: number; travelMissingOrigin: boolean } } }
-window.__dashboardTest = { refreshes: 0, writes: 0, authSignOuts: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false, travelFail: state === 'travel-error', travelWrongOrg: state === 'travel-wrong-org', travelWrongDate: state === 'travel-wrong-date', travelDelay: 0, travelMissingOrigin: state === 'travel-missing-origin' || state === 'client-travel-missing-origin' }
+declare global { interface Window { __dashboardTest: { refreshes: number; writes: number; authSignOuts: number; requests: string[]; fail: boolean; failureStatus: number; wrongOrg: boolean; delay: number; confirmTentative: boolean; completeOb: boolean; travelFail: boolean; travelWrongOrg: boolean; travelWrongDate: boolean; travelDelay: number; travelMissingOrigin: boolean } } }
+window.__dashboardTest = { refreshes: 0, writes: 0, authSignOuts: 0, requests: [], fail: state === 'client-error', failureStatus: 503, wrongOrg: false, delay: 0, confirmTentative: false, completeOb: false, travelFail: state === 'travel-error', travelWrongOrg: state === 'travel-wrong-org', travelWrongDate: state === 'travel-wrong-date', travelDelay: 0, travelMissingOrigin: state === 'travel-missing-origin' || state === 'client-travel-missing-origin' }
 // The isolated dashboard must never clear a session automatically. This stub
 // records accidental calls without exposing real credentials or auth writes.
 Object.assign(syntheticSupabase.auth, { signOut: async () => {
@@ -64,7 +73,11 @@ window.fetch = async (input, init) => {
     await new Promise(resolve => setTimeout(resolve, window.__dashboardTest.delay))
     if (window.__dashboardTest.fail) return Response.json({ error: 'Översikten kunde inte hämtas. Försök igen.' }, { status: window.__dashboardTest.failureStatus })
     return Response.json({ ...data,
-      bookings: data.bookings.map(booking => window.__dashboardTest.confirmTentative && booking.id === 'booking-tentative'
+      actions: window.__dashboardTest.completeOb ? data.actions.filter(action => action.id !== 'ob-report') : data.actions,
+      modules: window.__dashboardTest.completeOb ? data.modules.map(module => module.id === 'ob' ? { ...module, activeCount: 6, actionCount: 1 } : module) : data.modules,
+      bookings: data.bookings.map(booking => window.__dashboardTest.completeOb && booking.id === 'booking-ob'
+        ? { ...booking, status: 'completed' }
+        : window.__dashboardTest.confirmTentative && booking.id === 'booking-tentative'
         ? { ...booking, status: 'confirmed', confirmationStatus: undefined, href: scoped('/ob/inspections/test-tentative-converted') }
         : booking),
       organizationId: window.__dashboardTest.wrongOrg ? 'foreign-organization' : organizationId,
@@ -90,6 +103,8 @@ window.fetch = async (input, init) => {
     const selectedIds = url.searchParams.getAll('bookingId')
     const includesTentative = url.searchParams.get('includeTentative') !== '0'
     const selected = data.bookings.filter(booking => booking.moduleId !== 'moisture'
+      && !('status' in booking && booking.status === 'completed')
+      && !(window.__dashboardTest.completeOb && booking.id === 'booking-ob')
       && bookingDate(booking.startsAt) === url.searchParams.get('date')
       && selectedIds.includes(booking.id)
       && (includesTentative || !('status' in booking && booking.status === 'tentative' && !(window.__dashboardTest.confirmTentative && booking.id === 'booking-tentative'))))

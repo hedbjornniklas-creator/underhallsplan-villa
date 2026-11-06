@@ -37,7 +37,7 @@ export type DashboardBooking = {
   latitude?: number
   longitude?: number
   /** Legacy bookings without a status are confirmed. */
-  status?: 'confirmed' | 'tentative'
+  status?: 'confirmed' | 'tentative' | 'completed'
   confirmationStatus?: string
 }
 /** Only the current confirmation, read inside the signed-in user's RLS boundary. */
@@ -73,8 +73,8 @@ const wallTimeFormat = new Intl.DateTimeFormat('en-CA', {
 })
 const first = (...values: Array<string | null | undefined>) => values.find(value => value?.trim())?.trim() || ''
 const joined = (...values: Array<string | null | undefined>) => values.filter(value => value?.trim()).join(' · ')
-const closedStatuses = new Set(['completed', 'done', 'klar', 'archived', 'arkiverad', 'cancelled', 'canceled', 'avbokad', 'avbruten'])
-const closed = (status: string | null | undefined) => closedStatuses.has(status?.trim().toLowerCase() || '')
+const completedStatuses = new Set(['completed', 'done', 'klar'])
+const hiddenStatuses = new Set(['archived', 'arkiverad', 'cancelled', 'canceled', 'avbokad', 'avbruten'])
 const knownOpenStatus = (status: string | null | undefined) => ['draft', 'utkast', 'ongoing', 'in_progress', 'pågående', 'pågår'].includes(status?.trim().toLowerCase() || '')
 
 export function getStockholmDate(value: Date | string | number = new Date()): string {
@@ -152,12 +152,24 @@ function draftConfirmation(source: DashboardConfirmationBookingSource | undefine
 
 export function buildObDashboard(items: ObOverviewItem[], times: Map<string, string | null>, today: string,
   inspectionDates?: Map<string, string | null>, confirmations?: Map<string, DashboardConfirmationBookingSource>): DashboardModuleSummary {
-  const rows = items.filter(item => (!('canEdit' in item) || item.canEdit !== false) && !item.closed && !item.archived
+  const rows = items.filter(item => (!('canEdit' in item) || item.canEdit !== false) && !item.archived
+    && (!item.closed || (item.inspectionHref && item.inspection === 'Klar'))
     && !(item.confirmation.startsWith('Avbokad') && !item.inspectionHref))
   const actions: DashboardAction[] = [], bookings: DashboardBooking[] = []
+  let activeCount = 0
   for (const row of rows) {
     const title = row.address === 'Adress saknas' ? first(row.customer, 'Överlåtelsebesiktning') : row.address
     const subtitle = joined(row.customer, row.city)
+    if (row.inspectionHref && row.inspection === 'Klar') {
+      // Overview dates can fall back to a confirmation proposal. Historical
+      // visits require the separately read actual inspection date and time.
+      const startsAt = dashboardBookingStart(inspectionDates?.get(row.id), times.get(row.id))
+      if (startsAt) bookings.push({ id: `ob:${row.id}`, moduleId: 'ob', title,
+        href: row.inspectionHref, startsAt, status: 'completed',
+        ...(row.address !== 'Adress saknas' ? { address: [row.address, row.city].filter(Boolean).join(', ') } : {}) })
+      continue
+    }
+    activeCount += 1
     const displayedDate = row.date ? getStockholmDate(row.date) : ''
     // The ordinary overview falls back to a customer's preferred date. Read the
     // actual inspection date separately so an unsent draft cannot move a visit.
@@ -203,26 +215,34 @@ export function buildObDashboard(items: ObOverviewItem[], times: Map<string, str
         ...(row.address !== 'Adress saknas' ? { address: [row.address, row.city].filter(Boolean).join(', ') } : {}) })
     }
   }
-  return { activeCount: rows.length, actions, bookings }
+  return { activeCount, actions, bookings }
 }
 
 export function buildTuDashboard(orgId: string, assignments: TuAssignmentListItem[], investigations: TuInspectionSummary[], today: string): DashboardModuleSummary {
   const scoped = assignments.filter(item => item.org_id === orgId && item.assignment_type === 'TU')
   const byId = new Map(scoped.map(item => [item.id, item]))
   const byInspection = new Map(scoped.filter(item => item.inspection_id).map(item => [item.inspection_id, item]))
+  const loadedInspections = new Set(investigations.map(item => item.inspectionId))
   const used = new Set<string>(), actions: DashboardAction[] = [], bookings: DashboardBooking[] = []
   let activeCount = 0
   const url = (path: string) => `${path}?orgId=${encodeURIComponent(orgId)}`
   for (const investigation of investigations) {
     const assignment = (investigation.assignmentId ? byId.get(investigation.assignmentId) : undefined) || byInspection.get(investigation.inspectionId)
     if (assignment) used.add(assignment.id)
-    if (closed(investigation.status) || investigation.reportLockedAt) continue
-    activeCount += 1
+    const status = investigation.status?.trim().toLowerCase() || ''
+    if (hiddenStatuses.has(status)) continue
     const title = first(investigation.title, investigation.propertyAddress, 'Teknisk utredning')
     const address = first(investigation.propertyAddress, assignment?.property_address, assignment?.preliminary_address)
     const city = first(investigation.propertyCity, assignment?.property_city)
     const subtitle = joined(investigation.customerName || assignment?.customer_name, address)
     const href = url(`/tu/investigations/${encodeURIComponent(investigation.inspectionId)}`)
+    if (completedStatuses.has(status) || investigation.reportLockedAt) {
+      const startsAt = dashboardBookingStart(investigation.date, investigation.inspectionTime)
+      if (startsAt) bookings.push({ id: `tu:${investigation.inspectionId}`, moduleId: 'tu', title,
+        href, startsAt, status: 'completed', ...(address ? { address: [address, city].filter(Boolean).join(', ') } : {}) })
+      continue
+    }
+    activeCount += 1
     const cancelledConfirmation = assignment?.status === 'cancelled'
     const next = assignment && !assignment.archived_at ? confirmationNextStep(assignment.status, Boolean(assignment.accepted_at)) : null
     if (next) actions.push(action({ id: `tu:${investigation.inspectionId}:confirmation`, moduleId: 'tu', title, subtitle,
@@ -243,7 +263,8 @@ export function buildTuDashboard(orgId: string, assignments: TuAssignmentListIte
       ...(address ? { address: [address, city].filter(Boolean).join(', ') } : {}) })
   }
   for (const assignment of scoped) {
-    if (used.has(assignment.id) || assignment.archived_at || ['cancelled', 'completed'].includes(assignment.status)) continue
+    if (used.has(assignment.id) || (assignment.inspection_id && loadedInspections.has(assignment.inspection_id))
+      || assignment.archived_at || ['cancelled', 'completed'].includes(assignment.status)) continue
     activeCount += 1
     const next = confirmationNextStep(assignment.status, Boolean(assignment.accepted_at)) || {
       nextStep: assignment.inspection_id ? 'Kontrollera den kopplade utredningen' : assignment.status === 'ordered' ? 'Starta den godkända utredningen' : 'Planera uppdraget och starta utredningen',

@@ -30,6 +30,7 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
   actionCaseRows = [] as DashboardActionCaseSource[] } = {}) {
   const checks: Array<Record<string, unknown>> = [], reads: Array<{ module: string; orgId: string }> = [], selections: unknown[] = []
   const bookingReads: Array<{ table: string; columns: string; orgId: unknown; ids: string[] }> = []
+  const overviewReads: Array<{ filter: string; showArchived: boolean; page: number; pageSize: number }> = []
   const read = (module: string, selected: string, result: unknown) => {
     reads.push({ module, orgId: selected })
     if (failed === module) throw new Error('DATABASE_FAILED')
@@ -70,9 +71,13 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
       }
       return query
     } }) },
-    '@/lib/ob/overviewLoader': { loadObOverview: async ({ orgId: selected, options }: { orgId: string; options: { page: number } }) => read('ob', selected,
-      { items: overviewItems, total: overviewItems.length, page: options.page, pageSize: 50,
-        counts: { active: overviewItems.length, closed: 0, all: overviewItems.length } }) },
+    '@/lib/ob/overviewLoader': { loadObOverview: async ({ orgId: selected, options }: { orgId: string; options: { page: number; pageSize: number; filter: string; showArchived: boolean } }) => {
+      overviewReads.push(options)
+      const visible = overviewItems.filter(item => (options.showArchived || !item.archived) && (options.filter !== 'active' || !item.closed))
+      return read('ob', selected, { items: visible.slice((options.page - 1) * options.pageSize, options.page * options.pageSize),
+        total: visible.length, page: options.page, pageSize: options.pageSize,
+        counts: { active: visible.filter(item => !item.closed).length, closed: visible.filter(item => item.closed).length, all: visible.length } })
+    } },
     '@/lib/tu/server': {
       requireTuContext: async (selected: string) => { selections.push(selected); return { ...context, orgId: selected } },
       listTuAssignments: async (selected: string) => read('tu', selected, []), listTuInvestigations: async (selected: string) => read('tu', selected, []),
@@ -93,7 +98,7 @@ function harness({ allowed = ['inspections', 'construction_inspections', 'techni
     if (!(name in deps)) throw new Error(`Unexpected dependency ${name}`)
     return deps[name]
   }, compiled, compiled.exports)
-  return { server: compiled.exports as typeof Server, checks, reads, selections, bookingReads }
+  return { server: compiled.exports as typeof Server, checks, reads, selections, bookingReads, overviewReads }
 }
 
 test('dashboard validates membership before readers and never reads a denied module', async () => {
@@ -189,6 +194,26 @@ test('OB read-only colleague rows are excluded before supplemental assignment an
   assert.equal(result.bookings.length, 0)
   assert.equal(result.actions.length, 0)
   assert.equal(h.bookingReads.length, 0)
+})
+
+test('OB history reads authorized completed inspections across overview pages and skips unused confirmation metadata', async () => {
+  const rows: ObOverviewItem[] = Array.from({ length: 51 }, (_, index) => ({ id: `inspection:completed-${index}`, date: '2026-10-15',
+    createdAt: '2026-10-01', address: `Testgatan ${index}`, city: 'Stockholm', customer: 'Kund', assignmentNumber: '',
+    confirmation: 'Inväntar kund', inspection: 'Klar', confirmationHref: `/ob/assignments/completed-${index}`,
+    inspectionHref: `/properties/p/ob/completed-${index}`, confirmationAction: 'Öppna bekräftelse', attention: ['Följ upp'],
+    closed: true, archived: false, marker: 'closed' }))
+  const h = harness({ allowed: ['inspections'], overviewItems: [...rows, { ...rows[0], id: 'inspection:colleague', canEdit: false },
+    { ...rows[0], id: 'inspection:archived', archived: true }],
+  inspectionRows: rows.map((_, index) => ({ id: `completed-${index}`, date: '2026-10-10', inspection_time: '11:15' })) })
+  const result = await h.server.getDashboardData(orgId)
+  assert.deepEqual(h.overviewReads.map(options => [options.filter, options.showArchived, options.page]), [['all', false, 1], ['all', false, 2]])
+  assert.equal(result.bookings.length, 51)
+  assert.ok(result.bookings.every(booking => booking.status === 'completed' && booking.startsAt === '2026-10-10T11:15:00+02:00'))
+  assert.equal(result.modules.find(module => module.id === 'ob')?.activeCount, 0)
+  assert.equal(result.actions.length, 0)
+  assert.equal(h.bookingReads.filter(read => read.table === 'assignments').length, 0, 'completed visits use actual inspection dates, so no confirmation metadata is needed')
+  assert.equal(h.bookingReads.filter(read => read.table === 'inspections').length, 2)
+  assert.ok(h.bookingReads.every(read => !read.ids.some(id => id === 'colleague' || id === 'archived')))
 })
 
 test('EB supplemental schedule reads use only current confirmation IDs and remain tentative if RLS hides the source', async () => {

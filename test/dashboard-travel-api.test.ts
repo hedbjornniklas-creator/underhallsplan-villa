@@ -13,6 +13,7 @@ const records: DashboardBooking[] = [
   { id: 'later', moduleId: 'tu', title: 'Utredning', href: '/tu', startsAt: '2026-10-15T13:30:00+02:00', address: 'Testgatan 2, Stockholm' },
   { id: 'draft', moduleId: 'ob', title: 'Utkast', href: '/ob', startsAt: '2026-10-15T12:30:00+02:00', address: 'Testgatan 1, Stockholm', status: 'tentative' },
   { id: 'tomorrow', moduleId: 'ob', title: 'I morgon', href: '/ob', startsAt: '2026-10-16', address: 'Testgatan 3, Stockholm' },
+  { id: 'completed', moduleId: 'tu', title: 'Utförd utredning', href: '/tu', startsAt: '2026-10-15T11:30:00+02:00', address: 'Historikgatan 4, Stockholm', status: 'completed' },
 ]
 function harness({ error = '', companyAddress = 'Kontorsgatan 1', missingId = '', bookings = records, approximate = false } = {}) {
   const reads: unknown[] = [], companyReads: string[] = [], lookups: DashboardBooking[][] = [], routes: Array<Array<{ id: string }>> = []
@@ -69,6 +70,22 @@ test('one tentative appointment has a company-to-visit leg, and disabling tentat
   assert.deepEqual((await response.json()).route.legs.map((leg: { fromId: string; toId: string }) => [leg.fromId, leg.toId]), [['company-origin', 'draft']])
   const confirmed = await h.route.GET(request('date=2026-10-15&includeTentative=0'))
   assert.deepEqual((await confirmed.json()).bookingIds, ['later'])
+})
+test('completed history never adds driving stops and a completed-only selection never reads a company or calls providers', async () => {
+  const h = harness()
+  const mixed = await h.route.GET(request('date=2026-10-15&includeTentative=1&bookingId=completed&bookingId=later&bookingId=draft'))
+  assert.deepEqual((await mixed.json()).bookingIds, ['draft', 'later'])
+  assert.deepEqual(h.routes[0].map(point => point.id), ['company-origin', 'draft', 'later'])
+  assert.deepEqual(h.lookups[0].map(row => row.id), ['company-origin', 'draft', 'later'])
+  const completed = harness()
+  const onlyHistory = await completed.route.GET(request('date=2026-10-15&includeTentative=1&bookingId=completed'))
+  const body = await onlyHistory.json()
+  assert.deepEqual(body.bookingIds, [])
+  assert.equal(body.route.status, 'insufficient_points')
+  assert.deepEqual(body.directionsLinks, [])
+  assert.deepEqual(completed.companyReads, [])
+  assert.deepEqual(completed.lookups, [])
+  assert.deepEqual(completed.routes, [])
 })
 test('no jobs, missing company, or any unresolved stop never produce a fabricated or incomplete total', async () => {
   for (const [config, expected] of [

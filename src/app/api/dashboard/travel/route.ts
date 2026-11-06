@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDashboardData, getStockholmDate } from '@/lib/dashboard/server'
-import { bookingLocation, compareBookings, directionsLinks, isTentativeBooking } from '@/lib/dashboard/calendar'
+import { bookingLocation, compareBookings, directionsLinks, isCompletedBooking, isTentativeBooking } from '@/lib/dashboard/calendar'
 import { isDashboardCoordinate, locateDashboardBookings } from '@/lib/dashboard/geocoding'
 import { calculateDashboardRoute } from '@/lib/dashboard/routing'
 import { readOrganizationBranding } from '@/lib/organizations/companyProfile'
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     const selectedIds = new Set(params.getAll('bookingId'))
     // A caller can narrow authorized bookings, never supply an arbitrary origin,
     // address or coordinate. The company belongs to this validated organization.
-    const bookings = dashboard.bookings.filter(booking => getStockholmDate(booking.startsAt) === date
+    const bookings = dashboard.bookings.filter(booking => !isCompletedBooking(booking) && getStockholmDate(booking.startsAt) === date
       && (includesTentative || !isTentativeBooking(booking))
       && (selectedIds.size === 0 || selectedIds.has(booking.id))).sort(compareBookings)
     const response: DashboardTravelResponse = {

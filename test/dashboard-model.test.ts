@@ -40,7 +40,7 @@ function ob(overrides: Partial<ObOverviewItem> = {}): ObOverviewItem {
     assignmentNumber: '', confirmation: 'Utkast', inspection: 'Ej startad', confirmationHref: '/ob/assignments/a', inspectionHref: null,
     confirmationAction: 'Öppna bekräftelse', attention: ['Färdigställ uppdragsbekräftelsen'], closed: false, archived: false, marker: 'attention', ...overrides }
 }
-test('OB excludes cancelled/completed rows while keeping dated drafts and sent visits tentative', () => {
+test('OB excludes cancelled or unsupported closed rows while keeping dated drafts and sent visits tentative', () => {
   const result = buildObDashboard([ob(), ob({ id: 'b', closed: true }), ob({ id: 'c', confirmation: 'Avbokad' }),
     ob({ id: 'inspection:d', inspection: 'Pågår', inspectionHref: '/properties/p/ob/d', confirmation: 'Inväntar kund', attention: [] })],
   new Map([['inspection:d', '13:15']]), today, undefined,
@@ -59,6 +59,38 @@ function confirmation(overrides: Partial<DashboardConfirmationBookingSource> = {
   return { status: 'sent', preferred_date: today, preferred_time: '09:30', accepted_at: null, booked_at: null,
     last_sent_at: '2026-10-11T10:00:00Z', archived_at: null, ...overrides }
 }
+
+test('OB completed visits retain their actual inspection slot without pending work or active counts', () => {
+  const row = ob({ id: 'inspection:done', closed: true, inspection: 'Klar', inspectionHref: '/properties/p/ob/done',
+    date: '2026-10-15', confirmation: 'Inväntar kund', attention: ['Förnya uppdragsbekräftelsen'] })
+  const result = buildObDashboard([row], new Map([[row.id, '11:15']]), today,
+    new Map([[row.id, '2026-10-10']]), new Map([[row.id, confirmation({ preferred_date: '2026-10-15', preferred_time: '14:30' })]]))
+  assert.equal(result.activeCount, 0)
+  assert.deepEqual(result.actions, [])
+  assert.deepEqual(result.bookings, [{ id: 'ob:inspection:done', moduleId: 'ob', title: 'Testgatan 1',
+    href: row.inspectionHref, startsAt: '2026-10-10T11:15:00+02:00', status: 'completed', address: 'Testgatan 1, Stockholm' }])
+  const cancelledConfirmation = buildObDashboard([{ ...row, confirmation: 'Avbokad' }], new Map(), today,
+    new Map([[row.id, '2026-10-10']]), new Map([[row.id, confirmation({ status: 'cancelled' })]]))
+  assert.equal(cancelledConfirmation.bookings[0].status, 'completed', 'a later confirmation cancellation cannot erase an actually completed visit')
+  assert.equal(cancelledConfirmation.bookings[0].startsAt, '2026-10-10', 'unknown visit time remains date-only')
+})
+
+test('OB completed history never borrows a proposed date or includes archived/read-only work', () => {
+  const row = ob({ id: 'inspection:done', closed: true, inspection: 'Klar', inspectionHref: '/properties/p/ob/done' })
+  for (const actualDates of [undefined, new Map([[row.id, null]]), new Map([[row.id, '2026-02-30']])]) {
+    const result = buildObDashboard([row], new Map([[row.id, '12:00']]), today, actualDates,
+      new Map([[row.id, confirmation({ preferred_date: today, preferred_time: '13:00' })]]))
+    assert.equal(result.bookings.length, 0)
+    assert.equal(result.activeCount, 0)
+    assert.equal(result.actions.length, 0)
+  }
+  const result = buildObDashboard([{ ...row, archived: true }, { ...row, canEdit: false },
+    { ...row, inspection: 'Arkiverad' }, { ...row, inspection: 'Ej startad', inspectionHref: null }], new Map(), today,
+  new Map([[row.id, today]]))
+  assert.equal(result.bookings.length, 0)
+  assert.equal(result.activeCount, 0)
+  assert.equal(result.actions.length, 0)
+})
 
 test('OB dashboard preserves its editable-assignment scope and excludes shared read-only work', () => {
   const shared = Object.assign(ob({ id: 'assignment:colleague', confirmation: 'Inväntar kund', attention: [] }), { canEdit: false })
@@ -235,6 +267,52 @@ test('TU includes unscheduled unfinished work without inventing calendar visits'
   assert.equal(result.bookings.length, 0)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.dueDate, undefined)
   assert.equal(result.actions.find(item => item.category === 'inspection')?.priority, 'normal')
+})
+
+test('TU completed and report-locked visits retain actual times once without creating new actions', () => {
+  for (const completed of [{ status: 'completed' }, { status: 'done' }, { status: 'Klar' }, { status: 'in_progress', reportLockedAt: today }]) {
+    const assignment = tuAssignment({ inspection_id: 'inspection-1', status: 'sent', preferred_date: '2026-10-15', preferred_time: '14:30' })
+    const investigation = tuInvestigation({ ...completed, assignmentId: assignment.id, date: '2026-10-10', inspectionTime: '11:15' })
+    const result = buildTuDashboard(tuPreviewOrg, [assignment], [investigation], today)
+    assert.equal(result.activeCount, 0)
+    assert.deepEqual(result.actions, [])
+    assert.equal(result.bookings.length, 1, 'the linked assignment cannot duplicate a completed visit')
+    assert.equal(result.bookings[0].status, 'completed')
+    assert.equal(result.bookings[0].startsAt, '2026-10-10T11:15:00+02:00')
+    assert.equal(result.bookings[0].href, `/tu/investigations/${investigation.inspectionId}?orgId=${tuPreviewOrg}`)
+    assert.equal(result.bookings[0].confirmationStatus, undefined)
+  }
+})
+
+test('TU history excludes cancelled/archived investigations and never resurrects linked confirmation proposals', () => {
+  const assignment = tuAssignment({ inspection_id: 'inspection-1', status: 'booked', booked_at: today, preferred_date: today })
+  for (const status of ['archived', 'arkiverad', 'cancelled', 'canceled', 'avbokad', 'avbruten']) {
+    const result = buildTuDashboard(tuPreviewOrg, [assignment], [tuInvestigation({ status, reportLockedAt: today })], today)
+    assert.deepEqual(result, { activeCount: 0, actions: [], bookings: [] })
+  }
+  for (const date of [null, '2026-02-30']) {
+    const result = buildTuDashboard(tuPreviewOrg, [assignment], [tuInvestigation({ date, status: 'completed' })], today)
+    assert.deepEqual(result, { activeCount: 0, actions: [], bookings: [] })
+  }
+  const dateOnly = buildTuDashboard(tuPreviewOrg, [assignment], [tuInvestigation({ status: 'completed', date: today, inspectionTime: null })], today)
+  assert.equal(dateOnly.bookings[0].startsAt, today)
+  assert.equal(dateOnly.bookings[0].status, 'completed')
+})
+
+test('TU superseded linked assignments never recreate work beside a completed or hidden investigation', () => {
+  const current = tuAssignment({ id: 'current', inspection_id: 'inspection-1', status: 'completed' })
+  const older = tuAssignment({ id: 'older', inspection_id: 'inspection-1', status: 'sent', last_sent_at: today, preferred_date: today })
+  const olderBooked = tuAssignment({ id: 'older-booked', inspection_id: 'inspection-1', status: 'booked', booked_at: today, preferred_date: today })
+  const separatelyLinked = tuAssignment({ id: 'unloaded', inspection_id: 'not-loaded', status: 'booked', booked_at: today, preferred_date: today })
+  for (const status of ['completed', 'archived', 'cancelled']) {
+    const result = buildTuDashboard(tuPreviewOrg, [current, older, olderBooked, separatelyLinked],
+      [tuInvestigation({ assignmentId: current.id, status, date: today })], today)
+    assert.equal(result.activeCount, 1, 'unloaded linked work keeps its existing handling')
+    assert.deepEqual(result.actions.map(item => item.id), ['tu:unloaded:confirmation'])
+    assert.ok(result.bookings.every(item => !item.id.includes('older')))
+    assert.equal(result.bookings.filter(item => item.status === 'completed').length, status === 'completed' ? 1 : 0)
+    assert.ok(result.bookings.some(item => item.id === 'tu:assignment:unloaded'))
+  }
 })
 
 test('TU dated drafts appear as unsent tentative visits, including the planned 13:30 visit', () => {

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, Building2, Clock3, ExternalLink, RotateCcw } from 'lucide-react'
-import { bookingTimeLabel, compareBookings, isTentativeBooking } from '@/lib/dashboard/calendar'
+import { bookingTimeLabel, compareBookings, isCompletedBooking, isTentativeBooking } from '@/lib/dashboard/calendar'
 import type { DashboardBooking } from '@/lib/dashboard/model'
 import type { DashboardTravelResponse } from '@/lib/dashboard/travel'
 import styles from './TravelSummary.module.css'
@@ -51,7 +51,9 @@ function validResponse(value: DashboardTravelResponse, date: string, organizatio
   })
 }
 
-export default function TravelSummary({ bookings, organizationId, date }: Props) {
+export default function TravelSummary({ bookings: allBookings, organizationId, date }: Props) {
+  const bookings = useMemo(() => allBookings.filter(booking => !isCompletedBooking(booking)), [allBookings])
+  const completedOnly = allBookings.length > 0 && bookings.length === 0
   const sectionRef = useRef<HTMLElement>(null)
   const [includeTentative, setIncludeTentative] = useState(true)
   const [request, setRequest] = useState<RequestState | null>(null)
@@ -137,8 +139,8 @@ export default function TravelSummary({ bookings, organizationId, date }: Props)
 
       {selectedBookings.length === 0 ? (
         <div className={styles.message} role="status">
-          <strong>{bookings.length && !includeTentative ? 'Inga bekräftade uppdrag den här dagen' : 'Inga uppdrag den här dagen'}</strong>
-          <p>{bookings.length ? 'Ta med preliminära uppdrag för att beräkna dagens resväg.' : 'Restiden visas när det finns uppdrag i kalendern.'}</p>
+          <strong>{completedOnly ? 'Alla uppdrag den här dagen är utförda' : bookings.length && !includeTentative ? 'Inga bekräftade uppdrag den här dagen' : 'Inga uppdrag den här dagen'}</strong>
+          <p>{completedOnly ? 'Utförda uppdrag finns kvar i kalendern och räknas inte in i restiden.' : bookings.length ? 'Ta med preliminära uppdrag för att beräkna dagens resväg.' : 'Restiden visas när det finns uppdrag i kalendern.'}</p>
         </div>
       ) : loading ? (
         <p className={styles.loading} role="status"><Clock3 size={16} aria-hidden="true" /> Beräknar restid…</p>

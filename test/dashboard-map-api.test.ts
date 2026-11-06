@@ -5,6 +5,8 @@ import ts from 'typescript'
 import type { DashboardBooking } from '../src/lib/dashboard/model'
 // @ts-expect-error Node strip-types requires an explicit TypeScript extension.
 import { getStockholmDate } from '../src/lib/dashboard/model.ts'
+// @ts-expect-error Node strip-types requires an explicit TypeScript extension.
+import * as calendar from '../src/lib/dashboard/calendar.ts'
 
 const orgId = '11111111-1111-4111-8111-111111111111'
 const records: DashboardBooking[] = [
@@ -12,6 +14,7 @@ const records: DashboardBooking[] = [
   { id: 'today-tu', moduleId: 'tu', title: 'Synlig utredning', href: '/tu', startsAt: '2026-10-11T22:30:00Z', address: 'Testgatan 2, Teststad' },
   { id: 'tomorrow', moduleId: 'eb', title: 'Annat datum', href: '/eb', startsAt: '2026-10-13', address: 'Testgatan 3, Teststad' },
   { id: 'tentative', moduleId: 'ob', title: 'Skickad bekräftelse', href: '/ob/assignments/sent', startsAt: '2026-10-12', address: 'Preliminära gatan 4, Teststad', status: 'tentative' },
+  { id: 'completed', moduleId: 'ob', title: 'Utförd besiktning', href: '/ob', startsAt: '2026-10-12', address: 'Utförda gatan 5, Teststad', status: 'completed' },
 ]
 
 function harness(error?: string) {
@@ -19,6 +22,7 @@ function harness(error?: string) {
   const lookups: DashboardBooking[][] = []
   const dependencies: Record<string, unknown> = {
     'next/server': { NextResponse: { json: Response.json } },
+    '@/lib/dashboard/calendar': calendar,
     '@/lib/dashboard/server': {
       getStockholmDate,
       getDashboardData: async (selected?: unknown) => {
@@ -76,6 +80,16 @@ test('authorized tentative slots can be geocoded for the selected day', async ()
   const otherDay = await h.route.GET(request('date=2026-10-13&bookingId=tentative'))
   assert.equal(otherDay.status, 200)
   assert.deepEqual(h.lookups[1], [], 'the tentative status never bypasses the selected-date boundary')
+})
+
+test('completed history is never geocoded even when explicitly selected alongside upcoming visits', async () => {
+  const h = harness()
+  const mixed = await h.route.GET(request('date=2026-10-12&bookingId=completed&bookingId=tentative'))
+  assert.deepEqual((await mixed.json()).locations.map((location: { id: string }) => location.id), ['tentative'])
+  assert.deepEqual(h.lookups[0].map(row => row.id), ['tentative'])
+  const completedOnly = await h.route.GET(request('date=2026-10-12&bookingId=completed'))
+  assert.deepEqual((await completedOnly.json()).locations, [])
+  assert.deepEqual(h.lookups[1], [])
 })
 
 test('arbitrary addresses, ambiguous organization/date and malformed dates fail before readers or geocoding', async () => {

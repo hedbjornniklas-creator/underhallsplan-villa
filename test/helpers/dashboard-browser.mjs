@@ -496,3 +496,106 @@ export async function testDashboardTravelRefresh(page, base) {
   assert.equal((await travelRequests()).length, after.length, 'An ordinary action-tab render does not repeat the travel request')
   assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
 }
+
+export async function testCompletedDashboard(base, output) {
+  const browser = await puppeteer.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  const page = await browser.newPage()
+  const errors = [], external = []
+  const completedIds = ['booking-completed-ob', 'booking-completed-eb', 'booking-completed-tu']
+  const travel = '[data-testid="dashboard-travel"]'
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setRequestInterception(true)
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.hostname === 'tile.openstreetmap.org' || url.hostname.endsWith('.tile.openstreetmap.org')) {
+      void request.respond({ status: 200, contentType: 'image/svg+xml', body: tile }); return
+    }
+    if (url.origin !== base && !['data:', 'blob:'].includes(url.protocol)) {
+      external.push(url.origin); void request.abort(); return
+    }
+    void request.continue()
+  })
+  async function open(state) {
+    await page.goto(`${base}/dashboard-v1?state=${state}`, { waitUntil: 'networkidle0' })
+    await page.waitForSelector('.dh-calendar')
+    await page.evaluate(() => document.fonts.ready)
+  }
+  async function plannedRoute(ids) {
+    await page.$eval('.dh-map-panel', node => node.scrollIntoView())
+    await page.waitForFunction(expected => document.querySelectorAll('.leaflet-marker-icon').length === expected, {}, ids.length)
+    await page.waitForFunction((selector, expected) => JSON.stringify([...document.querySelectorAll(`${selector} [data-to-id]`)].map(node => node.dataset.toId)) === JSON.stringify(expected), {}, travel, ids)
+    assert.deepEqual(await page.$$eval('.leaflet-marker-icon', nodes => nodes.map(node => node.dataset.bookingId)), ids)
+  }
+  async function noOverflow(label) {
+    const dimensions = await page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth }))
+    assert.ok(dimensions.scroll <= dimensions.width + 1, `${label}: no horizontal overflow`)
+  }
+  try {
+    await page.emulateTimezone('Europe/Stockholm')
+    for (const width of [390, 1440]) {
+      await page.setViewport({ width, height: 1000 })
+      const calendar = width < 640 ? '.dh-calendar-mobile-booking' : '.dh-calendar-booking'
+      await open('completed-visits')
+      assert.equal((await page.$$(`${calendar}[data-booking-status="completed"]`)).length, 3, 'All three inspection modules retain their completed visit')
+      assert.equal((await page.$$('.dh-agenda-row[data-booking-status="completed"]')).length, 3)
+      const styles = await page.$$eval(`${calendar}[data-booking-status]`, nodes => nodes.map(node => ({ status: node.dataset.bookingStatus, color: getComputedStyle(node).backgroundColor, label: `${node.textContent} ${node.getAttribute('title') ?? ''} ${node.getAttribute('aria-label') ?? ''}` })))
+      for (const completed of styles.filter(item => item.status === 'completed')) {
+        assert.match(completed.label, /Utförd/, 'Completion is conveyed by text, not just color')
+        assert.notEqual(completed.color, styles.find(item => item.status === 'tentative').color)
+        assert.notEqual(completed.color, styles.find(item => item.status === 'confirmed').color)
+      }
+      assert.match(await page.$eval('.dh-calendar .dh-panel-heading p', node => node.textContent), /3 utförda/)
+      assert.equal((await page.$$('[data-action-id*="completed"]')).length, 0, 'History never appears as an inspection todo')
+      const doneStops = await page.$$eval('.dh-agenda-row[data-booking-status="completed"] .dh-stop-number', nodes => nodes.map(node => ({ label: node.getAttribute('aria-label'), text: node.textContent })))
+      assert.ok(doneStops.every(stop => !/^Stopp \d+$/.test(stop.label ?? '') && !/^\d+$/.test(stop.text)), 'Completed history has no upcoming route stop number')
+      await plannedRoute(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'])
+      const requests = await page.evaluate(() => window.__dashboardTest.requests)
+      assert.ok(requests.filter(path => /\/api\/dashboard\/(map|travel)\?/.test(path)).every(path => !new URL(path, base).searchParams.getAll('bookingId').some(id => completedIds.includes(id))), 'Completed coordinates and addresses are not requested from map or routing services')
+      const directions = new URL(await page.$eval(`${travel} a[href^="https://www.google.com/maps/dir/"]`, node => node.href))
+      assert.doesNotMatch(directions.toString(), /Granv%C3%A4gen|L%C3%B6nnv%C3%A4gen/, 'Navigation excludes completed visits')
+      await noOverflow(`${width}px mixed completed calendar`)
+      await page.evaluate(() => scrollTo(0, 0))
+      await page.screenshot({ path: resolve(output, `dashboard-completed-${width}.png`), fullPage: true })
+
+      for (const moduleId of ['ob', 'eb', 'tu']) {
+        await page.select('select[aria-label="Filtrera arbetsområde"]', moduleId)
+        await page.waitForFunction(() => document.querySelectorAll('.dh-agenda-row[data-booking-status="completed"]').length === 1)
+        assert.equal(await page.$eval(`${calendar}[data-booking-status="completed"]`, node => node.dataset.module), moduleId)
+      }
+      await page.select('select[aria-label="Filtrera arbetsområde"]', 'all')
+      await page.click('button[aria-label="Föregående vecka"]')
+      await page.waitForFunction(() => document.querySelector('.dh-agenda')?.textContent.includes('Utförd förra veckan'))
+      assert.match(await page.$eval(`${calendar}[data-booking-status="completed"]`, node => node.textContent), /Utförd förra veckan/)
+      assert.match(await page.$eval('.dh-agenda-row time', node => node.textContent), /09:00/, 'Past history keeps the actual registered visit time')
+
+      await open('completed-only')
+      await page.$eval('.dh-map-panel', node => node.scrollIntoView())
+      await page.waitForFunction(() => document.querySelector('.dh-map-panel')?.textContent.includes('Alla uppdrag den här dagen är utförda'))
+      assert.equal((await page.$$(`${calendar}[data-booking-status="completed"]`)).length, 3)
+      assert.equal(await page.$('.leaflet-marker-icon'), null)
+      assert.equal(await page.$(`${travel} [data-testid="travel-total"]`), null)
+      assert.equal(await page.$(`${travel} a[href^="https://www.google.com/maps/dir/"]`), null)
+      assert.deepEqual(await page.evaluate(() => window.__dashboardTest.requests.filter(path => /\/api\/dashboard\/(map|travel)\?/.test(path))), [], 'A completed-only day makes no geocoding or driving request')
+      await noOverflow(`${width}px completed-only calendar`)
+      await page.screenshot({ path: resolve(output, `dashboard-completed-only-${width}.png`), fullPage: true })
+
+      await open('client-completion')
+      await plannedRoute(['booking-ob', 'booking-tentative', 'booking-eb', 'booking-tu'])
+      const requestStart = await page.evaluate(() => window.__dashboardTest.requests.length)
+      await page.evaluate(() => { window.__dashboardTest.completeOb = true })
+      await page.click('button[aria-label="Uppdatera översikten"]')
+      await page.waitForFunction(() => document.querySelector('.dh-agenda-row[data-booking-id="booking-ob"]')?.dataset.bookingStatus === 'completed')
+      await plannedRoute(['booking-tentative', 'booking-eb', 'booking-tu'])
+      assert.equal((await page.$$('.dh-agenda-row[data-booking-id="booking-ob"]')).length, 1, 'A status change updates the same visit without a duplicate')
+      assert.equal(await page.$('[data-action-id="ob-report"]'), null)
+      assert.match(await page.$eval(`${calendar}[data-booking-status="completed"]`, node => node.textContent), /Tallstigen 12/)
+      const refreshed = await page.evaluate(start => window.__dashboardTest.requests.slice(start), requestStart)
+      assert.ok(refreshed.filter(path => /\/api\/dashboard\/(map|travel)\?/.test(path)).every(path => !new URL(path, base).searchParams.getAll('bookingId').includes('booking-ob')), 'Completing a visit removes it from all new route requests')
+      assert.equal(await page.evaluate(() => window.__dashboardTest.writes), 0)
+      assert.equal(await page.evaluate(() => window.__dashboardTest.authSignOuts), 0)
+    }
+    assert.deepEqual(errors, [])
+    assert.deepEqual(external, [])
+    console.log('PASS: completed OB/EB/TU green history and labels390/1440; past-week history/actualtime; modulefilter; completed-only calendar without map/travel requests; active-to-completed refresh preserves visit and removes todo/route; no external requests or writes.')
+  } finally { await browser.close() }
+}

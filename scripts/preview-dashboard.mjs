@@ -60,7 +60,11 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`Dashboard preview (synthetic only): ${base}/dashboard-v1`)
-if (process.argv.includes('--test')) {
-  try { const { testDashboard } = await import('../test/helpers/dashboard-browser.mjs'); await testDashboard(base, output) }
+if (process.argv.includes('--test') || process.argv.includes('--test-completed')) {
+  try {
+    const { testDashboard, testCompletedDashboard } = await import('../test/helpers/dashboard-browser.mjs')
+    if (process.argv.includes('--test')) await testDashboard(base, output)
+    await testCompletedDashboard(base, output)
+  }
   finally { await new Promise(ok => server.close(ok)) }
 }

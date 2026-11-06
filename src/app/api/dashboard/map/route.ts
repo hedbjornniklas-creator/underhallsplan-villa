@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getDashboardData, getStockholmDate } from '@/lib/dashboard/server'
 import { locateDashboardBookings } from '@/lib/dashboard/geocoding'
+import { isCompletedBooking } from '@/lib/dashboard/calendar'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     // data before geocoding the selected day's confirmed and tentative assignments.
     const dashboard = await getDashboardData(url.searchParams.get('orgId') ?? undefined)
     const selectedIds = new Set(url.searchParams.getAll('bookingId'))
-    const bookings = dashboard.bookings.filter(booking => getStockholmDate(booking.startsAt) === date
+    const bookings = dashboard.bookings.filter(booking => !isCompletedBooking(booking) && getStockholmDate(booking.startsAt) === date
       && (selectedIds.size === 0 || selectedIds.has(booking.id)))
     return NextResponse.json({
       organizationId: dashboard.organizationId,

@@ -8,7 +8,7 @@ import DailyRouteMap from '@/components/dashboard/DailyRouteMap'
 import TravelSummary from '@/components/dashboard/TravelSummary'
 import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
 import type { DashboardAction, DashboardBooking, DashboardData, DashboardModule, DashboardModuleId } from '@/lib/dashboard/model'
-import { bookingCountLabel, bookingDate, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
+import { bookingCountLabel, bookingDate, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, isCalendarDate, isCompletedBooking, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
 import './dashboard.css'
 
 type ActionFilter = 'all' | DashboardAction['category']
@@ -83,20 +83,21 @@ function BookingCalendar({ bookings, modules, selectedDate, today, onSelectDate 
         <span aria-live="polite">{range}</span><button className="dh-icon-button" type="button" aria-label="Nästa vecka" onClick={() => onSelectDate(shiftCalendarDate(selectedDate, 7))}><ChevronRight size={18} aria-hidden /></button>
       </div><button type="button" className="dh-button dh-today-button" onClick={() => onSelectDate(today)}>I dag</button>
     </div>
-    <div className="dh-calendar-legend" aria-label="Bokningsstatus"><span><i aria-hidden />Bekräftat</span><span><i className="dh-legend-tentative" aria-hidden />Preliminärt</span></div>
+    <div className="dh-calendar-legend" aria-label="Bokningsstatus"><span><i aria-hidden />Bekräftat</span><span><i className="dh-legend-tentative" aria-hidden />Preliminärt</span><span><i className="dh-legend-completed" aria-hidden />Utförd</span></div>
     <div className="dh-calendar-grid">
       {week.map(day => <div className="dh-calendar-column" key={day} data-selected={day === selectedDate}>
         <button className="dh-calendar-day" type="button" aria-pressed={day === selectedDate} aria-label={calendarDateLabel(day, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} onClick={() => onSelectDate(day)}>
           <span>{calendarDateLabel(day, { weekday: 'short' }).replace('.', '')}</span><strong data-today={day === today}>{Number(day.slice(-2))}</strong>
         </button>
-        <div className="dh-calendar-bookings">{weekBookings.filter(booking => bookingDate(booking.startsAt) === day).map(booking => <Link className="dh-calendar-booking" key={booking.id} href={booking.href} prefetch={false} data-module={booking.moduleId} data-booking-status={isTentativeBooking(booking) ? 'tentative' : 'confirmed'} title={`${bookingTimeLabel(booking)} · ${booking.title} · ${bookingStatusLabel(booking)} · ${modules.get(booking.moduleId)?.title ?? ''}`}>
+        <div className="dh-calendar-bookings">{weekBookings.filter(booking => bookingDate(booking.startsAt) === day).map(booking => <Link className="dh-calendar-booking" key={booking.id} href={booking.href} prefetch={false} data-module={booking.moduleId} data-booking-status={booking.status ?? 'confirmed'} title={`${bookingTimeLabel(booking)} · ${booking.title} · ${bookingStatusLabel(booking)} · ${modules.get(booking.moduleId)?.title ?? ''}`}>
           <time dateTime={booking.startsAt}>{bookingTime(booking.startsAt) ?? 'Tid saknas'}</time><span>{booking.title}</span>
           {isTentativeBooking(booking) && <span className="dh-calendar-status">Preliminärt</span>}
+          {isCompletedBooking(booking) && <span className="dh-calendar-status"><CheckCheck size={11} aria-hidden />Utförd</span>}
         </Link>)}</div>
       </div>)}
     </div>
-    <div className="dh-calendar-mobile-list">{dayBookings.length ? dayBookings.map(booking => <Link href={booking.href} prefetch={false} key={booking.id} data-module={booking.moduleId} data-booking-status={isTentativeBooking(booking) ? 'tentative' : 'confirmed'} className="dh-calendar-mobile-booking" title={bookingStatusLabel(booking)}>
-      <time dateTime={booking.startsAt}>{bookingTimeLabel(booking)}</time><div><strong>{booking.title}</strong>{isTentativeBooking(booking) && <span className="dh-calendar-status">Preliminärt</span>}</div><ArrowRight size={16} aria-hidden />
+    <div className="dh-calendar-mobile-list">{dayBookings.length ? dayBookings.map(booking => <Link href={booking.href} prefetch={false} key={booking.id} data-module={booking.moduleId} data-booking-status={booking.status ?? 'confirmed'} className="dh-calendar-mobile-booking" title={bookingStatusLabel(booking)}>
+      <time dateTime={booking.startsAt}>{bookingTimeLabel(booking)}</time><div><strong>{booking.title}</strong>{isTentativeBooking(booking) && <span className="dh-calendar-status">Preliminärt</span>}{isCompletedBooking(booking) && <span className="dh-calendar-status"><CheckCheck size={12} aria-hidden />Utförd</span>}</div><ArrowRight size={16} aria-hidden />
     </Link>) : <p>Inga uppdrag i kalendern denna dag.</p>}</div>
     <div className="dh-calendar-footer"><label><span>Visa datum</span><input type="date" aria-label="Visa uppdrag för datum" value={selectedDate} onChange={event => { if (isCalendarDate(event.target.value)) onSelectDate(event.target.value) }} /></label><span>Välj dag för uppdragslista och karta.</span></div>
   </section>
@@ -123,7 +124,8 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
       && terms.every(term => `${booking.title} ${booking.address ?? ''}`.toLocaleLowerCase('sv-SE').includes(term))).sort(compareBookings)
   }, [data.bookings, activeModules, effectiveFilter, search])
   const dayBookings = useMemo(() => bookings.filter(booking => bookingDate(booking.startsAt) === selectedDate), [bookings, selectedDate])
-  const confirmedDayBookings = useMemo(() => dayBookings.filter(booking => !isTentativeBooking(booking)), [dayBookings])
+  const remainingDayBookings = useMemo(() => dayBookings.filter(booking => !isCompletedBooking(booking)), [dayBookings])
+  const confirmedDayBookings = useMemo(() => remainingDayBookings.filter(booking => !isTentativeBooking(booking)), [remainingDayBookings])
   const stopNumbers = new Map(confirmedDayBookings.map((booking, index) => [booking.id, index + 1]))
   const isToday = selectedDate === data.today
   const changeCategory = (value: ActionFilter) => { setCategory(value); setShowAll(false) }
@@ -151,16 +153,17 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
         <div className="dh-actions-footer"><span aria-live="polite">{filteredActions.length ? `Visar ${visibleActions.length} av ${filteredActions.length} nästa steg` : '0 nästa steg'}</span>{filteredActions.length > 8 && <button type="button" className="dh-text-button" onClick={() => setShowAll(value => !value)}>{showAll ? 'Visa färre' : `Visa alla ${filteredActions.length}`}<ArrowRight size={15} aria-hidden /></button>}</div>
       </section>
       <section className="dh-panel dh-agenda" aria-labelledby="dh-agenda-heading"><div className="dh-panel-heading"><div><div className="dh-heading-count"><h2 id="dh-agenda-heading">{isToday ? 'Dagens uppdrag' : 'Uppdrag denna dag'}</h2><span className="dh-count">{bookingCountLabel(dayBookings)}</span></div>{!isToday && <p>{calendarDateLabel(selectedDate, { weekday: 'long', day: 'numeric', month: 'long' })}</p>}</div></div>
-        {dayBookings.length ? <ol className="dh-agenda-list">{dayBookings.map(booking => { const mapUrl = bookingMapUrl(booking); const tentative = isTentativeBooking(booking); const stopNumber = stopNumbers.get(booking.id); return <li className="dh-agenda-row" key={booking.id} data-booking-id={booking.id} data-booking-status={tentative ? 'tentative' : 'confirmed'}>
-          <span className={`dh-stop-number${tentative ? ' dh-tentative-stop' : ''}`} aria-label={tentative ? 'Preliminärt uppdrag' : `Stopp ${stopNumber}`}>{tentative ? <Clock3 size={16} aria-hidden /> : stopNumber}</span><time dateTime={booking.startsAt}>{bookingTimeLabel(booking)}</time><div className="dh-agenda-identity"><strong>{booking.title}</strong><span>{activeModules.get(booking.moduleId)?.title}</span>
+        {dayBookings.length ? <ol className="dh-agenda-list">{dayBookings.map(booking => { const mapUrl = bookingMapUrl(booking); const tentative = isTentativeBooking(booking); const completed = isCompletedBooking(booking); const stopNumber = stopNumbers.get(booking.id); return <li className="dh-agenda-row" key={booking.id} data-booking-id={booking.id} data-booking-status={booking.status ?? 'confirmed'}>
+          <span className={`dh-stop-number${tentative ? ' dh-tentative-stop' : completed ? ' dh-completed-stop' : ''}`} aria-label={completed ? 'Utfört uppdrag' : tentative ? 'Preliminärt uppdrag' : `Stopp ${stopNumber}`}>{completed ? <CheckCheck size={16} aria-hidden /> : tentative ? <Clock3 size={16} aria-hidden /> : stopNumber}</span><time dateTime={booking.startsAt}>{bookingTimeLabel(booking)}</time><div className="dh-agenda-identity"><strong>{booking.title}</strong><span>{activeModules.get(booking.moduleId)?.title}</span>
             {tentative && <span className="dh-tentative-label">{bookingStatusLabel(booking)}</span>}
+            {completed && <span className="dh-completed-label">Utförd</span>}
             {mapUrl ? <a className="dh-address" href={mapUrl} target="_blank" rel="noopener noreferrer" title="Visa adressen i Google Maps"><MapPin size={13} aria-hidden />{booking.address || 'Visa plats på karta'}</a> : <span className="dh-address-missing">Adress saknas</span>}
           </div><Link href={booking.href} prefetch={false} className="dh-agenda-open" aria-label={`Öppna ${booking.title}`}>Öppna<ArrowRight size={16} aria-hidden /></Link>
         </li> })}</ol> : <div className="dh-empty dh-empty-compact" role="status"><CalendarDays size={26} aria-hidden /><strong>Inga uppdrag i kalendern {isToday ? 'i dag' : 'denna dag'}</strong><p>Välj en annan dag i kalendern för att se dess uppdrag.</p></div>}
       </section>
     </div><div className="dh-column dh-plan-column">
       <BookingCalendar bookings={bookings} modules={activeModules} selectedDate={selectedDate} today={data.today} onSelectDate={setSelectedDate} />
-      <section className="dh-panel dh-map-panel" aria-labelledby="dh-map-heading"><div className="dh-panel-heading"><div className="dh-heading-count"><h2 id="dh-map-heading">{isToday ? 'Dagens karta' : 'Karta för vald dag'}</h2><span className="dh-muted">{bookingCountLabel(dayBookings)}</span></div></div>
+      <section className="dh-panel dh-map-panel" aria-labelledby="dh-map-heading"><div className="dh-panel-heading"><div className="dh-heading-count"><h2 id="dh-map-heading">{isToday ? 'Dagens karta' : 'Karta för vald dag'}</h2><span className="dh-muted">{bookingCountLabel(remainingDayBookings)}</span></div></div>
         <DailyRouteMap key={`${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
         <TravelSummary key={`travel:${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
       </section>

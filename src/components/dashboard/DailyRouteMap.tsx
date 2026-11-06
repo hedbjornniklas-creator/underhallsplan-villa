@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Clock3, MapPin, RotateCcw } from 'lucide-react'
 import type { DashboardBooking } from '@/lib/dashboard/model'
 import type { DashboardMapLocation } from '@/lib/dashboard/geocoding'
-import { bookingStatusLabel, isTentativeBooking } from '@/lib/dashboard/calendar'
+import { bookingStatusLabel, isCompletedBooking, isTentativeBooking } from '@/lib/dashboard/calendar'
 import 'leaflet/dist/leaflet.css'
 import styles from './DailyRouteMap.module.css'
 
@@ -130,7 +130,9 @@ function MapCanvas({ points, mapKey }: { points: PlottedBooking[]; mapKey: strin
   )
 }
 
-export default function DailyRouteMap({ bookings, organizationId, date }: Props) {
+export default function DailyRouteMap({ bookings: allBookings, organizationId, date }: Props) {
+  const bookings = useMemo(() => allBookings.filter(booking => !isCompletedBooking(booking)), [allBookings])
+  const completedOnly = allBookings.length > 0 && bookings.length === 0
   const wrapperRef = useRef<HTMLDivElement>(null)
   const [request, setRequest] = useState<RequestState | null>(null)
   const [retry, setRetry] = useState(0)
@@ -221,8 +223,8 @@ export default function DailyRouteMap({ bookings, organizationId, date }: Props)
       {points.length > 0 ? <MapCanvas points={points} mapKey={key} /> : (
         <div className={styles.empty} role="status">
           <span className={styles.emptyIcon}><MapPin size={26} strokeWidth={1.6} /></span>
-          <strong>{bookings.length === 0 ? 'Inga uppdrag den här dagen' : loading ? 'Letar upp dagens adresser…' : 'Uppdragen kan inte placeras på kartan'}</strong>
-          <p>{bookings.length === 0 ? 'Bekräftade och preliminära uppdrag med besöksadress visas här.' : loading ? 'Kartan visas så snart adresserna är hittade.' : missingAddress === bookings.length ? 'Lägg till besöksadress i uppdragen för att se dem här.' : 'Kontrollera uppdragens besöksadresser eller öppna dem för mer information.'}</p>
+          <strong>{completedOnly ? 'Alla uppdrag den här dagen är utförda' : bookings.length === 0 ? 'Inga uppdrag den här dagen' : loading ? 'Letar upp dagens adresser…' : 'Uppdragen kan inte placeras på kartan'}</strong>
+          <p>{completedOnly ? 'De finns kvar i kalendern. Kartan visar bara återstående bekräftade och preliminära uppdrag.' : bookings.length === 0 ? 'Bekräftade och preliminära uppdrag med besöksadress visas här.' : loading ? 'Kartan visas så snart adresserna är hittade.' : missingAddress === bookings.length ? 'Lägg till besöksadress i uppdragen för att se dem här.' : 'Kontrollera uppdragens besöksadresser eller öppna dem för mer information.'}</p>
         </div>
       )}
       {(points.length > 0 || missingAddress > 0 || unavailable) && (

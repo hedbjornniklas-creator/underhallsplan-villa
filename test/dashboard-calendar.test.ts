@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 // @ts-expect-error Node strip-types requires explicit TypeScript extensions.
-import { bookingCountLabel, bookingDate, bookingStatusLabel, bookingTimeLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, isTentativeBooking, shiftCalendarDate } from '../src/lib/dashboard/calendar.ts'
+import { bookingCountLabel, bookingDate, bookingStatusLabel, bookingTimeLabel, calendarWeek, compareBookings, directionsLinks, isCalendarDate, isCompletedBooking, isTentativeBooking, shiftCalendarDate } from '../src/lib/dashboard/calendar.ts'
 import type { DashboardBooking } from '../src/lib/dashboard/model'
 
 function booking(id: string, startsAt: string, address = id): DashboardBooking {
@@ -87,4 +87,25 @@ test('planned directions can include tentative visits and start at the company a
   assert.equal(params.get('destination'), 'Andra gatan 2')
   const confirmed = new URL(directionsLinks(visits, { origin: 'Kontorsgatan 3, Stockholm' })[0]).searchParams
   assert.equal(confirmed.get('destination'), 'Första gatan 1')
+})
+
+test('completed history has its own label and count without becoming confirmed or tentative', () => {
+  const completed: DashboardBooking = { ...booking('completed', '2026-10-12'), status: 'completed' }
+  const confirmed = booking('confirmed', '2026-10-12')
+  const tentative: DashboardBooking = { ...booking('tentative', '2026-10-12'), status: 'tentative' }
+  assert.equal(isCompletedBooking(completed), true)
+  assert.equal(isTentativeBooking(completed), false)
+  assert.equal(bookingStatusLabel(completed), 'Utförd')
+  assert.equal(bookingCountLabel([completed]), '1 utförd')
+  assert.equal(bookingCountLabel([completed, completed]), '2 utförda')
+  assert.equal(bookingCountLabel([confirmed, tentative, completed]), '1 bekräftat · 1 preliminärt · 1 utförd')
+  assert.equal(bookingCountLabel([]), '0 bekräftade')
+})
+
+test('completed visits never enter driving directions even when tentative visits are included', () => {
+  const history: DashboardBooking = { ...booking('completed', '2026-10-12', 'Utförda gatan 1'), status: 'completed' }
+  const planned: DashboardBooking = { ...booking('planned', '2026-10-12', 'Planerade gatan 2'), status: 'tentative' }
+  assert.deepEqual(directionsLinks([history]), [])
+  assert.deepEqual(directionsLinks([history], { includeTentative: true, origin: 'Företaget' }), [])
+  assert.deepEqual(directionsLinks([history, planned], { includeTentative: true, origin: 'Företaget' }), directionsLinks([planned], { includeTentative: true, origin: 'Företaget' }))
 })

@@ -76,7 +76,7 @@ async function readOb(orgId: string, today: string): Promise<DashboardModuleSumm
   // including the current confirmation after a reissue. No admin fallback.
   do {
     const result = await loadObOverview({ userClient, orgId, options: {
-      search: '', filter: 'active', sort: 'date-asc', attentionOnly: false,
+      search: '', filter: 'all', sort: 'date-asc', attentionOnly: false,
       showArchived: false, page, pageSize: 50,
     } })
     total = result.total
@@ -85,7 +85,7 @@ async function readOb(orgId: string, today: string): Promise<DashboardModuleSumm
     const inspectionRows = ownItems.filter(item => item.id.startsWith('inspection:'))
     // The overview already resolves reissued confirmations. Fetch only its
     // current confirmation IDs rather than searching by inspection/date/address.
-    const assignmentIds = new Map(ownItems.flatMap(item => {
+    const assignmentIds = new Map(ownItems.filter(item => item.inspection !== 'Klar').flatMap(item => {
       const id = item.confirmationHref?.match(/^\/ob\/assignments\/([^/?#]+)$/)?.[1]
       return id ? [[item.id, id] as const] : []
     }))

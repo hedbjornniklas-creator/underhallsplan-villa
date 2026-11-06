@@ -6,7 +6,12 @@ export function isTentativeBooking(booking: DashboardBooking) {
   return booking.status === 'tentative'
 }
 
+export function isCompletedBooking(booking: DashboardBooking) {
+  return booking.status === 'completed'
+}
+
 export function bookingStatusLabel(booking: DashboardBooking) {
+  if (isCompletedBooking(booking)) return 'Utförd'
   return isTentativeBooking(booking)
     ? `Preliminärt${booking.confirmationStatus ? ` · ${booking.confirmationStatus}` : ''}`
     : 'Bekräftat'
@@ -14,9 +19,11 @@ export function bookingStatusLabel(booking: DashboardBooking) {
 
 export function bookingCountLabel(bookings: DashboardBooking[]) {
   const tentative = bookings.filter(isTentativeBooking).length
-  const confirmed = bookings.length - tentative
-  const parts = [`${confirmed} ${confirmed === 1 ? 'bekräftat' : 'bekräftade'}`]
+  const completed = bookings.filter(isCompletedBooking).length
+  const confirmed = bookings.length - tentative - completed
+  const parts = confirmed || !completed ? [`${confirmed} ${confirmed === 1 ? 'bekräftat' : 'bekräftade'}`] : []
   if (tentative) parts.push(`${tentative} ${tentative === 1 ? 'preliminärt' : 'preliminära'}`)
+  if (completed) parts.push(`${completed} ${completed === 1 ? 'utförd' : 'utförda'}`)
   return parts.join(' · ')
 }
 
@@ -92,7 +99,7 @@ export function bookingMapUrl(booking: DashboardBooking) {
 // Google Maps supports three waypoints in mobile browsers. Larger days are
 // split into consecutive legs so no appointment is silently left out.
 export function directionsLinks(bookings: DashboardBooking[], options: { includeTentative?: boolean; origin?: string } = {}) {
-  const locations = bookings.filter(booking => options.includeTentative || !isTentativeBooking(booking)).map(bookingLocation).filter((location): location is string => Boolean(location))
+  const locations = bookings.filter(booking => !isCompletedBooking(booking) && (options.includeTentative || !isTentativeBooking(booking))).map(bookingLocation).filter((location): location is string => Boolean(location))
   const links: string[] = []
   for (let index = 0; index < locations.length;) {
     let count = Math.min(4, locations.length - index)
