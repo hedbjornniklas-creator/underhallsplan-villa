@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { generateAssignmentToken } from '@/lib/assignments/tokens'
 import { diaryCookie, DIARY_DEVICE_SECONDS, validDiaryDevice } from './projectDiaryLinks'
-import { DIARY_MAX_PHOTOS } from './projectDiary'
+import { DIARY_MAX_PHOTOS, DIARY_PHOTO_PART_BYTES } from './projectDiary'
 
 export const diaryHeaders = { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' }
 export function diaryJson(body: unknown, status = 200) { return NextResponse.json(body, { status, headers: diaryHeaders }) }
@@ -57,6 +57,24 @@ export async function diaryRequestBody(request: Request) {
   } catch (error) { if (error instanceof Error && error.message === 'PROJECT_DIARY_TOO_LARGE') throw error; throw new Error('PROJECT_DIARY_INVALID') }
 }
 export function diaryRequestCookie(request: NextRequest, token: string) { return request.cookies.get(diaryCookie(token))?.value }
+export async function diaryPhotoPartBody(request: Request) {
+  if (request.headers.get('origin') !== new URL(request.url).origin || request.headers.get('content-type')?.toLowerCase() !== 'application/octet-stream') throw new Error('PROJECT_DIARY_ORIGIN')
+  if (Number(request.headers.get('content-length')) > DIARY_PHOTO_PART_BYTES) throw new Error('PROJECT_DIARY_TOO_LARGE')
+  const reader = request.body?.getReader()
+  if (!reader) throw new Error('PROJECT_DIARY_PHOTO')
+  const chunks: Uint8Array[] = []; let length = 0
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      length += value.byteLength
+      if (length > DIARY_PHOTO_PART_BYTES) { await reader.cancel(); throw new Error('PROJECT_DIARY_TOO_LARGE') }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  if (!length) throw new Error('PROJECT_DIARY_PHOTO')
+  return Buffer.concat(chunks, length)
+}
 export function rememberDiaryDevice(response: NextResponse, request: NextRequest, token: string) {
   const old = diaryRequestCookie(request, token), value = validDiaryDevice(old) ? old : generateAssignmentToken()
   response.cookies.set(diaryCookie(token), value, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: DIARY_DEVICE_SECONDS })

@@ -1,5 +1,5 @@
 import type { NextRequest } from 'next/server'
-import { completeDiaryPhoto, prepareDiaryPhoto } from '@/lib/action-cases/projectDiaryServer'
+import { completeDiaryPhoto, completeRelayedDiaryPhoto, prepareDiaryPhoto } from '@/lib/action-cases/projectDiaryServer'
 import { diaryError, diaryJson, diaryRequestBody, diaryRequestCookie } from '@/lib/action-cases/projectDiaryHttp'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,6 +9,7 @@ export async function POST(request: NextRequest, route: { params: Promise<{ toke
     const { token } = await route.params, data = await diaryRequestBody(request), identity = { token, device: diaryRequestCookie(request, token) }
     if (data.operation === 'prepare') return diaryJson(await prepareDiaryPhoto(identity, data))
     if (data.operation === 'complete') return diaryJson(await completeDiaryPhoto(identity, data.id))
+    if (data.operation === 'complete_relay') return diaryJson(await completeRelayedDiaryPhoto(identity, data.id))
     throw new Error('PROJECT_DIARY_INVALID')
   } catch (error) { return diaryError(error) }
 }

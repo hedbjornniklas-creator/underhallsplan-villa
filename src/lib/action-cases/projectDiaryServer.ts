@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import QRCode from 'qrcode'
 import { validateDiaryImage } from './projectDiaryImage'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { diaryDate, diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_EDIT_HOURS, DIARY_MAX_PHOTO_BYTES, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace, type DiaryRevision } from './projectDiary'
+import { diaryDate, diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_EDIT_HOURS, DIARY_MAX_PHOTO_BYTES, DIARY_PHOTO_PART_BYTES, DIARY_MAX_PHOTO_PARTS, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace, type DiaryRevision } from './projectDiary'
 import { diaryDeviceHash, diaryLinkToken, diarySecret, parseDiaryLink } from './projectDiaryLinks'
 
 export const DIARY_BUCKET = 'project-diary-files'
@@ -110,24 +110,36 @@ export async function getDiaryHistory(ctx: DiaryContext, caseId: string, entryId
   return { versions, nextBeforeRevision: (result.data?.length || 0) > 20 ? rows.at(-1)!.revision : null }
 }
 const photoPath = (a: Pick<Actor, 'orgId' | 'caseId'>, id: string, incoming = false) => `${a.orgId}/${a.caseId}/${incoming ? 'incoming' : 'images'}/${id}`
+const partPath = (a: Actor, id: string, index: number) => `${photoPath(a, id, true)}.part-${index}`
+const stagingPaths = (a: Actor, id: string) => [photoPath(a, id, true), ...Array.from({ length: DIARY_MAX_PHOTO_PARTS }, (_, index) => partPath(a, id, index))]
+async function removePhotoStaging(a: Actor, id: string) {
+  await createSupabaseAdminClient().storage.from(DIARY_BUCKET).remove(stagingPaths(a, id)).catch(() => undefined)
+}
+async function ownedUpload(a: Actor, fileId: unknown) {
+  if (!diaryUuid(fileId)) throw new Error('PROJECT_DIARY_PHOTO')
+  const found = await createSupabaseAdminClient().from('action_case_diary_uploads').select('*').eq('id', fileId).eq('org_id', a.orgId).eq('action_case_id', a.caseId).eq('owner_key', a.owner).maybeSingle(); checked(found.error)
+  const u = found.data as Upload | null
+  if (!u || !['ready', 'pending'].includes(u.state) || Date.parse(u.expires_at) <= Date.now()) throw new Error('PROJECT_DIARY_PHOTO')
+  return u
+}
 export async function prepareDiaryPhoto(identity: DiaryIdentity, data: Record<string, unknown>) {
   const a = await actor(identity), meta = diaryPhotoRequest(data), stored = await command(a, 'reserve_photo', meta) as Upload
-  if (stored.state === 'ready') return { id: meta.id, ready: true }
+  if (stored.state === 'ready') { await removePhotoStaging(a, meta.id); return { id: meta.id, ready: true } }
   if (stored.state !== 'pending') throw new Error('PROJECT_DIARY_PHOTO')
   const signed = await createSupabaseAdminClient().storage.from(DIARY_BUCKET).createSignedUploadUrl(photoPath(a, meta.id, true), { upsert: false })
   if (signed.error || !signed.data?.signedUrl) throw new Error('PROJECT_DIARY_UPLOAD')
   return { id: meta.id, uploadUrl: signed.data.signedUrl, ready: false }
 }
 export async function completeDiaryPhoto(identity: DiaryIdentity, fileId: unknown) {
-  if (!diaryUuid(fileId)) throw new Error('PROJECT_DIARY_PHOTO')
-  const a = await actor(identity), db = createSupabaseAdminClient()
-  const found = await db.from('action_case_diary_uploads').select('*').eq('id', fileId).eq('org_id', a.orgId).eq('action_case_id', a.caseId).eq('owner_key', a.owner).maybeSingle(); checked(found.error)
-  const u = found.data as Upload | null
-  if (!u || !['ready', 'pending'].includes(u.state) || Date.parse(u.expires_at) <= Date.now()) throw new Error('PROJECT_DIARY_PHOTO')
-  if (u.state === 'ready') return { id: u.id, name: u.name }
+  const a = await actor(identity), db = createSupabaseAdminClient(), u = await ownedUpload(a, fileId)
+  if (u.state === 'ready') { await removePhotoStaging(a, u.id); return { id: u.id, name: u.name } }
   const raw = await db.storage.from(DIARY_BUCKET).download(photoPath(a, u.id, true))
   if (raw.error || !raw.data || raw.data.size !== u.size_bytes || raw.data.size > DIARY_MAX_PHOTO_BYTES) throw new Error('PROJECT_DIARY_PHOTO')
   const bytes = Buffer.from(await raw.data.arrayBuffer())
+  return sealPhotoBytes(a, u, bytes)
+}
+async function sealPhotoBytes(a: Actor, u: Upload, bytes: Buffer) {
+  const db = createSupabaseAdminClient()
   await validateDiaryImage(bytes, u.content_type, u.size_bytes)
   const sha256 = createHash('sha256').update(bytes).digest('hex'), finalPath = photoPath(a, u.id)
   const uploaded = await db.storage.from(DIARY_BUCKET).upload(finalPath, bytes, { contentType: u.content_type, upsert: false })
@@ -138,8 +150,39 @@ export async function completeDiaryPhoto(identity: DiaryIdentity, fileId: unknow
   }
   const result = await command(a, 'seal_photo', { id: u.id, sha256 })
   // Never remove archived bytes on an ambiguous commit result.
-  await db.storage.from(DIARY_BUCKET).remove([photoPath(a, u.id, true)]).catch(() => undefined)
+  await removePhotoStaging(a, u.id)
   return result
+}
+export async function storeDiaryPhotoPart(identity: DiaryIdentity, fileId: unknown, index: number, bytes: Buffer) {
+  if (!Number.isInteger(index) || index < 0 || index >= DIARY_MAX_PHOTO_PARTS) throw new Error('PROJECT_DIARY_PHOTO')
+  const a = await actor(identity), u = await ownedUpload(a, fileId)
+  const expected = Math.min(DIARY_PHOTO_PART_BYTES, u.size_bytes - index * DIARY_PHOTO_PART_BYTES)
+  if (expected <= 0 || bytes.length !== expected) throw new Error('PROJECT_DIARY_PHOTO')
+  if (u.state === 'ready') return { id: u.id, part: index }
+  const bucket = createSupabaseAdminClient().storage.from(DIARY_BUCKET), path = partPath(a, u.id, index)
+  // Parts are private staging bytes with the reserved image's metadata. Only the
+  // reconstructed, decoded original can be sealed and attached to an entry.
+  const stored = await bucket.upload(path, bytes, { contentType: u.content_type, upsert: false })
+  if (stored.error) {
+    const prior = await bucket.download(path)
+    if (prior.error || !prior.data || prior.data.size !== expected || !Buffer.from(await prior.data.arrayBuffer()).equals(bytes)) throw new Error('PROJECT_DIARY_UPLOAD')
+  }
+  return { id: u.id, part: index }
+}
+export async function completeRelayedDiaryPhoto(identity: DiaryIdentity, fileId: unknown) {
+  const a = await actor(identity), u = await ownedUpload(a, fileId)
+  if (u.state === 'ready') { await removePhotoStaging(a, u.id); return { id: u.id, name: u.name } }
+  const bucket = createSupabaseAdminClient().storage.from(DIARY_BUCKET), chunks: Buffer[] = []
+  const count = Math.ceil(u.size_bytes / DIARY_PHOTO_PART_BYTES)
+  for (let index = 0; index < count; index++) {
+    const part = await bucket.download(partPath(a, u.id, index))
+    const expected = Math.min(DIARY_PHOTO_PART_BYTES, u.size_bytes - index * DIARY_PHOTO_PART_BYTES)
+    if (part.error || !part.data || part.data.size !== expected) throw new Error('PROJECT_DIARY_UPLOAD')
+    const bytes = Buffer.from(await part.data.arrayBuffer())
+    if (bytes.length !== expected) throw new Error('PROJECT_DIARY_PHOTO')
+    chunks.push(bytes)
+  }
+  return sealPhotoBytes(a, u, Buffer.concat(chunks, u.size_bytes))
 }
 export async function diaryPhotoUrl(ctx: DiaryContext, caseId: string, photoId: string) {
   await internal(ctx, caseId)
@@ -155,7 +198,7 @@ export async function diaryPhotoUrl(ctx: DiaryContext, caseId: string, photoId: 
 export async function cleanupDiaryUploads(ctx: DiaryContext, caseId: string) {
   const a = await actor({ ctx, caseId }), data = await command(a, 'cleanup', {}) as { ids: string[] }
   if (data.ids.length) {
-    const result = await createSupabaseAdminClient().storage.from(DIARY_BUCKET).remove(data.ids.flatMap(id => [photoPath(a, id, true), photoPath(a, id)]))
+    const result = await createSupabaseAdminClient().storage.from(DIARY_BUCKET).remove(data.ids.flatMap(id => [...stagingPaths(a, id), photoPath(a, id)]))
     if (result.error) console.error('PROJECT_DIARY_ORPHAN_CLEANUP_FAILED')
     else await command(a, 'cleanup_done', { ids: data.ids })
   }

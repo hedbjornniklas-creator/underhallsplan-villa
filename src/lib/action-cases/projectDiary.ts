@@ -1,6 +1,8 @@
 export const DIARY_MAX_PHOTOS = 20
 export const DIARY_EDIT_HOURS = 48
 export const DIARY_MAX_PHOTO_BYTES = 8 * 1024 * 1024
+export const DIARY_PHOTO_PART_BYTES = 2 * 1024 * 1024
+export const DIARY_MAX_PHOTO_PARTS = Math.ceil(DIARY_MAX_PHOTO_BYTES / DIARY_PHOTO_PART_BYTES)
 export const DIARY_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
 export type DiaryBody = { name: string; company: string; workDate: string; startTime: string; endTime: string; breakMinutes: number; text: string; itemId: string | null }
 export type DiaryPhoto = { id: string; name: string; contentType: string; size: number; sha256: string }

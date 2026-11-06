@@ -8,7 +8,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 import QRCode from 'qrcode'
-import { diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryMinutes, diaryPhotoRequest, diaryToday } from '../src/lib/action-cases/projectDiary.ts'
+import { DIARY_PHOTO_PART_BYTES, diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryMinutes, diaryPhotoRequest, diaryToday } from '../src/lib/action-cases/projectDiary.ts'
 import { validateDiaryImage } from '../src/lib/action-cases/projectDiaryImage.ts'
 const require = createRequire(import.meta.url), { webpack } = require('next/dist/compiled/webpack/webpack'), output = resolve('tmp/project-diary-ui')
 await mkdir(output, { recursive: true })
@@ -17,8 +17,8 @@ const globals = (await readFile('src/app/globals.css', 'utf8')).replace('@import
 const { css: base } = await postcss([tailwind({ base: resolve('src') })]).process(globals, { from: resolve('src/app/globals.css') })
 const css = base + await readFile('src/components/tasks/uppdrag-theme.css', 'utf8') + await readFile('src/components/tasks/project-diary.css', 'utf8'), js = await readFile(resolve(output, 'view.js'))
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, project = { id: id(1), title: 'Björkängen · Fiktivt dagboksprojekt' }, items = [{ id: id(2), title: 'Mark och grund' }, { id: id(3), title: 'Invändiga arbeten' }]
-let active = true, revision = 1, token = randomUUID(), member = false, fail = false, failPhoto = false, failRevision = false
-const transferring = new Set(), metrics = { prepared: 0, completed: 0, maxConcurrent: 0 }
+let active = true, revision = 1, token = randomUUID(), member = false, fail = false, failPhoto = false, failRevision = false, blockDirect = false, blockParts = false
+const transferring = new Set(), metrics = { prepared: 0, completed: 0, maxConcurrent: 0, relayedParts: 0, maxPartBytes: 0 }
 const people = [{ id: id(8), name: 'Anna Exempel', company: 'Exempelbygg AB' }, { id: id(9), name: 'Erik Test', company: 'Testmontage AB' }]
 const uploads = new Map(), entries = [{ id: id(20), body: { name: 'Anna Exempel', company: 'Exempelbygg AB', workDate: diaryToday(), startTime: '07:00', endTime: '15:30', breakMinutes: 30, text: 'Förberett underlag i hallen och monterat reglar. Avstämt placering av genomföringar med arbetsledaren.', itemId: id(3) }, itemTitle: 'Invändiga arbeten', authorEmail: 'anna@example.invalid', actorMethod: 'email_code', emailVerifiedAt: new Date().toISOString(), receivedAt: new Date().toISOString(), minutes: 480, photos: [], corrections: [] }]
 const requests = new Map()
@@ -35,7 +35,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/style.css') { res.writeHead(200, { 'Content-Type': 'text/css' }); return res.end(css) }
     if (url.pathname.startsWith('/uppdrag/brand/')) { res.writeHead(200, { 'Content-Type': 'image/svg+xml' }); return res.end(await readFile(resolve('public', url.pathname.slice(1)))) }
     if (url.pathname === '/fixture') return send({ project, public: state, publicUrl })
-    if (url.pathname === '/test/control' && req.method === 'POST') { const d = JSON.parse(await body(req)); fail = Boolean(d.fail); failPhoto = Boolean(d.failPhoto); member = Boolean(d.member); failRevision = Boolean(d.failRevision); if (d.expire) entries[0].receivedAt = new Date(Date.now() - 49 * 3600000).toISOString(); return send({ ok: true }) }
+    if (url.pathname === '/test/control' && req.method === 'POST') { const d = JSON.parse(await body(req)); fail = Boolean(d.fail); failPhoto = Boolean(d.failPhoto); member = Boolean(d.member); failRevision = Boolean(d.failRevision); blockDirect = Boolean(d.blockDirect); blockParts = Boolean(d.blockParts); if (d.expire) entries[0].receivedAt = new Date(Date.now() - 49 * 3600000).toISOString(); return send({ ok: true }) }
     if (url.pathname === '/test/metrics') return send({ ...metrics, transferring: transferring.size, entryCount: entries.length, latestPhotoCount: entries[0].photos.length })
     const internal = url.pathname.startsWith(`/api/action-cases/${project.id}/diary`), external = url.pathname.startsWith(`/api/dagbok/${token}`)
     if (internal || external) {
@@ -53,16 +53,24 @@ const server = createServer(async (req, res) => {
         const filtered = entries.filter(e => (!url.searchParams.get('from') || e.body.workDate >= url.searchParams.get('from')) && (!url.searchParams.get('to') || e.body.workDate <= url.searchParams.get('to')) && (!url.searchParams.get('person') || e.body.name.toLowerCase().includes(url.searchParams.get('person').toLowerCase())) && (!url.searchParams.get('item') || e.body.itemId === url.searchParams.get('item')))
         return send({ project, people, items, canManage: !member, managerAssigned: true, authorId: id(5), authorName: 'Testledare', authorEmail: 'ledare@example.invalid', link: { active, revision, url: !member && active ? publicUrl : null, qrDataUrl: !member && active ? await QRCode.toDataURL(publicUrl, { width: 360, margin: 4, errorCorrectionLevel: 'M' }) : null }, entries: filtered.map(e => ({ ...e, revision: e.revision || 0, editUntil: new Date(Date.parse(e.receivedAt) + 48 * 3600000).toISOString(), canEdit: !member && Date.now() < Date.parse(e.receivedAt) + 48 * 3600000, photos: e.photos.map(photoMetadata) })), hasMore: false, nextCursor: null })
       }
+      if (url.pathname.includes('/parts/')) {
+        if (external && !device) return send({ error: 'Öppna dagboken igen.' }, 401)
+        if (blockParts) return send({ error: 'Anslutningen avbröts. Texten finns kvar. Försök igen.' }, 503)
+        const [photoId, index] = url.pathname.split('/photos/')[1].split('/parts/'), p = uploads.get(photoId), bytes = await body(req, false)
+        if (!p || !/^[0-3]$/.test(index) || bytes.length !== Math.min(DIARY_PHOTO_PART_BYTES, p.size - Number(index) * DIARY_PHOTO_PART_BYTES)) return send({ error: 'Fel bilddel.' }, 400)
+        p.parts ??= []; p.parts[Number(index)] = bytes; metrics.relayedParts++; metrics.maxPartBytes = Math.max(metrics.maxPartBytes, bytes.length)
+        return send({ id: p.id, part: Number(index) })
+      }
       const d = JSON.parse(await body(req))
       if (['request_code','verify_code','logout'].includes(d.operation)) return send({ error: 'Ladda om dagboken för att välja person.' }, 410)
       if (external && !device) return send({ error: 'Öppna dagboken igen.' }, 401)
       if (d.operation === 'person') { const p = diaryPersonInput(d); let found = people.find(old => old.name.toLocaleLowerCase('sv') === p.name.toLocaleLowerCase('sv') && old.company.toLocaleLowerCase('sv') === p.company.toLocaleLowerCase('sv')); if (!found) { found = { id: randomUUID(), ...p }; people.push(found) } return send(found) }
       if (d.operation === 'link' && internal && !member) { if (d.expectedRevision !== revision) return send({ error: 'QR-länken har ändrats.' }, 409); active = d.active; revision++; token = randomUUID(); return send({ active, revision }) }
-      if (d.operation === 'prepare') { const p = diaryPhotoRequest(d); uploads.set(p.id, { ...p }); transferring.add(p.id); metrics.prepared++; metrics.maxConcurrent = Math.max(metrics.maxConcurrent,transferring.size); return send({ uploadUrl: `${origin}/upload/${p.id}`, ready: false }) }
-      if (d.operation === 'complete') {
+      if (d.operation === 'prepare') { const p = diaryPhotoRequest(d); uploads.set(p.id, { ...uploads.get(p.id), ...p }); transferring.add(p.id); metrics.prepared++; metrics.maxConcurrent = Math.max(metrics.maxConcurrent,transferring.size); return send({ id: p.id, uploadUrl: `${origin}/upload/${p.id}`, ready: Boolean(uploads.get(p.id).sha256) }) }
+      if (d.operation === 'complete' || d.operation === 'complete_relay') {
         try {
           if (failPhoto) { failPhoto = false; throw Error('Simulerat bildfel. Försök igen.') }
-          const p = uploads.get(d.id); await validateDiaryImage(p.bytes, p.contentType, p.size); p.sha256 = createHash('sha256').update(p.bytes).digest('hex'); metrics.completed++; return send({ id: p.id, name: p.name })
+          const p = uploads.get(d.id); if (d.operation === 'complete_relay') p.bytes = Buffer.concat(p.parts || []); if (!p.bytes) return send({ error: 'Bilden har inte nått lagringen.' }, 400); await validateDiaryImage(p.bytes, p.contentType, p.size); p.sha256 = createHash('sha256').update(p.bytes).digest('hex'); metrics.completed++; return send({ id: p.id, name: p.name })
         } finally { transferring.delete(d.id) }
       }
       if (d.operation === 'entry') {
@@ -93,9 +101,16 @@ const server = createServer(async (req, res) => {
       if (d.operation === 'correction' && internal && !member) { const e = entries.find(e => e.id === d.entryId); if (!e.corrections.some(c => c.id === d.requestId)) e.corrections.push({ id: d.requestId, text: d.text, actorName: 'Testledare', createdAt: new Date().toISOString() }); return send({ id: d.requestId }) }
       return send({ error: 'Inte tillåtet' }, 403)
     }
-    if (url.pathname.startsWith('/upload/') && req.method === 'PUT') { const p = uploads.get(url.pathname.split('/').at(-1)); p.bytes = await body(req, false); res.writeHead(200); return res.end() }
+    if (url.pathname.startsWith('/upload/') && req.method === 'PUT') { if (blockDirect) return send({ error: 'Synthetic blocked direct upload' }, 503); const p = uploads.get(url.pathname.split('/').at(-1)); p.bytes = await body(req, false); res.writeHead(200); return res.end() }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Referrer-Policy': 'no-referrer' }); res.end('<!doctype html><html lang="sv"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dagbok · Fiktivt testprojekt</title><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script src="/view.js"></script></body></html>')
   } catch (error) { send({ error: error.message, definite: true }, 400) }
 })
 async function body(req, text = true) { const chunks = []; for await (const chunk of req) chunks.push(chunk); const bytes = Buffer.concat(chunks); return text ? bytes.toString('utf8') : bytes }
-server.listen(Number(process.argv.find(arg => arg.startsWith('--port='))?.slice(7)) || 0, '127.0.0.1', async () => { const url = `http://127.0.0.1:${server.address().port}`; await writeFile(resolve(output, 'url.txt'), url); console.log(url) })
+server.listen(Number(process.argv.find(arg => arg.startsWith('--port='))?.slice(7)) || 0, '127.0.0.1', async () => {
+  const url = `http://127.0.0.1:${server.address().port}`; await writeFile(resolve(output, 'url.txt'), url); console.log(url)
+  if (process.argv.includes('--test-upload')) {
+    try { const { testDiaryUpload } = await import('../test/helpers/diary-upload-browser.mjs'); await testDiaryUpload(url, output) }
+    catch (error) { console.error(error); process.exitCode = 1 }
+    finally { server.closeAllConnections(); server.close() }
+  }
+})

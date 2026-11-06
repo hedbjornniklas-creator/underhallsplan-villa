@@ -52,7 +52,7 @@ Mina uppdrags konton och behorigheter andras inte. QR genereras lokalt av
 qrcode, inte av en extern QR-tjanst. En slumpmassig HttpOnly-enhetscookie
 avgransar pagaende uppladdningar och aterforsok; den identifierar ingen person.
 Val av samma namn pa en annan telefon ger aldrig tillgang till dess bilder.
-Gamla QR-lankar stoppas vid byte eller stangning. Bilder laddas direkt
+Gamla QR-lankar stoppas vid byte eller stangning. Bilder laddas normalt direkt
 till ett tillfalligt privat objekt, kontrolleras pa servern och arkiveras pa en
 separat, ej overskrivbar sokvag innan de kan knytas till en anteckning.
 JPG, PNG och WebP, hogst 8 MiB per bild och 20 bilder per anteckning.
@@ -72,6 +72,37 @@ Mejlkodsflodet ar borttaget fran applikationen och de gamla RPC-ingangarna
 stangs av i migreringen. Tidigare verifieringsuppgifter och original behalls
 for historik. Namnlistan fylls fran gamla anteckningar utan att skriva om dem.
 Ingen publicering ingar fore separat godkannande.
+
+## Reservvag For Bilduppladdning, 2026-11-06
+
+Incidentkontrollen hittade 20 forberedda bildposter i Gashaga den 5 november
+18.51, men inga mottagna bildobjekt eller nagon anteckning fran det forsoket.
+Alla filer lag under 8 MiB. Direkt uppladdning av en fiktiv 5 MiB-bild fungerar
+vid kontrollen dagen efter. Den exakta orsaken pa telefonen ar inte faststalld.
+Lagringsloggarna visar lyckade forberedelser och gateway-loggen visar att
+Chrome pa Android fick svar pa OPTIONS-forfragan, men ingen efterfoljande
+PUT for den kontrollerade bilden. Detta avgransar felet men bevisar inte
+om det berodde pa fillasning, webblasarkontroll eller natverk.
+
+Formularet tar nu en stabil bytekopia fran telefonens galleri. Om direkt
+overforing misslyckas kontrolleras forst om bilden redan mottagits. Annars
+anvands samma Hushub-origin med hogst fyra delar om 2 MiB. Varje anrop
+avgransas till befintlig reserverad bild, aktiv lank/enhetscookie eller
+inloggad medlem, organisation, projekt, agare, forfallotid och exakt delstorlek.
+Delar ar privat temporar lagring med den reserverade bildens MIME-metadata;
+de kan aldrig lasas via dagboken eller bifogas en anteckning. Servern satter
+samman och avkodar hela originalet innan dess SHA-256 och befintliga
+forseglingskommando anvands. Ofullstandiga bilder bifogas aldrig.
+
+Aterforsok ateranvander bild-id. En befintlig del skrivs inte over; identiska
+bytes godtas, andra bytes avvisas. Arkiverade original tas aldrig bort vid
+osakert sparsvar. Temporara delar omfattas av befintlig avgransad rensning.
+Ingen SQL, ny bucket, andrad hemlighet eller ny QR-lank behovs.
+
+Fel forklaras pa svenska och formularet visar nar bilder hindrar inskickning.
+Flera fel kan provas igen tillsammans. Texten behalls under pagaende forsok.
+Bildfiler finns fortfarande bara pa telefonen tills de har mottagits; ingen
+offline-bildlagring eller garanti om aterstallning efter stangd flik tillkommer.
 
 ## Aktivering och kontroll
 
@@ -114,6 +145,10 @@ att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
   fran avsandarens telefon avvisas; QR ar enbart for inlamning. Ingen annan
   projektroll far redigeringsratt genom detta beslut. Rader ar minimerade
   fran borjan. Original och andra modulers uppgifter skrivs inte om.
+- 2026-11-06: Anvandaren godkanner publicering av reservvagen for misslyckad
+  bilduppladdning och tydligare aterforsok. Befintliga QR-lankar, original,
+  avtal och kalkyler ska behallas. Ingen ny databasandring behovs. Reservvagen
+  ar en robusthetsrattning, inte en bekraftelse av telefonincidentens grundorsak.
 
 ## Senare, Inte Bestallt
 
