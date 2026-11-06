@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Check, Download, ExternalLink, Loader2, Share2, Upload, X } from 'lucide-react'
 import type { ContractSigningVersion } from '@/lib/action-cases/customerOffers'
 import type { ActionCaseParticipantView } from '@/lib/action-cases/contracts'
@@ -12,6 +12,7 @@ export default function CustomerContractDelivery({ caseId, version, available, r
 }) {
   const [confirm, setConfirm] = useState<'share' | 'withdraw_share' | null>(null)
   const [file, setFile] = useState<File | null>(null), [checked, setChecked] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
   const d = version.delivery, shared = Boolean(d?.sharedAt && !d.withdrawnAt)
   const button = 'gizmo-button inline-flex items-center justify-center gap-2 disabled:opacity-50'
   if (!available) return <p className="my-3 text-sm text-amber-800">Delning och underskriven kopia behöver aktiveras av administratören.</p>
@@ -39,7 +40,11 @@ export default function CustomerContractDelivery({ caseId, version, available, r
         <p className="mt-2 flex items-start gap-2 text-sm"><Check size={16} className="shrink-0" />Registrerad {new Date(d.signedCopy.registeredAt).toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}</p>
         <a className={`${button} mt-2`} href={`/api/action-cases/${caseId}/contract-signing/${version.id}/signed`} target="_blank" rel="noopener noreferrer"><Download size={16} /> Hämta underskriven kopia</a>
       </> : <>
-        <label className="mt-2 block text-sm">Underskrivet avtal (PDF)<input type="file" accept="application/pdf,.pdf" className="mt-2 block max-w-full text-sm" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] || null); setChecked(false) }} /></label>
+        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
+          <button type="button" className={`${button} shrink-0`} disabled={disabled} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden="true" /> Välj signerad PDF</button>
+          <p className="min-w-0 break-all text-sm" role="status" aria-live="polite">{file ? file.name : 'Ingen PDF vald.'}</p>
+          <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden" aria-label="Välj signerad PDF-fil" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] || null); setChecked(false) }} />
+        </div>
         <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => setChecked(event.target.checked)} className="mt-0.5 shrink-0" />Jag har kontrollerat att samtliga beställare och entreprenören har skrivit under version {version.version}.</label>
         <button className={`${button} mt-3`} disabled={disabled || !file || !checked} onClick={async () => {
           if (await onAction('upload_signed', { id: version.id, file, confirmed: true })) { setFile(null); setChecked(false) }

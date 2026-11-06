@@ -152,6 +152,14 @@ avtalsinnehall eller arbetsrader. Bada filerna kan koras igen utan dubbla uppgif
   Avtal. Uppgiften avslutas i samma databastransaktion som registreringen.
   Ingen signerad PDF kopieras till uppgiftens bilagor eller delas automatiskt.
 
+### Filval For Underskriven Kopia 2026-11-06
+
+- Avtalsstatus visar en tydlig knapp Valj signerad PDF och namnet pa vald fil.
+  Filvalet ar lokalt; uppladdning sker forst med Registrera underskriven kopia.
+- Befintlig manuell kontroll av samtliga underskrifter kravs fortfarande och
+  maste bekraftas pa nytt om filen byts. Lasta avtalsdata, PDF-original,
+  bilagor och registreringens serverkontroller andras inte. Ingen SQL behovs.
+
 ## Verifiering
 
 `test/action-cases-contract-work-db.test.mjs` provar de verkliga migreringarna
