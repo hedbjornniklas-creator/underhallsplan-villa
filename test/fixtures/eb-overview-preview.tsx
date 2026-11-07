@@ -16,6 +16,12 @@ declare global {
 }
 
 const mode = new URLSearchParams(location.search).get('state')
+const previewProjects = () => ebOverviewDemo().map(project => mode !== 'billing' ? project : ({ ...project, inspections: project.inspections.map(inspection => ({
+  ...inspection, billing: inspection.inspectionId === 'inspection-11' ? undefined : { status: ['inspection-closed', 'inspection-delivery'].includes(inspection.inspectionId) ? 'not_invoiced' as const
+    : inspection.inspectionId === 'inspection-9' ? 'invoiced' as const : 'unavailable' as const,
+  invoicedAt: inspection.inspectionId === 'inspection-9' ? '2026-11-07T10:00:00Z' : null,
+  invoiceNumber: 'INTERNAL-NUMBER-MUST-NOT-APPEAR', updatedAt: null, updatedByName: null, revision: 0 },
+})) }))
 const savedProjects = new Map<string, ReturnType<typeof ebOverviewProject>>()
 window.__ebOverviewTest = {
   fail: mode === 'error', failStatus: 503, empty: mode === 'empty', delay: 0, reads: [], writes: [],
@@ -32,7 +38,7 @@ window.fetch = async (input, init) => {
     state.reads.push(url.pathname + url.search)
     if (snapshot.fail) return Response.json({ error: 'Kunde inte hämta besiktningarna.' }, { status: snapshot.failStatus })
     if (url.pathname === '/api/eb/projects') {
-      const projects = snapshot.empty ? [] : ebOverviewDemo()
+      const projects = snapshot.empty ? [] : previewProjects()
       if (snapshot.sourceUnlocked) {
         const source = projects[0]?.inspections.find(item => item.inspectionId === 'inspection-closed')
         if (source) { source.reportLockedAt = null; source.reportLockedBy = null }

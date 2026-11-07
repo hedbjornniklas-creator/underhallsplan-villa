@@ -23,6 +23,9 @@ export async function GET(request: Request) {
     const organizationFailure = obOrganizationFailure(error)
     if (organizationFailure) return organizationFailure
 
+    if (error instanceof Error && 'code' in error && error.code === 'OB_OVERVIEW_BILLING_CONFIGURATION') {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 503, headers })
+    }
     if (error instanceof InvalidOverviewQuery) return NextResponse.json({ error: error.message }, { status: 400, headers })
     const code = error instanceof Error ? error.message : ''
     if (code === 'UNAUTHORIZED') return NextResponse.json({ error: 'Logga in igen för att läsa dina uppdrag.' }, { status: 401, headers })

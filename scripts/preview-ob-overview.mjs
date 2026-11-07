@@ -16,12 +16,12 @@ await new Promise((ok, fail) => webpack({
     '@/lib/supabaseClient': resolve('test/fixtures/ob-overview-client.ts'),
     'next/link': resolve('test/fixtures/ob-overview-navigation.tsx'),
     'next/navigation': resolve('test/fixtures/ob-overview-navigation.tsx'),
-    './ob-overview.css': false, './ob-home.css': false, '@': resolve('src'),
+    './ob-overview.css': false, './ob-home.css': false, './ob-billing-overview.css': false, '@': resolve('src'),
   } },
-  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
+  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }, { test: /\.css$/, type: 'asset/source' }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
-const css = `${globalCss.css}\n${await readFile('src/components/ob/ob-overview.css', 'utf8')}\n${await readFile('src/components/ob/ob-home.css', 'utf8')}\n
+const css = `${globalCss.css}\n${await readFile('src/components/ob/ob-overview.css', 'utf8')}\n${await readFile('src/components/ob/ob-billing-overview.css', 'utf8')}\n${await readFile('src/components/ob/ob-home.css', 'utf8')}\n
 body{margin:0;background:#f4f6f8;color:#25313b;font-family:ObOverviewManrope,sans-serif}
 .preview-notice{padding:6px 16px;background:#edf3fc;color:#245eb5;font-size:14px;text-align:center}
 .preview-header{display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid #d4dce4;background:white;gap:16px}
@@ -52,8 +52,11 @@ const portIndex = process.argv.indexOf('--port')
 await new Promise((ok, fail) => { server.once('error', fail); server.listen(portIndex < 0 ? 0 : Number(process.argv[portIndex + 1]), '127.0.0.1', ok) })
 const base = `http://127.0.0.1:${server.address().port}`
 console.log(`OB overview preview (synthetic only): ${base}/ob`)
-if (process.argv.includes('--test') || process.argv.includes('--test-actions') || process.argv.includes('--test-guide') || process.argv.includes('--test-retirement')) {
+if (process.argv.includes('--test') || process.argv.includes('--test-actions') || process.argv.includes('--test-guide') || process.argv.includes('--test-retirement') || process.argv.includes('--test-billing')) {
   try {
+    if (process.argv.includes('--test-billing')) {
+      const { testOverviewBilling } = await import('../test/helpers/ob-overview-billing-browser.mjs'); await testOverviewBilling(base, output)
+    }
     if (process.argv.includes('--test-retirement')) {
       const { testOverviewRetirement } = await import('../test/helpers/ob-overview-retirement-browser.mjs'); await testOverviewRetirement(base, output)
     }

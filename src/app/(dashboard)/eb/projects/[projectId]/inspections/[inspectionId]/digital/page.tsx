@@ -133,11 +133,19 @@ export default async function EbInspectionDigitalReportPage({
 
     return (
       <>
-        <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-center text-sm leading-6 text-slate-600 print:hidden">
-          Intern förhandsvisning av det fastställda utlåtandet.
-          <a className="ml-2 text-indigo-700 underline" href={`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`}>
-            Ändra beställaradress
-          </a>
+        <aside className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm leading-6 text-slate-600 print:hidden">
+          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
+            <a
+              className="inline-flex items-center rounded-md border border-emerald-200 bg-white px-3 py-2 font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              href={`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/perform`}
+            >
+              Till besiktningen
+            </a>
+            <span>Intern förhandsvisning av det fastställda utlåtandet.</span>
+            <a className="text-indigo-700 underline" href={`/eb/projects/${encodeURIComponent(projectId)}/inspections/${encodeURIComponent(inspectionId)}/follow-up-customer`}>
+              Ändra beställaradress
+            </a>
+          </div>
         </aside>
         <EbPublicReportSnapshotView
           report={report}

@@ -49,6 +49,8 @@ export function ebOverviewDemo(): EbProjectListItem[] {
     status: 'completed', reportLockedAt: '2026-10-13T08:00:00Z', reportLockedBy: 'preview-user',
     reportPdfStatus: 'ready' as const, reportPdfDownloadUrl: '/synthetic/report.pdf',
     reportPdfCreatedAt: '2026-10-13T08:01:00Z',
+    billing: { status: 'invoiced' as const, invoicedAt: '2026-10-14T08:00:00Z', invoiceNumber: null,
+      updatedAt: '2026-10-14T08:00:00Z', updatedByName: null, revision: 1 },
   }
   const sent = { reportDeliveryStatus: 'sent' as const, reportLastSentAt: '2026-10-13T08:05:00Z' }
   return [

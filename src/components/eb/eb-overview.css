@@ -25,6 +25,8 @@
 .eb-overview .obo-row-toggle[data-attention=true] { color:#785016; }
 .eb-overview .obo-table .obo-detail-row td { background:var(--eb-accent-subtle); }
 .eb-overview .obo-actions a { color:var(--eb-accent); }
+.eb-overview .obo-action-links { grid-template-columns:repeat(2,44px); }
+.eb-overview .eb-project-link { grid-column:1; }
 .eb-overview .eb-name-link {
   display:flex;
   justify-content:flex-start;
@@ -39,10 +41,14 @@
 .eb-overview .eb-name-link > span { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .eb-overview .eb-name-link:is(:hover,:focus-visible) { color:var(--eb-accent-hover); text-decoration:underline; }
 .eb-overview .eb-reuse-action { color:var(--eb-accent); border:0; background:transparent; }
-.eb-overview .obo-table th:nth-child(3) { width:15%; }
-.eb-overview .obo-table th:nth-child(4) { width:14%; }
-.eb-overview .obo-table th:nth-child(5) { width:12rem; }
-.eb-overview .obo-table th:nth-child(6) { width:8rem; }
+.eb-overview .obo-table th:nth-child(3) { width:12%; }
+.eb-overview .obo-table th:nth-child(4) { width:11%; }
+.eb-overview .obo-table th:nth-child(5) { width:10rem; }
+.eb-overview .obo-table th:nth-child(6) { width:6rem; }
+.eb-overview .obo-table th:nth-child(7) { width:8rem; }
+.eb-overview .obo-table th:nth-child(8) { width:3.5rem; }
+.eb-overview .obo-table th:nth-child(9) { width:9.5rem; }
+.eb-billing-unavailable { margin:.75rem 1rem; padding:.75rem; border:1px solid #e6cf90; background:#fffbeb; color:#70531d; border-radius:4px; font-size:.875rem; }
 .eb-overview .eb-time { display:block; font-size:.75rem; }
 .eb-overview .eb-delivery-action { display:inline-flex; align-items:center; justify-content:center; min-height:44px; width:44px; padding:0; border:0; color:var(--eb-accent); background:transparent; }
 .eb-overview .eb-delivery-action span { display:none; }
@@ -63,7 +69,44 @@
   .eb-home .obo-home-heading h1 { order:3; flex-basis:100%; }
   .eb-home .obo-guide-trigger { margin-left:auto; }
 }
-@container ob-overview (width < 56rem) {
+/* EB has nine columns, so reflow before its identity column gets squeezed out.
+   Below 56rem the shared overview already supplies these card styles. */
+@container ob-overview (56rem <= width < 70rem) {
+  .eb-overview .obo-workspace { font-size:1rem; line-height:1.5; }
+  .eb-overview .obo-toolbar { display:flex; flex-wrap:wrap; gap:16px; padding:16px; }
+  .eb-overview .obo-search { flex:1 1 100%; }
+  .eb-overview .obo-sort { flex:1 1 9rem; min-width:0; }
+  .eb-overview .obo-page-size { flex:0 1 5.5rem; min-width:0; }
+  .eb-overview :is(.obo-sort,.obo-page-size,.obo-filter-select) { flex-direction:column; align-items:stretch; gap:.25rem; }
+  .eb-overview :is(.obo-sort,.obo-page-size,.obo-filter-select) > span { font-size:.875rem; }
+  .eb-overview select { padding:8px 32px 8px 12px; }
+  .eb-overview :is(select,button,.obo-search input,.obo-actions a) { min-height:48px; }
+  .eb-overview .obo-icon { width:48px; height:48px; flex-basis:48px; }
+  .eb-overview .obo-filters { padding:0 1rem .75rem; gap:.25rem 1rem; }
+  .eb-overview .obo-filter-buttons { display:none; }
+  .eb-overview .obo-filter-select { display:flex; margin-right:auto; }
+  .eb-overview :is(.obo-table,.obo-table tbody) { display:block; }
+  .eb-overview .obo-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .eb-overview .obo-table tr[data-row-id] { display:flex; flex-direction:column; height:auto; padding:1rem; border-bottom:1px solid #d4dce4; border-left:3px solid #d4dce4; }
+  .eb-overview .obo-table tr[data-marker=attention] { border-left-color:#a36116; }
+  .eb-overview .obo-table tr[data-marker=closed] { border-left-color:#52705e; }
+  .eb-overview .obo-table tr[data-marker] td:first-child { box-shadow:none; }
+  .eb-overview .obo-table td { display:block; padding:0; border:0; }
+  .eb-overview .obo-table .obo-desktop-only { display:none; }
+  .eb-overview .obo-table .obo-mobile-only { display:block; }
+  .eb-overview .obo-cell-text { white-space:normal; overflow:visible; overflow-wrap:anywhere; }
+  .eb-overview .obo-identity { overflow-wrap:anywhere; order:-2; }
+  .eb-overview :is(.obo-meta,.obo-attention) { font-size:.875rem; }
+  .eb-overview .obo-table .obo-date { order:-1; margin:.5rem 0 .75rem; }
+  .eb-overview .obo-table .obo-state { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr)); gap:.5rem; padding:.2rem 0; }
+  .eb-overview .obo-mobile-label { display:block; color:#596571; font-size:.875rem; padding-top:.125rem; }
+  .eb-overview .obo-table .obo-actions { padding:.5rem 0 0; }
+  .eb-overview .obo-action-links { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:.25rem 1.5rem; }
+  .eb-overview .obo-actions a { flex:1 1 9rem; width:auto; justify-content:flex-start; gap:.5rem; font-size:.875rem; }
+  .eb-overview .obo-actions a > span { display:block; min-width:0; overflow-wrap:anywhere; }
+  .eb-overview .obo-pagination { padding:.75rem 1rem; }
+}
+@container ob-overview (width < 70rem) {
   .eb-overview .obo-table tr[data-marker=active] { border-left-color:var(--eb-accent); }
   .eb-overview .obo-table tr[data-marker=active] td:first-child { box-shadow:none; }
   .eb-overview .eb-delivery-action { flex:1 1 9rem; width:auto; min-height:48px; justify-content:flex-start; gap:.5rem; font-size:.875rem; }

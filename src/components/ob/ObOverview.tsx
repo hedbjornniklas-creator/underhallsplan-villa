@@ -7,10 +7,12 @@ import PendingLink from '@/components/ui/PendingLink'
 import ObOverviewAssignmentActions from './ObOverviewAssignmentActions'
 import type { ObOverviewItem, ObOverviewPage, OverviewFilter, OverviewSort } from '@/lib/ob/overview'
 import './ob-overview.css'
+import './ob-billing-overview.css'
 import { useObOrganization, withObOrganization } from './ObOrganizationBoundary'
 
 const filters: { value: OverviewFilter; label: string }[] = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
+  { value: 'to-invoice', label: 'Att fakturera' },
 ]
 const AUTO_REFRESH_FRESHNESS_MS = 5_000
 type OverviewPage = ObOverviewPage & { filtered: boolean }
@@ -29,6 +31,9 @@ function OverviewRow({ item, onChanged }: { item: ObOverviewItem; onChanged: () 
   const detailsId = useId()
   const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
   const attentionLabel = item.attention.length ? `Åtgärd krävs: ${item.attention.join('. ')}. ` : ''
+  const billingLabel = item.billing?.status === 'invoiced' ? 'Fakturerad'
+    : item.billing?.status === 'not_invoiced' ? 'Ej fakturerad'
+      : item.id.startsWith('inspection:') ? 'Ej tillgänglig' : '–'
   return <>
     <tr data-marker={item.marker} data-row-id={item.id}>
       <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
@@ -43,6 +48,7 @@ function OverviewRow({ item, onChanged }: { item: ObOverviewItem; onChanged: () 
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Bekräftelse</span><span className="obo-cell-text" title={item.confirmation}>{item.confirmation}</span></td>
       <td className="obo-state"><span className="obo-mobile-label" aria-hidden="true">Besiktning</span><span className="obo-cell-text" title={item.inspection}>{item.inspection}</span></td>
+      <td className="obo-state obo-billing-status"><span className="obo-mobile-label" aria-hidden="true">Fakturering</span><span className="obo-cell-text" title={billingLabel}>{billingLabel}</span></td>
       <td className="obo-details-toggle">
         <button type="button" className="obo-icon obo-row-toggle" aria-label={attentionLabel + detailsLabel}
           title={attentionLabel + detailsLabel} aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
@@ -64,7 +70,7 @@ function OverviewRow({ item, onChanged }: { item: ObOverviewItem; onChanged: () 
         </a>}
       </div></td>
     </tr>
-    {expanded && <tr className="obo-detail-row"><td colSpan={8}>
+    {expanded && <tr className="obo-detail-row"><td colSpan={9}>
       <div id={detailsId} className="obo-row-details">
         <dl>
           <div><dt>Besiktningsdag</dt><dd>{dateLabel(item.date)}</dd></div>
@@ -73,6 +79,7 @@ function OverviewRow({ item, onChanged }: { item: ObOverviewItem; onChanged: () 
           <div><dt>Kund</dt><dd>{item.customer}</dd></div>
           <div><dt>Uppdragsbekräftelse</dt><dd>{item.confirmation}</dd></div>
           <div><dt>Besiktning</dt><dd>{item.inspection}</dd></div>
+          <div><dt>Fakturering</dt><dd>{billingLabel}</dd></div>
         </dl>
         {item.attention.length > 0 && <div className="obo-detail-attention"><strong>Kräver åtgärd</strong>
           <ul className="obo-attention">{item.attention.map(reason => <li key={reason}>{reason}</li>)}</ul></div>}
@@ -122,6 +129,7 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
         !Number.isInteger(payload.page) || payload.page < 1 || ![10, 25, 50].includes(payload.pageSize)) {
         throw new Error(payload.error || 'Uppdragslistan kunde inte hämtas.')
       }
+      if (payload.billingAvailable !== true) throw new Error('Databasstödet för fakturamarkering behöver installeras innan listan kan visas korrekt.')
       if (controller.signal.aborted) return
       setResult({ ...payload, filtered })
       lastLoaded.current = { query, at: Date.now() }
@@ -141,10 +149,12 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
     const visible = () => { if (document.visibilityState === 'visible') void load(true) }
     window.addEventListener('focus', visible)
     document.addEventListener('visibilitychange', visible)
+    window.addEventListener('ob-inspection-billing-updated', visible)
     return () => {
       request.current?.abort()
       window.removeEventListener('focus', visible)
       document.removeEventListener('visibilitychange', visible)
+      window.removeEventListener('ob-inspection-billing-updated', visible)
     }
   }, [load, refreshKey])
 
@@ -155,10 +165,10 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
   const loadedPageSize = result?.pageSize ?? pageSize
   const pages = Math.max(1, Math.ceil(total / loadedPageSize))
   const start = (currentPage - 1) * loadedPageSize
-  function changeFilter(value: OverviewFilter) { setFilter(value); setPage(1) }
+  function changeFilter(value: OverviewFilter) { setFilter(value); if (value === 'to-invoice') setAttentionOnly(false); setPage(1) }
   function resetFilters() { setSearch(''); setDebouncedSearch(''); setFilter('all'); setAttentionOnly(false); setPage(1) }
 
-  return <section className="obo" aria-labelledby={heading} aria-busy={loading}>
+  return <section className="obo ob-billing-overview" aria-labelledby={heading} aria-busy={loading}>
     <div className="obo-heading">
       <h2 id={heading}>ÖB-uppdrag</h2>
       <ActionButton className="obo-icon" aria-label="Uppdatera uppdragslistan" title="Uppdatera uppdragslistan"
@@ -199,11 +209,13 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
             {filters.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
-        <label className="obo-check"><input type="checkbox" checked={attentionOnly}
+        <label className="obo-check"><input type="checkbox" checked={attentionOnly} disabled={filter === 'to-invoice'}
           onChange={event => { setAttentionOnly(event.target.checked); setPage(1) }} />Kräver åtgärd</label>
         <label className="obo-check"><input type="checkbox" checked={showArchived}
           onChange={event => { setShowArchived(event.target.checked); setPage(1) }} />Visa arkiverade</label>
       </div>
+      {filter === 'active' && <p className="obo-billing-help">Aktuella innehåller även klara besiktningar som inte är fakturerade. Besiktningens status visas separat.</p>}
+      {filter === 'to-invoice' && <p className="obo-billing-help">Klara besiktningar som inte har markerats fakturerade. Ändra markeringen i besiktningen under Skicka utlåtande.</p>}
       {error && <div className="obo-error" role="alert"><p>{error}{result ? ' Listan nedan visar senast hämtade uppgifter.' : ''}</p>
         <ActionButton className="obo-retry" tone="secondary" onClick={() => void load()} busy={loading} busyLabel="Hämtar…">Försök igen</ActionButton></div>}
       {result === null && !error ? <p className="obo-empty" role="status">Hämtar uppdrag…</p> : null}
@@ -213,9 +225,9 @@ export default function ObOverview({ refreshKey = 0 }: { refreshKey?: number }) 
         {result.filtered && <button type="button" onClick={resetFilters}>Rensa filter</button>}
       </div> : null}
       {rows.length > 0 && <table className="obo-table">
-        <caption className="obo-sr">ÖB-uppdrag med separata statusar för uppdragsbekräftelse och besiktning</caption>
+        <caption className="obo-sr">ÖB-uppdrag med separata statusar för uppdragsbekräftelse, besiktning och fakturering</caption>
         <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
-          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer och åtgärdsbehov</span></th>
+          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Besiktning</th><th scope="col">Fakturering</th><th scope="col"><span className="obo-sr">Detaljer och åtgärdsbehov</span></th>
           <th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead>
         <tbody>{rows.map(item => <OverviewRow key={item.id} item={item} onChanged={load} />)}</tbody>
       </table>}

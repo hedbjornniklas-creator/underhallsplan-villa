@@ -32,6 +32,14 @@ function fixture() {
   }
   const viewProps: Array<Record<string, unknown>> = []
   const page = loadPage({
+    '@/components/auth/DashboardAccessRecovery': { __esModule: true,
+      default: () => createElement('aside', null, 'Behörighet behöver kontrolleras') },
+    '@/lib/auth/returnPath': { authLoginUrl: (path: string) => `/login?next=${encodeURIComponent(path)}` },
+    '@/lib/auth/serverRecovery': {
+      currentAuthReturnPath: async (fallback: string) => fallback,
+      authRecoveryReason: (error: unknown) => error instanceof Error &&
+        ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED'].includes(error.message) ? 'forbidden' : 'unavailable',
+    },
     'next/navigation': {
       notFound: () => { throw new Error('NOT_FOUND') },
       redirect: (path: string) => { throw new Error(`REDIRECT:${path}`) },
@@ -82,6 +90,10 @@ test('authenticated internal preview offers ordinary contact correction without 
   const f = fixture()
   const html = await f.render()
   assert.match(html, /Intern förhandsvisning/)
+  assert.match(html, /Till besiktningen/)
+  assert.match(html, /href="\/eb\/projects\/project\/inspections\/inspection\/perform"/)
+  assert.match(html, /flex-wrap/)
+  assert.match(html, /print:hidden/)
   assert.match(html, /Ändra beställaradress/)
   assert.match(html, /href="\/eb\/projects\/project\/inspections\/inspection\/follow-up-customer"/)
   assert.match(html, /Det fastställda utlåtandet/)
@@ -101,10 +113,16 @@ test('authenticated internal preview offers ordinary contact correction without 
 })
 
 test('unauthenticated or mismatched project/inspection previews never expose the report or customer correction', async () => {
-  for (const error of ['UNAUTHORIZED', 'ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED']) {
+  const unauthenticated = fixture()
+  unauthenticated.state.authError = 'UNAUTHORIZED'
+  await assert.rejects(unauthenticated.render(), /REDIRECT:/)
+  assert.equal(unauthenticated.viewProps.length, 0)
+  for (const error of ['ORG_MEMBERSHIP_REQUIRED', 'MODULE_ACCESS_REQUIRED']) {
     const f = fixture()
     f.state.authError = error
-    await assert.rejects(f.render(), /REDIRECT:/)
+    const html = await f.render()
+    assert.match(html, /Behörighet behöver kontrolleras/)
+    assert.doesNotMatch(html, /Till besiktningen|Ändra beställaradress|Det fastställda utlåtandet/)
     assert.equal(f.viewProps.length, 0)
   }
   for (const mismatch of ['project', 'inspection', 'snapshot-project', 'snapshot-inspection']) {
@@ -122,6 +140,6 @@ test('internal PDF output remains the report alone without contact correction or
   const f = fixture()
   const html = await f.render(true)
   assert.match(html, /PDF-utlåtande/)
-  assert.doesNotMatch(html, /förhandsvisning|uppföljning|599|beställaradress|follow-up-customer/)
+  assert.doesNotMatch(html, /förhandsvisning|uppföljning|599|beställaradress|follow-up-customer|Till besiktningen|\/perform/)
   assert.equal(f.viewProps.length, 0)
 })

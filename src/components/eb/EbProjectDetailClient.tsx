@@ -32,6 +32,8 @@ import EbAgreementDocumentField from '@/components/eb/EbAgreementDocumentField'
 import EbProjectAttachmentsPanel from '@/components/eb/EbProjectAttachmentsPanel'
 import EbAssignmentConfirmationDialog from '@/components/eb/EbAssignmentConfirmationDialog'
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
+import EbInspectionBillingPanel, { type EbInspectionBillingPanelHandle } from '@/components/eb/EbInspectionBillingPanel'
+import type { EbInspectionBilling } from '@/lib/eb/billing'
 import EbNewInspectionDialog, { canReusePreviousFinalInspection } from '@/components/eb/EbNewInspectionDialog'
 import { getEbInspectionLifecycle } from '@/lib/eb/inspectionLifecycle'
 import { useEbToast } from '@/components/eb/EbToastProvider'
@@ -998,14 +1000,18 @@ function InspectionDetailsDialog({
   open,
   project,
   inspection,
+  initialTab = 'time',
   onClose,
   onUpdated,
+  onBillingChanged,
 }: {
   open: boolean
   project: EbProjectListItem
   inspection: EbInspectionSummary | null
+  initialTab?: InspectionDetailsTabKey
   onClose: () => void
   onUpdated: (project: EbProjectListItem) => void
+  onBillingChanged: (inspectionId: string, billing: EbInspectionBilling) => void
 }) {
   const { showError } = useEbToast()
   const partyVocabulary = resolveEbAgreementVocabulary(project.standardAgreement)
@@ -1025,7 +1031,22 @@ function InspectionDetailsDialog({
   const [invitationSubject, setInvitationSubject] = useState('')
   const [invitationBody, setInvitationBody] = useState('')
   const [participants, setParticipants] = useState<EditableParticipant[]>([])
-  const [activeTab, setActiveTab] = useState<InspectionDetailsTabKey>('time')
+  const [selectedTab, setSelectedTab] = useState<InspectionDetailsTabKey>('time')
+  const [billingBusy, setBillingBusy] = useState(false)
+  const [closing, setClosing] = useState(false)
+  const billingPanel = useRef<EbInspectionBillingPanelHandle>(null)
+  const detailsTabList = useRef<HTMLDivElement>(null)
+  const isLocked = Boolean(inspection?.reportLockedAt)
+  const activeTab = isLocked ? 'billing' : selectedTab
+  const hasForm = Boolean(form)
+
+  useEffect(() => {
+    if (open && hasForm) {
+      const selected = detailsTabList.current?.querySelector<HTMLElement>('[aria-selected="true"]')
+      selected?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      selected?.focus({ preventScroll: true })
+    }
+  }, [activeTab, hasForm, open])
 
   useEffect(() => {
     if (!open || !inspection) return
@@ -1038,7 +1059,11 @@ function InspectionDetailsDialog({
     setDocumentsLoaded(false)
     setInvitationSubject('')
     setInvitationBody('')
-    setActiveTab('time')
+    setSelectedTab(initialTab)
+    setBillingBusy(false)
+    setParticipantsLoading(false)
+    setDocumentsLoading(false)
+    if (inspection.reportLockedAt) return
     const loadParticipants = async () => {
       try {
         setParticipantsLoading(true)
@@ -1100,12 +1125,28 @@ function InspectionDetailsDialog({
     return () => {
       cancelled = true
     }
-  }, [inspection, open, project.id, showError])
+  }, [inspection, initialTab, open, project.id, showError])
 
   if (!open || !inspection || !form) return null
 
   const preliminaryInspection = isEbPreliminaryInspection(inspection.variant)
   const supportsFinalDecision = isEbFinalDecisionInspection(inspection.variant)
+
+  const requestClose = async () => {
+    if (submitting || closing) return
+    setClosing(true)
+    try { if (!billingPanel.current || await billingPanel.current.flush()) onClose() }
+    finally { setClosing(false) }
+  }
+
+  const selectDetailsTab = async (tab: InspectionDetailsTabKey) => {
+    if (submitting || closing) return
+    setClosing(true)
+    try {
+      if (billingPanel.current && !(await billingPanel.current.flush())) return
+      setSelectedTab(tab)
+    } finally { setClosing(false) }
+  }
 
   const updateField = <K extends keyof InspectionDetailsFormState>(
     field: K,
@@ -1139,7 +1180,7 @@ function InspectionDetailsDialog({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (submitting) return
+    if (submitting || billingBusy || isLocked) return
 
     try {
       setSubmitting(true)
@@ -1208,7 +1249,9 @@ function InspectionDetailsDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 p-3"
+      onClick={event => { if (event.target === event.currentTarget) void requestClose() }}
+      onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); void requestClose() } }}>
       <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-emerald-100 px-4 py-3">
           <div>
@@ -1219,8 +1262,8 @@ function InspectionDetailsDialog({
           </div>
           <button
             type="button"
-            onClick={onClose}
-            disabled={submitting}
+            onClick={() => void requestClose()}
+            disabled={submitting || closing}
             aria-label="Stäng"
             title="Stäng"
             className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1231,8 +1274,8 @@ function InspectionDetailsDialog({
 
         <form onSubmit={(event) => void handleSubmit(event)} className="overflow-auto p-4">
           <div className="border-b border-emerald-100">
-            <div role="tablist" aria-label="Besiktningsuppgifter" className="flex gap-2 overflow-x-auto pb-3">
-              {INSPECTION_DETAILS_TABS.map((tab) => {
+            <div ref={detailsTabList} role="tablist" aria-label="Besiktningsuppgifter" className="flex gap-2 overflow-x-auto pb-3">
+              {INSPECTION_DETAILS_TABS.filter(tab => !isLocked || tab.key === 'billing').map((tab) => {
                 const Icon = tab.icon
                 const selected = activeTab === tab.key
                 return (
@@ -1243,8 +1286,9 @@ function InspectionDetailsDialog({
                     aria-selected={selected}
                     aria-controls={`inspection-details-${tab.key}`}
                     id={`inspection-details-tab-${tab.key}`}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={`inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 ${
+                    onClick={() => void selectDetailsTab(tab.key)}
+                    disabled={closing || (isLocked && tab.key !== 'billing')}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 ${
                       selected
                         ? 'border-emerald-700 bg-emerald-700 text-white shadow-sm'
                         : 'border-emerald-100 bg-white text-gray-700 hover:bg-emerald-50 hover:text-emerald-900'
@@ -1652,6 +1696,17 @@ function InspectionDetailsDialog({
                 aria-labelledby="inspection-details-tab-billing"
                 className="space-y-5"
               >
+                <EbInspectionBillingPanel
+                  ref={billingPanel}
+                  key={inspection.inspectionId}
+                  projectId={project.id}
+                  inspectionId={inspection.inspectionId}
+                  initialBilling={inspection.billing}
+                  onChanged={(billing) => onBillingChanged(inspection.inspectionId, billing)}
+                  onBusyChange={setBillingBusy}
+                />
+                {isLocked && <p className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">Utlåtandet är låst. Fakturamarkeringen kan ändras utan att låsa upp det. Uppgifterna nedan är skrivskyddade.</p>}
+                <fieldset disabled={isLocked || billingBusy} className="space-y-5 disabled:opacity-70">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-950">Fakturering för besiktningen</h3>
                   <p className="mt-1 text-sm text-gray-600">
@@ -1778,6 +1833,7 @@ function InspectionDetailsDialog({
                     className={inputClassName()}
                   />
                 )}
+                </fieldset>
               </section>
             ) : null}
           </div>
@@ -1785,20 +1841,20 @@ function InspectionDetailsDialog({
           <div className="mt-5 flex flex-col-reverse gap-2 border-t border-emerald-100 pt-4 sm:flex-row sm:justify-end">
             <button
               type="button"
-              onClick={onClose}
-              disabled={submitting}
+              onClick={() => void requestClose()}
+              disabled={submitting || closing}
               className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Avbryt
+              {closing ? 'Sparar…' : isLocked ? 'Stäng' : 'Avbryt'}
             </button>
-            <button
+            {!isLocked && <button
               type="submit"
-              disabled={submitting || participantsLoading || documentsLoading}
+              disabled={submitting || billingBusy || closing || participantsLoading || documentsLoading}
               className="inline-flex items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
             >
               {submitting ? <Loader2 size={16} className="animate-spin" /> : <Pencil size={16} />}
               {submitting ? 'Sparar...' : 'Spara'}
-            </button>
+            </button>}
           </div>
         </form>
       </div>
@@ -2602,6 +2658,7 @@ export default function EbProjectDetailClient({
   const [sourceInspectionId, setSourceInspectionId] = useState<string | undefined>()
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [detailsInspection, setDetailsInspection] = useState<EbInspectionSummary | null>(null)
+  const [detailsInitialTab, setDetailsInitialTab] = useState<InspectionDetailsTabKey>('time')
   const [invitationInspection, setInvitationInspection] = useState<EbInspectionSummary | null>(null)
   const [assignmentInspection, setAssignmentInspection] = useState<EbInspectionSummary | null>(null)
   const [deliveryInspection, setDeliveryInspection] = useState<EbInspectionSummary | null>(null)
@@ -2703,6 +2760,11 @@ export default function EbProjectDetailClient({
     setCurrentProject(updatedProject)
     router.refresh()
   }, [router])
+
+  const handleBillingChanged = useCallback((inspectionId: string, billing: EbInspectionBilling) => {
+    setCurrentProject((current) => ({ ...current, inspections: current.inspections.map((inspection) =>
+      inspection.inspectionId === inspectionId ? { ...inspection, billing } : inspection) }))
+  }, [])
 
   const handleDeliveryProjectUpdated = useCallback((updatedProject: EbProjectListItem) => {
     setCurrentProject(updatedProject)
@@ -3081,12 +3143,22 @@ export default function EbProjectDetailClient({
                                   </p>
                                   <button
                                     type="button"
-                                    onClick={() => setDetailsInspection(inspection)}
+                                    onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setDetailsInitialTab('time'); setDetailsInspection(inspection) }}
+                                    disabled={navigationInProgress || isLocked}
+                                    title={isLocked ? 'Lås upp utlåtandet för att ändra besiktningsuppgifter' : undefined}
+                                    className={inspectionMenuItemClassName({ disabled: navigationInProgress || isLocked })}
+                                  >
+                                    <Pencil size={16} />
+                                    Besiktningsuppgifter
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); setDetailsInitialTab('billing'); setDetailsInspection(inspection) }}
                                     disabled={navigationInProgress}
                                     className={inspectionMenuItemClassName({ disabled: navigationInProgress })}
                                   >
-                                    <Pencil size={16} />
-                                    Besiktningsuppgifter och fakturering
+                                    <FileCheck2 size={16} />
+                                    Fakturering
                                   </button>
                                   <PendingLink
                                     href={`/eb/projects/${project.id}/inspections/${inspection.inspectionId}/remediation`}
@@ -3194,8 +3266,10 @@ export default function EbProjectDetailClient({
           open={Boolean(detailsInspection)}
           project={currentProject}
           inspection={detailsInspection}
+          initialTab={detailsInitialTab}
           onClose={() => setDetailsInspection(null)}
           onUpdated={handleUpdated}
+          onBillingChanged={handleBillingChanged}
         />
         <InvitationDialog
           open={Boolean(invitationInspection)}
@@ -3210,6 +3284,7 @@ export default function EbProjectDetailClient({
           onEditSchedule={() => {
             const inspectionToEdit = invitationInspection
             setInvitationInspection(null)
+            setDetailsInitialTab('time')
             setDetailsInspection(inspectionToEdit)
           }}
           onSent={handleCreated}

@@ -7,7 +7,7 @@ export function parseOverviewQuery(params: URLSearchParams): OverviewPageOptions
   if (search.length > 200) throw new InvalidOverviewQuery('Sökningen får innehålla högst 200 tecken.')
   const filter = params.get('filter') ?? 'all'
   const sort = params.get('sort') ?? 'date-desc'
-  if (!['all', 'active', 'closed'].includes(filter) || !['date-desc', 'date-asc', 'customer', 'address'].includes(sort)) {
+  if (!['all', 'active', 'closed', 'to-invoice'].includes(filter) || !['date-desc', 'date-asc', 'customer', 'address'].includes(sort)) {
     throw new InvalidOverviewQuery('Ogiltigt filter eller sortering.')
   }
   function boolean(key: string) {

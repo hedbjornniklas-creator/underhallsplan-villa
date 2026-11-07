@@ -6,6 +6,7 @@ import Page from '../../src/app/(dashboard)/ob/page'
 import ActiveOrganizationSwitcher from '../../src/components/organizations/ActiveOrganizationSwitcher'
 import OrganizationContextProvider from '../../src/components/organizations/OrganizationContextProvider'
 import { overviewDemoItems } from './ob-overview-data'
+import { emptyObInspectionBilling, unavailableObInspectionBilling } from '../../src/lib/ob/billing'
 import { selectObOverview, type OverviewFilter, type OverviewSort } from '../../src/lib/ob/overview'
 import type { OverviewAssignment } from '../../src/lib/ob/overview'
 
@@ -72,7 +73,11 @@ window.fetch = async (input, init) => {
   window.__obOverviewTest.urls.push(url.search)
   const responseState = { ...window.__obOverviewTest }
   await new Promise(resolve => setTimeout(resolve, responseState.delay))
-  const items = selectedOrganization.id === organizations[0].id ? overviewDemoItems(assignmentChanges) : overviewDemoItems().slice(0, 1).map(item => ({ ...item, id: 'inspection:other-org', address: 'Hushub 1:s testuppdrag', customer: 'Testkund i Hushub 1' }))
+  const billingOverrides = state === 'billing' ? new Map([
+    ['inspection-3', { ...emptyObInspectionBilling(), invoiceNumber: 'MUST-NOT-SHOW-IN-LIST' }],
+    ['legacy-0', emptyObInspectionBilling()], ['legacy-1', unavailableObInspectionBilling()],
+  ]) : new Map()
+  const items = selectedOrganization.id === organizations[0].id ? overviewDemoItems(assignmentChanges, billingOverrides) : overviewDemoItems().slice(0, 1).map(item => ({ ...item, id: 'inspection:other-org', address: 'Hushub 1:s testuppdrag', customer: 'Testkund i Hushub 1' }))
   items.filter(item => item.inspection === 'Klar').forEach(item => {
     item.pdfHref = `/api/report-v2/${item.id.replace('inspection:', '')}/pdf`
   })
@@ -94,12 +99,13 @@ window.fetch = async (input, init) => {
   const selected = selectObOverview(available, options)
   const counts = { all: selectObOverview(available, { ...options, filter: 'all' }).length,
     active: selectObOverview(available, { ...options, filter: 'active' }).length,
-    closed: selectObOverview(available, { ...options, filter: 'closed' }).length }
+    closed: selectObOverview(available, { ...options, filter: 'closed' }).length,
+    'to-invoice': selectObOverview(available, { ...options, filter: 'to-invoice' }).length }
   const pageSize = Number(url.searchParams.get('pageSize') ?? 10)
   const page = Math.max(1, Math.min(Number(url.searchParams.get('page') ?? 1), Math.max(1, Math.ceil(selected.length / pageSize))))
   const pageItems = selected.slice((page - 1) * pageSize, page * pageSize)
   window.__obOverviewTest.pageLengths.push(pageItems.length)
-  return Response.json({ items: pageItems, total: selected.length, counts, page, pageSize })
+  return Response.json({ items: pageItems, total: selected.length, counts, page, pageSize, billingAvailable: state !== 'billing-unavailable' })
 }
 
 function SyntheticMutationReceipt() {

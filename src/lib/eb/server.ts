@@ -19,6 +19,9 @@ import {
   type EbApprovalStatus,
 } from '@/lib/eb/approvalStatus'
 import { classifyEbAgreement, resolveEbAgreementVocabulary } from '@/lib/eb/vocabulary'
+import type { EbInspectionBilling } from '@/lib/eb/billing'
+import { unavailableEbInspectionBilling } from '@/lib/eb/billing'
+import { loadEbInspectionBillingForProjects } from '@/lib/eb/billingServer'
 import {
   applyEbInspectionReusePlan,
   assertEbInspectionReuseEligible,
@@ -86,6 +89,8 @@ export type EbProjectAgreementItem = {
 
 export type EbInspectionSummary = {
   inspectionId: string
+  /** Internal accounting reminder; never part of the published report. */
+  billing?: EbInspectionBilling
   projectId: string
   variant: EbInspectionVariant
   variantLabel: string
@@ -2178,7 +2183,7 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
     detailsByProjectId.set(detail.eb_project_id, rows)
   }
 
-  return projectRows.map((project) =>
+  const projects = projectRows.map((project) =>
     mapProject(
       project,
       detailsByProjectId,
@@ -2188,6 +2193,17 @@ async function buildProjectItems(projectRows: EbProjectRow[]) {
       reopenedAtByInspectionId
     )
   )
+  const billingByInspectionId = await loadEbInspectionBillingForProjects({
+    orgId: projectRows[0]?.org_id ?? '',
+    projects,
+  })
+  return projects.map((project) => ({
+    ...project,
+    inspections: project.inspections.map((inspection) => ({
+      ...inspection,
+      billing: billingByInspectionId.get(inspection.inspectionId) ?? unavailableEbInspectionBilling(),
+    })),
+  }))
 }
 
 export async function listEbProjects(orgId: string): Promise<EbProjectListItem[]> {

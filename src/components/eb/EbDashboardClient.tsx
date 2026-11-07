@@ -10,7 +10,7 @@ import GettingStarted from '@/components/besiktapp/GettingStarted'
 import EbNewInspectionDialog, { canReusePreviousFinalInspection } from '@/components/eb/EbNewInspectionDialog'
 import EbReportDeliveryDialog from '@/components/eb/EbReportDeliveryDialog'
 import type { EbInspectionSummary, EbProjectListItem } from '@/lib/eb/server'
-import { buildEbOverviewItems, selectEbOverviewPage, type EbOverviewItem, type EbOverviewFilter, type EbOverviewSort } from '@/lib/eb/overview'
+import { buildEbOverviewItems, getEbOverviewItemState, selectEbOverviewPage, type EbOverviewItem, type EbOverviewFilter, type EbOverviewSort } from '@/lib/eb/overview'
 import { getEbInspectionLifecycle } from '@/lib/eb/inspectionLifecycle'
 import '@/components/ob/ob-overview.css'
 import './eb-overview.css'
@@ -18,6 +18,7 @@ import './eb-overview.css'
 type Props = { initialProjects: EbProjectListItem[]; initialError: string | null }
 const filters: Array<{ value: EbOverviewFilter; label: string }> = [
   { value: 'active', label: 'Pågående' }, { value: 'closed', label: 'Klara' }, { value: 'all', label: 'Alla' },
+  { value: 'to-invoice', label: 'Att fakturera' },
 ]
 type DeliveryTarget = { projectId: string; inspection: EbInspectionSummary; initialAction: 'delivery' | 'unlock' }
 function dateLabel(value: string | null) {
@@ -34,7 +35,9 @@ function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; on
   const reportHref = `${base}/inspections/${encodeURIComponent(item.id)}/report`
   const performHref = `${base}/inspections/${encodeURIComponent(item.id)}/perform`
   const inspectionHref = lifecycle.isOpen ? performHref : reportHref
-  const marker = lifecycle.needsAttention ? 'attention' : lifecycle.isOpen ? 'active' : 'closed'
+  const { marker } = getEbOverviewItemState(item)
+  const billingLabel = inspection.billing?.status === 'invoiced' ? 'Fakturerad'
+    : inspection.billing?.status === 'not_invoiced' ? 'Ej fakturerad' : 'Ej tillgänglig'
   const canReuse = canReusePreviousFinalInspection(inspection) && getEbInspectionLifecycle({ status: 'draft' }, project.status).isOpen
   return <>
     <tr data-row-id={item.id} data-marker={marker}>
@@ -49,27 +52,31 @@ function InspectionRow({ item, onDelivery, onReuse }: { item: EbOverviewItem; on
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Utlåtande</span><span className="obo-cell-text" title={lifecycle.deliveryLabel}>{lifecycle.deliveryLabel}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Besiktning</span><span className="obo-cell-text" title={lifecycle.workLabel}>{lifecycle.workLabel}</span></td>
+      <td className="obo-state eb-billing-status"><span className="obo-mobile-label">Fakturering</span><span className="obo-cell-text" title={billingLabel}>{billingLabel}</span></td>
       <td className="obo-details-toggle obo-desktop-only"><button type="button" className="obo-icon obo-row-toggle" data-attention={lifecycle.needsAttention}
         aria-label={`${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.title}, ${project.title}`} aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined}
         onClick={() => setExpanded(value => !value)}>{lifecycle.needsAttention ? <TriangleAlert size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}</button></td>
       <td className="obo-actions"><div className="obo-action-links">
         <PendingLink href={inspectionHref} className="obo-inspection-link" prefetch={false} autoPending pendingLabel="Öppnar besiktning…"
           aria-label={`Öppna besiktning: ${item.title}, ${project.title}`} title="Öppna besiktning" icon={<ClipboardList size={18} aria-hidden />}>Öppna besiktning</PendingLink>
-        <PendingLink href={reportHref} className="obo-confirmation-link" prefetch={false} autoPending pendingLabel="Öppnar utlåtande…"
-          aria-label={`Visa utlåtande: ${item.title}, ${project.title}`} title="Visa utlåtande" icon={<FileText size={18} aria-hidden />}>Utlåtande</PendingLink>
+        <PendingLink href={performHref} className="obo-confirmation-link" prefetch={false} autoPending pendingLabel="Öppnar granskning…"
+          aria-label={`Granska utlåtande: ${item.title}, ${project.title}`} title="Granska utlåtande" icon={<FileText size={18} aria-hidden />}>Utlåtande</PendingLink>
+        <PendingLink href={base} className="eb-project-link" prefetch={false} autoPending pendingLabel="Öppnar entreprenad…"
+          aria-label={`Öppna entreprenad: ${project.title}`} title="Öppna entreprenad" icon={<Building2 size={18} aria-hidden />}>Entreprenad</PendingLink>
         <button type="button" className="eb-delivery-action" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'delivery' })}
           aria-label={`Hantera utlåtande: ${item.title}, ${project.title}`} title={lifecycle.deliveryAction || 'Hantera utlåtande'}><Send size={18} aria-hidden /><span>{lifecycle.deliveryAction || 'Hantera utlåtande'}</span></button>
       </div></td>
     </tr>
-    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}><div id={detailsId} className="obo-row-details">
+    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={9}><div id={detailsId} className="obo-row-details">
       <dl><div><dt>Besiktning</dt><dd>{item.title}</dd></div><div><dt>Entreprenad</dt><dd>{project.title}</dd></div>
         <div><dt>Fastighet och adress</dt><dd>{[project.propertyDesignation, item.address, project.city].filter(Boolean).join(' · ')}</dd></div><div><dt>Beställare</dt><dd>{item.customer}</dd></div>
-        <div><dt>Uppdragsnummer</dt><dd>{inspection.assignmentNumber || '–'}</dd></div><div><dt>Status</dt><dd>{lifecycle.workLabel} · {lifecycle.deliveryLabel}</dd></div></dl>
+        <div><dt>Uppdragsnummer</dt><dd>{inspection.assignmentNumber || '–'}</dd></div><div><dt>Status</dt><dd>{lifecycle.workLabel} · {lifecycle.deliveryLabel}</dd></div>
+        <div><dt>Fakturering</dt><dd>{billingLabel}</dd></div></dl>
       {lifecycle.deliveryAction && <p className="obo-attention">{lifecycle.deliveryAction}</p>}
       <div className="eb-detail-actions"><PendingLink href={base} prefetch={false} autoPending pendingLabel="Öppnar entreprenad…" icon={<Building2 size={16} aria-hidden />}>Entreprenad, avtal och historik</PendingLink>
         {inspection.reportLockedAt && <button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button>}</div>
     </div></td></tr>}
-    {inspection.reportLockedAt && <tr className="eb-mobile-context"><td colSpan={8}><button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button></td></tr>}
+    {inspection.reportLockedAt && <tr className="eb-mobile-context"><td colSpan={9}><button type="button" onClick={() => onDelivery({ projectId: project.id, inspection, initialAction: 'unlock' })}><LockOpen size={16} aria-hidden />Lås upp för ändring</button></td></tr>}
   </>
 }
 
@@ -138,18 +145,19 @@ export default function EbDashboardClient({ initialProjects, initialError }: Pro
     <div className="eb-home-actions"><button type="button" onClick={() => setCreateOpen(true)} className="eb-primary"><Plus size={18} aria-hidden />Ny besiktning</button><PendingLink href="/settings" autoPending pendingLabel="Öppnar inställningar…" icon={<Settings size={17} aria-hidden />}>Inställningar</PendingLink></div>
     <section className="obo eb-overview" aria-labelledby={heading} aria-busy={loading}>
       <div className="obo-heading"><h2 id={heading}>EB-besiktningar</h2><button type="button" className="obo-icon" disabled={loading} onClick={() => void refresh()} aria-label="Uppdatera besiktningslistan" title="Uppdatera besiktningslistan"><RefreshCw size={20} className={loading ? 'obo-spinning' : undefined} aria-hidden /></button></div>
-      <p className="mb-3 text-sm text-slate-600">Pågående visar öppna besiktningar och kvarstående leveransuppgifter.</p>
+      <p className="mb-3 text-sm text-slate-600">{filter === 'to-invoice' ? 'Att fakturera visar färdiga besiktningar som inte har markerats fakturerade. Ändra markeringen via Hantera → Fakturering i besiktningen.' : 'Pågående visar öppna besiktningar samt kvarstående leverans och fakturering. Klara visar färdiga, fakturerade besiktningar utan leveransåtgärder.'}</p>
       <div className="obo-workspace"><div className="obo-toolbar">
         <div className="obo-search"><Search size={20} aria-hidden /><input type="search" aria-label="Sök besiktningar" placeholder="Sök besiktning, entreprenad eller kund" maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPage(1) }} />{search && <button type="button" className="obo-icon" aria-label="Rensa sökning" onClick={() => { setSearch(''); setPage(1) }}><X size={18} aria-hidden /></button>}</div>
         <label className="obo-sort"><span>Sortering</span><select value={sort} onChange={event => { setSort(event.target.value as EbOverviewSort); setPage(1) }}><option value="date-desc">Nyast först</option><option value="date-asc">Äldst först</option><option value="customer">Kund A–Ö</option><option value="address">Adress A–Ö</option></select></label>
         <label className="obo-page-size"><span>Rader</span><select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(1) }}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label>
-      </div><div className="obo-filters"><div className="obo-filter-buttons" role="group" aria-label="Filtrera besiktningar">{filters.map(option => <button type="button" key={option.value} aria-pressed={filter === option.value} onClick={() => { setFilter(option.value); setPage(1) }}>{option.label}<span>{result.counts[option.value]}</span></button>)}</div>
-        <label className="obo-filter-select"><span>Visa</span><select value={filter} onChange={event => { setFilter(event.target.value as EbOverviewFilter); setPage(1) }}>{filters.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label className="obo-check"><input type="checkbox" checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setPage(1) }} />Kräver åtgärd</label><label className="obo-check"><input type="checkbox" checked={showArchived} onChange={event => { setShowArchived(event.target.checked); setPage(1) }} />Visa arkiverade / avbokade</label>
+      </div><div className="obo-filters"><div className="obo-filter-buttons" role="group" aria-label="Filtrera besiktningar">{filters.map(option => <button type="button" key={option.value} aria-pressed={filter === option.value} onClick={() => { setFilter(option.value); if (option.value === 'to-invoice') setAttentionOnly(false); setPage(1) }}>{option.label}<span>{result.counts[option.value]}</span></button>)}</div>
+        <label className="obo-filter-select"><span>Visa</span><select value={filter} onChange={event => { const selected = event.target.value as EbOverviewFilter; setFilter(selected); if (selected === 'to-invoice') setAttentionOnly(false); setPage(1) }}>{filters.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <label className="obo-check"><input type="checkbox" checked={attentionOnly} disabled={filter === 'to-invoice'} onChange={event => { setAttentionOnly(event.target.checked); setPage(1) }} />Kräver åtgärd</label><label className="obo-check"><input type="checkbox" checked={showArchived} onChange={event => { setShowArchived(event.target.checked); setPage(1) }} />Visa arkiverade / avbokade</label>
       </div>
+      {filter === 'to-invoice' && result.unavailableBillingCount > 0 && <p className="eb-billing-unavailable" role="status">Fakturastatus kunde inte hämtas för {result.unavailableBillingCount} klara besiktningar. Dessa ingår inte i urvalet. Försök uppdatera listan.</p>}
       {error && <div className="obo-error" role="alert"><p>{error}</p><button type="button" onClick={() => void refresh()} disabled={loading}>Försök igen</button></div>}{loading && <p className="obo-empty" role="status">Uppdaterar besiktningslistan…</p>}
-      {!result.items.length && !loading && !error && <div className="obo-empty" role="status"><p>{filtered ? 'Inga besiktningar matchar dina val.' : items.length ? 'Inga pågående besiktningar eller leveransuppgifter.' : 'Inga besiktningar ännu.'}</p>{filtered ? <button type="button" onClick={resetFilters}>Rensa filter</button> : items.length ? <button type="button" onClick={() => setFilter('closed')}>Visa klara besiktningar</button> : <button type="button" onClick={() => setCreateOpen(true)}>Skapa din första besiktning</button>}</div>}
-      {result.items.length > 0 && <table className="obo-table"><caption className="obo-sr">Besiktningar med separata statusar för arbete och utlåtandets leverans</caption><thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Besiktning / adress</th><th scope="col">Entreprenad</th><th scope="col">Beställare</th><th scope="col">Utlåtande</th><th scope="col">Besiktning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead><tbody>{result.items.map(item => <InspectionRow key={item.id} item={item} onDelivery={setDeliveryTarget} onReuse={reuseInspection} />)}</tbody></table>}
+      {!result.items.length && !loading && !error && <div className="obo-empty" role="status"><p>{filtered ? 'Inga besiktningar matchar dina val.' : items.length ? 'Inga pågående besiktningar, leveransuppgifter eller faktureringsuppgifter.' : 'Inga besiktningar ännu.'}</p>{filtered ? <button type="button" onClick={resetFilters}>Rensa filter</button> : items.length ? <button type="button" onClick={() => setFilter('closed')}>Visa klara besiktningar</button> : <button type="button" onClick={() => setCreateOpen(true)}>Skapa din första besiktning</button>}</div>}
+      {result.items.length > 0 && <table className="obo-table"><caption className="obo-sr">Besiktningar med separata statusar för arbete, utlåtandets leverans och fakturering</caption><thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Besiktning / adress</th><th scope="col">Entreprenad</th><th scope="col">Beställare</th><th scope="col">Utlåtande</th><th scope="col">Besiktning</th><th scope="col">Fakturering</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th></tr></thead><tbody>{result.items.map(item => <InspectionRow key={item.id} item={item} onDelivery={setDeliveryTarget} onReuse={reuseInspection} />)}</tbody></table>}
       <div className="obo-pagination"><span role="status" aria-live="polite">{result.total ? `${result.start + 1}–${result.start + result.items.length} av ${result.total} besiktningar` : '0 besiktningar'}</span><nav aria-label="Sidbläddring besiktningar"><button type="button" className="obo-icon" aria-label="Föregående sida" disabled={result.page === 1} onClick={() => setPage(result.page - 1)}><ChevronLeft size={20} aria-hidden /></button><span>{result.page} / {result.pages}</span><button type="button" className="obo-icon" aria-label="Nästa sida" disabled={result.page >= result.pages} onClick={() => setPage(result.page + 1)}><ChevronRight size={20} aria-hidden /></button></nav></div>
       </div>
     </section>

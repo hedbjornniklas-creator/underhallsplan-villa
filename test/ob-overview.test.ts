@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import type * as Domain from '../src/lib/ob/overview'
 import type * as Fixtures from './fixtures/ob-overview-data'
+import type * as Billing from '../src/lib/ob/billing'
 
 function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
   const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -15,9 +16,11 @@ function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
   }, compiled, compiled.exports)
   return compiled.exports as T
 }
-const domain = load<typeof Domain>('src/lib/ob/overview.ts')
+const billing = load<typeof Billing>('src/lib/ob/billing.ts')
+const domain = load<typeof Domain>('src/lib/ob/overview.ts', { './billing': billing })
 const { overviewAssignment: assignment, overviewInspection: inspection } = load<typeof Fixtures>('test/fixtures/ob-overview-data.ts', {
   '../../src/lib/ob/overview': domain,
+  '../../src/lib/ob/billing': billing,
 })
 const { buildObOverview: build, selectObOverview: select } = domain
 const options = { search: '', filter: 'all' as const, sort: 'date-desc' as const, attentionOnly: false, showArchived: false }
@@ -85,7 +88,9 @@ test('unlinked legacy inspection is retained and not labelled approved', () => {
   assert.equal(row.confirmation, 'Ingen kopplad')
   assert.equal(row.confirmationHref, null)
   assert.equal(row.assignment, undefined, 'No confirmation commands without an accessible assignment')
-  assert.equal(row.closed, true)
+  assert.equal(row.closed, false, 'Unknown invoicing must remain in the current list')
+  assert.equal(row.inspection, 'Klar', 'The actual inspection status remains truthful')
+  assert.equal(row.billing?.status, 'unavailable')
 })
 test('inaccessible linked inspection gets no link and is not labelled not started', () => {
   const [row] = build([assignment({ inspection_id: 'secret' })], [], [])
@@ -115,7 +120,9 @@ test('reconciliation is flagged using authoritative workflow state', () => {
 })
 test('filters and search use both domains and inspection snapshot metadata', () => {
   const rows = build([assignment({ id: 'draft', status: 'draft' })], [inspection(), inspection({ id: 'done', status: 'completed' }),
-    inspection({ id: 'archive', status: 'archived' })], [])
+    inspection({ id: 'archive', status: 'archived' })], [], new Map([['done', {
+      ...billing.emptyObInspectionBilling(), status: 'invoiced', invoicedAt: '2026-11-07T12:00:00Z',
+    }]]))
   assert.equal(select(rows, options).length, 3)
   assert.equal(select(rows, { ...options, filter: 'closed' }).length, 1)
   assert.equal(select(rows, { ...options, showArchived: true }).length, 4)
@@ -127,4 +134,69 @@ test('missing dates sort last with stable tie breakers in either direction', () 
   const rows = build([], [inspection({ id: 'a', date: null }), inspection({ id: 'b' }), inspection({ id: 'c', date: '2026-09-01' })], [])
   assert.deepEqual(select(rows, options).map(row => row.id), ['inspection:b', 'inspection:c', 'inspection:a'])
   assert.deepEqual(select(rows, { ...options, sort: 'date-asc' }).map(row => row.id), ['inspection:c', 'inspection:b', 'inspection:a'])
+})
+
+test('completed inspections remain current until confirmed invoiced, without changing inspection facts', () => {
+  for (const status of ['completed', 'done', 'klar']) {
+    const source = inspection({ status })
+    const before = structuredClone(source)
+    for (const metadata of [undefined, billing.unavailableObInspectionBilling(), billing.emptyObInspectionBilling()]) {
+      const row = domain.makeObOverviewItem(undefined, source, undefined, metadata)
+      assert.equal(row.closed, false)
+      assert.equal(row.inspection, 'Klar')
+      assert.equal(row.marker, 'active')
+      assert.equal(select([row], { ...options, filter: 'active' }).length, 1)
+      assert.equal(select([row], { ...options, filter: 'closed' }).length, 0)
+    }
+    const invoiced = domain.makeObOverviewItem(undefined, source, undefined, {
+      ...billing.emptyObInspectionBilling(), status: 'invoiced', invoicedAt: '2026-11-07T12:00:00Z',
+    })
+    assert.equal(invoiced.closed, true)
+    assert.equal(invoiced.inspection, 'Klar')
+    assert.equal(select([invoiced], { ...options, filter: 'closed' }).length, 1)
+    assert.deepEqual(source, before)
+  }
+})
+
+test('Att fakturera only selects confirmed unbilled completed inspections and ignores attention-only', () => {
+  const invoiced = { ...billing.emptyObInspectionBilling(), status: 'invoiced' as const, invoicedAt: '2026-11-07T12:00:00Z' }
+  const rows = build([assignment({ id: 'no-inspection', status: 'completed' }), assignment({ id: 'cancelled', status: 'cancelled' })], [
+    inspection({ id: 'completed', status: 'completed' }), inspection({ id: 'paid', status: 'done' }),
+    inspection({ id: 'unknown', status: 'completed' }), inspection({ id: 'ongoing' }),
+    inspection({ id: 'archived', status: 'archived' }),
+  ], [], new Map([
+    ['completed', billing.emptyObInspectionBilling()], ['paid', invoiced],
+    ['ongoing', billing.emptyObInspectionBilling()], ['archived', billing.emptyObInspectionBilling()],
+  ]))
+  assert.deepEqual(select(rows, { ...options, filter: 'to-invoice', attentionOnly: true }).map(row => row.id), ['inspection:completed'])
+  assert.deepEqual(select(rows, { ...options, filter: 'to-invoice', showArchived: true }).map(row => row.id), ['inspection:completed'])
+  assert.equal(rows.find(row => row.id === 'assignment:cancelled')?.closed, true)
+  assert.equal(rows.find(row => row.id === 'inspection:archived')?.closed, true)
+  assert.ok(rows.filter(row => row.id.startsWith('assignment:')).every(row => row.billing === undefined))
+})
+
+test('list item construction projects owner accounting data to status only and never invents detail fields for unknown items', () => {
+  const privateBilling = { ...billing.emptyObInspectionBilling(), status: 'invoiced' as const,
+    invoicedAt: '2026-11-07T12:00:00Z', invoiceNumber: 'PRIVATE-INVOICE-123',
+    updatedAt: '2026-11-07T12:00:00Z', updatedByName: 'PRIVATE-USER', revision: 17 }
+  const source = inspection({ status: 'completed' })
+  const before = structuredClone(privateBilling)
+  const row = domain.makeObOverviewItem(undefined, source, undefined, privateBilling)
+  assert.deepEqual(row.billing, { status: 'invoiced' })
+  const built = build([], [source], [], new Map([[source.id, privateBilling]]))
+  assert.deepEqual(built[0].billing, { status: 'invoiced' })
+  assert.doesNotMatch(JSON.stringify(built), /PRIVATE-|invoiceNumber|invoicedAt|updatedAt|updatedByName|revision/)
+  assert.deepEqual(domain.makeObOverviewItem(undefined, source, undefined).billing, { status: 'unavailable' })
+  assert.deepEqual(privateBilling, before)
+})
+
+test('legacy whitespace around archived status remains archived and closed independently of invoice marking', () => {
+  for (const status of [' archived ', ' ARKIVERAD ']) {
+    const row = domain.makeObOverviewItem(undefined, inspection({ status }), undefined, { status: 'not_invoiced' })
+    assert.equal(row.inspection, 'Arkiverad')
+    assert.equal(row.archived, true)
+    assert.equal(row.closed, true)
+    assert.equal(select([row], options).length, 0)
+    assert.equal(select([row], { ...options, filter: 'closed', showArchived: true }).length, 1)
+  }
 })
