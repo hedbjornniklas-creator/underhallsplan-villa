@@ -35,7 +35,7 @@ export async function testEbOverview(base, output) {
   }
   async function chooseFilter(value, width) {
     if (width < 960) await page.select('.obo-filter-select select', value)
-    else await page.click(`.obo-filter-buttons button:nth-child(${({ active: 1, closed: 2, all: 3 })[value]})`)
+    else await page.click(`.obo-filter-buttons button:nth-child(${({ active: 1, closed: 2, all: 3, 'to-invoice': 4 })[value]})`)
   }
   async function layout(label) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label}: page overflow`)
@@ -473,6 +473,19 @@ export async function testEbOverview(base, output) {
     await ready()
     assert.equal((await rows()).length, 10)
 
+    for (const width of [390, 1440]) {
+      await page.setViewport({ width, height: 1000 })
+      await page.goto(`${base}/eb?state=billing`, { waitUntil: 'networkidle0' })
+      await ready()
+      await chooseFilter('to-invoice', width)
+      assert.deepEqual(new Set(await rows()), new Set(['inspection-closed', 'inspection-delivery']))
+      assert.equal(await page.$$eval('tr[data-row-id] input[type=checkbox]', nodes => nodes.length), 0, 'List billing status is read-only')
+      assert.ok(await page.$('.eb-billing-unavailable'), 'Unknown completed status gets an explicit warning')
+      assert.match(await page.$eval('.eb-billing-unavailable', node => node.textContent), /2 klara besiktningar/)
+      assert.equal(await page.$eval('.obo-table', node => node.outerHTML.includes('INTERNAL-NUMBER-MUST-NOT-APPEAR')), false, 'Only status, never invoice number in the list')
+      await layout(`Att fakturera ${width}`)
+    }
+    console.log('EB overview: read-only billing status, independent Att fakturera and unknown-status warning passed on mobile/desktop.')
     await page.goto(`${base}/eb?state=empty`, { waitUntil: 'networkidle0' })
     await ready()
     assert.match(await page.$eval('.obo-empty', node => node.textContent), /Inga besiktningar/)

@@ -15,7 +15,7 @@ test('one row per inspection retains shared project/property identity and separa
   assert.equal(new Set(siblings.map(item => item.id)).size, 4)
   assert.equal(new Set(siblings.map(item => item.project.propertyId)).size, 1)
   const active = selectEbOverviewPage(items, { filter: 'active', pageSize: 50 })
-  assert.deepEqual(active.counts, { all: 16, active: 13, closed: 3 })
+  assert.deepEqual(active.counts, { all: 16, active: 13, closed: 3, 'to-invoice': 0 })
   assert.ok(active.items.some(item => item.id === 'inspection-after'))
   assert.ok(active.items.some(item => item.id === 'inspection-delivery' && !item.lifecycle.isOpen && item.lifecycle.needsAttention))
   assert.ok(!active.items.some(item => item.id === 'inspection-closed'))
@@ -53,4 +53,28 @@ test('sorting keeps undated inspections after dated work in both directions', ()
   ] })])
   assert.deepEqual(selectEbOverviewPage(items, { sort: 'date-asc' }).items.map(item => item.id), ['early', 'late', 'undated'])
   assert.deepEqual(selectEbOverviewPage(items, { sort: 'date-desc' }).items.map(item => item.id), ['late', 'early', 'undated'])
+})
+
+test('Att fakturera is independent of work and delivery filters and only includes confirmed unbilled completed inspections', () => {
+  const billing = { status: 'not_invoiced' as const, invoicedAt: null, invoiceNumber: null,
+    updatedAt: null, updatedByName: null, revision: 0 }
+  const completed = { status: 'completed', reportLockedAt: '2026-10-20T10:00:00Z', reportDeliveryStatus: 'sent' as const }
+  const projects = [ebOverviewProject({ inspections: [
+    ebOverviewInspection({ ...completed, inspectionId: 'unbilled', billing }),
+    ebOverviewInspection({ ...completed, inspectionId: 'pending-delivery', reportDeliveryStatus: 'not_sent', billing }),
+    ebOverviewInspection({ ...completed, inspectionId: 'invoiced', billing: { ...billing, status: 'invoiced', invoicedAt: '2026-10-20T10:00:00Z' } }),
+    ebOverviewInspection({ ...completed, inspectionId: 'unavailable', billing: { ...billing, status: 'unavailable' } }),
+    ebOverviewInspection({ ...completed, inspectionId: 'unknown' }),
+    ebOverviewInspection({ inspectionId: 'ongoing', billing }),
+  ] })]
+  const before = JSON.stringify(projects)
+  const items = buildEbOverviewItems(projects)
+  const filtered = selectEbOverviewPage(items, { filter: 'to-invoice', attentionOnly: true })
+  assert.deepEqual(new Set(filtered.items.map(item => item.id)), new Set(['unbilled', 'pending-delivery']))
+  assert.equal(filtered.counts['to-invoice'], 2)
+  assert.equal(filtered.unavailableBillingCount, 2, 'Unavailable and absent status are explicitly counted, never treated as invoiced')
+  assert.ok(!selectEbOverviewPage(items, { filter: 'active', pageSize: 50 }).items.some(item => item.id === 'unbilled'))
+  assert.equal(filtered.items.find(item => item.id === 'unbilled')?.lifecycle.workStatus, 'completed')
+  assert.equal(filtered.items.find(item => item.id === 'unbilled')?.lifecycle.deliveryLabel, 'Skickat')
+  assert.equal(JSON.stringify(projects), before)
 })

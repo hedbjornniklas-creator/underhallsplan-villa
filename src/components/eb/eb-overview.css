@@ -39,10 +39,14 @@
 .eb-overview .eb-name-link > span { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .eb-overview .eb-name-link:is(:hover,:focus-visible) { color:var(--eb-accent-hover); text-decoration:underline; }
 .eb-overview .eb-reuse-action { color:var(--eb-accent); border:0; background:transparent; }
-.eb-overview .obo-table th:nth-child(3) { width:15%; }
-.eb-overview .obo-table th:nth-child(4) { width:14%; }
-.eb-overview .obo-table th:nth-child(5) { width:12rem; }
-.eb-overview .obo-table th:nth-child(6) { width:8rem; }
+.eb-overview .obo-table th:nth-child(3) { width:12%; }
+.eb-overview .obo-table th:nth-child(4) { width:11%; }
+.eb-overview .obo-table th:nth-child(5) { width:10rem; }
+.eb-overview .obo-table th:nth-child(6) { width:6rem; }
+.eb-overview .obo-table th:nth-child(7) { width:8rem; }
+.eb-overview .obo-table th:nth-child(8) { width:3.5rem; }
+.eb-overview .obo-table th:nth-child(9) { width:9.5rem; }
+.eb-billing-unavailable { margin:.75rem 1rem; padding:.75rem; border:1px solid #e6cf90; background:#fffbeb; color:#70531d; border-radius:4px; font-size:.875rem; }
 .eb-overview .eb-time { display:block; font-size:.75rem; }
 .eb-overview .eb-delivery-action { display:inline-flex; align-items:center; justify-content:center; min-height:44px; width:44px; padding:0; border:0; color:var(--eb-accent); background:transparent; }
 .eb-overview .eb-delivery-action span { display:none; }

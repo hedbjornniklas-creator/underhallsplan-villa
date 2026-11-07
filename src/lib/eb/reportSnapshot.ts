@@ -71,8 +71,10 @@ function sanitizeEbProjectForDelivery<T extends EbReportProjectSnapshot>(project
 function sanitizeEbInspectionForDelivery(
   inspection: EbInspectionReport['inspection']
 ): EbInspectionReport['inspection'] {
+  const publicInspection = { ...inspection }
+  delete publicInspection.billing
   return {
-    ...inspection,
+    ...publicInspection,
     invoiceRecipientMatchesClient: true,
     invoiceName: null,
     invoiceOrgNo: null,

@@ -4,7 +4,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, ClipboardCheck, Download, Loader2, Printer, Send } from 'lucide-react'
+import { ArrowLeft, Download, Loader2, Printer, Send } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -2533,29 +2533,31 @@ export default function EbInspectionReportView({
         <div className="mx-auto max-w-5xl px-4 py-5 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-sm">
             {showInternalActions ? (
-              <Link
-                href={`/eb/projects/${report.project.id}`}
-                onClick={(event) => handleNavigation(event, projectNavigationKey)}
-                aria-disabled={navigationInProgress}
-                aria-busy={isProjectNavigating}
-                className={reportNavigationClassName(false, navigationInProgress)}
-              >
-                {isProjectNavigating ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
-                Till entreprenaden
-              </Link>
-            ) : <span />}
-            {showInternalActions ? (
-              <div className="flex flex-wrap items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Link
-                  href={`/eb/projects/${report.project.id}/inspections/${report.inspection.inspectionId}/perform`}
+                  href={`/eb/projects/${encodeURIComponent(report.project.id)}/inspections/${encodeURIComponent(report.inspection.inspectionId)}/perform`}
                   onClick={(event) => handleNavigation(event, reviewNavigationKey)}
                   aria-disabled={navigationInProgress}
                   aria-busy={isReviewNavigating}
                   className={reportNavigationClassName(true, navigationInProgress)}
                 >
-                  {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ClipboardCheck size={16} />}
-                  Granska
+                  {isReviewNavigating ? <Loader2 size={16} className="animate-spin" /> : <ArrowLeft size={16} />}
+                  Till besiktningen
                 </Link>
+                <Link
+                  href={`/eb/projects/${encodeURIComponent(report.project.id)}`}
+                  onClick={(event) => handleNavigation(event, projectNavigationKey)}
+                  aria-disabled={navigationInProgress}
+                  aria-busy={isProjectNavigating}
+                  className={reportNavigationClassName(false, navigationInProgress)}
+                >
+                  {isProjectNavigating ? <Loader2 size={16} className="animate-spin" /> : null}
+                  Till entreprenaden
+                </Link>
+              </div>
+            ) : <span />}
+            {showInternalActions ? (
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <div className="flex items-center overflow-hidden rounded-md border border-gray-300 bg-white">
                   <button
                     type="button"

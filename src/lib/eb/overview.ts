@@ -2,7 +2,7 @@ import type { EbInspectionSummary, EbProjectListItem } from './server'
 // @ts-expect-error Node's native TypeScript tests require the extension.
 import { getEbInspectionLifecycle } from './inspectionLifecycle.ts'
 
-export type EbOverviewFilter = 'active' | 'closed' | 'all'
+export type EbOverviewFilter = 'active' | 'closed' | 'all' | 'to-invoice'
 export type EbOverviewSort = 'date-desc' | 'date-asc' | 'customer' | 'address'
 export type EbOverviewItem = {
   id: string; project: EbProjectListItem; inspection: EbInspectionSummary; title: string; address: string; customer: string
@@ -25,10 +25,17 @@ export function selectEbOverviewPage(items: EbOverviewItem[], input: {
     && (!search || [item.title, item.address, item.project.title, item.project.city, item.project.propertyDesignation,
       item.project.brfApartmentNumber, item.customer, item.inspection.assignmentNumber].filter(Boolean).join(' ').toLocaleLowerCase('sv-SE').includes(search)))
   const active = (item: EbOverviewItem) => item.lifecycle.isOpen || item.lifecycle.needsAttention
+  const toInvoice = (item: EbOverviewItem) => item.lifecycle.workStatus === 'completed'
+    && item.inspection.billing?.status === 'not_invoiced'
   const counts = { all: visible.length, active: visible.filter(active).length,
-    closed: visible.filter(item => item.lifecycle.workStatus === 'completed' && !item.lifecycle.needsAttention).length }
+    closed: visible.filter(item => item.lifecycle.workStatus === 'completed' && !item.lifecycle.needsAttention).length,
+    'to-invoice': visible.filter(toInvoice).length }
+  const unavailableBillingCount = visible.filter(item => item.lifecycle.workStatus === 'completed'
+    && (!item.inspection.billing || item.inspection.billing.status === 'unavailable')).length
   const rows = visible.filter(item => (input.filter === 'closed' ? item.lifecycle.workStatus === 'completed' && !item.lifecycle.needsAttention
-    : input.filter === 'all' ? true : active(item)) && (!input.attentionOnly || item.lifecycle.needsAttention))
+    : input.filter === 'to-invoice' ? toInvoice(item)
+    : input.filter === 'all' ? true : active(item))
+    && (input.filter === 'to-invoice' || !input.attentionOnly || item.lifecycle.needsAttention))
   const collator = new Intl.Collator('sv-SE', { numeric: true, sensitivity: 'base' })
   rows.sort((a, b) => {
     if (input.sort === 'customer' || input.sort === 'address') {
@@ -45,5 +52,5 @@ export function selectEbOverviewPage(items: EbOverviewItem[], input: {
   const pages = Math.max(1, Math.ceil(rows.length / pageSize))
   const page = Math.max(1, Math.min(pages, Math.floor(input.page || 1)))
   const start = (page - 1) * pageSize
-  return { items: rows.slice(start, start + pageSize), total: rows.length, counts, page, pages, start, pageSize }
+  return { items: rows.slice(start, start + pageSize), total: rows.length, counts, unavailableBillingCount, page, pages, start, pageSize }
 }
