@@ -9,6 +9,8 @@ import type { QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
 import { scheduleStatuses, type ProjectSchedule } from '@/lib/action-cases/projectSchedule'
 import type { ProjectView } from '@/lib/action-cases/projectNavigation'
 import ProjectManagerField from './ProjectManagerField'
+import ProjectCompletion from './ProjectCompletion'
+import type { ActionCaseStatus } from '@/lib/action-cases/contracts'
 import './project-overview.css'
 
 type Resource<T> = { data: T | null; loading: boolean; error: boolean }
@@ -20,11 +22,12 @@ function SectionHead({ title, children }: { title: string; children?: ReactNode 
   return <div className="gizmo-home-sectionhead"><h3>{title}</h3>{children}</div>
 }
 
-export default function ProjectOverview({ project, offer, active, refreshKey, questionsDirty, sharingDirty, onManagerChanged, onNavigate, onQuestion, senderControls }: {
+export default function ProjectOverview({ project, offer, active, refreshKey, questionsDirty, sharingDirty, onManagerChanged, onNavigate, onQuestion, senderControls, completionBlocked, onStatus, onCompletionDirty }: {
   project: ActionCaseView; offer: CustomerOfferWorkspace | null; active: boolean; refreshKey: number
   questionsDirty: boolean; sharingDirty: boolean; onManagerChanged: () => void
   onNavigate: (view: ProjectView) => void; onQuestion: (id: string | null) => void
   senderControls?: ReactNode
+  completionBlocked: boolean; onStatus: (status: ActionCaseStatus) => void; onCompletionDirty: (dirty: boolean) => void
 }) {
   const [questions, setQuestions] = useState<Resource<QuestionWorkspace>>(pending)
   const [schedule, setSchedule] = useState<Resource<ProjectSchedule>>(pending)
@@ -76,10 +79,11 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
   const missing = model.missingPrices
   return <section className="gizmo-home" aria-label="Projektöversikt" hidden={!active}>
     <div className="gizmo-home-heading"><div><h2>Projektöversikt</h2><p><time dateTime={today}>{overviewDate(today, { weekday: 'long', day: 'numeric', month: 'long' })}</time></p></div>
-      <div className="gizmo-home-actions"><button type="button" className="gizmo-home-icon-button" aria-label="Uppdatera översikten" title="Uppdatera översikten" disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw size={17} aria-hidden="true" /></button><button type="button" className="gizmo-home-command" disabled={questionsDirty || questions.loading || questions.error} onClick={() => onQuestion(null)}><Plus size={17} aria-hidden="true" />Ny fråga</button></div>
+      <div className="gizmo-home-actions"><button type="button" className="gizmo-home-icon-button" aria-label="Uppdatera översikten" title="Uppdatera översikten" disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw size={17} aria-hidden="true" /></button><button type="button" className="gizmo-home-command" disabled={project.status === 'completed' || questionsDirty || questions.loading || questions.error} onClick={() => onQuestion(null)}><Plus size={17} aria-hidden="true" />Ny fråga</button></div>
     </div>
     <details className="gizmo-home-manager"><summary>Projektansvarig · {questions.loading ? 'Hämtar…' : questions.error ? 'Kunde inte hämtas' : questions.data?.managerId ? questions.data.assignees.find(person => person.kind === 'profile' && person.id === questions.data?.managerId)?.name || 'Utsedd' : 'Ej utsedd'}</summary><ProjectManagerField caseId={project.id} active={active} disabled={questionsDirty || sharingDirty} onChanged={onManagerChanged} /></details>
     {senderControls}
+    <ProjectCompletion caseId={project.id} active={active} refreshKey={refreshKey + reload} blocked={completionBlocked} onStatus={onStatus} onDirty={onCompletionDirty} />
     {partial && <p className="gizmo-home-notice" role="status">{[questions.error && 'Frågor kunde inte hämtas.', schedule.error && 'Tidsplanen kunde inte hämtas.', schedule.data?.available === false && 'Tidsplaneringen är inte aktiverad.', !offer && 'Avtalsunderlaget kunde inte hämtas.'].filter(Boolean).join(' ')} Översikten är ofullständig. <button type="button" className="gizmo-home-link" onClick={() => !offer ? onNavigate('contract') : setReload(value => value + 1)}>{!offer ? 'Öppna avtalsvyn' : 'Försök igen'}</button></p>}
     <div className="gizmo-home-milestones">
       <div className="gizmo-home-milestone"><span className="gizmo-home-milestone-icon"><HardHat size={19} aria-hidden="true" /></span><div><small>Nästa start</small><strong>{schedule.loading ? 'Hämtar…' : model.nextStart ? overviewDate(model.nextStart.startDate) : 'Ingen planerad'}</strong><p>{model.nextStart?.title || (schedule.error ? 'Underlag saknas' : 'Tidsplan')}</p></div></div>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import PendingLink from '@/components/ui/PendingLink'
 import { ArrowLeft, ArrowRight, CalendarClock, Eye, FileText, FilePenLine, FolderOpen, LayoutDashboard, ListChecks, Loader2, MapPin, MessageSquare, NotebookPen, Pencil, Save, Share2, WalletCards, Wrench, X } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
-import type { ActionCaseWorkspace, ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
+import type { ActionCaseWorkspace, ActionCaseAttachmentView, ActionCaseStatus } from '@/lib/action-cases/contracts'
 import type { TaskPerson } from '@/lib/tasks/contracts'
 import type { CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
 import { parseProjectView, projectUrl, type ProjectView } from '@/lib/action-cases/projectNavigation'
@@ -51,6 +51,9 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
 }) {
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [renamedTitle, setRenamedTitle] = useState<string | null>(null)
+  const [projectStatus, setProjectStatus] = useState<ActionCaseStatus | null>(null)
+  const [completionDirty, setCompletionDirty] = useState(false)
+  const receiveStatus = useCallback((status: ActionCaseStatus) => setProjectStatus(status), [])
   const [renameOpen, setRenameOpen] = useState(false), [nameDraft, setNameDraft] = useState('')
   const [renameBusy, setRenameBusy] = useState(false), [renameError, setRenameError] = useState('')
   const nameInput = useRef<HTMLInputElement>(null), renameButton = useRef<HTMLButtonElement>(null), renameRunning = useRef(false), wasRenaming = useRef(false)
@@ -102,7 +105,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const keyboardTabChange = useRef(false)
   const storedProject = workspace.cases.find((item) => item.id === caseId)!
   // A late response from an already-running work save cannot restore the old header name.
-  const project = renamedTitle === null ? storedProject : { ...storedProject, title: renamedTitle }
+  const project = { ...storedProject, title: renamedTitle ?? storedProject.title, status: projectStatus ?? storedProject.status }
   const renameDirty = renameOpen && nameDraft.trim() !== project.title
   useEffect(() => {
     if (renameOpen) { wasRenaming.current = true; nameInput.current?.focus(); nameInput.current?.select() }
@@ -183,7 +186,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if ((completionDirty || senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
       }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
         if (renameOpen) closeRename()
@@ -218,6 +221,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
       </nav>
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
         <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh}
+          completionBlocked={senderPending || offerDirty || estimateDirty || workDirty || workBusy || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameBusy || renameDirty} onStatus={receiveStatus} onCompletionDirty={setCompletionDirty}
           questionsDirty={questionsDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion}
           senderControls={offer && <details className="gizmo-home-manager"><summary>Projektets avsändarprofil · {offer.draft.senderProfile?.name ?? issuerName}{senderLocked ? ' · Låst' : ''}</summary>
             {senderLocked ? <p className="py-3 text-sm">{offer.draft.senderProfile?.legalName ?? issuerName}{offer.draft.senderProfile && <> · {offer.draft.senderProfile.organizationNumber}</>}</p> : <CustomerContractSenderProfile project caseId={caseId} organizationId={offer.customerLink?.organizationId}
@@ -226,7 +230,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
               onPendingChange={setSenderPending} onApplied={applyProjectSender} onReload={reloadProjectSender} />}
           </details>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
-        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} />
+        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} projectClosed={project.status === 'completed'} />
         <ProjectDiary key={caseId} caseId={caseId} active={view === 'diary'} refreshKey={questionsRefresh} onDirty={setDiaryDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}

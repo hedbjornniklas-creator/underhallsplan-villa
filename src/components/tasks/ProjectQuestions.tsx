@@ -17,8 +17,9 @@ const button = 'gizmo-button', field = 'gizmo-question-field'
 const stamp = (value: string) => formatTaskDateTime(value, 'Europe/Stockholm', 'compact')
 export type QuestionOpenRequest = { id: string | null; token: number }
 
-export default function ProjectQuestions({ caseId, active, refreshKey = 0, openRequest, files, onDirty }: {
+export default function ProjectQuestions({ caseId, active, refreshKey = 0, openRequest, files, onDirty, projectClosed = false }: {
   caseId: string; active: boolean; refreshKey?: number; openRequest?: QuestionOpenRequest | null; files: ActionCaseAttachmentView[]; onFiles: (files: ActionCaseAttachmentView[]) => void; onDirty: (dirty: boolean) => void
+  projectClosed?: boolean
 }) {
   const [data, setData] = useState<QuestionWorkspace | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [refreshError, setRefreshError] = useState('')
@@ -137,6 +138,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   }
   useEffect(() => { rememberMode() }, [selected, mode, message, reportedBy, due, followup, dueTime, followupTime, fileIds]) // eslint-disable-line react-hooks/exhaustive-deps
   function open(q?: ProjectQuestion) {
+    if (!q && projectClosed) { setError('Projektet är avslutat. Återöppna projektet innan du skapar en fråga.'); return }
     if (autosave.busy) return
     focusBefore.current = document.activeElement as HTMLElement
     let id = q?.id || crypto.randomUUID()
@@ -330,7 +332,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       <footer>
         <span role="status">{busy ? 'Arbetar…' : autosave.busy ? 'Sparar…' : autosave.error || localError ? 'Sparfel · utkastet finns kvar' : ['dialogue', 'participants'].includes(mode) && dialogueSaveStatus ? dialogueSaveStatus : mode === 'send' ? pending.current ? 'Utskicket kunde inte bekräftas' : 'Inte skickat · utkast på den här enheten' : autosave.dirty || !['details', 'history', 'participants', 'dialogue'].includes(mode) ? 'Utkast sparat på den här enheten' : question ? 'Sparat internt' : 'Ny fråga'}</span>
         <div className="flex flex-wrap gap-2">
-          {question && mode === 'details' && <button className={button} disabled={busy || dirty || (!closed && taskOpen)} title={taskOpen ? 'Hantera den aktiva uppgiften i Uppdrag först' : undefined} onClick={() => switchMode(closed ? 'reopen' : 'close')}>{closed ? 'Återöppna' : 'Avsluta fråga'}</button>}
+          {question && mode === 'details' && <button className={button} disabled={busy || dirty || (closed && projectClosed) || (!closed && taskOpen)} title={projectClosed ? 'Återöppna projektet först' : taskOpen ? 'Hantera den aktiva uppgiften i Uppdrag först' : undefined} onClick={() => switchMode(closed ? 'reopen' : 'close')}>{closed ? 'Återöppna' : 'Avsluta fråga'}</button>}
           <button className={button} onClick={close} disabled={busy}>Stäng</button>
           {mode === 'participants' && <div ref={setDialogueFooter} className="gizmo-question-footer-actions" />}
           {mode === 'details' && !question && <button className={`${button} gizmo-question-primary`} disabled={detailsDisabled} onClick={() => void write('create')}><Save size={16} />{autosave.busy ? 'Skapar…' : autosave.error ? 'Försök skapa igen' : 'Skapa fråga'}</button>}
@@ -342,7 +344,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     </div>
   </div>, document.body) : null
   return <section className="gizmo-questions" aria-label="Frågor och beslut" hidden={!active}>
-    <div className="gizmo-section-heading"><h2>Frågor och beslut</h2><div className="flex gap-2"><button className={`${button} gizmo-icon-button`} disabled={loading || busy} title="Hämta sparade frågor och svar" aria-label="Hämta sparade frågor och svar" onClick={() => void refresh()}><RefreshCw size={17} /></button><button className={button} disabled={!data || loading} onClick={() => open()}><Plus size={17} />Ny fråga</button></div></div>
+    <div className="gizmo-section-heading"><h2>Frågor och beslut</h2><div className="flex gap-2"><button className={`${button} gizmo-icon-button`} disabled={loading || busy} title="Hämta sparade frågor och svar" aria-label="Hämta sparade frågor och svar" onClick={() => void refresh()}><RefreshCw size={17} /></button><button className={button} disabled={!data || loading || projectClosed} title={projectClosed ? 'Återöppna projektet först' : undefined} onClick={() => open()}><Plus size={17} />Ny fråga</button></div></div>
     {!selected && error && <p role="alert" className="gizmo-question-error">{error}</p>}{!selected && notice && <p role="status">{notice}</p>}
     {!selected && refreshError && <p role="alert" className="gizmo-question-error">{refreshError}</p>}
     <div className="gizmo-question-toolbar"><label className="gizmo-question-search"><Search size={17} /><input className={field} placeholder="Sök frågor" aria-label="Sök frågor" value={search} onChange={e => setSearch(e.target.value)} /></label><label>Visa<select className={field} aria-label="Filtrera frågor" value={filter} onChange={e => setFilter(e.target.value)}><option value="active">Aktiva</option><option value="all">Alla</option><option value="closed">Avslutade</option></select></label><span className="gizmo-secondary" role="status">{loading ? 'Hämtar…' : `${rows.length} ${rows.length === 1 ? 'fråga' : 'frågor'}`}</span></div>

@@ -1,0 +1,10 @@
+.gizmo-closeout { border-block: 1px solid #D5DCDD; padding: 16px 0; margin: 12px 0 20px; }
+.gizmo-closeout label { min-height: 44px; }
+.gizmo-closeout input[type='checkbox'] { width: 18px; height: 18px; accent-color: #206961; }
+.gizmo-invoice-basis { padding: 20px 0; max-width: 1160px; }
+.gizmo-invoice-lines { border-top: 1px solid #AEB8B9; }
+.gizmo-invoice-row { display: grid; grid-template-columns: minmax(180px, 2.5fr) minmax(65px, .7fr) minmax(60px, .7fr) minmax(100px, 1fr) 80px minmax(115px, 1fr) 44px; gap: 8px; padding: 12px 0; border-bottom: 1px solid #AEB8B9; align-items: start; }
+.gizmo-invoice-row label { min-width: 0; font-size: 13px; }
+.gizmo-invoice-totals { margin-left: auto; max-width: 370px; padding: 12px; background: #FCF7E8; }
+@media (max-width: 1100px) { .gizmo-invoice-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } .gizmo-invoice-description { grid-column: 1 / -1; } }
+@media (max-width: 520px) { .gizmo-closeout label { min-height: 48px; } .gizmo-invoice-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .gizmo-invoice-row input, .gizmo-invoice-row select, .gizmo-invoice-row textarea { min-height: 48px; } }

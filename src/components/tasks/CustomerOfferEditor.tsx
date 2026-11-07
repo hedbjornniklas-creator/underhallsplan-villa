@@ -65,6 +65,7 @@ import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 import { ContractCustomerEditor, ContractContractorEditor } from './CustomerContractPartiesEditor'
 import { emptyContractParties, type ContractContractor } from '@/lib/action-cases/customerContractParties'
 import ProjectBillingEditor from './ProjectBillingEditor'
+import ProjectInvoiceBasis from './ProjectInvoiceBasis'
 import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
@@ -171,7 +172,9 @@ export default function CustomerOfferEditor({
   const [expanded, setExpanded] = useState<string | null>('customer')
   const [planningDirty, setPlanningDirty] = useState(false)
   const [billingDirty, setBillingDirty] = useState(false)
-  const [paymentView, setPaymentView] = useState<'plan' | 'billing'>('plan')
+  const [invoiceDirty, setInvoiceDirty] = useState(false)
+  const paymentDirty = billingDirty || invoiceDirty
+  const [paymentView, setPaymentView] = useState<'plan' | 'billing' | 'basis'>('plan')
   const planningDirtyRef = useRef(planningDirty)
   planningDirtyRef.current = planningDirty
   const [planning, setPlanning] = useState(initial.planning)
@@ -236,7 +239,7 @@ export default function CustomerOfferEditor({
     },
     onError: (error) => toast.error(error, 'Utkastet kunde inte sparas. Dina ändringar är kvar.'),
   })
-  useEffect(() => { onDirtyChange?.(dirty || planningDirty || billingDirty || Boolean(documentRecovery) || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error') }, [dirty, planningDirty, billingDirty, documentRecovery, busy, autosave.isSaving, autosave.state?.status, onDirtyChange])
+  useEffect(() => { onDirtyChange?.(dirty || planningDirty || paymentDirty || Boolean(documentRecovery) || Boolean(busy) || autosave.isSaving || autosave.state?.status === 'error') }, [dirty, planningDirty, paymentDirty, documentRecovery, busy, autosave.isSaving, autosave.state?.status, onDirtyChange])
   useEffect(() => { onWorkspaceChange?.({ ...workspace, planning }) }, [workspace, planning, onWorkspaceChange])
   const accepted = workspace.offers.some((o) => o.status === 'accepted')
   const signingVersion = draftTarget === 'contract' ? activeSigningVersion(workspace.signingVersions) : undefined
@@ -431,14 +434,14 @@ export default function CustomerOfferEditor({
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }, [view, active, embedded])
   useEffect(() => {
-    if (!dirty && !planningDirty && !billingDirty && !senderPending) return
+    if (!dirty && !planningDirty && !paymentDirty && !senderPending) return
     const prevent = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', prevent)
     return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, planningDirty, billingDirty, senderPending])
+  }, [dirty, planningDirty, paymentDirty, senderPending])
   async function action(
     operation: string,
     extra: Record<string, unknown> = {}
@@ -681,7 +684,7 @@ export default function CustomerOfferEditor({
         {!embedded && <PendingLink autoPending pendingLabel="Öppnar projektlistan…" icon={<ArrowLeft size={17} />}
           href="/uppdrag"
           onClick={(e) => {
-            if ((dirty || planningDirty || billingDirty || senderPending) && !window.confirm(senderPending ? 'Profilbytet är inte bekräftat. Vill du ändå lämna uppdraget?' : 'Lämna osparade ändringar?'))
+            if ((dirty || planningDirty || paymentDirty || senderPending) && !window.confirm(senderPending ? 'Profilbytet är inte bekräftat. Vill du ändå lämna uppdraget?' : 'Lämna osparade ändringar?'))
               e.preventDefault()
           }}
           className="inline-flex items-center gap-2 text-sm text-violet-700"
@@ -747,9 +750,10 @@ export default function CustomerOfferEditor({
         </>}
         {dirty && !locked && !busy && !autosave.isSaving && autosave.state?.status !== 'error' && <button type="button" className="gizmo-button mt-2" onClick={() => { autosave.change(currentSnapshot.current); void autosave.flush() }}><RefreshCw size={16} />Försök spara nu</button>}
       </section>}
-      {draftTarget === 'contract' && (planningDirty || billingDirty) && view !== 'customer' && <div className="mb-4 flex flex-wrap items-center gap-2 text-sm print:hidden" role="status">
+      {draftTarget === 'contract' && (planningDirty || paymentDirty) && view !== 'customer' && <div className="mb-4 flex flex-wrap items-center gap-2 text-sm print:hidden" role="status">
         {planningDirty && <button type="button" className="gizmo-text-button" onClick={() => setView('planning')}>Ändringar i Val och tillval<ArrowRight size={16} /></button>}
         {billingDirty && <button type="button" className="gizmo-text-button" onClick={() => { setPaymentView('billing'); setView('payments') }}>Osparade faktureringsuppgifter<ArrowRight size={16} /></button>}
+        {invoiceDirty && <button type="button" className="gizmo-text-button" onClick={() => { setPaymentView('basis'); setView('payments') }}>Osparat fakturaunderlag<ArrowRight size={16} /></button>}
       </div>}
       {!embedded && <nav
         className="flex gap-2 overflow-x-auto border-b border-slate-200 py-3"
@@ -794,14 +798,18 @@ export default function CustomerOfferEditor({
         <div role="tablist" aria-label="Betalning och fakturering" className="gizmo-register-tabs gizmo-payment-tabs mt-4" onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
           event.preventDefault()
-          const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'billing' : paymentView === 'plan' ? 'billing' : 'plan'
+          const tabs = ['plan', 'billing', 'basis'] as const
+          const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'basis' : tabs[(tabs.indexOf(paymentView) + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length]
           setPaymentView(next)
           event.currentTarget.querySelector<HTMLButtonElement>(`[data-payment-tab="${next}"]`)?.focus()
         }}>
-          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
+          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck], ['basis', 'Fakturaunderlag', WalletCards]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
         </div>
         <div id={`payment-panel-${actionCase.id}-billing`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-billing`} hidden={paymentView !== 'billing'}>
           {draftTarget === 'contract' && <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />}
+        </div>
+        <div id={`payment-panel-${actionCase.id}-basis`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-basis`} hidden={paymentView !== 'basis'}>
+          {draftTarget === 'contract' && <ProjectInvoiceBasis caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
         </div>
       </div>
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>

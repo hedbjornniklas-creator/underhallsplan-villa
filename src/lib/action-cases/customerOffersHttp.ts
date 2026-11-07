@@ -32,6 +32,18 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    PROJECT_ADMIN_INVALID: [400, 'Kontrollera underlagets datum, rader och belopp.'],
+    PROJECT_ADMIN_FORBIDDEN: [403, 'Du saknar behörighet till projektet.'],
+    PROJECT_ADMIN_MANAGER: [403, 'Endast projektansvarig kan klarmarkera och avsluta projektet.'],
+    PROJECT_ADMIN_NOT_FOUND: [404, 'Projektet eller fakturaunderlaget kunde inte hittas.'],
+    PROJECT_ADMIN_STALE: [409, 'Uppgifterna har ändrats. Dina ändringar är kvar. Hämta den sparade versionen innan du fortsätter.'],
+    PROJECT_ADMIN_SCHEMA: [503, 'Projektavslut och fakturaunderlag behöver aktiveras i databasen.'],
+    PROJECT_ADMIN_CLOSED: [409, 'Projektet är avslutat eller avbrutet. Återöppna det innan du ändrar underlaget.'],
+    PROJECT_ADMIN_INCOMPLETE: [409, 'Bekräfta att arbetet är klart och projektet färdigfakturerat före avslut.'],
+    PROJECT_ADMIN_OPEN_QUESTIONS: [409, 'Avsluta alla projektets frågor innan projektet avslutas.'],
+    PROJECT_ADMIN_PDF_INCOMPLETE: [409, 'Fyll i avsändare, fakturakund och samtliga rader innan PDF skapas.'],
+    PROJECT_ADMIN_FAILED: [500, 'Åtgärden kunde inte bekräftas. Dina uppgifter är kvar. Försök igen.'],
+    PROJECT_QUESTION_PROJECT_CLOSED: [409, 'Projektet är avslutat. Projektansvarig behöver återöppna det innan nya eller återöppnade frågor kan hanteras.'],
     PROJECT_PRICE_READ_ONLY: [409, 'Kopplade kundprisvillkor ändras i Projektarbete. Dina övriga ändringar är kvar.'],
     PROJECT_PRICE_HOURS: [409, 'Offerten har en separat timuppskattning med ett gemensamt timpris. Granska och ta bort den under Priset innan momentens egna prisvillkor används. Inga timmar eller belopp fördelas automatiskt.'],
     PROJECT_PRICE_STALE: [409, 'Momentets kundprisvillkor har ändrats i Projektarbete. Hämta det sparade underlaget innan du fortsätter.'],

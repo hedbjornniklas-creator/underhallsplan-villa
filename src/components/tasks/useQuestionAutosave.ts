@@ -8,10 +8,11 @@ const fingerprint = (value: unknown) => JSON.stringify(value)
 
 // The owner flushes before changing questions. Retries replay the exact request
 // before saving any newer typing, including after an uncertain network response.
-export function useQuestionAutosave<T>({ save, valid, onSaved }: {
+export function useQuestionAutosave<T>({ save, valid, onSaved, staleMessage }: {
   save: (attempt: Attempt<T>) => Promise<void>;
   valid: (value: T) => boolean;
   onSaved: (value: T, revision: number) => void;
+  staleMessage?: string;
 }) {
   const entry = useRef<Draft<T> | null>(null), key = useRef(''), failed = useRef(false), running = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null), mounted = useRef(true)
@@ -72,7 +73,7 @@ export function useQuestionAutosave<T>({ save, valid, onSaved }: {
         (stored.pending === null || (stored.pending && typeof stored.pending.requestId === 'string' && stored.pending.revision === stored.revision && stored.pending.value))) {
         entry.current = stored
         if (stored.revision !== revision && !stored.pending) {
-          failed.current = true; error = 'Det lokala utkastet avser en äldre version. Hämta den sparade frågan innan du fortsätter.'
+          failed.current = true; error = staleMessage || 'Det lokala utkastet avser en äldre version. Hämta den sparade frågan innan du fortsätter.'
         }
       }
     } catch { /* A missing or unreadable local draft never replaces server data. */ }
