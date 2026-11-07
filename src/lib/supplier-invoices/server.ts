@@ -124,14 +124,14 @@ export async function uploadSupplierInvoiceAttachment(ctx: Context, invoiceId: s
   }
 }
 
-export async function getSupplierInvoiceAttachmentUrl(ctx: Context, invoiceId: string, attachmentId: string) {
+export async function getSupplierInvoiceAttachmentUrl(ctx: Context, invoiceId: string, attachmentId: string, inline = false) {
   await requireInvoice(ctx, invoiceId)
   const db = createSupabaseAdminClient()
   const result = await db.from('supplier_invoice_attachments').select('file_path,file_name')
     .eq('org_id', ctx.orgId).eq('invoice_id', id(invoiceId)).eq('id', id(attachmentId)).maybeSingle()
   checked(result.error)
   if (!result.data) throw new Error('INVOICE_FILE_NOT_FOUND')
-  const signed = await db.storage.from(BUCKET).createSignedUrl(result.data.file_path, 60, { download: result.data.file_name })
+  const signed = await db.storage.from(BUCKET).createSignedUrl(result.data.file_path, 60, inline ? undefined : { download: result.data.file_name })
   if (signed.error || !signed.data?.signedUrl) throw new Error('INVOICE_FILE_DOWNLOAD_FAILED')
   return signed.data.signedUrl
 }

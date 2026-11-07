@@ -32,7 +32,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
       if (result.id !== id.current || result.revision !== attempt.revision + 1) throw new Error('Sparningen kunde inte bekräftas.')
     },
     onSaved: (value, revision) => {
-      const record = { id: id.current!, body: parsed(value), revision, updatedAt: new Date().toISOString() }
+      const record = { id: id.current!, body: parsed(value), revision, updatedAt: new Date().toISOString(), sourceLineIds: data?.bases.find(b => b.id === id.current)?.sourceLineIds }
       setData(d => d ? { ...d, bases: [record, ...d.bases.filter(b => b.id !== record.id)] } : d)
     },
   })
@@ -94,6 +94,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
   let body: InvoiceBasis | null = null
   try { if (form) body = parsed(form) } catch { /* Keep partially typed numeric values visible. */ }
   const totals = body ? invoiceBasisTotals(body) : null
+  const sourceLineIds = new Set(data?.bases.find(b => b.id === selected)?.sourceLineIds ?? [])
   return <section className="gizmo-invoice-basis" aria-label="Fakturaunderlag" aria-busy={loading}>
     <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-semibold">Fakturaunderlag</h3><div className="flex gap-2"><button type="button" className="gizmo-text-button" title="Uppdatera fakturaunderlag" aria-label="Uppdatera fakturaunderlag" disabled={loading || autosave.dirty || autosave.busy || pdfBusy} onClick={() => void load()}><RefreshCw size={17} /></button><button type="button" className="gizmo-button" disabled={!data || closed || loading || autosave.busy || pdfBusy} onClick={() => void select(null)}><Plus size={17} />Nytt underlag</button></div></div>
     <p className="my-2 text-sm text-[#596368]">Bilaga till faktura i ekonomisystemet.</p>
@@ -116,12 +117,12 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
         <div className="grid gap-3 sm:grid-cols-3"><label className="sm:col-span-2">Rubrik<input className={input} maxLength={200} value={form.title} onChange={e => edit({ ...form, title: e.target.value })} /></label><label>Datum<input type="date" className={input} value={form.date} onChange={e => edit({ ...form, date: e.target.value })} /></label><label className="sm:col-span-3">Period<input className={input} maxLength={200} value={form.period} onChange={e => edit({ ...form, period: e.target.value })} /></label></div>
         <div className="my-3 grid gap-3 sm:grid-cols-2"><label>Avsändare<textarea className={input} rows={4} maxLength={1500} value={form.issuer} onChange={e => edit({ ...form, issuer: e.target.value })} /></label><label>Fakturakund<textarea className={input} rows={4} maxLength={1500} value={form.recipient} onChange={e => edit({ ...form, recipient: e.target.value })} /></label></div>
         <div className="my-3 flex justify-end"><button type="button" className="gizmo-text-button" disabled={form.lines.length >= 100} onClick={() => edit({ ...form, lines: [...form.lines, { id: crypto.randomUUID(), description: '', quantity: '1', unit: 'st', unitPrice: '', vatRate: 25 }] })}><Plus size={16} />Lägg till rad</button></div>
-        <div className="gizmo-invoice-lines">{form.lines.map(line => <div key={line.id} className="gizmo-invoice-row">
+        <div className="gizmo-invoice-lines">{form.lines.map(line => <fieldset key={line.id} className="gizmo-invoice-row" disabled={sourceLineIds.has(line.id)} aria-label={sourceLineIds.has(line.id) ? 'Kopplad leverantörskostnad' : 'Manuell rad'}>
           <label className="gizmo-invoice-description">Beskrivning<textarea className={input} rows={2} maxLength={1500} value={line.description} onChange={e => edit({ ...form, lines: form.lines.map(l => l.id === line.id ? { ...l, description: e.target.value } : l) })} /></label>
           {(['quantity', 'unit', 'unitPrice'] as const).map(field => <label key={field}>{field === 'quantity' ? 'Antal' : field === 'unit' ? 'Enhet' : 'À-pris exkl. moms'}<input className={input} inputMode={field === 'unit' ? 'text' : 'decimal'} maxLength={field === 'unit' ? 30 : 25} value={line[field]} onChange={e => edit({ ...form, lines: form.lines.map(l => l.id === line.id ? { ...l, [field]: e.target.value } : l) })} /></label>)}
           <label>Moms<select className={input} value={line.vatRate} onChange={e => edit({ ...form, lines: form.lines.map(l => l.id === line.id ? { ...l, vatRate: Number(e.target.value) } : l) })}>{[0, 6, 12, 25].map(rate => <option key={rate} value={rate}>{rate} %</option>)}</select></label>
           <div className="self-end pb-2 text-right text-sm">{totals?.lines.find(l => l.id === line.id)?.netOre == null ? 'Belopp saknas' : money(totals.lines.find(l => l.id === line.id)!.netOre!)}<small className="block text-[#596368]">exkl. moms</small></div><button type="button" className="gizmo-text-button self-end" title="Ta bort rad" aria-label={`Ta bort ${line.description || 'rad'}`} onClick={() => edit({ ...form, lines: form.lines.filter(l => l.id !== line.id) })}><Trash2 size={17} /></button>
-        </div>)}</div>
+        </fieldset>)}</div>
         <label className="my-4 block">Notering till underlaget<textarea className={input} rows={3} maxLength={10000} value={form.note} onChange={e => edit({ ...form, note: e.target.value })} /></label>
       </fieldset>
       {totals && <dl className="gizmo-invoice-totals">{[['Summa exkl. moms', totals.netOre], ['Moms', totals.vatOre], ['Summa inkl. moms', totals.grossOre]].map(([label, amount]) => <div key={String(label)} className="flex justify-between gap-4"><dt>{label}</dt><dd className="font-semibold">{money(Number(amount))}</dd></div>)}</dl>}

@@ -2,7 +2,7 @@ import type { ActionCaseStatus } from './contracts'
 
 export type InvoiceBasisLine = { id: string; description: string; quantity: number | null; unit: string; unitPriceOre: number | null; vatRate: number }
 export type InvoiceBasis = { version: 1; title: string; date: string; period: string; issuer: string; recipient: string; note: string; lines: InvoiceBasisLine[] }
-export type InvoiceBasisRecord = { id: string; revision: number; body: InvoiceBasis; updatedAt: string }
+export type InvoiceBasisRecord = { id: string; revision: number; body: InvoiceBasis; updatedAt: string; sourceLineIds?: string[] }
 export type ProjectCompletionWorkspace = {
   available: boolean; userId: string; canManage: boolean; status: ActionCaseStatus; revision: number
   workComplete: boolean; invoiced: boolean; completedAt: string | null; openQuestions: number | null

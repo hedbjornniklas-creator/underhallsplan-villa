@@ -32,7 +32,7 @@ export function SupplierInvoiceProjectEconomy({ actionCase, invoices }: { action
 }
 
 function overdue(invoice: SupplierInvoice, today: string) {
-  return invoice.approvalStatus !== 'void' && invoice.documentKind === 'invoice' && invoice.paymentStatus === 'unpaid' && invoice.dueDate < today
+  return invoice.approvalStatus !== 'void' && invoice.documentKind === 'invoice' && invoice.paymentStatus === 'unpaid' && Boolean(invoice.dueDate) && invoice.dueDate < today
 }
 
 export default function SupplierInvoiceWorkspace({ cases, caseId, initialInvoices }: Props) {

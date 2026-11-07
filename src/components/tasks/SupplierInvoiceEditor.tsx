@@ -85,7 +85,7 @@ export default function SupplierInvoiceEditor({ initial, invoices, cases, defaul
   const remainingOre = (netOre ?? 0) - allocatedOre
   let normalized: SupplierInvoiceDraft | null = null
   try {
-    normalized = normalizeSupplierInvoiceDraft({ ...draft, netAmountOre: netOre, vatAmountOre: vatOre, allocations: allocations.map(({ caseId, itemId, category, description, amount }) => ({ caseId, itemId, category, description, amountOre: parseInvoiceAmount(amount) })) })
+    normalized = normalizeSupplierInvoiceDraft({ ...draft, netAmountOre: netOre, vatAmountOre: vatOre, allocations: allocations.map(({ key, amount, ...row }) => ({ ...row, id: row.id ?? key, amountOre: parseInvoiceAmount(amount) })) })
   } catch { /* Native fields and the form explanation guide completion. Never submit partial amounts. */ }
   const canSave = Boolean(normalized) && (!draft.sourceText.trim() || reviewed)
 

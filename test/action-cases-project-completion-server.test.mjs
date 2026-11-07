@@ -17,7 +17,7 @@ function harness(options = {}) {
     organization_customers: { name: 'Buyer', invoice_same_as_customer: false, invoice_name: 'Invoice recipient', invoice_address: 'Testgatan 1', invoice_postal_code: '12345', invoice_city: 'Teststad' } }
   if (options.noMember) rows.org_members = null
   if (options.noProject) rows.action_cases = null
-  const db = { from(table) { const read = { table, filters: [] }; reads.push(read); const query = { select() { return query }, eq(...args) { read.filters.push(args); return query }, order() { return query }, limit() { return query }, maybeSingle() { return query }, then(resolve) { resolve({ data: rows[table], error: options.schema && table === 'action_case_completion' ? { code: '42P01' } : null }) } }; return query },
+  const db = { from(table) { const read = { table, filters: [] }; reads.push(read); const query = { select() { return query }, eq(...args) { read.filters.push(args); return query }, order() { return query }, range() { return query }, limit() { return query }, maybeSingle() { return query }, then(resolve) { resolve({ data: rows[table], error: options.schema && table === 'action_case_completion' ? { code: '42P01' } : null }) } }; return query },
     rpc: async (name, payload) => { writes.push({ name, payload }); return options.rpcError ? { error: options.rpcError } : { data: { revision: 4, id: docId, status: 'in_progress' } } } }
   const module = { exports: {} }
   new Function('require', 'module', 'exports', code)(name => {

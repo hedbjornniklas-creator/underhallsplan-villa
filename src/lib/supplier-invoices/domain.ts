@@ -48,9 +48,9 @@ export function normalizeSupplierInvoiceDraft(value: unknown): SupplierInvoiceDr
   const supplierName = text('supplierName', 200, true)
   const supplierOrgNumber = text('supplierOrgNumber', 40)
   const invoiceNumber = text('invoiceNumber', 100, true)
-  const invoiceDate = text('invoiceDate', 10, true), dueDate = text('dueDate', 10, true)
+  const invoiceDate = text('invoiceDate', 10, true), dueDate = text('dueDate', 10)
   if (!isInvoiceDate(invoiceDate)) issues.push('invoiceDate')
-  if (!isInvoiceDate(dueDate)) issues.push('dueDate')
+  if (dueDate && !isInvoiceDate(dueDate)) issues.push('dueDate')
   // Historic invoices and contractual dates are accepted; no inferred payment terms.
   const documentKind = input.documentKind
   if (documentKind !== 'invoice' && documentKind !== 'credit') issues.push('documentKind')
@@ -81,8 +81,13 @@ export function normalizeSupplierInvoiceDraft(value: unknown): SupplierInvoiceDr
     if (!INVOICE_COST_CATEGORIES.includes(row.category as typeof INVOICE_COST_CATEGORIES[number])) issues.push(`${key}.category`)
     const description = typeof row.description === 'string' ? row.description.trim() : ''
     if (typeof row.description !== 'string' || description.length > 500) issues.push(`${key}.description`)
-    allocations.push({ caseId, itemId: itemId as string | null, category: row.category as SupplierInvoiceAllocation['category'], description, amountOre: amount(row.amountOre, `${key}.amountOre`, true) })
+    const id = row.id, changeId = row.changeId
+    if (id !== undefined && (typeof id !== 'string' || !UUID.test(id))) issues.push(`${key}.id`)
+    if (changeId != null && (typeof changeId !== 'string' || !UUID.test(changeId) || itemId !== null || !id)) issues.push(`${key}.changeId`)
+    allocations.push({ ...(typeof id === 'string' ? { id: id.toLowerCase() } : {}), ...(changeId !== undefined ? { changeId: typeof changeId === 'string' ? changeId.toLowerCase() : null } : {}), caseId, itemId: itemId as string | null, category: row.category as SupplierInvoiceAllocation['category'], description, amountOre: amount(row.amountOre, `${key}.amountOre`, true) })
   }
+  const ids = allocations.flatMap(a => a.id ? [a.id] : [])
+  if (new Set(ids).size !== ids.length) issues.push('allocationIds')
   if (allocations.reduce((sum, row) => sum + row.amountOre, 0) > netAmountOre) issues.push('allocationTotal')
   if (issues.length) throw new SupplierInvoiceValidationError([...new Set(issues)])
   return {
@@ -167,7 +172,7 @@ export function summarizeSupplierInvoices(invoices: readonly SupplierInvoice[], 
     if (invoice.paymentStatus === 'unpaid') {
       total.unpaidGrossOre += invoiceSignedAmount(invoice, gross)
       // Unsettled credits are not assumed to have paid an overdue debit invoice.
-      if (invoice.documentKind === 'invoice' && invoice.dueDate < today) total.overdueGrossOre += gross
+      if (invoice.documentKind === 'invoice' && invoice.dueDate && invoice.dueDate < today) total.overdueGrossOre += gross
     }
     total.unallocatedNetOre += invoiceUnallocatedOre(invoice)
     total.count += 1

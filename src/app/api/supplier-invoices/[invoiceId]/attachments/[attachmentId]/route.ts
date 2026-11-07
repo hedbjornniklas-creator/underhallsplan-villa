@@ -3,9 +3,9 @@ import { supplierInvoiceContext, supplierInvoiceError } from '@/lib/supplier-inv
 import { getSupplierInvoiceAttachmentUrl } from '@/lib/supplier-invoices/server'
 
 export const dynamic = 'force-dynamic'
-export async function GET(_request: Request, { params }: { params: Promise<{ invoiceId: string; attachmentId: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ invoiceId: string; attachmentId: string }> }) {
   try {
     const ctx = await supplierInvoiceContext(), { invoiceId, attachmentId } = await params
-    return NextResponse.redirect(await getSupplierInvoiceAttachmentUrl(ctx, invoiceId, attachmentId), { headers: { 'Cache-Control': 'private, no-store' } })
+    return NextResponse.redirect(await getSupplierInvoiceAttachmentUrl(ctx, invoiceId, attachmentId, new URL(request.url).searchParams.get('inline') === '1'), { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) { return supplierInvoiceError(error) }
 }

@@ -26,6 +26,16 @@ export async function getProjectCompletion(ctx: Context, caseId: string): Promis
   checked(completion.error)
   const bases = await db.from('action_case_invoice_basis').select('id,revision,body,updated_at').eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('created_at', { ascending: false })
   checked(bases.error)
+  const sourceLines = new Map<string, string[]>()
+  if (bases.data?.length) for (let offset = 0; ; offset += 500) {
+    const sources = await db.from('supplier_invoice_basis_sources').select('basis_id,line_id').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
+      .order('basis_id').order('line_id').range(offset, offset + 499)
+    // Standalone manual bases remain usable before the additive supplier migration is deployed.
+    if (sources.error && ['42P01', 'PGRST205'].includes(sources.error.code || '')) break
+    checked(sources.error)
+    for (const row of sources.data ?? []) sourceLines.set(row.basis_id, [...sourceLines.get(row.basis_id) ?? [], row.line_id])
+    if ((sources.data?.length ?? 0) < 500) break
+  }
   let openQuestions: number | null = null
   if (canManage) {
     const questions = await db.from('action_case_questions').select('body').eq('org_id', ctx.orgId).eq('action_case_id', caseId)
@@ -56,7 +66,7 @@ export async function getProjectCompletion(ctx: Context, caseId: string): Promis
   const c = completion.data
   return { available: true, userId: ctx.userId, canManage, status: project.status, revision: c?.revision ?? 0,
     workComplete: c?.work_complete ?? false, invoiced: c?.invoiced ?? false, completedAt: c?.completed_at ?? null, openQuestions,
-    bases: (bases.data ?? []).map(row => ({ id: row.id, revision: row.revision, body: normalizeInvoiceBasis(row.body), updatedAt: row.updated_at })),
+    bases: (bases.data ?? []).map(row => ({ id: row.id, revision: row.revision, body: normalizeInvoiceBasis(row.body), updatedAt: row.updated_at, sourceLineIds: sourceLines.get(row.id) ?? [] })),
     events: (events.data ?? []).map(e => ({ id: e.id, operation: e.operation, actor: e.actor_name, at: e.created_at })), defaults: { issuer, recipient } }
 }
 export async function writeProjectCompletion(ctx: Context, caseId: string, payload: Record<string, unknown>) {

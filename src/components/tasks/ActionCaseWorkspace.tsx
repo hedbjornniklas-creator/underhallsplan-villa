@@ -25,7 +25,6 @@ import { supabase } from '@/lib/supabaseClient'
 import ActionCaseImageBank from './ActionCaseImageBank'
 import { isImageAttachment } from '@/lib/action-cases/attachmentImages'
 import ActionCaseItemSheet from './ActionCaseItemSheet'
-import SupplierInvoiceWorkspace from './SupplierInvoiceWorkspace'
 import ActionCaseRequestSheet, { ActionCaseRequestsPanel } from './ActionCaseQuoteRequests'
 import { actionCaseItemCompletion, actionCaseCostCoverage } from '@/lib/action-cases/domain'
 import type { TaskPerson } from '@/lib/tasks/contracts'
@@ -502,7 +501,6 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
         })
       }}><label>Ny åtgärd<input required value={newItemTitle} onChange={(event) => setNewItemTitle(event.target.value)} placeholder="Beskriv arbetet kort" /></label><button type="submit" disabled={busy || !newItemTitle.trim()} className="gizmo-button">{busy ? <Loader2 size={17} className="animate-spin" /> : <Plus size={17} />} Lägg till åtgärd</button></form>
       <ActionCaseRequestsPanel actionCase={selectedCase} busy={busy} onOpen={(requestId) => setRequestEditor({ requestId })} />
-      <SupplierInvoiceWorkspace key={`invoices:${selectedCase.id}`} cases={workspace.cases} caseId={selectedCase.id} />
     </section>
     <section hidden={section !== 'files'} aria-label="Bilder och filer">
       <div className="gizmo-section-heading"><h2>Bilder och filer</h2></div>

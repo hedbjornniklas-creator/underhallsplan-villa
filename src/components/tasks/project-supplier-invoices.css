@@ -1,0 +1,67 @@
+.psi { max-width: 1200px; padding-block: 20px; color: #252A2D; font-size: 14px; }
+.psi h3,.psi-panel h3 { font-size: 18px; font-weight: 600; margin: 12px 0; }
+.psi-toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.psi-toolbar>div,.psi-panel-footer>div:last-child { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.psi-summary { display: flex; flex-wrap: wrap; gap: 24px; border-block: 1px solid #D5DCDD; padding: 16px 0; margin-block: 16px; }
+.psi-summary>div { flex: 1 1 220px; }
+.psi-summary dt,.psi-muted,.psi-panel-header small { color: #596368; font-size: 13px; }
+.psi-summary dd { font-size: 21px; font-weight: 600; margin-top: 4px; }
+.psi-filters { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.psi-filters>label { display: flex; flex: 1 1 220px; align-items: center; gap: 8px; border: 1px solid #AEB8B9; padding: 8px 12px; border-radius: 4px; }
+.psi-filters input { width: 100%; min-width: 0; outline: none; }
+.psi-filters select { max-width: 240px; }
+.psi table { border-collapse: collapse; width: 100%; text-align: left; }
+.psi th { font-weight: 500; }
+.psi th,.psi td { padding: 10px 12px; border-bottom: 1px solid #D5DCDD; vertical-align: middle; }
+.psi thead { background: #EDF1F1; font-size: 13px; }
+.psi-table-wrap { overflow-x: auto; }
+.psi-table-wrap table { min-width: 720px; }
+.psi-table-wrap tbody tr { cursor: pointer; }
+.psi-table-wrap tbody tr:hover { background: #F3F7F6; }
+.psi-open { display: block; text-align: left; min-height: 44px; }
+.psi-open small { display: block; color: #596368; }
+.psi-money { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.psi-empty { padding: 32px 0; color: #596368; }
+.psi-economy { margin-block: 24px; }
+.psi-economy summary,.psi-panel summary { cursor: pointer; padding-block: 12px; font-weight: 600; }
+.psi-error { color: #922F32; background: #FFF0EF; padding: 12px; margin-block: 8px; }
+.psi-overlay { position: fixed; inset: 0; z-index: 1000; background: #252A2D66; display: flex; justify-content: flex-end; overflow: hidden; }
+.psi-panel { width: min(1280px, 96vw); height: 100dvh; background: white; display: flex; flex-direction: column; color: #252A2D; font-family: 'Uppdrag Manrope',Manrope,Arial,sans-serif; font-size: 14px; }
+.psi-panel-header { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid #D5DCDD; flex-shrink: 0; }
+.psi-panel-header h2 { font-size: 21px; font-weight: 600; overflow-wrap: anywhere; }
+.psi-panel-body { overflow-y: auto; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.1fr); align-items: start; }
+.psi-original { padding: 20px; background: #F3F5F5; min-width: 0; position: sticky; top: 0; }
+.psi-original header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.psi-original iframe { width: 100%; height: min(65dvh,750px); border: 1px solid #D5DCDD; background: white; }
+.psi-original img { width: 100%; max-height: 65dvh; object-fit: contain; }
+.psi-original>a { display: block; padding: 8px 0; color: #206961; overflow-wrap: anywhere; }
+.psi-original p { overflow-wrap: anywhere; }
+.psi-no-original { min-height: 240px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; border: 1px dashed #AEB8B9; }
+.psi-edit { padding: 20px 24px; min-width: 0; }
+.psi-panel fieldset { min-width: 0; }
+.psi-panel legend { font-size: 18px; font-weight: 600; padding-bottom: 12px; }
+.psi-panel label { display: block; font-size: 13px; }
+.psi-field { min-height: 44px; border: 1px solid #AEB8B9; border-radius: 4px; background: white; color: #252A2D; padding: 8px 10px; width: 100%; min-width: 0; font-size: 14px; }
+.psi-field:focus { outline: 2px solid #206961; outline-offset: 1px; }
+.psi-field:disabled { background: #F3F5F5; color: #596368; }
+.psi-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.psi-gross { align-self: end; min-height: 44px; }
+.psi-gross small,.psi-gross strong { display: block; }
+.psi-segment { display: flex; flex-wrap: wrap; margin-block: 12px; }
+.psi-segment button { padding: 8px 12px; min-height: 44px; border: 1px solid #AEB8B9; }
+.psi-segment button[aria-pressed='true'] { background: #EDF5F3; box-shadow: inset 0 -2px #206961; }
+.psi-segment button:disabled { opacity: .55; }
+.psi-allocation { padding-block: 12px; border-block-end: 1px solid #AEB8B9; }
+.psi-allocation>.psi-fields,.psi-allocation>.psi-toolbar { margin-top: 10px; }
+.psi-grow { flex: 1; min-width: 0; }
+.psi-balance { background: #FCF7E8; padding: 12px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-block: 12px; }
+.psi-linked { color: #206961; padding-block: 8px; }
+.psi-basis { border-top: 3px solid #206961; margin-top: 20px; padding-top: 8px; }
+.psi-review { padding-block: 12px; border-bottom: 1px solid #D5DCDD; }
+.psi-review fieldset>label,.psi-review fieldset>.psi-fields { margin-top: 10px; }
+.psi-panel .psi-check { display: flex; align-items: start; gap: 10px; margin-block: 12px; }
+.psi-check input { flex: 0 0 18px; width: 18px; height: 18px; accent-color: #206961; margin-top: 2px; }
+.psi-panel-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 24px; border-top: 1px solid #D5DCDD; background: white; }
+.psi-panel-footer>div:first-child { max-width: 420px; font-size: 13px; }
+@media(max-width:800px) { .psi-panel { width: 100%; } .psi-panel-body { display: block; } .psi-original { position: static; } .psi-original iframe { height: 280px; } .psi-no-original { min-height: 100px; } .psi-original img { max-height: 300px; } }
+@media(max-width:520px) { .psi-panel-header,.psi-panel-footer,.psi-edit,.psi-original { padding: 12px 16px; } .psi-field { font-size: 16px; min-height: 48px; } .psi-fields { grid-template-columns: minmax(0,1fr); } .psi-panel-footer .gizmo-button,.psi-panel-footer .gizmo-text-button { min-height: 48px; } .psi-summary { gap: 12px; } .psi-economy table { font-size: 12px; } .psi-economy th,.psi-economy td { padding-inline: 4px; } }

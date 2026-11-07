@@ -255,7 +255,7 @@ test('attachment download API redirects only after authenticated authorization',
   })
   const response = await route.GET(new Request('https://hushub.se/api/supplier-invoices/attachments/file'), { params: Promise.resolve({ invoiceId: id(3), attachmentId: id(6) }) })
   assert.equal(response.status, 307)
-  assert.deepEqual(downloads, [[ctx, id(3), id(6)]])
+  assert.deepEqual(downloads, [[ctx, id(3), id(6), false]])
   assert.equal(response.headers.get('Location'), 'https://storage.example.test/signed')
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store')
 })

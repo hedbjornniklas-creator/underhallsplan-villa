@@ -66,6 +66,7 @@ import { ContractCustomerEditor, ContractContractorEditor } from './CustomerCont
 import { emptyContractParties, type ContractContractor } from '@/lib/action-cases/customerContractParties'
 import ProjectBillingEditor from './ProjectBillingEditor'
 import ProjectInvoiceBasis from './ProjectInvoiceBasis'
+import ProjectSupplierInvoices from './ProjectSupplierInvoices'
 import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
@@ -173,8 +174,10 @@ export default function CustomerOfferEditor({
   const [planningDirty, setPlanningDirty] = useState(false)
   const [billingDirty, setBillingDirty] = useState(false)
   const [invoiceDirty, setInvoiceDirty] = useState(false)
-  const paymentDirty = billingDirty || invoiceDirty
-  const [paymentView, setPaymentView] = useState<'plan' | 'billing' | 'basis'>('plan')
+  const [supplierDirty, setSupplierDirty] = useState(false)
+  const [basisRefresh, setBasisRefresh] = useState(0)
+  const paymentDirty = billingDirty || invoiceDirty || supplierDirty
+  const [paymentView, setPaymentView] = useState<'plan' | 'billing' | 'basis' | 'supplier'>('plan')
   const planningDirtyRef = useRef(planningDirty)
   planningDirtyRef.current = planningDirty
   const [planning, setPlanning] = useState(initial.planning)
@@ -798,18 +801,21 @@ export default function CustomerOfferEditor({
         <div role="tablist" aria-label="Betalning och fakturering" className="gizmo-register-tabs gizmo-payment-tabs mt-4" onKeyDown={(event) => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
           event.preventDefault()
-          const tabs = ['plan', 'billing', 'basis'] as const
-          const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'basis' : tabs[(tabs.indexOf(paymentView) + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length]
+          const tabs = ['plan', 'billing', 'basis', 'supplier'] as const
+          const next = event.key === 'Home' ? 'plan' : event.key === 'End' ? 'supplier' : tabs[(tabs.indexOf(paymentView) + (event.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length]
           setPaymentView(next)
           event.currentTarget.querySelector<HTMLButtonElement>(`[data-payment-tab="${next}"]`)?.focus()
         }}>
-          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck], ['basis', 'Fakturaunderlag', WalletCards]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
+          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck], ['basis', 'Fakturaunderlag', WalletCards], ['supplier', 'Leverantörsfakturor', WalletCards]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
         </div>
         <div id={`payment-panel-${actionCase.id}-billing`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-billing`} hidden={paymentView !== 'billing'}>
           {draftTarget === 'contract' && <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />}
         </div>
         <div id={`payment-panel-${actionCase.id}-basis`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-basis`} hidden={paymentView !== 'basis'}>
-          {draftTarget === 'contract' && <ProjectInvoiceBasis caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
+          {draftTarget === 'contract' && <ProjectInvoiceBasis key={basisRefresh} caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
+        </div>
+        <div id={`payment-panel-${actionCase.id}-supplier`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-supplier`} hidden={paymentView !== 'supplier'}>
+          {draftTarget === 'contract' && <ProjectSupplierInvoices caseId={actionCase.id} items={actionCase.items} active={active && view === 'payments' && paymentView === 'supplier'} onDirty={setSupplierDirty} basisBlocked={invoiceDirty} onBasis={() => { setSupplierDirty(false); setBasisRefresh(n => n + 1); setPaymentView('basis') }} />}
         </div>
       </div>
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>

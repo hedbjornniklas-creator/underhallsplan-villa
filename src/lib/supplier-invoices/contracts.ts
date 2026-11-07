@@ -4,11 +4,19 @@ export type InvoiceApprovalStatus = 'registered' | 'approved' | 'disputed' | 'vo
 export type InvoiceCostCategory = 'material' | 'subcontractor' | 'waste' | 'transport' | 'other'
 
 export type SupplierInvoiceAllocation = {
+  id?: string
+  changeId?: string | null
   caseId: string
   itemId: string | null
   category: InvoiceCostCategory
   description: string
   amountOre: number
+}
+
+export type ProjectInvoiceTarget = { id: string; kind: 'item' | 'change'; title: string; mode: 'fixed' | 'running' | 'budget' | 'unknown'; markupPercent: number | null; parts?: { key: string; mode: string; markupPercent: number | null }[] }
+export type SupplierInvoiceBasisLink = { invoiceId: string; allocationId: string; basisId: string; lineId: string; customerNetOre: number; agreement: string }
+export type ProjectInvoiceWorkspace = SupplierInvoiceWorkspace & {
+  userId: string; status: string; targets: ProjectInvoiceTarget[]; links: SupplierInvoiceBasisLink[]
 }
 
 export type SupplierInvoiceDraft = {

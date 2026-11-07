@@ -33,6 +33,7 @@ export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
     PROJECT_ADMIN_INVALID: [400, 'Kontrollera underlagets datum, rader och belopp.'],
+    INVOICE_SOURCE_IN_USE: [409, 'Kostnadsraden är kopplad till en leverantörsfaktura och kan inte ändras eller tas bort. Använd en kredit för rättning.'],
     PROJECT_ADMIN_FORBIDDEN: [403, 'Du saknar behörighet till projektet.'],
     PROJECT_ADMIN_MANAGER: [403, 'Endast projektansvarig kan klarmarkera och avsluta projektet.'],
     PROJECT_ADMIN_NOT_FOUND: [404, 'Projektet eller fakturaunderlaget kunde inte hittas.'],
