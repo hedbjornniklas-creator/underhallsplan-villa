@@ -16,6 +16,15 @@ export function buildEbOverviewItems(projects: EbProjectListItem[]): EbOverviewI
     lifecycle: getEbInspectionLifecycle(inspection, project.status),
   })))
 }
+/** List completion includes invoicing, without reopening the visit or its report. */
+export function getEbOverviewItemState(item: EbOverviewItem) {
+  const completed = item.lifecycle.workStatus === 'completed'
+  const active = item.lifecycle.isOpen || item.lifecycle.needsAttention
+    || (completed && item.inspection.billing?.status !== 'invoiced')
+  const closed = completed && item.inspection.billing?.status === 'invoiced' && !item.lifecycle.needsAttention
+  const marker = item.lifecycle.needsAttention ? 'attention' : active ? 'active' : 'closed'
+  return { active, closed, marker } as const
+}
 export function selectEbOverviewPage(items: EbOverviewItem[], input: {
   search?: string; filter?: EbOverviewFilter; sort?: EbOverviewSort; attentionOnly?: boolean
   showArchived?: boolean; page?: number; pageSize?: number
@@ -24,15 +33,16 @@ export function selectEbOverviewPage(items: EbOverviewItem[], input: {
   const visible = items.filter(item => (input.showArchived || !['archived', 'cancelled'].includes(item.lifecycle.workStatus))
     && (!search || [item.title, item.address, item.project.title, item.project.city, item.project.propertyDesignation,
       item.project.brfApartmentNumber, item.customer, item.inspection.assignmentNumber].filter(Boolean).join(' ').toLocaleLowerCase('sv-SE').includes(search)))
-  const active = (item: EbOverviewItem) => item.lifecycle.isOpen || item.lifecycle.needsAttention
+  const active = (item: EbOverviewItem) => getEbOverviewItemState(item).active
+  const closed = (item: EbOverviewItem) => getEbOverviewItemState(item).closed
   const toInvoice = (item: EbOverviewItem) => item.lifecycle.workStatus === 'completed'
     && item.inspection.billing?.status === 'not_invoiced'
   const counts = { all: visible.length, active: visible.filter(active).length,
-    closed: visible.filter(item => item.lifecycle.workStatus === 'completed' && !item.lifecycle.needsAttention).length,
+    closed: visible.filter(closed).length,
     'to-invoice': visible.filter(toInvoice).length }
   const unavailableBillingCount = visible.filter(item => item.lifecycle.workStatus === 'completed'
     && (!item.inspection.billing || item.inspection.billing.status === 'unavailable')).length
-  const rows = visible.filter(item => (input.filter === 'closed' ? item.lifecycle.workStatus === 'completed' && !item.lifecycle.needsAttention
+  const rows = visible.filter(item => (input.filter === 'closed' ? closed(item)
     : input.filter === 'to-invoice' ? toInvoice(item)
     : input.filter === 'all' ? true : active(item))
     && (input.filter === 'to-invoice' || !input.attentionOnly || item.lifecycle.needsAttention))

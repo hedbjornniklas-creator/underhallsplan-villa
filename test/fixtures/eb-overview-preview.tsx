@@ -17,7 +17,7 @@ declare global {
 
 const mode = new URLSearchParams(location.search).get('state')
 const previewProjects = () => ebOverviewDemo().map(project => mode !== 'billing' ? project : ({ ...project, inspections: project.inspections.map(inspection => ({
-  ...inspection, billing: { status: ['inspection-closed', 'inspection-delivery'].includes(inspection.inspectionId) ? 'not_invoiced' as const
+  ...inspection, billing: inspection.inspectionId === 'inspection-11' ? undefined : { status: ['inspection-closed', 'inspection-delivery'].includes(inspection.inspectionId) ? 'not_invoiced' as const
     : inspection.inspectionId === 'inspection-9' ? 'invoiced' as const : 'unavailable' as const,
   invoicedAt: inspection.inspectionId === 'inspection-9' ? '2026-11-07T10:00:00Z' : null,
   invoiceNumber: 'INTERNAL-NUMBER-MUST-NOT-APPEAR', updatedAt: null, updatedByName: null, revision: 0 },

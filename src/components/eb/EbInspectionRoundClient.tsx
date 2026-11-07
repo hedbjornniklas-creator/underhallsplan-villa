@@ -301,12 +301,6 @@ function navigationLinkClassName(primary: boolean, busy: boolean) {
   return busy ? `${base} ${variant} pointer-events-none cursor-wait opacity-70` : `${base} ${variant}`
 }
 
-function navigationIconLinkClassName(busy: boolean) {
-  const base =
-    'mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-200 bg-white text-emerald-800 transition hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600'
-  return busy ? `${base} pointer-events-none cursor-wait opacity-70` : base
-}
-
 function isImageFile(file: File) {
   return file.type.startsWith('image/') || /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(file.name)
 }
@@ -5246,17 +5240,18 @@ export default function EbInspectionRoundClient({
         <div className="relative mx-auto w-full max-w-7xl p-4 md:p-6">
           <header className="rounded-lg border border-emerald-100 bg-white/84 p-4 shadow-sm backdrop-blur-sm md:p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="flex min-w-0 items-start gap-3">
+              <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row">
                 <Link
-                  href={`/eb/projects/${round.project.id}`}
+                  href={`/eb/projects/${encodeURIComponent(round.project.id)}`}
                   onClick={(event) => handleNavigation(event, projectNavigationKey)}
-                  aria-label="Tillbaka"
-                  title="Tillbaka"
+                  aria-label="Till entreprenaden"
+                  title="Till entreprenaden"
                   aria-disabled={navigationInProgress}
                   aria-busy={isProjectNavigating}
-                  className={navigationIconLinkClassName(navigationInProgress)}
+                  className={`mt-0.5 min-h-11 shrink-0 ${navigationLinkClassName(false, navigationInProgress)}`}
                 >
                   {isProjectNavigating ? <Loader2 size={17} className="animate-spin" /> : <ArrowLeft size={17} strokeWidth={2} />}
+                  Till entreprenaden
                 </Link>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">

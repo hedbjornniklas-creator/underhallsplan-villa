@@ -33,12 +33,14 @@ export async function testEbOverview(base, output) {
     assert.ok(found, `Field label: ${text}`)
     return `#${id}`
   }
-  async function chooseFilter(value, width) {
-    if (width < 960) await page.select('.obo-filter-select select', value)
+  async function chooseFilter(value) {
+    if (await page.$eval('.obo-filter-select', node => node.checkVisibility())) await page.select('.obo-filter-select select', value)
     else await page.click(`.obo-filter-buttons button:nth-child(${({ active: 1, closed: 2, all: 3, 'to-invoice': 4 })[value]})`)
   }
   async function layout(label) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${label}: page overflow`)
+    assert.deepEqual(await page.$$eval('.eb-inspection-name', nodes => nodes.filter(node => node.checkVisibility() && node.getBoundingClientRect().width < 100)
+      .map(node => ({ id: node.closest('tr').dataset.rowId, width: node.getBoundingClientRect().width }))), [], `${label}: inspection names retain readable width`)
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.obo-toolbar, .obo-table td, .obo-check, .obo-actions a, .obh-actions')]
       .filter(node => node.checkVisibility() && node.scrollWidth > node.clientWidth + 1).map(node => node.className)), [], `${label}: content overflow`)
     assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.obo button, .obo select, .obo input:not([type=checkbox]), .obo a, .obh-actions button, .obh-actions a')]
@@ -105,6 +107,9 @@ export async function testEbOverview(base, output) {
       const node = document.querySelector(selector)
       return node.matches(':focus-visible') && getComputedStyle(node).outlineColor === accent
     }, {}, selector, theme.accent)
+    await page.$eval(selector, async node => {
+      await Promise.allSettled(node.getAnimations().map(animation => animation.finished))
+    })
     const focused = await page.$eval(selector, node => ({
       outline: getComputedStyle(node).outlineColor,
       outlineWidth: parseFloat(getComputedStyle(node).outlineWidth),
@@ -122,18 +127,25 @@ export async function testEbOverview(base, output) {
       { closed: false, target: 'project', keyboard: true },
       { closed: true, target: 'inspection', keyboard: true },
       { closed: true, target: 'project', keyboard: false },
+      { closed: false, target: 'project-action', keyboard: false },
+      { closed: false, target: 'report-action', keyboard: true },
+      { closed: true, target: 'project-action', keyboard: true },
+      { closed: true, target: 'report-action', keyboard: false },
     ]) {
       await page.goto(`${base}/eb`, { waitUntil: 'networkidle0' })
       await ready()
       if (closed) await chooseFilter('closed', width)
       const row = `tr[data-row-id="${closed ? 'inspection-closed' : 'inspection-slab'}"]`
       const selector = target === 'inspection' ? `${row} .eb-inspection-name`
-        : `${row} ${width < 960 ? '.obo-mobile-only' : '.obo-desktop-only'} .eb-project-name`
+        : target === 'project' ? `${row} ${width < 960 ? '.obo-mobile-only' : '.obo-desktop-only'} .eb-project-name`
+        : target === 'project-action' ? `${row} .eb-project-link` : `${row} .obo-confirmation-link`
       const expected = target === 'inspection'
         ? `/eb/projects/project-alpha/inspections/${closed ? 'inspection-closed/report' : 'inspection-slab/perform'}`
+        : target === 'report-action' ? `/eb/projects/project-alpha/inspections/${closed ? 'inspection-closed' : 'inspection-slab'}/perform`
         : '/eb/projects/project-alpha'
       assert.equal(await page.$eval(selector, node => node.getAttribute('href')), expected)
-      assert.match(await page.$eval(selector, node => node.getAttribute('aria-label')), target === 'inspection' ? /^Öppna besiktning:/ : /^Öppna entreprenad:/)
+      assert.match(await page.$eval(selector, node => node.getAttribute('aria-label')),
+        target === 'inspection' ? /^Öppna besiktning:/ : target === 'report-action' ? /^Granska utlåtande:/ : /^Öppna entreprenad:/)
       if (target === 'inspection') assert.equal(await page.$eval(`${row} .obo-inspection-link`, node => node.getAttribute('href')), expected,
         'The title and existing open action use the same lifecycle destination')
       assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0)
@@ -143,7 +155,7 @@ export async function testEbOverview(base, output) {
           await page.keyboard.press('Tab')
           reached = await page.$eval(selector, node => document.activeElement === node)
         }
-        assert.ok(reached, `${width}: ${target} name is reachable by keyboard`)
+        assert.ok(reached, `${width}: ${target} is reachable by keyboard`)
       }
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
@@ -473,19 +485,48 @@ export async function testEbOverview(base, output) {
     await ready()
     assert.equal((await rows()).length, 10)
 
-    for (const width of [390, 1440]) {
+    for (const width of [390, 960, 1100, 1280, 1440]) {
       await page.setViewport({ width, height: 1000 })
       await page.goto(`${base}/eb?state=billing`, { waitUntil: 'networkidle0' })
       await ready()
+      await page.select('.obo-page-size select', '25')
+      assert.equal((await rows()).length, 15, `${width}: only the invoiced, delivered inspection leaves Pågående`)
+      assert.equal(await page.$eval('.obo-filter-buttons button:nth-child(1) span', node => node.textContent), '15')
+      assert.equal(await page.$eval('.obo-filter-buttons button:nth-child(2) span', node => node.textContent), '1')
+      for (const [id, marker] of [
+        ['inspection-closed', 'active'],
+        ['inspection-delivery', 'attention'],
+        ['inspection-10', 'attention'],
+        ['inspection-11', 'active'],
+      ]) {
+        assert.ok((await rows()).includes(id), `${width}: ${id} remains current until work, delivery and invoicing are complete`)
+        assert.equal(await page.$eval(`tr[data-row-id="${id}"]`, node => node.dataset.marker), marker)
+      }
+      assert.equal((await rows()).includes('inspection-9'), false)
+      assert.match(await page.$eval('tr[data-row-id="inspection-closed"] .eb-billing-status', node => node.textContent), /Ej fakturerad/)
+      assert.match(await page.$eval('tr[data-row-id="inspection-11"] .eb-billing-status', node => node.textContent), /Ej tillgänglig/)
+      assert.equal(await page.$eval('tr[data-row-id="inspection-closed"] .obo-inspection-link', node => node.getAttribute('href')),
+        '/eb/projects/project-alpha/inspections/inspection-closed/report', 'Invoice grouping never reopens the actual inspection')
+      assert.equal(await page.$eval('tr[data-row-id="inspection-closed"] .obo-confirmation-link', node => node.getAttribute('href')),
+        '/eb/projects/project-alpha/inspections/inspection-closed/perform', 'The report action opens Granska rather than the read-only report')
+      await layout(`Pågående med fakturering ${width}`)
+      await page.screenshot({ path: resolve(output, `eb-home-billing-${width}.png`), fullPage: width >= 960 })
+      const billingRow = await page.$('tr[data-row-id="inspection-closed"]')
+      await billingRow.screenshot({ path: resolve(output, `eb-billing-row-${width}.png`) })
+      await chooseFilter('closed', width)
+      assert.deepEqual(await rows(), ['inspection-9'], `${width}: Klara contains only completed and invoiced inspections`)
+      assert.equal(await page.$eval('tr[data-row-id="inspection-9"]', node => node.dataset.marker), 'closed')
+      assert.match(await page.$eval('tr[data-row-id="inspection-9"] .eb-billing-status', node => node.textContent), /Fakturerad/)
       await chooseFilter('to-invoice', width)
       assert.deepEqual(new Set(await rows()), new Set(['inspection-closed', 'inspection-delivery']))
       assert.equal(await page.$$eval('tr[data-row-id] input[type=checkbox]', nodes => nodes.length), 0, 'List billing status is read-only')
       assert.ok(await page.$('.eb-billing-unavailable'), 'Unknown completed status gets an explicit warning')
       assert.match(await page.$eval('.eb-billing-unavailable', node => node.textContent), /2 klara besiktningar/)
       assert.equal(await page.$eval('.obo-table', node => node.outerHTML.includes('INTERNAL-NUMBER-MUST-NOT-APPEAR')), false, 'Only status, never invoice number in the list')
+      assert.equal(await page.evaluate(() => window.__ebOverviewTest.writes.length), 0, 'Changing list filters never writes billing, work or delivery data')
       await layout(`Att fakturera ${width}`)
     }
-    console.log('EB overview: read-only billing status, independent Att fakturera and unknown-status warning passed on mobile/desktop.')
+    console.log('EB overview: uninvoiced/unknown stay current, only invoiced close, read-only billing and independent Att fakturera passed on mobile/desktop.')
     await page.goto(`${base}/eb?state=empty`, { waitUntil: 'networkidle0' })
     await ready()
     assert.match(await page.$eval('.obo-empty', node => node.textContent), /Inga besiktningar/)
