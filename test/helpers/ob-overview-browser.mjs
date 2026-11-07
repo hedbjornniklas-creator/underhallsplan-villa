@@ -76,12 +76,12 @@ export async function testOverview(base, output) {
       await page.click('.obh-dialog-close')
       assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"]', node => node.textContent.includes('Inväntar kund') && node.textContent.includes('Pågår')), true)
       assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"]', node => node.textContent.includes('2026-0925-01')), false, 'Assignment number is omitted on desktop and mobile')
-      assert.equal((await page.$$('.obo-table thead th')).length, 8)
+      assert.equal((await page.$$('.obo-table thead th')).length, 9)
       assert.deepEqual(await page.$$eval('.obo-table thead th', nodes => nodes.slice(0, 4).map(node => node.textContent)), ['Besiktningsdag', 'Adress', 'Ort', 'Kund'])
       assert.equal(await page.$eval('[data-row-id="inspection:inspection-1"] .obo-city', node => node.textContent), 'Täby')
       const links = await page.$$eval('[data-row-id="inspection:inspection-1"] a', nodes => nodes.map(node => node.getAttribute('href')))
       assert.deepEqual(links, ['/properties/property-1/ob/inspection-1?orgId=11111111-1111-4111-8111-111111111111', '/ob/assignments/assignment-1?orgId=11111111-1111-4111-8111-111111111111'])
-      await tableMode(`width ${width}`, width >= 960)
+      await tableMode(`width ${width}`, width >= 1152)
       if (width >= 960) {
         const listWidth = await page.$eval('.obo-workspace', node => node.getBoundingClientRect().width)
         assert.ok(listWidth >= width * .93, `width ${width}: use available page width`)
@@ -98,7 +98,7 @@ export async function testOverview(base, output) {
     for (const width of [895, 896, 920, 960, 1032, 1087, 1088]) {
       await page.$eval('.obo', (node, size) => { node.style.width = `${size}px` }, width)
       await layout(`panel ${width}`)
-      await tableMode(`panel ${width}`, width >= 896)
+      await tableMode(`panel ${width}`, width >= 1088)
       if (width === 1032) {
         await page.$eval('.obo-heading', node => node.scrollIntoView())
         await page.screenshot({ path: resolve(output, 'overview-panel-1032.png') })
@@ -112,7 +112,7 @@ export async function testOverview(base, output) {
     assert.equal(await page.$eval(`${actionRow} .obo-row-toggle`, node => node.getAttribute('aria-expanded')), 'true')
     assert.match(await page.$eval('.obo-row-details', node => node.textContent), /Acceptera uppdraget/)
     assert.doesNotMatch(await page.$eval('.obo-row-details', node => node.textContent), /Uppdragsnummer/)
-    assert.equal(await page.$eval('.obo-detail-row td', node => node.colSpan), 8)
+    assert.equal(await page.$eval('.obo-detail-row td', node => node.colSpan), 9)
     assert.equal(await page.$eval('.obo-row-details', node => [...node.querySelectorAll('dt')].find(term => term.textContent === 'Ort').nextElementSibling.textContent), 'Täby')
     await layout('expanded action details')
     await page.keyboard.press('Enter')

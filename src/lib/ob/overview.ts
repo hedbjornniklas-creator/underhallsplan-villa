@@ -1,3 +1,5 @@
+import type { ObInspectionBilling, ObInspectionBillingStatus } from './billing'
+
 export type OverviewAssignment = {
   id: string
   inspection_id: string | null
@@ -42,6 +44,8 @@ export type OverviewWorkflow = {
 
 export type ObOverviewItem = {
   assignment?: { id: string; status: string; archived: boolean }
+  /** Internal accounting reminder, separate from the actual inspection state. */
+  billing?: ObInspectionBillingStatus
   canEdit?: boolean
   pdfHref?: string | null
   id: string
@@ -83,6 +87,7 @@ export function makeObOverviewItem(
   assignment: OverviewAssignment | undefined,
   inspection: OverviewInspection | undefined,
   workflow: OverviewWorkflow | undefined,
+  billing?: ObInspectionBillingStatus | ObInspectionBilling,
 ): ObOverviewItem {
   const attention: string[] = []
   let confirmation = assignment ? 'Okänd status' : 'Ingen kopplad'
@@ -119,20 +124,29 @@ export function makeObOverviewItem(
   }
 
   const state = inspection ? inspectionState(inspection.status) : null
+  // Even when an owner passes its full private DTO, list items expose only the
+  // status projection. Never copy invoice numbers, names, dates or revisions.
+  const inspectionBilling: ObInspectionBillingStatus | undefined = inspection
+    ? { status: billing?.status ?? 'unavailable' } : undefined
   if (state && !state.known) attention.push('Kontrollera besiktningens status')
   if (workflow?.paused) attention.push(workflow.reason || 'Uppdragsbekräftelsen behöver uppdateras')
   else if (workflow?.needsReview && assignment?.approvalVerified && assignment.booked_at) {
     attention.push('Stäm av kundens uppgifter i besiktningen')
   }
   const linkedButUnavailable = !inspection && Boolean(assignment?.inspection_id || workflow)
-  // A converted confirmation is not evidence that the inspection is finished.
-  const closed = state?.closed ?? (!linkedButUnavailable && assignment?.status === 'cancelled')
   const archived = inspection
-    ? ['archived', 'arkiverad'].includes(inspection.status?.toLowerCase() ?? '')
+    ? ['archived', 'arkiverad'].includes(inspection.status?.trim().toLowerCase() ?? '')
     : Boolean(assignment?.archived_at)
+  // List completion includes the internal invoice reminder, not a change to
+  // the inspection's real state. Unknown billing is never guessed to be paid
+  // or confirmed not invoiced; the actual inspection label remains unchanged.
+  const closed = inspection
+    ? archived || Boolean(state?.closed && inspectionBilling?.status === 'invoiced')
+    : !linkedButUnavailable && assignment?.status === 'cancelled'
   return {
     id: inspection ? `inspection:${inspection.id}` : `assignment:${assignment!.id}`,
     ...(assignment ? { assignment: { id: assignment.id, status: assignment.status, archived: Boolean(assignment.archived_at) } } : {}),
+    ...(inspectionBilling ? { billing: inspectionBilling } : {}),
     date: first(inspection?.date, assignment?.preferred_date) || null,
     createdAt: inspection?.created_at ?? assignment!.created_at,
     address: first(inspection?.address, assignment?.property_address, assignment?.preliminary_address) || 'Adress saknas',
@@ -154,6 +168,7 @@ export function makeObOverviewItem(
 
 export function buildObOverview(
   assignments: OverviewAssignment[], inspections: OverviewInspection[], workflows: OverviewWorkflow[],
+  billingByInspectionId: ReadonlyMap<string, ObInspectionBillingStatus> = new Map(),
 ): ObOverviewItem[] {
   const assignmentMap = new Map(assignments.map(item => [item.id, item]))
   const inspectionMap = new Map(inspections.map(item => [item.id, item]))
@@ -174,7 +189,7 @@ export function buildObOverview(
     const inspection = inspectionMap.get(workflow.inspection_id)
     for (const id of [workflow.initial_assignment_id, workflow.current_assignment_id,
       ...(linked.get(workflow.inspection_id) ?? []).map(item => item.id)]) consumed.add(id)
-    if (current || inspection) rows.push(makeObOverviewItem(current, inspection, workflow))
+    if (current || inspection) rows.push(makeObOverviewItem(current, inspection, workflow, billingByInspectionId.get(workflow.inspection_id)))
   }
   for (const inspection of inspections) {
     if (workflowMap.has(inspection.id)) continue
@@ -182,7 +197,7 @@ export function buildObOverview(
     // Do not silently discard an ambiguous linkage: keep the extra confirmations visible.
     const assignment = candidates.length === 1 ? candidates[0] : undefined
     if (assignment) consumed.add(assignment.id)
-    rows.push(makeObOverviewItem(assignment, inspection, undefined))
+    rows.push(makeObOverviewItem(assignment, inspection, undefined, billingByInspectionId.get(inspection.id)))
   }
   for (const assignment of assignments) {
     if (!consumed.has(assignment.id)) rows.push(makeObOverviewItem(assignment, undefined, undefined))
@@ -190,7 +205,7 @@ export function buildObOverview(
   return rows
 }
 
-export type OverviewFilter = 'all' | 'active' | 'closed'
+export type OverviewFilter = 'all' | 'active' | 'closed' | 'to-invoice'
 export type OverviewSort = 'date-desc' | 'date-asc' | 'customer' | 'address'
 
 export type OverviewPageOptions = {
@@ -209,6 +224,8 @@ export type ObOverviewPage = {
   counts: Record<OverviewFilter, number>
   page: number
   pageSize: number
+  /** Explicitly absent/false on pre-billing responses; never infer an unpaid state. */
+  billingAvailable?: boolean
 }
 
 export function selectObOverview(items: ObOverviewItem[], options: {
@@ -219,7 +236,9 @@ export function selectObOverview(items: ObOverviewItem[], options: {
     if (!options.showArchived && item.archived) return false
     if (options.filter === 'active' && item.closed) return false
     if (options.filter === 'closed' && !item.closed) return false
-    if (options.attentionOnly && item.attention.length === 0) return false
+    if (options.filter === 'to-invoice' &&
+      (item.inspection !== 'Klar' || item.billing?.status !== 'not_invoiced')) return false
+    if (options.filter !== 'to-invoice' && options.attentionOnly && item.attention.length === 0) return false
     const text = `${item.address} ${item.city} ${item.customer} ${item.assignmentNumber}`.toLocaleLowerCase('sv-SE')
     return words.every(word => text.includes(word))
   }).sort((a, b) => {

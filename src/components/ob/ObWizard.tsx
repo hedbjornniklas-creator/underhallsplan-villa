@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import ObStepGrunddata from './ObStepGrunddata'
 import ObStepHandlingar from './ObStepHandlingar'
 import ObStepForutsattningar from './ObStepForutsattningar'
@@ -12,6 +12,7 @@ import ObStepEnvironmental from './ObStepEnvironmental'
 import ObStepFuktkontroll from './ObStepFuktkontroll'
 import ObUnlockInspection from './ObUnlockInspection'
 import ObWordExport from './ObWordExport'
+import ObInspectionBillingPanel from './ObInspectionBillingPanel'
 import type { Tables } from '@/types/supabase'
 import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
@@ -189,10 +190,19 @@ function normalizeDeliveryMeta(meta: ReportDeliveryMeta): ReportDeliveryMeta {
 
 export default function ObWizard(props: ObWizardProps) {
   const building = useObBuilding()
+  const [billingHost, setBillingHost] = useState<HTMLDivElement | null>(null)
+  const [billingStarted, setBillingStarted] = useState(props.activeSection === 'delivery')
+  const registerBillingHost = useCallback((node: HTMLDivElement | null) => {
+    setBillingHost(node)
+    if (node) setBillingStarted(true)
+  }, [])
+  const billing = (billingStarted || props.activeSection === 'delivery') && isValidUuid(props.inspection.id)
+    ? <ObInspectionBillingPanel key={props.inspection.id} inspectionId={props.inspection.id} portalTarget={billingHost} /> : null
   if (building?.part) return <ObFloorContext.Provider value={{ model: building.part.floor_model, update: () => { void building.reload() } }}>
-    <ObWizardContent key={`${props.inspection.id}:${building.part.id}`} {...props} />
+    <ObWizardContent key={`${props.inspection.id}:${building.part.id}`} {...props} billingHostRef={registerBillingHost} />
+    {billing}
   </ObFloorContext.Provider>
-  return <ObFloorProvider key={props.inspection.id} inspectionId={props.inspection.id}><ObWizardContent {...props} /></ObFloorProvider>
+  return <ObFloorProvider key={props.inspection.id} inspectionId={props.inspection.id}><ObWizardContent {...props} billingHostRef={registerBillingHost} />{billing}</ObFloorProvider>
 }
 
 function ObWizardContent({
@@ -203,7 +213,8 @@ function ObWizardContent({
   onInspectionUpdated,
   onInspectionAddonSelectionChanged,
   onOpenStepMenu,
-}: ObWizardProps) {
+  billingHostRef,
+}: ObWizardProps & { billingHostRef: (node: HTMLDivElement | null) => void }) {
   const normalizedProperty = useMemo<ObWizardProperty>(
     () => ({
       id: property.id,
@@ -783,6 +794,8 @@ function ObWizardContent({
                       <p className="mt-2 text-xs text-gray-600">Utför åtgärd...</p>
                     ) : null}
                   </div>
+
+                  <div ref={billingHostRef} />
 
                   {deliveryMeta ? (
                     <div className="ob-delivery-section text-sm">

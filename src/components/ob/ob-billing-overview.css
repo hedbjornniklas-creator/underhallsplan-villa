@@ -1,0 +1,52 @@
+/* Billing adds a ninth column; keep these overrides out of EB/TU. */
+.ob-billing-overview .obo-table th:nth-child(3) { width:8%; }
+.ob-billing-overview .obo-table th:nth-child(4) { width:12%; }
+.ob-billing-overview .obo-table th:nth-child(5) { width:11rem; }
+.ob-billing-overview .obo-table th:nth-child(6) { width:6rem; }
+.ob-billing-overview .obo-table th:nth-child(7) { width:8rem; }
+.ob-billing-overview .obo-table th:nth-child(8) { width:3.5rem; }
+.ob-billing-overview .obo-table th:nth-child(9) { width:9.5rem; }
+.obo-billing-help { margin:.75rem 1rem; color:#596571; overflow-wrap:anywhere; }
+@container ob-overview (width < 68rem) {
+  .ob-billing-overview .obo-workspace { font-size: 1rem; line-height: 1.5; }
+  .ob-billing-overview .obo-toolbar { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px; }
+  .ob-billing-overview .obo-search { flex: 1 1 100%; }
+  .ob-billing-overview .obo-sort { flex: 1 1 9rem; min-width: 0; }
+  .ob-billing-overview .obo-page-size { flex: 0 1 5.5rem; min-width: 0; }
+  .ob-billing-overview .obo-sort, .ob-billing-overview .obo-page-size, .ob-billing-overview .obo-filter-select { flex-direction: column; align-items: stretch; gap: .25rem; }
+  .ob-billing-overview .obo-sort > span, .ob-billing-overview .obo-page-size > span, .ob-billing-overview .obo-filter-select > span { font-size: .875rem; }
+  .ob-billing-overview .obo select { padding: 8px 32px 8px 12px; }
+  .ob-billing-overview .obo select, .ob-billing-overview .obo button, .ob-billing-overview .obo-search input, .ob-billing-overview .obo-actions a { min-height: 48px; }
+  .ob-billing-overview .obo .obo-icon { width: 48px; height: 48px; flex-basis: 48px; }
+  .ob-billing-overview .obo-filters { padding: 0 1rem .75rem; gap: .25rem 1rem; }
+  .ob-billing-overview .obo-filter-buttons { display: none; }
+  .ob-billing-overview .obo-filter-select { display: flex; margin-right: auto; }
+  .ob-billing-overview .obo-table, .ob-billing-overview .obo-table tbody { display: block; }
+  .ob-billing-overview .obo-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ob-billing-overview .obo-table tr[data-row-id] { display: flex; flex-direction: column; height: auto; padding: 1rem; border-bottom: 1px solid #d4dce4; border-left: 3px solid #d4dce4; }
+  .ob-billing-overview .obo-table tr[data-marker=attention] { border-left-color: #a36116; }
+  .ob-billing-overview .obo-table tr[data-marker=active] { border-left-color: #245eb5; }
+  .ob-billing-overview .obo-table tr[data-marker=closed] { border-left-color: #52705e; }
+  .ob-billing-overview .obo-table tr[data-marker] td:first-child { box-shadow: none; }
+  .ob-billing-overview .obo-table td { display: block; padding: 0; border: 0; }
+  .ob-billing-overview .obo-table .obo-desktop-only { display: none; }
+  .ob-billing-overview .obo-table .obo-mobile-only { display: block; }
+  .ob-billing-overview .obo-cell-text { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+  .ob-billing-overview .obo-identity { overflow-wrap: anywhere; }
+  .ob-billing-overview .obo-meta, .ob-billing-overview .obo-attention { font-size: .875rem; }
+  .ob-billing-overview .obo-identity { order: -2; }
+  .ob-billing-overview .obo-table .obo-date { order: -1; margin: .5rem 0 .75rem; }
+  .ob-billing-overview .obo-table .obo-state { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr)); gap: .5rem; padding: .2rem 0; }
+  .ob-billing-overview .obo-mobile-label { display: block; color: #596571; font-size: .875rem; padding-top: .125rem; }
+  .ob-billing-overview .obo-table .obo-actions { padding: .5rem 0 0; }
+  .ob-billing-overview .obo-action-links { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: .25rem 1.5rem; }
+  .ob-billing-overview .obo-actions a { flex: 1 1 9rem; width: auto; justify-content: flex-start; gap: .5rem; font-size: .875rem; }
+  .ob-billing-overview .obo-actions a > span { display: block; min-width: 0; overflow-wrap: anywhere; }
+  .ob-billing-overview .obo-table .obo-details-toggle { order: 4; padding-top: .5rem; }
+  .ob-billing-overview .obo .obo-details-toggle .obo-row-toggle { width: 100%; max-width: 100%; height: auto; min-height: 48px; justify-content: flex-start; padding: .25rem .5rem; gap: .5rem; }
+  .ob-billing-overview .obo-row-toggle svg { flex-shrink: 0; }
+  .ob-billing-overview .obo-row-toggle .obo-mobile-only { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+  .ob-billing-overview .obo-detail-row { display: block; }
+  .ob-billing-overview .obo-table .obo-detail-row td { padding: 1rem; }
+  .ob-billing-overview .obo-pagination { padding: .75rem 1rem; }
+}

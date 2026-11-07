@@ -1,4 +1,5 @@
 import { buildObOverview, type OverviewAssignment, type OverviewInspection } from '../../src/lib/ob/overview'
+import { emptyObInspectionBilling, type ObInspectionBilling } from '../../src/lib/ob/billing'
 
 export function overviewAssignment(overrides: Partial<OverviewAssignment> = {}): OverviewAssignment {
   return {
@@ -18,7 +19,7 @@ export function overviewInspection(overrides: Partial<OverviewInspection> = {}):
   }
 }
 
-export function overviewDemoItems(changes: Record<string, Partial<OverviewAssignment>> = {}) {
+export function overviewDemoItems(changes: Record<string, Partial<OverviewAssignment>> = {}, billingOverrides: ReadonlyMap<string, ObInspectionBilling> = new Map()) {
   const assignments = [
     overviewAssignment({ inspection_id: 'inspection-1' }),
     overviewAssignment({ id: 'assignment-2', customer_name: 'Johan Lind', property_address: 'Björkgatan 8',
@@ -42,6 +43,10 @@ export function overviewDemoItems(changes: Record<string, Partial<OverviewAssign
       assignment_number: `2026-0910-${index + 1}`,
     })),
   ]
+  const billing = new Map(inspections.map(inspection => [inspection.id, billingOverrides.get(inspection.id) ?? {
+    ...emptyObInspectionBilling(), ...(inspection.status === 'completed' ? { status: 'invoiced' as const,
+      invoicedAt: '2026-11-07T10:00:00Z', updatedAt: '2026-11-07T10:00:00Z', updatedByName: 'Testperson', revision: 1 } : {}),
+  }]))
   return buildObOverview(assignments.map(assignment => ({ ...assignment, ...changes[assignment.id] })), inspections, [{ inspection_id: 'inspection-1', initial_assignment_id: 'assignment-1',
-    current_assignment_id: 'assignment-1', needsReview: true, paused: false, reason: 'Inväntar kundens godkännande.' }])
+    current_assignment_id: 'assignment-1', needsReview: true, paused: false, reason: 'Inväntar kundens godkännande.' }], billing)
 }
