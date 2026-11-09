@@ -7,6 +7,8 @@ import { renderPdfDocument } from '../pdf/renderDocument.ts'
 // @ts-expect-error Shared with Node strip-types PDF tests.
 import { invoiceBasisTotals } from './projectCompletion.ts'
 import type { InvoiceBasisRecord } from './projectCompletion'
+// @ts-expect-error Shared with Node strip-types PDF tests.
+import { billingTotals } from './billingFlow.ts'
 
 let registered = false
 const money = (ore: number) => `${(ore / 100).toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`
@@ -22,12 +24,14 @@ const s = StyleSheet.create({
   note: { marginTop: 16 }, footer: { position: 'absolute', bottom: 23, left: 40, right: 40, height: 14, fontSize: 7, lineHeight: 1.2, color: '#596368' },
   continuation: { position: 'absolute', top: 22, left: 40, right: 40, height: 16, fontSize: 8, lineHeight: 1.2, color: '#596368' },
 })
-export async function renderInvoiceBasisPdf(record: InvoiceBasisRecord, projectTitle: string): Promise<Buffer> {
+export async function renderInvoiceBasisPdf(record: InvoiceBasisRecord, projectTitle: string, vatByRate = false): Promise<Buffer> {
   if (!registered) {
     Font.register({ family: 'InvoiceManrope', fonts: [400, 600, 700].map(fontWeight => ({ src: join(process.cwd(), 'public/uppdrag/brand/pdf', `Manrope-${fontWeight}.ttf`), fontWeight })) })
     registered = true
   }
   const b = record.body, totals = invoiceBasisTotals(b)
+  // Only the new billing workflow opts in; historical manual bases retain their calculation.
+  if (vatByRate) Object.assign(totals, billingTotals(totals.lines.map(l => ({ netOre: l.netOre ?? 0, vatRate: l.vatRate as 0 | 6 | 12 | 25 }))))
   if (!totals.complete) throw new Error('PROJECT_ADMIN_PDF_INCOMPLETE')
   const widths = ['39%', '10%', '9%', '17%', '7%', '18%']
   const row = (cells: string[], key: string, header = false) => h(View, { key, style: header ? [s.row, s.header] : s.row, wrap: false, ...(header ? { minPresenceAhead: 32 } : {}) }, ...cells.map((value, i) => h(Text, { key: i, style: [s.cell, { width: widths[i], textAlign: i > 0 ? 'right' : 'left' }] }, value)))

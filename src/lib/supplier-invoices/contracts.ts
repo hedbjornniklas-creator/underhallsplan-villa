@@ -17,6 +17,7 @@ export type ProjectInvoiceTarget = { id: string; kind: 'item' | 'change'; title:
 export type SupplierInvoiceBasisLink = { invoiceId: string; allocationId: string; basisId: string; lineId: string; customerNetOre: number; agreement: string }
 export type ProjectInvoiceWorkspace = SupplierInvoiceWorkspace & {
   userId: string; status: string; targets: ProjectInvoiceTarget[]; links: SupplierInvoiceBasisLink[]
+  billingFlowActive?: boolean
 }
 
 export type SupplierInvoiceDraft = {

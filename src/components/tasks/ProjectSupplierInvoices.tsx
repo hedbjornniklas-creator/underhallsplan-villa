@@ -171,6 +171,7 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
   const target = (row: Row) => workspace.targets.find(t => t.id === (row.changeId || row.itemId))
   async function reviewBasis() {
     if (basisBlocked) { setError('Spara eller återställ pågående ändringar i Fakturaunderlag först.'); return }
+    if (workspace.billingFlowActive) { if (await autosave.flush()) onBasis(''); return }
     if (form.identityVersion === 0) { const upgraded = { ...form, identityVersion: 1 }; setForm(upgraded); autosave.change(upgraded) }
     if (!(await autosave.flush()) || !files.length) return
     const values: typeof review = {}
@@ -231,6 +232,11 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
       <button type="button" className="gizmo-button" disabled={!confirmed || !reviewValid || basisBusy || autosave.dirty || autosave.busy} onClick={() => void createBasis()}><FilePlus2 size={17} />{basisBusy ? 'Skapar…' : 'Skapa fakturaunderlag'}</button>
     </section>}
     </div></div>
-    <footer className="psi-panel-footer"><div role="status" aria-live="polite">{uploading ? 'Laddar upp original…' : autosave.busy ? 'Sparar…' : autosave.error || (autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Fyll i leverantör, nummer, datum och giltiga belopp. Inte sparat.' : autosave.revision() ? 'Sparat' : 'Nytt utkast')}{!autosave.local && <strong> Kan inte lagra lokalt. Lämna inte sidan.</strong>}{autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div><div><button type="button" className="gizmo-text-button" disabled={uploading || basisBusy} onClick={() => void leave()}>Stäng</button>{more > 0 && <button type="button" className="gizmo-button" disabled={uploading || !!pendingFile || !autosave.revision() || basisBusy} onClick={() => void leave(true)}>Nästa fil ({more})</button>}<button type="button" className="gizmo-button" disabled={readOnly || uploading || !!pendingFile || basisBusy || autosave.dirty || autosave.busy || !autosave.revision() || !files.length || form.approvalStatus === 'void' || form.approvalStatus === 'disputed'} onClick={() => void reviewBasis()}><FilePlus2 size={17} />Till fakturaunderlag</button></div></footer>
+    <footer className="psi-panel-footer">
+      <div role="status" aria-live="polite">{uploading ? 'Laddar upp original…' : autosave.busy ? 'Sparar…' : autosave.error || (autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Fyll i leverantör, nummer, datum och giltiga belopp. Inte sparat.' : autosave.revision() ? 'Sparat' : 'Nytt utkast')}{!autosave.local && <strong> Kan inte lagra lokalt. Lämna inte sidan.</strong>}{autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div>
+      <div><button type="button" className="gizmo-text-button" disabled={uploading || basisBusy} onClick={() => void leave()}>Stäng</button>{more > 0 && <button type="button" className="gizmo-button" disabled={uploading || !!pendingFile || !autosave.revision() || basisBusy} onClick={() => void leave(true)}>Nästa fil ({more})</button>}
+        <button type="button" className="gizmo-button" disabled={readOnly || uploading || !!pendingFile || basisBusy || autosave.dirty || autosave.busy || !autosave.revision() || !workspace.billingFlowActive && !files.length || form.approvalStatus === 'void' || form.approvalStatus === 'disputed'} onClick={() => void reviewBasis()}><FilePlus2 size={17} />{workspace.billingFlowActive ? 'Till fakturering' : 'Till fakturaunderlag'}</button>
+      </div>
+    </footer>
     </div></div>, document.body)
 }

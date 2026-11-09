@@ -8,7 +8,7 @@ type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (['42P01', '42703', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '')) throw new Error('INVOICE_SCHEMA_REQUIRED')
-  throw new Error(error.message?.match(/INVOICE_[A-Z_]+|PROJECT_ADMIN_[A-Z_]+/)?.[0] || 'INVOICE_FAILED')
+  throw new Error(error.message?.match(/INVOICE_[A-Z_]+|PROJECT_ADMIN_[A-Z_]+|BILLING_[A-Z_]+/)?.[0] || 'INVOICE_FAILED')
 }
 async function context(ctx: Context, caseId: string) {
   if (!administrationUuid(caseId)) throw new Error('INVOICE_INVALID')
@@ -27,7 +27,9 @@ export async function getProjectSupplierInvoices(ctx: Context, caseId: string): 
     links.push(...page.map(r => ({ invoiceId: r.invoice_id, allocationId: r.allocation_id, basisId: r.basis_id, lineId: r.line_id, customerNetOre: Number(r.customer_net_ore), agreement: r.agreement })))
     if (page.length < 500) break
   }
-  return { ...project, invoices: all.invoices.filter(i => i.allocations.some(a => a.caseId === caseId)), links }
+  const flow = await db.from('action_case_billing_flows').select('revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  if (flow.error && !['42P01', 'PGRST205'].includes(flow.error.code || '')) checked(flow.error)
+  return { ...project, invoices: all.invoices.filter(i => i.allocations.some(a => a.caseId === caseId)), links, billingFlowActive: Boolean(flow.data?.revision) }
 }
 export async function createProjectSupplierBasis(ctx: Context, caseId: string, value: Record<string, unknown>) {
   await context(ctx, caseId)

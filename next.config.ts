@@ -46,6 +46,7 @@ const nextConfig: NextConfig = {
     '/api/action-cases/*/customer-offers/pdf': ['./public/uppdrag/brand/pdf/*.ttf', './public/hf17-2017.pdf'],
     '/api/action-cases/*/customer-planning/*/pdf': ['./public/uppdrag/brand/pdf/*.ttf'],
     '/api/action-cases/*/invoice-basis/*/pdf': ['./public/uppdrag/brand/pdf/*.ttf'],
+    '/api/action-cases/*/billing-flow/*/pdf': ['./public/uppdrag/brand/pdf/*.ttf'],
     '/api/**/*': [
       'node_modules/@sparticuz/chromium/bin/**/*',
       'node_modules/@sparticuz/chromium/build/**/*',

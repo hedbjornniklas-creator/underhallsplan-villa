@@ -65,7 +65,7 @@ import CustomerOfferSourcePicker from './CustomerOfferSourcePicker'
 import { ContractCustomerEditor, ContractContractorEditor } from './CustomerContractPartiesEditor'
 import { emptyContractParties, type ContractContractor } from '@/lib/action-cases/customerContractParties'
 import ProjectBillingEditor from './ProjectBillingEditor'
-import ProjectInvoiceBasis from './ProjectInvoiceBasis'
+import ProjectBillingFlow from './ProjectBillingFlow'
 import ProjectSupplierInvoices from './ProjectSupplierInvoices'
 import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
@@ -806,13 +806,13 @@ export default function CustomerOfferEditor({
           setPaymentView(next)
           event.currentTarget.querySelector<HTMLButtonElement>(`[data-payment-tab="${next}"]`)?.focus()
         }}>
-          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck], ['basis', 'Fakturaunderlag', WalletCards], ['supplier', 'Leverantörsfakturor', WalletCards]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
+          {([['plan', 'Betalningsplan', WalletCards], ['billing', 'Fakturakund', UserRoundCheck], ['basis', 'Fakturering', WalletCards], ['supplier', 'Leverantörsfakturor', WalletCards]] as const).map(([key, label, Icon]) => <button key={key} type="button" role="tab" id={`payment-${actionCase.id}-${key}`} aria-controls={`payment-panel-${actionCase.id}-${key}`} aria-selected={paymentView === key} tabIndex={paymentView === key ? 0 : -1} data-payment-tab={key} className="gizmo-register-tab" onClick={() => setPaymentView(key)}><Icon size={17} />{label}</button>)}
         </div>
         <div id={`payment-panel-${actionCase.id}-billing`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-billing`} hidden={paymentView !== 'billing'}>
           {draftTarget === 'contract' && <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />}
         </div>
         <div id={`payment-panel-${actionCase.id}-basis`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-basis`} hidden={paymentView !== 'basis'}>
-          {draftTarget === 'contract' && <ProjectInvoiceBasis key={basisRefresh} caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
+          {draftTarget === 'contract' && <ProjectBillingFlow key={basisRefresh} caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
         </div>
         <div id={`payment-panel-${actionCase.id}-supplier`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-supplier`} hidden={paymentView !== 'supplier'}>
           {draftTarget === 'contract' && <ProjectSupplierInvoices caseId={actionCase.id} items={actionCase.items} active={active && view === 'payments' && paymentView === 'supplier'} onDirty={setSupplierDirty} basisBlocked={invoiceDirty} onBasis={() => { setSupplierDirty(false); setBasisRefresh(n => n + 1); setPaymentView('basis') }} />}

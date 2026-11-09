@@ -1,0 +1,47 @@
+.gbf { color:#252a2d; font-size:14px; padding:20px 0; max-width:1240px; }
+.gbf h3 { font-size:18px; font-weight:600; margin:0; }
+.gbf h4 { font-size:15px; font-weight:600; margin:14px 0 8px; }
+.gbf-toolbar,.gbf-row-actions,.gbf-status { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.gbf-toolbar { justify-content:space-between; margin:12px 0; }
+.gbf-toolbar>div { display:flex; gap:8px; flex-wrap:wrap; }
+.gbf-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; padding:14px 0; border-block:1px solid #c5cecf; margin:12px 0; }
+.gbf-summary dt { font-size:12px; color:#596368; }
+.gbf-summary dd { font-weight:600; margin:5px 0 0; font-size:17px; }
+.gbf-choice { display:grid; gap:5px; flex:1; min-width:200px; max-width:660px; }
+.gbf select,.gbf input:not([type=checkbox]),.gbf textarea,.gbf-drawer select,.gbf-drawer input:not([type=checkbox]),.gbf-drawer textarea { min-width:0; max-width:100%; border:1px solid #aeb8b9; border-radius:4px; padding:7px 9px; background:#fff; color:#252a2d; min-height:36px; }
+.gbf input[type=checkbox],.gbf-drawer input[type=checkbox] { width:17px; height:17px; accent-color:#206961; flex-shrink:0; }
+.gbf-tabs { overflow-x:auto; max-width:100%; margin:14px 0; }
+.gbf-tabs .gizmo-register-tab { white-space:nowrap; }
+.gbf-table { overflow-x:auto; max-width:100%; }
+.gbf-table table { border-collapse:collapse; width:100%; font-size:13px; }
+.gbf-table th { background:#edf3f2; color:#394649; font-weight:600; text-align:left; }
+.gbf-table th,.gbf-table td { padding:8px 9px; border-bottom:1px solid #c5cecf; vertical-align:top; }
+.gbf-table small { display:block; color:#596368; font-size:11px; margin-top:3px; }
+.gbf-row-actions { flex-wrap:nowrap; gap:3px; }
+.gbf-row-actions button { padding:6px; width:32px; height:32px; }
+.gbf-table .gbf-amount { width:125px; text-align:right; }
+.gbf-status { padding:9px 0; font-size:13px; }
+.gbf-warning { background:#fbf5de; border-left:3px solid #d0b53d; padding:12px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+.gbf-error { color:#8c263b; padding:9px 0; }
+.gbf-empty { padding:16px 0; color:#596368; }
+.gbf-close { margin-top:18px; border-top:1px solid #c5cecf; padding-top:12px; }
+.gbf-legacy { border-top:1px solid #c5cecf; margin-top:20px; padding-top:12px; }
+.gbf-legacy>summary { cursor:pointer; padding:8px 0; }
+.gbf-overlay { position:fixed; inset:0; z-index:110; background:#18232355; display:flex; justify-content:flex-end; }
+.gbf-drawer { background:#fff; width:min(840px,100%); height:100%; display:flex; flex-direction:column; box-shadow:-8px 0 28px #0002; font-size:14px; color:#252a2d; }
+.gbf-drawer>header { display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid #c5cecf; }
+.gbf-drawer>header h2 { font-size:19px; font-weight:600; margin:0; }
+.gbf-drawer-body { overflow:auto; flex:1; padding:20px 22px; min-height:0; }
+.gbf-drawer>footer { display:flex; gap:10px; justify-content:flex-end; align-items:center; flex-wrap:wrap; border-top:1px solid #c5cecf; padding:12px 22px; background:#fff; }
+.gbf-drawer>footer>span { margin-right:auto; max-width:260px; font-size:12px; }
+.gbf-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; border:0; padding:0; margin:0; }
+.gbf-fields label { display:flex; flex-direction:column; gap:6px; min-width:0; font-size:13px; }
+.gbf-fields .gbf-check { flex-direction:row; align-items:flex-start; }
+.gbf-fields input,.gbf-fields textarea,.gbf-fields select { width:100%; }
+.gbf-fields input[type=checkbox] { width:17px; }
+.gbf-wide { grid-column:1/-1; }
+.gbf-drawer .gbf-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.gbf-drawer .gbf-summary dd { font-size:15px; }
+.gbf-drawer .gbf-table { font-size:12px; }
+.gbf-drawer :disabled { opacity:.65; }
+@media(max-width:640px) { .gbf-summary { grid-template-columns:1fr; gap:9px; } .gbf-summary>div { display:flex; justify-content:space-between; align-items:baseline; gap:12px; } .gbf-summary dd { font-size:16px; } .gbf-fields { grid-template-columns:1fr; } .gbf-drawer-body { padding:16px; } .gbf-drawer>header,.gbf-drawer>footer { padding:12px 16px; } .gbf-drawer .gbf-summary { grid-template-columns:1fr; } .gbf-table table { min-width:650px; } .gbf-drawer .gbf-table table { min-width:480px; } }

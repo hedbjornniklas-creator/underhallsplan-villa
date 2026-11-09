@@ -19,7 +19,7 @@ function parsed(form: Form): InvoiceBasis {
 const money = (ore: number) => `${(ore / 100).toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kr`
 const input = 'min-h-11 w-full min-w-0 rounded-md border border-[#AEB8B9] bg-white px-3 py-2 text-base sm:text-sm disabled:bg-[#F4F6F6]'
 
-export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseId: string; active: boolean; onDirty: (dirty: boolean) => void }) {
+export default function ProjectInvoiceBasis({ caseId, active, onDirty, readOnly = false }: { caseId: string; active: boolean; onDirty: (dirty: boolean) => void; readOnly?: boolean }) {
   const [data, setData] = useState<ProjectCompletionWorkspace | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<string | null>(null), [form, setForm] = useState<Form | null>(null), [pdfBusy, setPdfBusy] = useState(false)
   const id = useRef<string | null>(null), runningPdf = useRef(false), loadToken = useRef(0)
@@ -40,6 +40,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
   const key = (userId: string, basisId: string) => `invoice-basis:${userId}:${caseId}:${basisId}`
   const choose = (record: InvoiceBasisRecord, userId: string, discard = false) => {
     id.current = record.id; setSelected(record.id)
+    if (readOnly) { setForm(formOf(record.body)); return }
     const value = autosaveRef.current.seed(key(userId, record.id), formOf(record.body), record.revision, discard)
     setForm(value)
     try { localStorage.setItem(`invoice-basis:${userId}:${caseId}:selected`, record.id) } catch { /* Draft safety is handled by the autosave queue. */ }
@@ -65,26 +66,28 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
     finally { if (token === loadToken.current) setLoading(false) }
   // Choosing a document uses refs so a later save cannot restart the fetch.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId])
+  }, [caseId, readOnly])
   const invalidateLoad = useCallback(() => { loadToken.current++ }, [])
   useEffect(() => { if (active && !autosaveRef.current.dirty && !autosaveRef.current.busy) void load(); return invalidateLoad }, [active, load, invalidateLoad])
-  useEffect(() => { onDirty(autosave.dirty || autosave.busy || pdfBusy) }, [autosave.dirty, autosave.busy, pdfBusy, onDirty])
+  useEffect(() => { onDirty(!readOnly && (autosave.dirty || autosave.busy) || pdfBusy) }, [autosave.dirty, autosave.busy, pdfBusy, onDirty, readOnly])
+  useEffect(() => { if (readOnly) { const b = data?.bases.find(b => b.id === selected); if (b) setForm(formOf(b.body)) } }, [readOnly, data, selected])
   useEffect(() => {
     if (!autosave.dirty && !autosave.busy) return
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
     window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
   }, [autosave.dirty, autosave.busy])
-  const closed = data?.status === 'completed' || data?.status === 'cancelled'
+  const closed = readOnly || data?.status === 'completed' || data?.status === 'cancelled'
+  const savedRevision = readOnly ? data?.bases.find(b => b.id === selected)?.revision ?? 0 : autosave.revision()
   async function select(basisId: string | null) {
-    if (!data || !(await autosave.flush())) return
+    if (!data || !readOnly && !(await autosave.flush())) return
     choose(basisId ? data.bases.find(b => b.id === basisId)! : { id: crypto.randomUUID(), revision: 0, body: emptyInvoiceBasis(data.defaults), updatedAt: '' }, data.userId)
   }
   function edit(next: Form) { if (closed) return; setForm(next); autosave.change(next) }
   async function print() {
-    if (runningPdf.current || !selected || !totals?.complete || !(await autosave.flush()) || !autosave.revision()) return
+    if (runningPdf.current || !selected || !totals?.complete || !readOnly && !(await autosave.flush()) || !savedRevision) return
     runningPdf.current = true; setPdfBusy(true); setError('')
     try {
-      const response = await fetch(`/api/action-cases/${caseId}/invoice-basis/${selected}/pdf?revision=${autosave.revision()}`, { cache: 'no-store', signal: AbortSignal.timeout(60_000) })
+      const response = await fetch(`/api/action-cases/${caseId}/invoice-basis/${selected}/pdf?revision=${savedRevision}`, { cache: 'no-store', signal: AbortSignal.timeout(60_000) })
       if (!response.ok) { const result = await response.json(); throw new Error(result.error || 'PDF kunde inte skapas.') }
       const url = URL.createObjectURL(await response.blob()), a = document.createElement('a')
       a.href = url; a.download = `Fakturaunderlag-${form!.date.replaceAll('-', '')}-${selected.slice(0, 8)}.pdf`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 30_000)
@@ -102,7 +105,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
     {!data && <button type="button" className="gizmo-text-button" disabled={loading} onClick={() => void load()}>{loading ? 'Hämtar…' : 'Försök igen'}</button>}
     {data && <div className="my-4 flex flex-wrap gap-2" aria-label="Sparade fakturaunderlag">{data.bases.map(b => <button type="button" key={b.id} className="gizmo-text-button" aria-pressed={selected === b.id} disabled={autosave.busy || pdfBusy} onClick={() => void select(b.id)}>{b.body.title || 'Namnlöst underlag'} · {b.body.date}</button>)}{!data.bases.length && !form && <p className="text-sm">Inga fakturaunderlag skapade.</p>}</div>}
     {form && <>
-      <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div role="status" aria-live="polite" className="text-sm">{autosave.busy ? 'Sparar…' : autosave.error ? autosave.error : autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Kontrollera datum, antal och priser. Ändringarna är inte sparade.' : autosave.revision() ? 'Sparat' : 'Nytt underlag'}{!autosave.local && <strong> Utkastet kunde inte lagras på enheten. Lämna inte sidan.</strong>}{autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div><button type="button" className="gizmo-button" disabled={!totals?.complete || autosave.dirty || autosave.busy || Boolean(autosave.error) || pdfBusy || !autosave.revision()} onClick={() => void print()}><FileDown size={17} />{pdfBusy ? 'Skapar PDF…' : 'PDF'}</button></div>
+      <div className="my-3 flex flex-wrap items-center justify-between gap-3"><div role="status" aria-live="polite" className="text-sm">{readOnly ? 'Historiskt underlag' : autosave.busy ? 'Sparar…' : autosave.error ? autosave.error : autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Kontrollera datum, antal och priser. Ändringarna är inte sparade.' : autosave.revision() ? 'Sparat' : 'Nytt underlag'}{!readOnly && !autosave.local && <strong> Utkastet kunde inte lagras på enheten. Lämna inte sidan.</strong>}{!readOnly && autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div><button type="button" className="gizmo-button" disabled={!totals?.complete || !readOnly && (autosave.dirty || autosave.busy || Boolean(autosave.error)) || pdfBusy || !savedRevision} onClick={() => void print()}><FileDown size={17} />{pdfBusy ? 'Skapar PDF…' : 'PDF'}</button></div>
       {(autosave.error || autosave.dirty) && <button type="button" className="gizmo-text-button mb-3" disabled={autosave.busy || pdfBusy} onClick={async () => {
         if (!data || !window.confirm('Hämta sparat underlag och kasta lokala ändringar?')) return
         try {
@@ -112,7 +115,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty }: { caseI
           choose(saved || { id: selected!, revision: 0, body: emptyInvoiceBasis(fresh.defaults), updatedAt: '' }, fresh.userId, true)
         } catch (e) { setError(e instanceof Error ? e.message : 'Kunde inte hämta underlaget. Dina ändringar är kvar.') }
       }}>Hämta sparat underlag</button>}
-      {closed && <p className="mb-3 text-sm">Projektet är avslutat eller avbrutet. Sparade underlag kan fortfarande hämtas som PDF.</p>}
+      {closed && <p className="mb-3 text-sm">{readOnly ? 'Tidigare underlag är skrivskyddade. PDF-versionerna behålls.' : 'Projektet är avslutat eller avbrutet. Sparade underlag kan fortfarande hämtas som PDF.'}</p>}
       <fieldset disabled={closed || pdfBusy} className="min-w-0">
         <div className="grid gap-3 sm:grid-cols-3"><label className="sm:col-span-2">Rubrik<input className={input} maxLength={200} value={form.title} onChange={e => edit({ ...form, title: e.target.value })} /></label><label>Datum<input type="date" className={input} value={form.date} onChange={e => edit({ ...form, date: e.target.value })} /></label><label className="sm:col-span-3">Period<input className={input} maxLength={200} value={form.period} onChange={e => edit({ ...form, period: e.target.value })} /></label></div>
         <div className="my-3 grid gap-3 sm:grid-cols-2"><label>Avsändare<textarea className={input} rows={4} maxLength={1500} value={form.issuer} onChange={e => edit({ ...form, issuer: e.target.value })} /></label><label>Fakturakund<textarea className={input} rows={4} maxLength={1500} value={form.recipient} onChange={e => edit({ ...form, recipient: e.target.value })} /></label></div>

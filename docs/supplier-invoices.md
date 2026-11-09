@@ -25,6 +25,12 @@ Lokala kontroller: `node scripts/preview-project-supplier-invoices.mjs --test` o
 
 ## Ursprungligt Registerflöde
 
+Den följande etappen beskrivs i [Gizmos faktureringsflöde](gizmo-billing-flow.md).
+När ett projekt
+uttryckligen börjar använda den, går **Till fakturering** till kostnads- och
+faktureringsregistret. Det äldre underlagsflödet ovan bevaras som historik;
+befintliga fakturor eller kalkyler migreras inte automatiskt.
+
 1. Öppna fliken **Leverantörsfakturor** i Uppgifter. Projektets förenklade flöde finns enligt avsnittet ovan under **Betalning och fakturering**.
 2. Registrera leverantör, organisationsnummer om det finns, fakturanummer, fakturadatum, förfallodatum, belopp exklusive moms och momsbelopp i SEK.
 3. Vid behov: klistra in fakturatext och fyll fält med förslag. Extraktionen använder uttryckliga etiketter. Den gissar inte leverantör från sidhuvud, räknar inte fram netto från ett totalbelopp och antar ingen momssats. Kontrollera förslagen före sparning.

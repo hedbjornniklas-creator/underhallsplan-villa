@@ -35,6 +35,7 @@ export function supplierInvoiceError(error: unknown) {
     INVOICE_INVALID: [400, 'Kontrollera fakturans leverantör, nummer, datum och belopp. Beloppen anges i svenska kronor.'],
     INVOICE_FORBIDDEN: [403, 'Du saknar behörighet till projektets leverantörsfakturor.'],
     INVOICE_SOURCE_IN_USE: [409, 'Kostnaden ingår redan i ett fakturaunderlag. Belopp och kopplade rader kan inte ändras. Registrera en kredit för en rättning.'],
+    BILLING_USE_FLOW: [409, 'Använd projektets nya Fakturering för kunddebitering och fakturaunderlag.'],
     INVOICE_ALREADY_IN_BASIS: [409, 'En vald kostnadsrad ingår redan i ett fakturaunderlag. Uppdatera listan.'],
     INVOICE_FIXED_COST: [409, 'Fastprisdelens leverantörskostnad är intern och kan inte läggas till som extra kunddebitering.'],
     INVOICE_AGREEMENT_REQUIRED: [400, 'Ange hänvisning till överenskommelsen om kunddebitering, och för ÄTA även kundens godkännande.'],

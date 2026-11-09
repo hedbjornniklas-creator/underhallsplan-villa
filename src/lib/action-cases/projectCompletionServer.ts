@@ -6,7 +6,7 @@ type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (['42P01', '42703', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_ADMIN_SCHEMA')
-  throw new Error(error.message?.match(/PROJECT_ADMIN_[A-Z_]+/)?.[0] || 'PROJECT_ADMIN_FAILED')
+  throw new Error(error.message?.match(/PROJECT_ADMIN_[A-Z_]+|BILLING_[A-Z_]+/)?.[0] || 'PROJECT_ADMIN_FAILED')
 }
 async function access(ctx: Context, caseId: string) {
   if (!administrationUuid(caseId)) throw new Error('PROJECT_ADMIN_INVALID')
