@@ -202,6 +202,9 @@ export type TaskAiSuggestionView = {
 }
 
 export type TaskView = {
+  canEditDueDate?: boolean
+  canRemoveDueDate?: boolean
+  followupActive?: boolean
   estimatedMinutes?: number | null
   estimateVersion?: number
   canEditEstimate?: boolean

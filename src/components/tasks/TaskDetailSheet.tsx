@@ -49,6 +49,7 @@ import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskNotificationDeliveryStatus from './TaskNotificationDeliveryStatus'
 import TaskManualCompletionDialog from './TaskManualCompletionDialog'
 import TaskTimeEstimateEditor from './TaskTimeEstimateEditor'
+import TaskDueDateEditor from './TaskDueDateEditor'
 import { canManuallyCompleteTask, completionEvidenceSatisfied } from '@/lib/tasks/manualCompletion'
 import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
@@ -125,14 +126,15 @@ export default function TaskDetailSheet({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [manualCompletionOpen, setManualCompletionOpen] = useState(false)
   const [estimateDirty, setEstimateDirty] = useState(false)
-  const discardEstimate = useCallback(() => !estimateDirty || window.confirm('Stäng utan att spara tidsuppskattningen?'), [estimateDirty])
+  const [dueDateDirty, setDueDateDirty] = useState(false)
+  const discardEstimate = useCallback(() => !(estimateDirty || dueDateDirty) || window.confirm('Stäng utan att spara ändringarna?'), [estimateDirty, dueDateDirty])
   const requestClose = useCallback(() => { if (!busy && discardEstimate()) onClose() }, [busy, discardEstimate, onClose])
   useEffect(() => {
-    if (!estimateDirty) return
+    if (!estimateDirty && !dueDateDirty) return
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', beforeUnload)
     return () => window.removeEventListener('beforeunload', beforeUnload)
-  }, [estimateDirty])
+  }, [estimateDirty, dueDateDirty])
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>('')
@@ -537,22 +539,15 @@ export default function TaskDetailSheet({
               </dt>
               <dd className="mt-2 text-sm font-semibold text-slate-900">{ballText}</dd>
             </div>
-            <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-              <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <CalendarClock size={14} /> Ska vara klart
-              </dt>
-              <dd className="mt-2 text-sm font-semibold leading-5 text-slate-900">
-                {formatTaskDateTime(task.dueAt, effectiveTimeZone)}
-              </dd>
-              {task.dueAt ? <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd> : null}
-            </div>
+            <TaskDueDateEditor key={task.id} task={task} busy={busy} onDirtyChange={setDueDateDirty} onReload={onReload}
+              onSave={(dueAt, version) => onAction('set_personal_due_date', { taskId: task.id, dueAt, version })} />
             {isTaskIssuer ? (
               <div className="col-span-2 rounded-2xl border border-slate-200 bg-white p-3.5">
                 <dt className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <Clock3 size={14} /> Gizmo följer upp internt
                 </dt>
                 <dd className="mt-2 text-sm font-semibold text-slate-900">
-                  {formatTaskDateTime(task.nextFollowupAt, effectiveTimeZone)}
+                  {task.followupActive === false ? 'Avstängd' : formatTaskDateTime(task.nextFollowupAt, effectiveTimeZone)}
                 </dd>
               </div>
             ) : null}

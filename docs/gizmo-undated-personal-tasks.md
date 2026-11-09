@@ -23,6 +23,18 @@ utan pahittade deadlines. Datumkraven for tilldelning till andra andras inte.
 
 Detta ar inte en automatisk To Do-synk. Originaluppgifter ska inte andras,
 och varje separat overforing maste kontrolleras mot befintliga uppgifter.
-Senare schemalaggning av en redan odaterad uppgift ar en separat funktion.
+Uppdatering 2026-11-09: egna manuella enkla huvuduppgifter har en penna vid
+Ska vara klart. Datum kan laggas till, tidigarelaggas eller flyttas fram.
+Datum kan tas bort om uppgiften saknar underuppgifter. Avslutade uppgifter,
+aktiva aterkommande uppgifter och vantande forlangningsbeslut redigeras inte
+har. Uppgifter till andra behaller befintligt forlangningsflode.
+
+Slutdatum andras med versionskontroll och append-only historik med verklig
+aktor och gammalt/nytt datum. Intern uppfoljning bevaras, men kortas vid behov
+till den nya sluttiden; borttaget datum inaktiverar uppfoljningen. Att datum
+laggs till aktiverar inte avstangda paminnelser eller ett nytt tilldelningsmejl.
+Vid sparfel behalls datumutkastet. Avtal, kalkyl och projektets tidsplan berors inte.
+
+SQL for datumredigering: `docs/db/2026-11-09_01_personal_task_due_date.sql`.
 
 SQL: `docs/db/2026-10-30_02_undated_personal_tasks.sql`.

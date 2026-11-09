@@ -1,6 +1,7 @@
 import 'server-only'
 import { MANUAL_COMPLETION_STATUSES, MANUAL_COMPLETION_COMMENT_LIMIT } from './manualCompletion'
 import { normalizeTaskEstimate } from './timeEstimate'
+import { canEditPersonalDueDate, normalizePersonalDueDate } from './personalDueDate'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import type {
@@ -184,6 +185,7 @@ type AiSuggestionRow = {
 type FollowupRuleRow = {
   task_id: string
   initial_dispatch_pending: boolean
+  is_active: boolean
 }
 
 type RecurrenceRuleRow = {
@@ -562,7 +564,7 @@ async function loadRows(orgId: string, directoryOnly = false) {
         .order('created_at', { ascending: false }),
       admin
         .from('task_followup_rules')
-        .select('task_id,initial_dispatch_pending')
+        .select('task_id,initial_dispatch_pending,is_active')
         .in('task_id', taskIds),
       admin
         .from('task_recurrence_rules')
@@ -718,6 +720,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   const initialDispatchByTask = new Map(
     rows.followupRules.map((rule) => [rule.task_id, rule.initial_dispatch_pending])
   )
+  const followupActiveByTask = new Map(rows.followupRules.map((rule) => [rule.task_id, rule.is_active]))
   const recurrenceByTask = new Map(
     rows.recurrenceRules
       .filter((rule) => rule.is_active)
@@ -1026,6 +1029,7 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       dueAt: task.due_at,
       dueTimeZone: task.due_timezone,
       nextFollowupAt: task.next_followup_at,
+      followupActive: followupActiveByTask.get(task.id) ?? true,
       recurrenceInterval: recurrenceByTask.get(task.id)?.recurrence_interval ?? null,
       recurrenceSequence: recurrenceByTask.get(task.id)?.sequence ?? null,
       primaryChannel: task.primary_channel,
@@ -1038,6 +1042,10 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
       issuerId: task.issuer_profile_id,
       issuerName: issuer?.full_name?.trim() || issuer?.email?.trim() || 'Uppdragsansvarig',
       canDelete: task.created_by_profile_id === input.userId,
+      canEditDueDate: canEditPersonalDueDate(task, input.userId)
+        && !recurrenceByTask.has(task.id) && !hasPendingDeadlineRequest,
+      canRemoveDueDate: count.total === 0 && !recurrenceByTask.has(task.id)
+        && !['waiting', 'ready_for_review', 'returned'].includes(task.status),
       canCompleteManually: task.issuer_profile_id === input.userId && task.created_source !== 'system'
         && (MANUAL_COMPLETION_STATUSES as readonly string[]).includes(task.status),
       completionMethod: task.completion_method ?? null,
@@ -1429,6 +1437,20 @@ async function createTask(input: TaskActionInput) {
         ? 'Underuppgiften skapades.'
         : 'Uppgiften skapades.',
   }
+}
+
+async function setPersonalDueDate(input: TaskActionInput) {
+  const dueAt = normalizePersonalDueDate(input.payload.dueAt)
+  const task = await requireTask(input.orgId, asText(input.payload.taskId))
+  if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
+  if (!canEditPersonalDueDate(task, input.userId)) throw new Error('TASK_DUE_EDIT_FORBIDDEN')
+  const { error } = await createSupabaseAdminClient().rpc('set_personal_task_due_date', {
+    p_org_id: input.orgId, p_task_id: task.id, p_actor_profile_id: input.userId,
+    p_expected_version: requireExpectedVersion(input.payload.version), p_due_at: dueAt,
+  })
+  if (error && ['PGRST202', '42883'].includes(error.code ?? '')) throw new Error('TASK_DUE_EDIT_SCHEMA_REQUIRED')
+  if (error) throw taskDatabaseError(error, 'TASK_DUE_EDIT_FAILED')
+  return dueAt === null ? 'Slutdatumet togs bort.' : 'Slutdatumet sparades.'
 }
 
 async function setTaskTimeEstimate(input: TaskActionInput) {
@@ -1830,6 +1852,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     notice = await setTaskRecurrence(input)
   } else if (input.action === 'set_time_estimate') {
     notice = await setTaskTimeEstimate(input)
+  } else if (input.action === 'set_personal_due_date') {
+    notice = await setPersonalDueDate(input)
   } else if (input.action === 'transition') {
     notice = await transitionTask(input)
   } else if (input.action === 'complete_manually') {

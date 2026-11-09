@@ -36,6 +36,11 @@ function taskErrorResponse(error: unknown) {
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
     TASK_EVIDENCE_CHECKLIST_INVALID: 'Kontrollera valen för färdigbevis.',
     TASK_DUE_REQUIRED: 'Ange ett giltigt slutdatum.',
+    TASK_DUE_EDIT_RECURRENCE: 'Stäng av återkommande uppgift innan du ändrar slutdatumet.',
+    TASK_DUE_EDIT_PENDING_REQUEST: 'Hantera begäran om nytt slutdatum först.',
+    TASK_DUE_EDIT_CHILDREN: 'Slutdatumet behövs eftersom uppgiften har underuppgifter.',
+    TASK_DUE_EDIT_STATUS: 'Den här uppgiftens status kräver ett slutdatum.',
+    TASK_PARENT_DUE_BEFORE_CHILD: 'Slutdatumet får inte ligga före en öppen underuppgifts slutdatum.',
     TASK_FOLLOWUP_REQUIRED: 'Ange när Gizmo ska följa upp nästa gång.',
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',
     TASK_ASSIGNEE_REQUIRED: 'Välj en mottagare.',
@@ -106,6 +111,7 @@ function taskErrorResponse(error: unknown) {
     TASK_INITIAL_DISPATCH_FINALIZE_INPUT_INVALID: 'Uppgiften kunde inte förberedas för utskick.',
   }
   const forbidden = new Set([
+    'TASK_DUE_EDIT_FORBIDDEN',
     'TASK_ESTIMATE_FORBIDDEN',
     'TASK_SUBTASK_FORBIDDEN',
     'TASK_REVIEW_FORBIDDEN',
@@ -176,6 +182,8 @@ function taskErrorResponse(error: unknown) {
   if (code === 'TASK_ESTIMATE_CONFLICT') return jsonError('Tidsuppskattningen har ändrats. Din text är kvar. Hämta uppgiften igen före sparning.', 409, code)
   if (code === 'TASK_ESTIMATE_READ_FAILED' || code === 'TASK_ESTIMATE_SAVE_FAILED') return jsonError('Tidsuppskattningen kunde inte hanteras. Försök igen.', 503, code)
   if (code === 'TASK_ESTIMATE_SCHEMA_REQUIRED') return jsonError('Tidsuppskattningar behöver aktiveras i databasen.', 503, code)
+  if (code === 'TASK_DUE_EDIT_SCHEMA_REQUIRED') return jsonError('Datumredigering behöver aktiveras i databasen.', 503, code)
+  if (code === 'TASK_DUE_EDIT_FAILED') return jsonError('Slutdatumet kunde inte sparas. Din ändring är kvar, försök igen.', 503, code)
   if (code === 'TASK_VERSION_CONFLICT' || code === 'TASK_PARENT_VERSION_CONFLICT') {
     return jsonError('Uppgiften ändrades av någon annan. Ladda om och försök igen.', 409, code)
   }
@@ -220,6 +228,9 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = typeof body.action === 'string' ? body.action : ''
     if (['complete_manually', 'set_time_estimate'].includes(action) && request.headers.get('origin') !== new URL(request.url).origin) {
+      return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
+    }
+    if (action === 'set_personal_due_date' && request.headers.get('origin') !== new URL(request.url).origin) {
       return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
     }
     const payload =
