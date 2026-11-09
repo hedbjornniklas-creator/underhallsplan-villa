@@ -181,9 +181,9 @@ function TopbarContent() {
       active: isMoistureContext,
     },
     {
-      code: 'UP',
-      label: 'Uppdrag',
-      description: 'Uppdrag / ansvar och uppföljning',
+      code: 'GZ',
+      label: 'Gizmo',
+      description: 'Gizmo / projekt, uppgifter och uppföljning',
       href: '/uppdrag',
       active: isTasksContext,
     },

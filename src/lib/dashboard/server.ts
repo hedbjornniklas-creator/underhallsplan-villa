@@ -29,7 +29,7 @@ const MODULES: Array<Omit<DashboardModule, 'active' | 'activeCount' | 'actionCou
   { id: 'eb', title: 'Entreprenadbesiktning', code: 'EB', href: '/eb', moduleKey: 'construction_inspections' },
   { id: 'tu', title: 'Tekniska utredningar', code: 'TU', href: '/tu', moduleKey: 'technical_investigations' },
   { id: 'moisture', title: 'Fuktsäkerhet', code: 'FS', href: '/fuktsakerhet', moduleKey: 'moisture_safety' },
-  { id: 'tasks', title: 'Uppdrag', code: 'UP', href: '/uppdrag', moduleKey: 'tasks' },
+  { id: 'tasks', title: 'Gizmo', code: 'GZ', href: '/uppdrag', moduleKey: 'tasks' },
 ]
 
 async function allowedInOrganization(orgId: string, moduleKey?: PlatformModuleKeyMap['dashboard']) {

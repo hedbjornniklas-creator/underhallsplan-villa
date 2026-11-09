@@ -45,7 +45,7 @@ async function context() {
 function errorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : 'ACTION_CASE_UNKNOWN'
   if (code === 'UNAUTHORIZED') return NextResponse.json({ error: 'Inte inloggad.', code }, { status: 401 })
-  if (code === 'MODULE_ACCESS_REQUIRED') return NextResponse.json({ error: 'Du saknar behörighet till Uppdrag.', code }, { status: 403 })
+  if (code === 'MODULE_ACCESS_REQUIRED') return NextResponse.json({ error: 'Du saknar behörighet till Gizmo.', code }, { status: 403 })
   if (code === 'ACTION_CASE_REQUIRED_FIELDS') return NextResponse.json({ error: 'Fyll i titel, beställare och objektadress.', code }, { status: 400 })
   if (code === 'ACTION_CASE_ITEM_REQUIRED') return NextResponse.json({ error: 'Lägg till minst en åtgärd.', code }, { status: 400 })
   if (code === 'ACTION_CASE_PARTICIPANT_INVALID') return NextResponse.json({ error: 'Ange namn och e-post eller telefon för underentreprenören.', code }, { status: 400 })

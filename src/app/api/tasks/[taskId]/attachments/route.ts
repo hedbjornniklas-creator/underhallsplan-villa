@@ -12,7 +12,7 @@ function errorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : 'TASK_ATTACHMENT_FAILED'
   const errors: Record<string, [string, number]> = {
     UNAUTHORIZED: ['Inte inloggad.', 401],
-    MODULE_ACCESS_REQUIRED: ['Du saknar behörighet till Uppdrag.', 403],
+    MODULE_ACCESS_REQUIRED: ['Du saknar behörighet till Gizmo.', 403],
     ORG_MEMBERSHIP_REQUIRED: ['Du saknar en aktiv organisation.', 403],
     TASK_NOT_FOUND: ['Uppgiften kunde inte hittas.', 404],
     TASK_ATTACHMENT_FORBIDDEN: ['Du får inte lägga till underlag på uppgiften.', 403],

@@ -34,7 +34,7 @@ export function scheduleActionCaseAiAdminAlert(code: string) {
   const windowStart = Math.floor(Date.now() / ALERT_WINDOW_MS) * ALERT_WINDOW_MS
   const from = process.env.ASSIGNMENTS_MAIL_FROM?.trim()
   const text = [
-    'HusHub driftlarm: AI-kalkyl i Uppdrag', '',
+    'HusHub driftlarm: AI-kalkyl i Gizmo', '',
     alert.title, alert.action, '',
     `Miljö: ${environment}`, `Modell: ${model}`, `Intern felkod: ${code}`,
     `Larmperiod från: ${new Date(windowStart).toISOString()} (6 timmar)`, '',

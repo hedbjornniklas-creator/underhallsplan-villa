@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: 'Mina uppdrag',
+  title: 'Mina uppdrag | Gizmo',
   description: 'Dina tilldelade uppdrag och nästa steg.',
   robots: {
     index: false,

@@ -48,7 +48,7 @@ test('billing and configuration alarms run in the background and target only the
     assert.equal(email.from, 'HusHub <test@example.test>')
     assert.match(email.text, new RegExp(`ACTION_CASE_AI_${code}`))
     assert.match(email.subject, /HusHub driftlarm \[production\]/)
-    assert.match(email.text, /AI-kalkyl i Uppdrag/)
+    assert.match(email.text, /AI-kalkyl i Gizmo/)
     assert.equal(email.attachments, undefined)
     assert.equal(email.replyTo, undefined)
     assert.doesNotMatch(JSON.stringify(email), /secret-test-key/)

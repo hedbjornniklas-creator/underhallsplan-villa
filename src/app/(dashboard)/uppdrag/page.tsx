@@ -42,7 +42,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     const message = error instanceof Error ? error.message : ''
     if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/uppdrag')))
     initialError = message === 'TASKS_SCHEMA_REQUIRED'
-      ? 'Uppdrag-modulens databasmigration behöver köras innan sidan kan användas.'
+      ? 'Gizmos databasmigration behöver köras innan sidan kan användas.'
       : 'Kunde inte läsa uppgifterna just nu.'
   }
 

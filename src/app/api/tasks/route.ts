@@ -40,7 +40,7 @@ function taskErrorResponse(error: unknown) {
     TASK_FOLLOWUP_AFTER_DUE: 'Nästa uppföljning måste ligga senast på slutdatumet.',
     TASK_ASSIGNEE_REQUIRED: 'Välj en mottagare.',
     TASK_ASSIGNEE_NOT_IN_ORG: 'Den interna mottagaren tillhör inte organisationen.',
-    TASK_ASSIGNEE_TASK_ACCESS_REQUIRED: 'Den interna mottagaren saknar behörighet till Uppdrag. Ge personen åtkomst innan uppgiften tilldelas.',
+    TASK_ASSIGNEE_TASK_ACCESS_REQUIRED: 'Den interna mottagaren saknar behörighet till Gizmo. Ge personen åtkomst innan uppgiften tilldelas.',
     TASK_CONTACT_NOT_FOUND: 'Den externa kontakten kunde inte hittas.',
     TASK_CONTACT_NAME_REQUIRED: 'Ange namn på den externa mottagaren.',
     TASK_CONTACT_METHOD_REQUIRED: 'Ange e-post eller telefonnummer till mottagaren.',
@@ -138,7 +138,7 @@ function taskErrorResponse(error: unknown) {
 
   if (code === 'UNAUTHORIZED') return jsonError('Inte inloggad.', 401, code)
   if (code === 'ORG_MEMBERSHIP_REQUIRED' || code === 'MODULE_ACCESS_REQUIRED') {
-    return jsonError('Du saknar behörighet till Uppdrag.', 403, code)
+    return jsonError('Du saknar behörighet till Gizmo.', 403, code)
   }
   if (code === 'MISSING_ENV:APP_BASE_URL' || code === 'INVALID_ENV:APP_BASE_URL') {
     return jsonError('Den publika adressen för personliga uppdragslänkar är inte konfigurerad.', 503, code)
@@ -195,7 +195,7 @@ function taskErrorResponse(error: unknown) {
     code === 'TASK_AI_SUGGESTIONS_READ_FAILED' ||
     code === 'SIGNE_SCHEMA_REQUIRED'
   ) {
-    return jsonError('Uppdrag-modulens databasmigration behöver köras.', 503, 'TASKS_SCHEMA_REQUIRED')
+    return jsonError('Gizmos databasmigration behöver köras.', 503, 'TASKS_SCHEMA_REQUIRED')
   }
   return jsonError(code || 'Kunde inte hantera uppgiften.', 500, code)
 }

@@ -28,8 +28,8 @@ export function diaryError(error: unknown) {
     PROJECT_DIARY_TOO_LARGE: [413, 'Begäran är för stor. Bilder ska laddas upp med bildknappen.'],
     PROJECT_DIARY_CONFIG: [503, 'Dagbokslänkarna behöver konfigureras av administratören.'],
     UNAUTHORIZED: [401, 'Logga in igen. Ditt utkast finns kvar.'],
-    MODULE_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Uppdrag.'],
-    PRODUCT_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Uppdrag.'],
+    MODULE_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Gizmo.'],
+    PRODUCT_ACCESS_REQUIRED: [403, 'Du saknar behörighet till Gizmo.'],
     ORG_MEMBERSHIP_REQUIRED: [403, 'Du saknar behörighet till organisationen.'],
   }
   const [status, message] = errors[code] || [503, 'Åtgärden kunde inte bekräftas. Dina uppgifter finns kvar. Försök igen med samma uppgifter.']

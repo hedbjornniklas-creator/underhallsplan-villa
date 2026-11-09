@@ -163,7 +163,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
       }
       pending.current = null; selectionDirty.current = false; setText(''); setFileIds([]); setConfirmed(false)
       if (storageKey && !publicView) try { localStorage.removeItem(`${storageKey}:${mode}:${audience}:composer`) } catch { /* Keep the acknowledged result. */ }
-      setNotice(operation === 'share' ? 'Frågan är delad. Notifieringar ligger i utskickskön.' : operation === 'note' ? 'Intern anteckning sparad. Inget mejl skickas.' : operation === 'task_reply' ? 'Meddelandet är sparat i den enskilda uppgiften. Notifieringen ligger i Uppdrags utskickskö.' : 'Svaret är sparat. Frågans status är oförändrad.')
+      setNotice(operation === 'share' ? 'Frågan är delad. Notifieringar ligger i utskickskön.' : operation === 'note' ? 'Intern anteckning sparad. Inget mejl skickas.' : operation === 'task_reply' ? 'Meddelandet är sparat i den enskilda uppgiften. Notifieringen ligger i Gizmos utskickskö.' : 'Svaret är sparat. Frågans status är oförändrad.')
       onChanged?.()
       if (operation === 'task_reply') await onRefresh?.()
       await load()
@@ -175,10 +175,10 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
   const taskRecipientChanged = Boolean(taskDraftTarget && (taskDraftTarget.taskId !== taskReply?.taskId || JSON.stringify(taskDraftTarget.recipient) !== JSON.stringify(taskReply?.recipient)))
   const audiences: Array<['shared' | 'responsible' | 'internal', string]> = [
     ...(!taskReply || data?.sharedAt ? [['shared', 'Meddelande till deltagarna'] as ['shared', string]] : []),
-    ...(taskReply || taskDraftTarget ? [['responsible', `Meddelande till ${taskDraftTarget?.name || taskReply?.name || 'ansvarig'} via Uppdrag`] as ['responsible', string]] : []),
+    ...(taskReply || taskDraftTarget ? [['responsible', `Meddelande till ${taskDraftTarget?.name || taskReply?.name || 'ansvarig'} via Gizmo`] as ['responsible', string]] : []),
     ['internal', 'Intern anteckning'],
   ]
-  const composerLabel = audience === 'internal' ? 'Intern anteckning · delas inte och mejlaviseras inte' : audience === 'responsible' ? `Meddelande till ${taskDraftTarget?.name || 'ansvarig'} via Uppdrag` : 'Meddelande till frågans deltagare'
+  const composerLabel = audience === 'internal' ? 'Intern anteckning · delas inte och mejlaviseras inte' : audience === 'responsible' ? `Meddelande till ${taskDraftTarget?.name || 'ansvarig'} via Gizmo` : 'Meddelande till frågans deltagare'
   const sharedFiles = files.filter(f => !f.isQuoteDocument)
   const timeline = data ? [...data.messages.map(m => ({ ...m, label: 'Delat med deltagarna', files: m.files.map(f => ({ ...f, href: `${fileBase}/${f.id}` })) })), ...(!publicView ? internalEvents.map(e => ({ ...e, operation: 'note', snapshot: null })) : [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)) : []
   const participantActions = mode === 'participants' && data?.canManage ? <>
@@ -207,7 +207,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
       </> : <>
         {data.snapshot && <section className="gizmo-question-shared-body"><h3>{data.snapshot.title}</h3><p className="whitespace-pre-wrap">{data.snapshot.description}</p></section>}
         <p className="gizmo-secondary">Deltagare: {data.participants.filter(p => p.shared || !publicView).map(p => p.name).join(', ')}</p>
-        {!data.sharedAt && <p>{taskReply ? `Enskild dialog med ${taskReply.name} via Uppdrag. Inte delad med övriga frågedeltagare.` : 'Frågan är inte delad ännu.'}</p>}
+        {!data.sharedAt && <p>{taskReply ? `Enskild dialog med ${taskReply.name} via Gizmo. Inte delad med övriga frågedeltagare.` : 'Frågan är inte delad ännu.'}</p>}
         <ol className="gizmo-question-messages">{timeline.map(m => <li key={m.id}><div className="gizmo-question-message-meta"><strong>{m.actorName}</strong><time dateTime={m.createdAt}>{formatTaskDateTime(m.createdAt, 'Europe/Stockholm', 'compact')}</time><span>{m.label}</span></div>
           {m.operation === 'share' ? <details><summary>Frågan delades / uppdaterades</summary><strong>{m.snapshot?.title}</strong><p className="whitespace-pre-wrap">{m.snapshot?.description}</p></details> : <p className="whitespace-pre-wrap">{m.text}</p>}
           {m.files.map(f => <a key={f.id} className="gizmo-question-file-link" href={f.href} target="_blank" rel="noreferrer"><ExternalLink size={16} />{f.name}</a>)}

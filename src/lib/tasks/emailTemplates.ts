@@ -126,8 +126,8 @@ export function buildTaskEmailHtml(input: TaskEmailTemplateInput) {
                       <span style="display:inline-block;font-family:Arial,sans-serif;font-size:42px;font-weight:800;line-height:42px;color:#171717;mso-line-height-rule:exactly;">&#10003;</span>
                     </td>
                     <td style="vertical-align:middle;">
-                      <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">HusHub</p>
-                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">Uppdrag med Gizmo</p>
+                      <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">Gizmo</p>
+                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">från HusHub</p>
                     </td>
                     <td align="right" style="vertical-align:middle;">
                       <span style="display:inline-block;width:34px;height:34px;border-radius:10px;background:#f59e0b;font-family:Arial,sans-serif;font-size:24px;font-weight:700;line-height:34px;text-align:center;color:#ffffff;">&#10003;</span>
@@ -292,8 +292,8 @@ export function buildTaskReminderDigestEmailHtml(input: TaskReminderDigestEmailI
                       <span style="display:inline-block;font-family:Arial,sans-serif;font-size:42px;font-weight:800;line-height:42px;color:#171717;mso-line-height-rule:exactly;">&#10003;</span>
                     </td>
                     <td style="vertical-align:middle;">
-                      <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">HusHub</p>
-                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">Uppdrag med Gizmo</p>
+                      <p style="margin:0;font-family:Arial,sans-serif;font-size:19px;font-weight:800;line-height:22px;color:#171717;">Gizmo</p>
+                      <p style="margin:3px 0 0;font-family:Arial,sans-serif;font-size:11px;font-weight:700;line-height:15px;letter-spacing:.15em;text-transform:uppercase;color:#a16207;">från HusHub</p>
                     </td>
                     <td align="right" style="vertical-align:middle;">
                       <span style="display:inline-block;width:34px;height:34px;border-radius:10px;background:#f59e0b;font-family:Arial,sans-serif;font-size:24px;font-weight:700;line-height:34px;text-align:center;color:#ffffff;">&#10003;</span>

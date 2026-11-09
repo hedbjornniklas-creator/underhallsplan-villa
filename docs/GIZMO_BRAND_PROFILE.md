@@ -1,7 +1,7 @@
-# Gizmo / Uppdrag - varumärkesprofil 2.3
+# Gizmo - varumärkesprofil 2.4
 
 Beslutad riktning: 2026-10-01. Implementation och verifiering dokumenteras nedan.
-Gäller Uppdrags interna projektlista, projektytor och tillhörande arbetsdialoger.
+Gäller Gizmos interna projektlista, projektytor och tillhörande arbetsdialoger.
 ÖB, EB, TU och RenoApp ändras inte. Offertdokument, avtalsversioner och kundens
 godkännandeflöde får inte ändras som en följd av en visuell uppdatering.
 
@@ -323,6 +323,15 @@ Läsbarhetsunderlag: [Isofs vägledning](https://www.isof.se/svenska-spraket/kla
 och [GOV.UK:s dokumentvägledning](https://www.gov.uk/guidance/publishing-accessible-documents).
 
 ## Beslutslogg
+
+- 2026-11-09: Användaren godkänner slutfört namnbyte från Uppdrag till Gizmo
+  i huvudmeny, dashboard, modulhänvisningar, mottagarsidornas varumärkesrad,
+  framtida mejl och administrativa visningsnamn. Projekt och uppgift är fortsatt
+  sakbegrepp; uppdragsansvarig och juridiska avtalsrubriker ändras inte.
+  Befintliga länkar, tekniska nycklar, roller, rättigheter, projektdata,
+  avtalsversioner, PDF-mallar och historiska utskick ska förbli oförändrade.
+  Katalogens namn anpassas endast vid visning, utan SQL eller dataskrivning.
+  Se [Namnbyte till Gizmo](gizmo-rebranding.md).
 
 - 2026-10-19: Prisredigering i Val och tillval ska fungera som Projektarbete,
   med egna kalkylrader och direkt omräkning inom alternativet. Ingen ändring

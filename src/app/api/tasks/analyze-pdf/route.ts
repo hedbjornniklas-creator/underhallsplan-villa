@@ -26,8 +26,8 @@ function errorResponse(error: unknown) {
   const mapped: Record<string, [string, number]> = {
     UNAUTHORIZED: ['Inte inloggad.', 401],
     ORG_MEMBERSHIP_REQUIRED: ['Du saknar en aktiv organisation.', 403],
-    PRODUCT_ACCESS_REQUIRED: ['Du saknar behörighet till Uppdrag.', 403],
-    MODULE_ACCESS_REQUIRED: ['Du saknar behörighet till Uppdrag.', 403],
+    PRODUCT_ACCESS_REQUIRED: ['Du saknar behörighet till Gizmo.', 403],
+    MODULE_ACCESS_REQUIRED: ['Du saknar behörighet till Gizmo.', 403],
     TASK_EMAIL_PDF_REQUEST_INVALID: ['Begäran kunde inte läsas. Försök lägga till PDF-filen igen.', 400],
     TASK_EMAIL_PDF_FILE_REQUIRED: ['Lägg till ett dokument i PDF-format.', 400],
     TASK_EMAIL_PDF_MULTIPLE_FILES: ['Gizmo kan analysera en PDF-fil åt gången.', 400],

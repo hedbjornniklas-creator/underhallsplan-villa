@@ -155,7 +155,9 @@
 .uppdrag-scope [role='tab'] { border-radius: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--uppdrag-muted); padding: 12px 16px; }
 .uppdrag-scope [role='tab'][aria-selected='true'] { background: var(--uppdrag-selected); border-bottom-color: var(--uppdrag-ink); color: var(--uppdrag-ink); }
 .uppdrag-scope .uppdrag-brand { display: inline-flex; flex-shrink: 0; flex-direction: column; gap: 0; max-width: 100%; }
-.uppdrag-scope .uppdrag-brand-image { display: block; width: 180px; height: auto; }
+.uppdrag-scope .uppdrag-brand-lockup { display: inline-flex; align-items: center; gap: 15px; max-width: 100%; }
+.uppdrag-scope .uppdrag-brand-name { color: var(--uppdrag-ink); font-size: 32px; line-height: 40px; font-weight: 700; letter-spacing: 0; }
+.uppdrag-scope .uppdrag-brand-image { display: block; width: 40px; height: 40px; }
 .uppdrag-scope .uppdrag-brand-endorsement { margin-left: 55px; color: var(--uppdrag-muted); font-size: 12px; line-height: 18px; font-weight: 400; }
 .uppdrag-scope .uppdrag-brand-compact .uppdrag-brand-image { width: 40px; height: 40px; }
 .uppdrag-scope .uppdrag-heading { padding-bottom: 24px; border-bottom: 1px solid var(--uppdrag-line); }

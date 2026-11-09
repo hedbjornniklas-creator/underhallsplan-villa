@@ -6,6 +6,16 @@ import type { PlatformProductKey, PlatformScopeType } from './model'
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>
 
+// Catalog identities and grants stay unchanged; only the current display name changes.
+function moduleDisplayLabel(productKey: string, module: { key: string; label: string } | null) {
+  if (!module) return null
+  return productKey === 'dashboard' && module.key === 'tasks' ? 'Gizmo' : module.label
+}
+
+function roleDisplayLabel(productKey: string, role: { key: string; label: string }) {
+  return productKey === 'dashboard' && role.key === 'task_member' ? 'Gizmo-användare' : role.label
+}
+
 type ProductRow = {
   id: string
   key: string
@@ -277,7 +287,7 @@ export async function listAccessManagementData(): Promise<AccessManagementData> 
         .map((item) => ({
           id: item.id,
           key: item.key,
-          label: item.label,
+          label: moduleDisplayLabel(product.key, item)!,
           description: item.description ?? null,
         })),
       roles: roles
@@ -285,7 +295,7 @@ export async function listAccessManagementData(): Promise<AccessManagementData> 
         .map((item) => ({
           id: item.id,
           key: item.key,
-          label: item.label,
+          label: roleDisplayLabel(product.key, item),
           description: item.description ?? null,
         })),
     }))
@@ -309,10 +319,10 @@ export async function listAccessManagementData(): Promise<AccessManagementData> 
             productLabel: product.label,
             moduleId: moduleItem?.id ?? null,
             moduleKey: moduleItem?.key ?? null,
-            moduleLabel: moduleItem?.label ?? null,
+            moduleLabel: moduleDisplayLabel(product.key, moduleItem),
             roleId: role.id,
             roleKey: role.key,
-            roleLabel: role.label,
+            roleLabel: roleDisplayLabel(product.key, role),
             scopeType: assignment.scope_type,
             scopeId: assignment.scope_id ?? null,
             scopeLabel: buildScopeLabel(

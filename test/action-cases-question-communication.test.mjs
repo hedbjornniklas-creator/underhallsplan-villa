@@ -62,7 +62,7 @@ test('a group defaults to shared replies; individual and internal drafts remain 
   try{
     h.type('GROUP DRAFT')
     h.radio('Intern anteckning');h.type('INTERNAL DRAFT')
-    h.radio('via Uppdrag');h.type('INDIVIDUAL DRAFT')
+    h.radio('via Gizmo');h.type('INDIVIDUAL DRAFT')
     h.radio('Meddelande till deltagarna')
     assert.equal(h.field().props.value,'GROUP DRAFT')
     await h.click('Skicka meddelande')

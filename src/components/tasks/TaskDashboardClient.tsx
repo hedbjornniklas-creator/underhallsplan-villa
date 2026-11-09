@@ -844,14 +844,14 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           {!workspace ? (
             <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-7 text-center shadow-sm sm:p-10">
               <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-800"><AlertTriangle size={23} /></span>
-              <h2 className="mt-4 text-xl font-semibold text-slate-950">Uppdrag är inte redo i databasen</h2>
+              <h2 className="mt-4 text-xl font-semibold text-slate-950">Gizmo är inte redo i databasen</h2>
               {workspaceError ? (
                 <p role="alert" className="mx-auto mt-2 max-w-xl text-sm font-medium leading-6 text-rose-700">
                   {workspaceError}
                 </p>
               ) : null}
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">
-                Kör Uppdrag-migrationen och försök sedan igen. Inga befintliga EB-, TU- eller ÖB-data ändras av migrationen.
+                Kör Gizmo-migrationen och försök sedan igen. Inga befintliga EB-, TU- eller ÖB-data ändras av migrationen.
               </p>
               <button
                 type="button"

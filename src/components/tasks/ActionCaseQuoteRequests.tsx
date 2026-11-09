@@ -148,7 +148,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
       {editing ? <form id="group-request-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!valid || working) return; void run('quote_request', { ...form, operation: 'save', lines: selectedLines, expectedUpdatedAt: expected }).then((ok) => { if (ok) { setDirty(false); setEditing(false) } }) }}>
         <fieldset disabled={working} className="space-y-4">
           <legend className="mb-3 font-semibold">Mottagare</legend>
-          <label className="block text-sm">Kontakt i Uppdrag<select name="recipientContact" className={input} value={recipientId} disabled={Boolean(form.supplementsId)} onChange={(e) => {
+          <label className="block text-sm">Kontakt i Gizmo<select name="recipientContact" className={input} value={recipientId} disabled={Boolean(form.supplementsId)} onChange={(e) => {
             setRecipientId(e.target.value)
             const person = contacts.find((p) => `${p.kind}:${p.id}` === e.target.value) ?? caseContacts.find((p) => `case:${p.id}` === e.target.value)
             if (person) { set('supplierName', person.companyName || person.name); set('supplierEmail', person.email ?? '') }

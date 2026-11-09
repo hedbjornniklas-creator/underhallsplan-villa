@@ -2,9 +2,12 @@ import { authLoginUrl } from '@/lib/auth/returnPath'
 import { authRecoveryReason, currentAuthReturnPath } from '@/lib/auth/serverRecovery'
 import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
 import type { ReactNode } from 'react'
+import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
 import { requireModuleAccess } from '@/lib/access/server'
 import { requireOrgContext } from '@/lib/assignments/server'
+
+export const metadata: Metadata = { title: 'Gizmo' }
 
 export default async function TasksLayout({ children }: { children: ReactNode }) {
   try {
@@ -21,7 +24,7 @@ export default async function TasksLayout({ children }: { children: ReactNode })
       redirect(authLoginUrl(returnTo))
     }
 
-    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={returnTo} productLabel="Uppdrag" />
+    return <DashboardAccessRecovery reason={authRecoveryReason(error)} returnTo={returnTo} productLabel="Gizmo" />
   }
 
   return <>{children}</>

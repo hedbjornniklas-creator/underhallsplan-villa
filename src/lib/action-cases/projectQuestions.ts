@@ -19,7 +19,7 @@ export type QuestionWorkspace = { questions: ProjectQuestion[]; assignees: Quest
 export const emptyQuestion = (): QuestionBody => ({ title: '', description: '', source: '', meetingDate: '', assignee: null, status: 'open' })
 export const questionDeliveryLabels: Record<string, string> = { pending: 'Köad', sending: 'Skickas', sent: 'Överlämnad till e-posttjänsten', failed: 'Utskicket misslyckades', cancelled: 'Återkallad' }
 export function questionTaskEventText(event: QuestionTask['events'][number]) {
-  return event.text || ({ status_changed: 'Status ändrad i Uppdrag', task_submitted_for_review: 'Svar lämnat för granskning', task_approved: 'Hanteringen godkänd', task_returned: 'Komplettering begärd' } as Record<string, string>)[event.type] || 'Händelse registrerad i Uppdrag'
+  return event.text || ({ status_changed: 'Status ändrad i Gizmo', task_submitted_for_review: 'Svar lämnat för granskning', task_approved: 'Hanteringen godkänd', task_returned: 'Komplettering begärd' } as Record<string, string>)[event.type] || 'Händelse registrerad i Gizmo'
 }
 export function questionParticipantSelection(value: unknown, names: Map<string, string>): QuestionHistoryPerson[] | null {
   if (!Array.isArray(value) || value.some(p => !p || !['profile', 'contact', 'customer'].includes(p.kind) || !questionUuid(p.id))) return null
