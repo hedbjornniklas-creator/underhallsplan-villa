@@ -1,0 +1,14 @@
+.supplier-pdf-preview { height:min(65dvh,750px); width:100%; min-width:0; border:1px solid #b9c3c4; background:#e8eded; display:flex; flex-direction:column; }
+.supplier-pdf-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:2px; min-height:42px; padding:4px; border-bottom:1px solid #b9c3c4; background:#fff; flex-shrink:0; }
+.supplier-pdf-toolbar .gizmo-text-button { width:32px; height:32px; min-height:32px; padding:4px; justify-content:center; }
+.supplier-pdf-toolbar button:disabled { opacity:.4; }
+.supplier-pdf-counter { width:64px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; }
+.supplier-pdf-zoom { width:45px; text-align:center; font-size:12px; font-variant-numeric:tabular-nums; }
+.supplier-pdf-tools-gap { flex:1; }
+.supplier-pdf-viewport { position:relative; overflow:auto; flex:1; min-height:0; padding:8px; scrollbar-gutter:stable; }
+.supplier-pdf-paper { width:max-content; min-width:0; margin:0 auto; }
+.supplier-pdf-paper canvas { display:block; background:#fff; box-shadow:0 1px 4px #252a2d33; }
+.supplier-pdf-message { display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; gap:12px; padding:24px 12px; font-size:13px; color:#394649; margin:0; min-height:160px; }
+.supplier-pdf-message input { width:100%; max-width:260px; padding:8px; border:1px solid #aeb8b9; border-radius:4px; background:#fff; }
+.supplier-pdf-message[role=alert] { color:#922f32; }
+@media(max-width:800px) { .supplier-pdf-preview { height:420px; max-height:65dvh; } }

@@ -32,7 +32,7 @@
 .psi-panel-body { overflow-y: auto; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.1fr); align-items: start; }
 .psi-original { padding: 20px; background: #F3F5F5; min-width: 0; position: sticky; top: 0; }
 .psi-original header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.psi-original iframe { width: 100%; height: min(65dvh,750px); border: 1px solid #D5DCDD; background: white; }
+.psi-pending-details { display:block; color:#765a15; margin-top:4px; }
 .psi-original img { width: 100%; max-height: 65dvh; object-fit: contain; }
 .psi-original>a { display: block; padding: 8px 0; color: #206961; overflow-wrap: anywhere; }
 .psi-original p { overflow-wrap: anywhere; }
@@ -63,5 +63,5 @@
 .psi-check input { flex: 0 0 18px; width: 18px; height: 18px; accent-color: #206961; margin-top: 2px; }
 .psi-panel-footer { display: flex; flex-shrink: 0; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 24px; border-top: 1px solid #D5DCDD; background: white; }
 .psi-panel-footer>div:first-child { max-width: 420px; font-size: 13px; }
-@media(max-width:800px) { .psi-panel { width: 100%; } .psi-panel-body { display: block; } .psi-original { position: static; } .psi-original iframe { height: 280px; } .psi-no-original { min-height: 100px; } .psi-original img { max-height: 300px; } }
+@media(max-width:800px) { .psi-panel { width: 100%; } .psi-panel-body { display: block; } .psi-original { position: static; } .psi-no-original { min-height: 100px; } .psi-original img { max-height: 300px; } }
 @media(max-width:520px) { .psi-panel-header,.psi-panel-footer,.psi-edit,.psi-original { padding: 12px 16px; } .psi-field { font-size: 16px; min-height: 48px; } .psi-fields { grid-template-columns: minmax(0,1fr); } .psi-panel-footer .gizmo-button,.psi-panel-footer .gizmo-text-button { min-height: 48px; } .psi-summary { gap: 12px; } .psi-economy table { font-size: 12px; } .psi-economy th,.psi-economy td { padding-inline: 4px; } }

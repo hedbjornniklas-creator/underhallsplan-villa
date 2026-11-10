@@ -12,8 +12,8 @@ const caseId = id(1), userId = id(2), initial: ProjectInvoiceWorkspace = { userI
   { id: id(13), kind: 'item', title: 'Delat arbete och material', mode: 'unknown', markupPercent: null, parts: [{ key: 'labour', mode: 'fixed', markupPercent: null }, { key: 'material', mode: 'running', markupPercent: 15 }] },
 ], invoices: [], links: [] }
 const adminInitial: ProjectCompletionWorkspace = { available: true, userId, canManage: true, status: 'in_progress', revision: 0, workComplete: false, invoiced: false, completedAt: null, openQuestions: 0, bases: [], events: [], defaults: { issuer: 'Fiktivt Testbygg AB', recipient: 'Fiktiv testkund' } }
-let data = JSON.parse(localStorage.getItem('psi-fixture') || 'null') || initial
-let admin = JSON.parse(localStorage.getItem('psi-fixture-admin') || 'null') || adminInitial
+const data = JSON.parse(localStorage.getItem('psi-fixture') || 'null') || initial
+const admin = JSON.parse(localStorage.getItem('psi-fixture-admin') || 'null') || adminInitial
 let fail = '', delay = 0
 const calls: { path: string; body: unknown }[] = [], acknowledgements = new Map<string, unknown>()
 const nativeFetch = window.fetch.bind(window)
@@ -21,7 +21,13 @@ const persist = () => { localStorage.setItem('psi-fixture', JSON.stringify(data)
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } })
 window.fetch = async (url, options) => {
   const path = String(url)
+  if (new URL(path, location.href).origin === location.origin && new URL(path, location.href).pathname.startsWith('/vendor/pdfjs/')) return nativeFetch(url, options)
   if (!path.startsWith('/api/')) throw Error('Only synthetic APIs are permitted')
+  if (path.includes('/attachments/') && options?.method !== 'POST') {
+    if (fail === 'preview') { fail = ''; return response({ error: 'Syntetiskt visningsfel' }, 502) }
+    const file = data.invoices.flatMap((i: SupplierInvoice) => i.attachments).find((a: { id: string }) => path.includes(a.id))
+    return nativeFetch(file?.contentType === 'application/pdf' ? '/original.pdf' : '/original.png')
+  }
   if (path.includes('/invoice-basis/') && path.includes('/pdf')) {
     const record = admin.bases.find((b: { id: string }) => path.includes(b.id))
     return nativeFetch('/preview-invoice-basis-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) })
@@ -31,7 +37,7 @@ window.fetch = async (url, options) => {
   if (path.endsWith('/attachments')) {
     calls.push({ path, body: 'file' }); if (fail === 'upload') { fail = ''; return response({ error: 'Syntetiskt uppladdningsfel' }, 502) }
     const invoice = data.invoices.find((i: SupplierInvoice) => path.includes(i.id)), form = options.body as FormData, file = form.get('file') as File
-    invoice.attachments.push({ id: crypto.randomUUID(), fileName: file.name, fileSizeBytes: file.size, contentType: 'image/png', createdAt: new Date().toISOString() }); persist(); return response(data)
+    invoice.attachments.push({ id: crypto.randomUUID(), fileName: file.name, fileSizeBytes: file.size, contentType: file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/png', createdAt: new Date().toISOString() }); persist(); return response(data)
   }
   const request = JSON.parse(String(options.body)); calls.push({ path, body: request })
   if (fail === 'save') { fail = ''; return response({ error: 'Syntetiskt sparfel. Dina uppgifter finns kvar.' }, 500) }

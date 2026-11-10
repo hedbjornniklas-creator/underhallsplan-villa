@@ -23,6 +23,34 @@ Beslutslogg: 2026-11-07 godkände användaren etapp 1 med projektplacering, för
 
 Lokala kontroller: `node scripts/preview-project-supplier-invoices.mjs --test` och `node --experimental-strip-types --test test/supplier-invoices-*.test.mjs`. Förhandsvisningen använder endast fiktiva data.
 
+### Originalets förhandsvisning, 10 november 2026
+
+Projektpanelen visar PDF med en egen PDF.js-läsare, inte webbläsarens inbyggda
+PDF-tillägg. Sidbyte, zoom och anpassning till bredden finns i originalpanelen.
+En vald lokal PDF kan läsas innan fakturan registrerats, även om webbläsaren
+inte anger någon MIME-typ. Sparade original hämtas genom samma behörighetskontrollerade
+bilagerutt som tidigare, utan cache. Dokumentet skickas inte till en extern
+visningstjänst. Bilder använder fortsatt den befintliga bildvisningen.
+
+**Vald fil är inte samma sak som uppladdad fil.** Leverantör, fakturanummer,
+datum, netto, moms och giltig fördelning krävs fortfarande för registreringen.
+Panelen visar saknade fakturauppgifter och filens uppladdningsstatus. Originalet
+laddas upp efter bekräftad sparning. Stängningsvarningen behålls när filen bara
+finns lokalt; att avbryta stängningen behåller filen i panelen. Inga belopp,
+avtal, kalkyler, lagringsbehörigheter eller databasregler ändras av visningen.
+
+PDF.js är versionslåst i `package.json`. `predev` och `prebuild` kör
+`scripts/sync-pdfjs-assets.mjs`, som kopierar motsvarande worker, typsnitt,
+teckenkartor och bildresurser till `public/vendor/pdfjs/<version>/`.
+Resurserna levereras från den egna servern och genereras om vid byggning.
+Ingen SQL-migrering behövs för den här ändringen.
+
+Kontroller: `node scripts/preview-project-supplier-invoices.mjs --test-pdf`
+provar lokal PDF före registrering, tom MIME-typ, avstängt inbyggt PDF-tillägg,
+stäng/avbryt, sidbyte, zoom, dator/mobil, uppladdning, omladdning, läsfel med
+återförsök och byte från en trasig PDF. Canvas-pixlar och sidtext kontrolleras
+så att en tom visningsruta inte räknas som godkänt resultat.
+
 ## Ursprungligt Registerflöde
 
 Den följande etappen beskrivs i [Gizmos faktureringsflöde](gizmo-billing-flow.md).
