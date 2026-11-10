@@ -1,4 +1,5 @@
-import type { TuAssignmentListItem, TuInspectionSummary } from '../../src/lib/tu/server'
+import type { TuAssignmentListItem } from '../../src/lib/tu/server'
+import type { TuOverviewInvestigation } from '../../src/lib/tu/overview'
 
 export const tuPreviewOrg = '11111111-1111-4111-8111-111111111111'
 
@@ -19,7 +20,7 @@ export function tuAssignment(overrides: Partial<TuAssignmentListItem> = {}): TuA
   }
 }
 
-export function tuInvestigation(overrides: Partial<TuInspectionSummary> = {}): TuInspectionSummary {
+export function tuInvestigation(overrides: Partial<TuOverviewInvestigation> = {}): TuOverviewInvestigation {
   return {
     inspectionId: 'inspection-1', propertyId: null, assignmentId: null, assignmentNumber: '2026-1002-01',
     title: 'Fuktskadeutredning', projectType: 'Fuktskadeutredning', objectType: 'villa', status: 'draft',
@@ -46,8 +47,27 @@ export function tuOverviewDemo() {
       title: index % 2 ? 'Teknisk uppföljningskontroll efter skadeåtgärd' : 'Fuktskadeutredning',
       propertyCity: index % 2 ? 'Stockholm' : 'Täby', date: `2026-09-${String(30 - index).padStart(2, '0')}`,
       status: index % 3 === 0 ? 'draft' : 'in_progress', reportLockedAt: index > 7 ? '2026-10-01T08:00:00Z' : null,
+      billing: { status: index > 7 ? 'invoiced' : 'not_invoiced' },
     }),
     hasReadyPdf: index > 7,
   }))
   return { assignments, investigations }
+}
+
+/** More than one page of billable work, with unknown status kept distinct. */
+export function tuOverviewBillingDemo() {
+  const data = tuOverviewDemo()
+  const unbilled = { status: 'not_invoiced' as const, invoiceNumber: 'TU-INTERNAL-NUMBER-MUST-NOT-APPEAR',
+    updatedByName: 'TU-PRIVATE-BILLING-ACTOR' }
+  const locked = { status: 'completed', reportLockedAt: '2026-11-10T08:00:00Z' }
+  return {
+    assignments: data.assignments,
+    investigations: [
+      ...data.investigations.map(item => ({ ...item, ...locked, billing: unbilled })),
+      { ...tuInvestigation({ ...locked, inspectionId: 'invoiced', billing: { status: 'invoiced' } }), hasReadyPdf: true },
+      tuInvestigation({ ...locked, inspectionId: 'unavailable', billing: { status: 'unavailable' } }),
+      tuInvestigation({ ...locked, inspectionId: 'unknown' }),
+      tuInvestigation({ inspectionId: 'ongoing-invoiced', billing: { status: 'invoiced' } }),
+    ],
+  }
 }

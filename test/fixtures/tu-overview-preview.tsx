@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client'
 import TuDashboardClient from '../../src/components/tu/TuDashboardClient'
 import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
 import { TU_STANDARD_REPORT_TEMPLATES } from '../../src/lib/tu/reportTemplates'
-import { tuOverviewDemo, tuPreviewOrg } from './tu-overview-data'
+import { tuOverviewBillingDemo, tuOverviewDemo, tuPreviewOrg } from './tu-overview-data'
 import { tuCopyDemo } from './tu-copy-data'
 
 declare global {
@@ -11,6 +11,7 @@ declare global {
   }
 }
 const mode = new URLSearchParams(location.search).get('state')
+const previewData = () => mode === 'billing' ? tuOverviewBillingDemo() : tuOverviewDemo()
 window.__tuOverviewTest = { fail: mode === 'error', empty: mode === 'empty', wrongOrg: false, delay: 0, reads: [], writes: 0, submissions: [], failSave: false }
 window.fetch = async (input, init) => {
   if ((init?.method ?? 'GET') !== 'GET') {
@@ -32,12 +33,12 @@ window.fetch = async (input, init) => {
     organization: { id: tuPreviewOrg },
     customers: [{ id: tuCopyDemo.customerBinding!.customerId, customerNumber: '1', name: 'Anna Exempel', isActive: true, version: 1, email: 'anna@example.com' }],
   } })
-  const { assignments, investigations } = tuOverviewDemo()
+  const { assignments, investigations } = previewData()
   if (!['/api/tu/assignments', '/api/tu/investigations'].includes(url.pathname)) return Response.json({}, { status: 404 })
   return Response.json({ org: { id: state.wrongOrg ? 'another-organization' : tuPreviewOrg },
     items: state.empty ? [] : url.pathname.endsWith('/assignments') ? assignments : investigations })
 }
-const data = tuOverviewDemo()
+const data = previewData()
 createRoot(document.getElementById('root')!).render(<AppToastProvider>
   <div className="preview-notice">Förhandsvisning med testdata · Inte publicerad</div>
   <header className="preview-header">

@@ -18,7 +18,10 @@ await new Promise((ok, fail) => webpack({
     'next/navigation': resolve('test/fixtures/ob-overview-navigation.tsx'),
     '../ob/ob-overview.css': false, '../ob/ob-home.css': false, './tu-overview.css': false, '@': resolve('src'),
   } },
-  module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
+  module: { rules: [
+    { test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') },
+    { test: /\.css$/, type: 'asset/source' },
+  ] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const globalCss = await postcss([tailwind()]).process(await readFile('src/app/globals.css', 'utf8'), { from: resolve('src/app/globals.css') })
 const css = `${globalCss.css}\n${await readFile('src/components/ob/ob-overview.css', 'utf8')}\n${await readFile('src/components/ob/ob-home.css', 'utf8')}\n${await readFile('src/components/tu/tu-overview.css', 'utf8')}\n

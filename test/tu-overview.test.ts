@@ -5,6 +5,8 @@ import { buildTuOverviewItems, selectTuOverviewPage, canStartTuOverviewAssignmen
 // @ts-expect-error Node strip-types requires explicit TypeScript extension.
 import { tuAssignment, tuInvestigation, tuPreviewOrg, tuOverviewDemo } from './fixtures/tu-overview-data.ts'
 import type { TuAssignmentListItem } from '../src/lib/tu/server'
+// @ts-expect-error Node strip-types requires explicit TypeScript extension.
+import { buildTuDashboard } from '../src/lib/dashboard/model.ts'
 
 const build = (assignments: TuAssignmentListItem[], investigations = [tuInvestigation()]) =>
   buildTuOverviewItems({ organizationId: tuPreviewOrg, assignments, investigations })
@@ -87,7 +89,7 @@ test('search matches full address, customer email, title and number without case
 test('filters, sorting, page boundaries and counts derive from the same set of rows', () => {
   const rows = buildTuOverviewItems({ organizationId: tuPreviewOrg, ...tuOverviewDemo() })
   const first = selectTuOverviewPage(rows, options)
-  assert.deepEqual(first.counts, { all: 15, active: 11, closed: 4 })
+  assert.deepEqual(first.counts, { all: 15, active: 11, closed: 4, 'to-invoice': 0 })
   assert.equal(first.items.length, 10)
   assert.equal(first.items[0].address, 'Långgatan 18')
   const last = selectTuOverviewPage(rows, { ...options, page: 500 })
@@ -102,4 +104,71 @@ test('filters, sorting, page boundaries and counts derive from the same set of r
   const customer = selectTuOverviewPage(rows, { ...options, sort: 'customer', pageSize: 50 })
   assert.equal(customer.items[0].customer, 'Anna Andersson')
   assert.equal(selectTuOverviewPage(rows, { ...options, page: -10 }).page, 1)
+})
+
+test('finished TU investigations remain current until confirmed invoiced, without reopening reports or dashboard work', () => {
+  const completed = { status: 'completed', reportLockedAt: '2026-11-10T09:00:00Z' }
+  const investigations = [
+    tuInvestigation({ ...completed, inspectionId: 'unbilled', billing: { status: 'not_invoiced' } }),
+    tuInvestigation({ ...completed, inspectionId: 'invoiced', billing: { status: 'invoiced' } }),
+    tuInvestigation({ ...completed, inspectionId: 'unknown' }),
+    tuInvestigation({ ...completed, inspectionId: 'unavailable', billing: { status: 'unavailable' } }),
+    tuInvestigation({ inspectionId: 'ongoing-invoiced', billing: { status: 'invoiced' } }),
+    tuInvestigation({ inspectionId: 'legacy-unbilled', status: 'klar', billing: { status: 'not_invoiced' } }),
+  ]
+  const before = structuredClone(investigations)
+  const dashboard = buildTuDashboard(tuPreviewOrg, [], investigations, '2026-11-10')
+  const rows = build([], investigations)
+  const active = selectTuOverviewPage(rows, { ...options, filter: 'active', pageSize: 50 })
+  const closed = selectTuOverviewPage(rows, { ...options, filter: 'closed' })
+  assert.deepEqual(active.counts, { all: 6, active: 5, closed: 1, 'to-invoice': 2 })
+  assert.equal(active.total, active.counts.active)
+  assert.deepEqual(closed.items.map(item => item.id), ['investigation:invoiced'])
+  assert.equal(active.unavailableBillingCount, 2)
+  assert.equal(rows.find(item => item.id === 'investigation:unbilled')?.investigationStatus, 'Låst')
+  assert.equal(rows.find(item => item.id === 'investigation:legacy-unbilled')?.investigationStatus, 'Klar')
+  const invoicedOnly = investigations.map(investigation => ({ ...investigation, billing: { status: 'invoiced' as const } }))
+  assert.deepEqual(buildTuDashboard(tuPreviewOrg, [], invoicedOnly, '2026-11-10'), dashboard,
+    'Invoice changes never add work, alter the visit or reopen the common dashboard')
+  assert.equal(dashboard.activeCount, 1)
+  assert.deepEqual(investigations, before)
+})
+
+test('Att fakturera uses all completed unbilled rows before pagination and ignores unrelated attention filtering', () => {
+  const investigations = Array.from({ length: 12 }, (_, index) => tuInvestigation({
+    inspectionId: `unbilled-${index}`, status: 'completed', billing: { status: 'not_invoiced' },
+  }))
+  const assignments = [tuAssignment({ id: 'no-investigation' }), tuAssignment({ id: 'missing', inspection_id: 'missing' })]
+  const rows = build(assignments, investigations)
+  const first = selectTuOverviewPage(rows, { ...options, filter: 'to-invoice', attentionOnly: true })
+  const next = selectTuOverviewPage(rows, { ...options, filter: 'to-invoice', attentionOnly: true, page: 2 })
+  assert.equal(first.total, 12)
+  assert.equal(first.counts['to-invoice'], 12)
+  assert.equal(first.items.length, 10)
+  assert.equal(next.items.length, 2)
+  assert.equal(new Set([...first.items, ...next.items].map(item => item.id)).size, 12)
+  assert.equal(rows.find(item => item.id === 'assignment:no-investigation')?.billingStatus, null)
+  assert.equal(rows.find(item => item.id === 'assignment:missing')?.billingStatus, 'unavailable')
+  assert.equal(rows.find(item => item.id === 'assignment:missing')?.workCompleted, false)
+  assert.deepEqual(new Set(selectTuOverviewPage(rows, { ...options, attentionOnly: true }).items.map(item => item.id)),
+    new Set(['assignment:no-investigation', 'assignment:missing']))
+  assert.equal(selectTuOverviewPage(rows, { ...options, filter: 'to-invoice', search: 'no matches' }).total, 0)
+})
+
+test('invoice marking and unmarking moves only TU list grouping and keeps confirmation archive/cancellation handling', () => {
+  for (const status of ['not_invoiced', 'invoiced', 'not_invoiced'] as const) {
+    const rows = build([], [tuInvestigation({ status: 'done', billing: { status } })])
+    assert.equal(rows[0].workCompleted, true)
+    assert.equal(rows[0].closed, status === 'invoiced')
+    assert.equal(selectTuOverviewPage(rows, { ...options, filter: 'to-invoice' }).total, status === 'invoiced' ? 0 : 1)
+  }
+  const rows = build([
+    tuAssignment({ id: 'cancelled', status: 'cancelled' }),
+    tuAssignment({ id: 'archived', archived_at: '2026-11-09T09:00:00Z' }),
+    tuAssignment({ id: 'linked', inspection_id: 'inspection-1', archived_at: '2026-11-09T09:00:00Z' }),
+  ], [tuInvestigation({ reportLockedAt: '2026-11-10T09:00:00Z', billing: { status: 'not_invoiced' } })])
+  assert.equal(selectTuOverviewPage(rows, { ...options, filter: 'closed' }).total, 1)
+  assert.equal(selectTuOverviewPage(rows, { ...options, filter: 'closed', showArchived: true }).total, 2)
+  assert.equal(rows.find(item => item.id === 'investigation:inspection-1')?.archived, false)
+  assert.equal(selectTuOverviewPage(rows, { ...options, filter: 'to-invoice', showArchived: true }).total, 1)
 })

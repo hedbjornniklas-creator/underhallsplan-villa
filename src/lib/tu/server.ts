@@ -2,6 +2,8 @@ import 'server-only'
 
 import { hasCurrentUserAccess } from '@/lib/access/server'
 import { hasOrganizationTuAccess } from '@/lib/organizations/moduleAvailability'
+import type { TuInvestigationBillingStatus } from '@/lib/tu/billing'
+import { getTuInvestigationBillingStatuses } from '@/lib/tu/billingServer'
 import {
   buildBaseUrl,
   createAssignment,
@@ -127,6 +129,9 @@ export type TuInspectionSummary = {
   createdAt: string | null
   updatedAt: string | null
 }
+
+/** Internal overview projection only; report/details payloads remain billing-free. */
+export type TuInspectionListItem = TuInspectionSummary & { billing: TuInvestigationBillingStatus }
 
 export type TuInspectorProfileCard = {
   fullName: string | null
@@ -1498,7 +1503,7 @@ async function ensureTuInspectionAssignmentNumber(
   return (updatedInspection as InspectionRow | null) ?? inspection
 }
 
-export async function listTuInvestigations(orgId: string): Promise<TuInspectionSummary[]> {
+export async function listTuInvestigations(orgId: string): Promise<TuInspectionListItem[]> {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
@@ -1516,7 +1521,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const inspectionIds = details.map((detail) => detail.inspection_id)
   const propertyIds = [...new Set(details.map((detail) => detail.property_id).filter(Boolean) as string[])]
 
-  const [{ data: inspectionData, error: inspectionError }, { data: propertyData, error: propertyError }] =
+  const [{ data: inspectionData, error: inspectionError }, { data: propertyData, error: propertyError }, billingStatuses] =
     await Promise.all([
       admin
         .from('inspections')
@@ -1530,6 +1535,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
             .select('id,name,address,postal_code,city,municipality,cadastral_id,owner_name,client_name')
             .in('id', propertyIds)
         : Promise.resolve({ data: [], error: null }),
+      getTuInvestigationBillingStatuses({ orgId, inspectionIds }),
     ])
 
   if (inspectionError) throw new Error(inspectionError.message ?? 'Kunde inte hämta TU-inspektioner.')
@@ -1540,13 +1546,14 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionS
   const inspections = new Map(inspectionRows.map((row) => [row.id, row]))
   const properties = new Map(propertyRows.map((row) => [row.id, row]))
 
-  return details.map((detail) =>
-    buildSummary(
+  return details.map((detail) => ({
+    ...buildSummary(
       detail,
       inspections.get(detail.inspection_id) ?? null,
       detail.property_id ? properties.get(detail.property_id) ?? null : null
-    )
-  )
+    ),
+    billing: { status: billingStatuses.get(detail.inspection_id)?.status ?? 'unavailable' },
+  }))
 }
 
 export async function getTuInvestigationById(input: {

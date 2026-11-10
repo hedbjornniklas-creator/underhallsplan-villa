@@ -1,6 +1,52 @@
 .tu-overview .obo-actions .tu-start-investigation { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; border: 0; color: #245eb5; background: transparent; }
 .tu-overview .tu-start-investigation > span { display: none; }
-@container ob-overview (width < 56rem) {
+.tu-overview .obo-table th:nth-child(3) { width:8%; }
+.tu-overview .obo-table th:nth-child(4) { width:11%; }
+.tu-overview .obo-table th:nth-child(5) { width:10rem; }
+.tu-overview .obo-table th:nth-child(6) { width:6rem; }
+.tu-overview .obo-table th:nth-child(7) { width:8rem; }
+.tu-overview .obo-table th:nth-child(8) { width:3.5rem; }
+.tu-overview .obo-table th:nth-child(9) { width:9.5rem; }
+.tu-billing-help { margin:.75rem 1rem; color:#596571; overflow-wrap:anywhere; }
+.tu-billing-unavailable { margin:.75rem 1rem; padding:.75rem; border:1px solid #e6cf90; background:#fffbeb; color:#70531d; border-radius:4px; font-size:.875rem; overflow-wrap:anywhere; }
+/* Nine columns need more room; keep TU's reflow local to this module. */
+@container ob-overview (56rem <= width < 70rem) {
+  .tu-overview .obo-workspace { font-size:1rem; line-height:1.5; }
+  .tu-overview .obo-toolbar { display:flex; flex-wrap:wrap; gap:16px; padding:16px; }
+  .tu-overview .obo-search { flex:1 1 100%; }
+  .tu-overview .obo-sort { flex:1 1 9rem; min-width:0; }
+  .tu-overview .obo-page-size { flex:0 1 5.5rem; min-width:0; }
+  .tu-overview :is(.obo-sort,.obo-page-size,.obo-filter-select) { flex-direction:column; align-items:stretch; gap:.25rem; }
+  .tu-overview :is(.obo-sort,.obo-page-size,.obo-filter-select) > span { font-size:.875rem; }
+  .tu-overview select { padding:8px 32px 8px 12px; }
+  .tu-overview :is(select,button,.obo-search input,.obo-actions a) { min-height:48px; }
+  .tu-overview .obo-icon { width:48px; height:48px; flex-basis:48px; }
+  .tu-overview .obo-filters { padding:0 1rem .75rem; gap:.25rem 1rem; }
+  .tu-overview .obo-filter-buttons { display:none; }
+  .tu-overview .obo-filter-select { display:flex; margin-right:auto; }
+  .tu-overview :is(.obo-table,.obo-table tbody) { display:block; }
+  .tu-overview .obo-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .tu-overview .obo-table tr[data-row-id] { display:flex; flex-direction:column; height:auto; padding:1rem; border-bottom:1px solid #d4dce4; border-left:3px solid #d4dce4; }
+  .tu-overview .obo-table tr[data-marker=attention] { border-left-color:#a36116; }
+  .tu-overview .obo-table tr[data-marker=active] { border-left-color:#245eb5; }
+  .tu-overview .obo-table tr[data-marker=closed] { border-left-color:#52705e; }
+  .tu-overview .obo-table tr[data-marker] td:first-child { box-shadow:none; }
+  .tu-overview .obo-table td { display:block; padding:0; border:0; }
+  .tu-overview .obo-table .obo-desktop-only { display:none; }
+  .tu-overview .obo-table .obo-mobile-only { display:block; }
+  .tu-overview .obo-cell-text { white-space:normal; overflow:visible; overflow-wrap:anywhere; }
+  .tu-overview .obo-identity { overflow-wrap:anywhere; order:-2; }
+  .tu-overview :is(.obo-meta,.obo-attention) { font-size:.875rem; }
+  .tu-overview .obo-table .obo-date { order:-1; margin:.5rem 0 .75rem; }
+  .tu-overview .obo-table .obo-state { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr)); gap:.5rem; padding:.2rem 0; }
+  .tu-overview .obo-mobile-label { display:block; color:#596571; font-size:.875rem; padding-top:.125rem; }
+  .tu-overview .obo-table .obo-actions { padding:.5rem 0 0; }
+  .tu-overview .obo-action-links { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:.25rem 1.5rem; }
+  .tu-overview .obo-actions a { flex:1 1 9rem; width:auto; justify-content:flex-start; gap:.5rem; font-size:.875rem; }
+  .tu-overview .obo-actions a > span { display:block; min-width:0; overflow-wrap:anywhere; }
+  .tu-overview .obo-pagination { padding:.75rem 1rem; }
+}
+@container ob-overview (width < 70rem) {
   .tu-overview .obo-actions .tu-start-investigation { flex: 1 1 9rem; width: auto; min-height: 48px; justify-content: flex-start; gap: .5rem; font-size: .875rem; }
   .tu-overview .tu-start-investigation > span { display: block; overflow-wrap: anywhere; }
 }

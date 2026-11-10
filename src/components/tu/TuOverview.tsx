@@ -14,6 +14,7 @@ import { canStartTuBeforeApproval } from '@/lib/tu/assignmentProgress'
 
 const filters: Array<{ value: TuOverviewFilter; label: string }> = [
   { value: 'all', label: 'Alla' }, { value: 'active', label: 'Aktuella' }, { value: 'closed', label: 'Avslutade' },
+  { value: 'to-invoice', label: 'Att fakturera' },
 ]
 
 function dateLabel(value: string | null) {
@@ -33,6 +34,9 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh, organizationId 
   const detailsId = useId()
   const detailsLabel = `${expanded ? 'Dölj' : 'Visa'} detaljer för ${item.address}`
   const marker = item.attention.length ? 'attention' : item.closed ? 'closed' : 'active'
+  const billingLabel = item.billingStatus === 'invoiced' ? 'Fakturerad'
+    : item.billingStatus === 'not_invoiced' ? 'Ej fakturerad'
+      : item.billingStatus === null ? '–' : 'Ej tillgänglig'
   return <>
     <tr data-marker={marker} data-row-id={item.id}>
       <td className="obo-date">{item.date ? <time dateTime={item.date}>{dateLabel(item.date)}</time> : 'Datum saknas'}</td>
@@ -46,6 +50,7 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh, organizationId 
       <td className="obo-customer obo-desktop-only"><span className="obo-cell-text" title={item.customer}>{item.customer}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Bekräftelse</span><span className="obo-cell-text" title={item.confirmation}>{item.confirmation}</span></td>
       <td className="obo-state"><span className="obo-mobile-label">Utredning</span><span className="obo-cell-text">{item.investigationStatus}</span></td>
+      <td className="obo-state tu-billing-status"><span className="obo-mobile-label">Fakturering</span><span className="obo-cell-text" title={billingLabel}>{billingLabel}</span></td>
       <td className="obo-details-toggle obo-desktop-only">
         <button type="button" className="obo-icon obo-row-toggle" aria-label={detailsLabel} title={detailsLabel}
           aria-expanded={expanded} aria-controls={expanded ? detailsId : undefined} data-attention={item.attention.length > 0}
@@ -69,7 +74,7 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh, organizationId 
         {item.inspectionId && <TuCopyInvestigationLink inspectionId={item.inspectionId} organizationId={organizationId} iconOnly className="obo-icon" />}
       </div></td>
     </tr>
-    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={8}>
+    {expanded && <tr className="obo-detail-row obo-desktop-only"><td colSpan={9}>
       <div id={detailsId} className="obo-row-details"><dl>
         <div><dt>Utredning</dt><dd>{item.title}</dd></div>
         <div><dt>Adress</dt><dd>{item.address}</dd></div>
@@ -77,6 +82,7 @@ function OverviewRow({ item, busy, onStartAssignment, onRefresh, organizationId 
         <div><dt>Kund</dt><dd>{item.customer}</dd></div>
         <div><dt>Uppdragsbekräftelse</dt><dd>{item.confirmation}</dd></div>
         <div><dt>Utredningens status</dt><dd>{item.investigationStatus}</dd></div>
+        <div><dt>Fakturering</dt><dd>{billingLabel}</dd></div>
         {item.assignment && <>
           <div><dt>Senaste utskick</dt><dd>{item.assignment.last_sent_at ? new Date(item.assignment.last_sent_at).toLocaleString('sv-SE') : 'Inte registrerat'}</dd></div>
           <div><dt>Kundens godkännande</dt><dd>{item.assignment.progress?.approvalVerified && item.assignment.accepted_at ? new Date(item.assignment.accepted_at).toLocaleString('sv-SE') : 'Inte verifierat'}</dd></div>
@@ -106,7 +112,7 @@ export default function TuOverview({ organizationId, assignments, investigations
   const result = useMemo(() => selectTuOverviewPage(items, { search, filter, sort, attentionOnly, showArchived, page, pageSize }),
     [items, search, filter, sort, attentionOnly, showArchived, page, pageSize])
   const filtered = Boolean(search.trim() || filter !== 'all' || attentionOnly)
-  const changeFilter = (value: TuOverviewFilter) => { setFilter(value); setPage(1) }
+  const changeFilter = (value: TuOverviewFilter) => { setFilter(value); if (value === 'to-invoice') setAttentionOnly(false); setPage(1) }
   const resetFilters = () => { setSearch(''); setFilter('all'); setAttentionOnly(false); setPage(1) }
 
   return <section className="obo tu-overview" aria-labelledby={heading} aria-busy={loading}>
@@ -139,9 +145,12 @@ export default function TuOverview({ organizationId, assignments, investigations
         <label className="obo-filter-select"><span>Visa</span><select value={filter} onChange={event => changeFilter(event.target.value as TuOverviewFilter)}>
           {filters.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
-        <label className="obo-check"><input type="checkbox" checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setPage(1) }} />Kräver åtgärd</label>
+        <label className="obo-check"><input type="checkbox" checked={attentionOnly} disabled={filter === 'to-invoice'} onChange={event => { setAttentionOnly(event.target.checked); setPage(1) }} />Kräver åtgärd</label>
         <label className="obo-check"><input type="checkbox" checked={showArchived} onChange={event => { setShowArchived(event.target.checked); setPage(1) }} />Visa arkiverade</label>
       </div>
+      {filter === 'active' && <p className="tu-billing-help">Aktuella innehåller även klara utredningar som inte är fakturerade. Utredningens status visas separat.</p>}
+      {filter === 'to-invoice' && <p className="tu-billing-help">Klara utredningar som inte har markerats fakturerade. Ändra markeringen i utredningens leveranssteg.</p>}
+      {filter === 'to-invoice' && result.unavailableBillingCount > 0 && <p className="tu-billing-unavailable" role="status">Fakturastatus kunde inte hämtas för {result.unavailableBillingCount} klara utredningar. Dessa ingår inte i urvalet. Försök uppdatera listan.</p>}
       {error && <div className="obo-error" role="alert"><p>{error}</p><button type="button" onClick={onRefresh} disabled={loading || busy}>Försök igen</button></div>}
       {loading && <p className="obo-empty" role="status">Uppdaterar uppdragslistan...</p>}
       {!result.items.length && !loading && !error && <div className="obo-empty" role="status">
@@ -149,9 +158,9 @@ export default function TuOverview({ organizationId, assignments, investigations
         {filtered && <button type="button" onClick={resetFilters}>Rensa filter</button>}
       </div>}
       {result.items.length > 0 && <table className="obo-table">
-        <caption className="obo-sr">TU-uppdrag med separata statusar för uppdragsbekräftelse och utredning</caption>
+        <caption className="obo-sr">TU-uppdrag med separata statusar för uppdragsbekräftelse, utredning och fakturering</caption>
         <thead><tr><th scope="col">Besiktningsdag</th><th scope="col">Adress</th><th scope="col">Ort</th><th scope="col">Kund</th>
-          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Utredning</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th>
+          <th scope="col">Uppdragsbekräftelse</th><th scope="col">Utredning</th><th scope="col">Fakturering</th><th scope="col"><span className="obo-sr">Detaljer</span></th><th scope="col"><span className="obo-sr">Öppna</span></th>
         </tr></thead>
         <tbody>{result.items.map(item => <OverviewRow key={item.id} item={item} busy={busy || loading} onStartAssignment={onStartAssignment} onRefresh={onRefresh} organizationId={organizationId} />)}</tbody>
       </table>}

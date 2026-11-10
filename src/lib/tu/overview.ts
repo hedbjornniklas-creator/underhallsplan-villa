@@ -1,9 +1,10 @@
 import type { TuAssignmentListItem, TuInspectionSummary } from './server'
+import type { TuInvestigationBillingStatus } from './billing'
 // @ts-expect-error Node strip-types tests require the explicit TypeScript extension.
 import { canStartTuBeforeApproval, tuAssignmentState, type TuProgressAssignment } from './assignmentProgress.ts'
 
-export type TuOverviewInvestigation = TuInspectionSummary & { hasReadyPdf?: boolean }
-export type TuOverviewFilter = 'all' | 'active' | 'closed'
+export type TuOverviewInvestigation = TuInspectionSummary & { hasReadyPdf?: boolean; billing?: TuInvestigationBillingStatus }
+export type TuOverviewFilter = 'all' | 'active' | 'closed' | 'to-invoice'
 export type TuOverviewSort = 'date-desc' | 'date-asc' | 'customer' | 'address'
 
 export type TuOverviewItem = {
@@ -24,6 +25,8 @@ export type TuOverviewItem = {
   assignment: TuAssignmentListItem | null
   attention: string[]
   archived: boolean
+  workCompleted: boolean
+  billingStatus: TuInvestigationBillingStatus['status'] | null
   closed: boolean
   searchText: string
 }
@@ -75,8 +78,10 @@ export function buildTuOverviewItems({ organizationId, assignments, investigatio
     const investigationStatus = investigationLabel(investigation, inspectionId)
     // Archiving a confirmation must not hide an investigation that is still in use.
     const archived = Boolean(assignment?.archived_at) && !inspectionId
+    const workCompleted = Boolean(investigation && ['Låst', 'Klar'].includes(investigationStatus))
+    const billingStatus = inspectionId ? investigation?.billing?.status ?? 'unavailable' : null
     const closed = investigation
-      ? ['Låst', 'Klar'].includes(investigationStatus)
+      ? workCompleted && billingStatus === 'invoiced'
       : !inspectionId && (archived || assignment?.status === 'cancelled')
     return {
       id: investigation ? `investigation:${investigation.inspectionId}` : `assignment:${assignment!.id}`,
@@ -88,7 +93,7 @@ export function buildTuOverviewItems({ organizationId, assignments, investigatio
       inspectionId,
       confirmationHref: assignment ? url(`/tu/assignments/${encodeURIComponent(assignment.id)}`) : null,
       pdfHref: investigation?.hasReadyPdf ? url(`/api/report-v2/${encodeURIComponent(investigation.inspectionId)}/pdf`) : null,
-      startAssignment, assignment, attention, archived, closed,
+      startAssignment, assignment, attention, archived, workCompleted, billingStatus, closed,
       searchText: [address, city, customer, title, investigation?.assignmentNumber, investigation?.customerEmail,
         assignment?.customer_email, investigation?.cadastralId, assignment?.cadastral_id, investigation?.brfName,
         assignment?.brf_name, investigation?.apartmentNumber, assignment?.apartment_number,
@@ -114,10 +119,14 @@ export function selectTuOverviewPage(items: TuOverviewItem[], options: {
 }) {
   const words = options.search.trim().toLocaleLowerCase('sv-SE').split(/\s+/).filter(Boolean)
   const candidates = items.filter(item => (options.showArchived || !item.archived)
-    && (!options.attentionOnly || item.attention.length > 0)
+    && (options.filter === 'to-invoice' || !options.attentionOnly || item.attention.length > 0)
     && words.every(word => item.searchText.includes(word)))
-  const counts = { all: candidates.length, active: candidates.filter(item => !item.closed).length, closed: candidates.filter(item => item.closed).length }
-  const filtered = candidates.filter(item => options.filter === 'all' || (options.filter === 'closed' ? item.closed : !item.closed))
+  const toInvoice = (item: TuOverviewItem) => item.workCompleted && item.billingStatus === 'not_invoiced'
+  const counts = { all: candidates.length, active: candidates.filter(item => !item.closed).length,
+    closed: candidates.filter(item => item.closed).length, 'to-invoice': candidates.filter(toInvoice).length }
+  const unavailableBillingCount = candidates.filter(item => item.workCompleted && item.billingStatus === 'unavailable').length
+  const filtered = candidates.filter(item => options.filter === 'all' || (options.filter === 'to-invoice' ? toInvoice(item)
+    : options.filter === 'closed' ? item.closed : !item.closed))
   filtered.sort((a, b) => {
     let comparison = 0
     if (options.sort === 'customer') comparison = collator.compare(a.customer, b.customer)
@@ -129,5 +138,5 @@ export function selectTuOverviewPage(items: TuOverviewItem[], options: {
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const page = Math.min(pages, Math.max(1, Math.trunc(options.page) || 1))
   const start = (page - 1) * pageSize
-  return { items: filtered.slice(start, start + pageSize), total: filtered.length, counts, pages, page, start }
+  return { items: filtered.slice(start, start + pageSize), total: filtered.length, counts, unavailableBillingCount, pages, page, start }
 }

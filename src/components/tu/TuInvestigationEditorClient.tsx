@@ -11,6 +11,7 @@ import TuImageAppendixProposalDrawer, { type TuAppendixProposalApplyResult } fro
 import TuPostDamagePreparationWorkspace from '@/components/tu/TuPostDamagePreparationWorkspace'
 import TuPostDamageFieldChecklist from '@/components/tu/TuPostDamageFieldChecklist'
 import TuPrintActions from '@/components/tu/TuPrintActions'
+import TuInvestigationBillingPanel, { type TuInvestigationBillingPanelHandle } from '@/components/tu/TuInvestigationBillingPanel'
 import TuReportReviewDrawer from '@/components/tu/TuReportReviewDrawer'
 import TuWorkflowRail from '@/components/tu/TuWorkflowRail'
 import { useToast } from '@/components/ui/AppToastProvider'
@@ -835,6 +836,13 @@ export default function TuInvestigationEditorClient({
   const [workspaceView, setWorkspaceView] = useState<TuWorkspaceView>(
     initialWorkspaceView ?? (postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report')
   )
+  const billingPanelRef = useRef<TuInvestigationBillingPanelHandle>(null)
+  const [billingHost, setBillingHost] = useState<HTMLDivElement | null>(null)
+  const [billingStarted, setBillingStarted] = useState(workspaceView === 'delivery')
+  const registerBillingHost = useCallback((node: HTMLDivElement | null) => {
+    setBillingHost(node)
+    if (node) setBillingStarted(true)
+  }, [])
   const [evidenceFocusRequest, setEvidenceFocusRequest] = useState<{
     observationId: string
     measurementId?: string
@@ -849,10 +857,12 @@ export default function TuInvestigationEditorClient({
     setEvidenceFocusRequest({ observationId, measurementId, nonce: Date.now(), returnToField: true })
     setWorkspaceView('evidence')
   }, [])
-  const changeWorkspaceView = useCallback((view: TuWorkspaceView) => {
+  const changeWorkspaceView = useCallback(async (view: TuWorkspaceView) => {
+    if (workspaceView === 'delivery' && view !== 'delivery' && billingPanelRef.current &&
+      !(await billingPanelRef.current.flush())) return
     setEvidenceFocusRequest(null)
     setWorkspaceView(view)
-  }, [])
+  }, [workspaceView])
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
   }, [])
@@ -2514,7 +2524,7 @@ export default function TuInvestigationEditorClient({
             {!aiWorkflowEnabled ? (
               <button
                 type="button"
-                onClick={() => setWorkspaceView('report')}
+                onClick={() => void changeWorkspaceView('report')}
                 className="inline-flex h-10 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
               >
                 <ArrowLeft size={16} aria-hidden />
@@ -2530,8 +2540,9 @@ export default function TuInvestigationEditorClient({
                 : 'Leverans'}
               onStatusChange={handleDeliveryStatusChange}
               onOpenEvidence={aiWorkflowEnabled ? () => changeWorkspaceView('evidence') : undefined}
-              onOpenReport={() => setWorkspaceView('report')}
+              onOpenReport={() => void changeWorkspaceView('report')}
             />
+            <div ref={registerBillingHost} />
           </div>
         ) : (
           <>
@@ -4034,6 +4045,13 @@ export default function TuInvestigationEditorClient({
             onApply={applyAppendixProposal}
           />
         ) : null}
+        {billingStarted ? <TuInvestigationBillingPanel
+          key={`${investigation.orgId}:${investigation.inspectionId}`}
+          ref={billingPanelRef}
+          inspectionId={investigation.inspectionId}
+          organizationId={investigation.orgId}
+          portalTarget={billingHost}
+        /> : null}
         {renderImagePreview()}
       </div>
     </main>
