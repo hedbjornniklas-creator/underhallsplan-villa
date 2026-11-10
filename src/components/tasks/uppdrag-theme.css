@@ -204,6 +204,31 @@
 .uppdrag-scope .gizmo-workspace h3 { font-size: 16px; line-height: 24px; font-weight: 600; }
 .gizmo-workspace [hidden] { display: none !important; }
 .gizmo-workspace .gizmo-eyebrow { color: var(--uppdrag-muted); font-size: 12px; font-weight: 600; margin: 0 0 4px; }
+.gizmo-task-summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 16px; border-block: 1px solid var(--uppdrag-line); }
+.gizmo-task-stat { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 2px 8px; padding: 10px 14px; border-bottom: 3px solid transparent; }
+.gizmo-task-stat + .gizmo-task-stat { border-left: 1px solid var(--uppdrag-line); }
+.gizmo-task-stat > span:last-child { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.gizmo-task-stat:hover { background: #f5f7f7; }
+.gizmo-task-stat[aria-pressed='true'] { border-bottom-color: var(--uppdrag-ink); background: var(--uppdrag-selected); }
+.gizmo-task-toolbar { position: relative; display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; }
+.gizmo-task-toolbar > label:first-child { min-width: 220px; }
+.gizmo-task-options { position: static; }
+.gizmo-task-options-panel { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; width: 420px; max-width: 100%; background: white; border: 1px solid var(--uppdrag-line); border-radius: 6px; padding: 16px; box-shadow: 0 4px 16px #252a2d14; }
+.gizmo-task-options-panel :is(select, button) { max-width: 100%; }
+.gizmo-recipient section { border-radius: 0; }
+.gizmo-recipient :is(article, [role='dialog']) { border-radius: 8px; }
+.gizmo-recipient .gizmo-recipient-next-step :is(h2, p) { color: var(--uppdrag-ink); }
+.gizmo-recipient :is(.text-indigo-700, .text-indigo-900, .text-indigo-950) { color: var(--uppdrag-link); }
+.gizmo-recipient .bg-indigo-50 { background: #f1f6f5; }
+.gizmo-recipient :is(.bg-indigo-700, .bg-slate-900) { background: var(--uppdrag-ink); }
+@media (max-width: 639px) {
+  .gizmo-task-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gizmo-task-stat { padding: 8px; }
+  .gizmo-task-toolbar > label:first-child { flex-basis: 100%; }
+  .gizmo-task-options[open] { flex-basis: 100%; }
+  .gizmo-task-options-panel { position: static; width: 100%; margin-top: 8px; }
+  .gizmo-recipient :is(button, summary) { min-height: 48px; }
+}
 .gizmo-workspace .gizmo-secondary { color: var(--uppdrag-muted); }
 .uppdrag-scope.gizmo-dialog-scope h2 { font-weight: 600; }
 .uppdrag-scope.gizmo-dialog-scope h3 { font-size: 16px; font-weight: 600; }

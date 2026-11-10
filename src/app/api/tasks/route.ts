@@ -31,6 +31,11 @@ function taskErrorResponse(error: unknown) {
   const badRequest: Record<string, string> = {
     TASK_ESTIMATE_INVALID: 'Ange tidsåtgång i hela minuter, 1–10080, eller lämna tomt.',
     TASK_TITLE_REQUIRED: 'Ange vad som ska göras.',
+    TASK_DETAILS_INPUT_INVALID: 'Ange rubrik (högst 500 tecken), beskrivning (högst 20 000 tecken) och giltiga kanaler.',
+    TASK_DETAILS_MANAGED: 'Den här uppgiften ändras i sin ursprungsfunktion, exempelvis Frågor och beslut.',
+    TASK_DETAILS_CONFIRM_RECIPIENT: 'Bekräfta mottagarbytet. Den gamla länken spärras och ett nytt utskick görs separat.',
+    TASK_DETAILS_PENDING_REQUEST: 'Hantera den öppna begäran om nytt slutdatum innan mottagare eller tider ändras.',
+    TASK_DETAILS_DELIVERY_PENDING: 'Ett tidigare utskick pågår eller har oklar leverans. Kontrollera det före mottagarbytet.',
     TASK_PERSONAL_CREATE_INPUT_INVALID: 'Ange en rubrik på högst 500 tecken.',
     TASK_CREATE_INPUT_INVALID: 'Kontrollera titel, mottagare, datum och kanaler.',
     TASK_REQUIREMENTS_INPUT_INVALID: 'Kontrollpunkterna är ogiltiga.',
@@ -111,6 +116,7 @@ function taskErrorResponse(error: unknown) {
     TASK_INITIAL_DISPATCH_FINALIZE_INPUT_INVALID: 'Uppgiften kunde inte förberedas för utskick.',
   }
   const forbidden = new Set([
+    'TASK_DETAILS_FORBIDDEN',
     'TASK_DUE_EDIT_FORBIDDEN',
     'TASK_ESTIMATE_FORBIDDEN',
     'TASK_SUBTASK_FORBIDDEN',
@@ -169,6 +175,8 @@ function taskErrorResponse(error: unknown) {
   }
   if (forbidden.has(code)) return jsonError('Du får inte utföra den här åtgärden.', 403, code)
   if (code === 'TASK_NOT_FOUND') return jsonError('Uppgiften kunde inte hittas.', 404, code)
+  if (code === 'TASK_DETAILS_SCHEMA_REQUIRED') return jsonError('Redigering av grunduppgifter behöver aktiveras i databasen.', 503, code)
+  if (code === 'TASK_DETAILS_SAVE_FAILED') return jsonError('Ändringarna kunde inte sparas. Din text är kvar, försök igen.', 503, code)
   if (code === 'SIGNE_SUGGESTION_NOT_FOUND') return jsonError('Gizmo-förslaget kunde inte hittas.', 404, code)
   if (code === 'SIGNE_ALREADY_RUNNING') {
     return jsonError('Gizmo analyserar redan uppgiften. Vänta en kort stund och försök igen.', 409, code)
@@ -230,7 +238,7 @@ export async function POST(request: Request) {
     if (['complete_manually', 'set_time_estimate'].includes(action) && request.headers.get('origin') !== new URL(request.url).origin) {
       return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
     }
-    if (action === 'set_personal_due_date' && request.headers.get('origin') !== new URL(request.url).origin) {
+    if (['set_personal_due_date', 'edit_task_details'].includes(action) && request.headers.get('origin') !== new URL(request.url).origin) {
       return jsonError('Begäran måste komma från samma webbplats.', 403, 'TASK_ORIGIN_INVALID')
     }
     const payload =
@@ -245,7 +253,7 @@ export async function POST(request: Request) {
     })
     const assignmentDeferred =
       (action === 'create_task' || action === 'create_subtask') && payload.sendAssignment === false
-    if (!assignmentDeferred && !['mark_messages_read', 'set_time_estimate'].includes(action)) {
+    if (!assignmentDeferred && !['mark_messages_read', 'set_time_estimate', 'edit_task_details'].includes(action)) {
       after(async () => {
         try {
           await runTaskFollowupBatch({ limit: 5 })

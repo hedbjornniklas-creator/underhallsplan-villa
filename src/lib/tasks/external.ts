@@ -43,6 +43,7 @@ export type ExternalTaskWorkspace = {
   accessState: 'open' | 'expired' | 'revoked'
   timeZone: string
   recipientName: string
+  draftScope?: string
   recipientAccount: RecipientTaskAccountState
   canDelegate: boolean
   task: {
@@ -489,6 +490,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
     accessState: state,
     timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
+    draftScope: hashAssignmentToken(`task-draft:${access.org_id}:${task.id}:${access.contact_id}`),
     recipientAccount,
     canDelegate: access.role === 'delegator' && access.scope === 'branch',
     task: {
@@ -867,7 +869,7 @@ export async function issueTaskAccessLink(input: {
   const admin = createSupabaseAdminClient()
   const { data: task, error: taskError } = await admin
     .from('operational_tasks')
-    .select('id,title,description,status,due_at,due_timezone,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
+    .select('id,title,description,context_label,status,due_at,due_timezone,primary_channel,fallback_channel,assignee_contact_id,issuer_profile_id')
     .eq('id', input.taskId)
     .eq('org_id', input.orgId)
     .is('archived_at', null)
@@ -957,9 +959,11 @@ export async function issueTaskAccessLink(input: {
     `${contact.name},`,
     '',
     `${issuerName} har tilldelat dig uppgiften ”${task.title}”.`,
+    task.context_label ? `Projekt: ${task.context_label}` : null,
     `Slutdatum: ${dueLabel}.`,
     '',
     'Öppna uppdraget direkt via den personliga länken. Du behöver inte logga in.',
+    'Svara i uppdraget så att dialogen sparas i Gizmo. Vanliga mejlsvar sparas inte automatiskt där.',
     `Öppna uppdraget: ${accessUrl}`,
     secondaryActionUrl && secondaryActionLabel
       ? `${secondaryActionLabel}: ${secondaryActionUrl}`
@@ -972,12 +976,13 @@ export async function issueTaskAccessLink(input: {
   const bodyHtml = buildTaskEmailHtml({
     previewText: `${issuerName} har tilldelat dig uppdraget ${task.title}.`,
     eyebrow: 'Nytt uppdrag',
-    heading: 'Du har fått ett nytt uppdrag',
+    heading: task.title,
     recipientName: contact.name,
     lead: `${issuerName} har tilldelat dig följande uppdrag.`,
     taskTitle: task.title,
+    contextLabel: task.context_label,
     dueLabel,
-    instruction: 'Öppna uppdraget direkt utan att logga in för att läsa hela beskrivningen, uppdatera status och lämna underlag.',
+    instruction: 'Öppna uppdraget utan att logga in och bekräfta mottagandet. Svara där så att dialogen sparas i Gizmo. Vanliga mejlsvar sparas inte automatiskt i uppdraget.',
     actionUrl: accessUrl,
     actionLabel: 'Öppna uppdraget',
     secondaryActionUrl,

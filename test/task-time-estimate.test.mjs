@@ -84,7 +84,7 @@ test('time filtering is flat and private; estimate updates cannot schedule oppor
   assert.match(ui, /effectiveListMode = timeBudgetActive \? 'all' : listMode/)
   assert.match(ui, /task\.estimatedMinutes <= timeBudget/)
   assert.match(ui, /Tid ej angiven \(/)
-  assert.match(api, /!\['mark_messages_read', 'set_time_estimate'\]\.includes\(action\)/)
+  assert.match(api, /!\['mark_messages_read', 'set_time_estimate', 'edit_task_details'\]\.includes\(action\)/)
   assert.match(api, /\['complete_manually', 'set_time_estimate'\]\.includes\(action\).*request.headers.get\('origin'\)/)
 })
 

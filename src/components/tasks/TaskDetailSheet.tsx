@@ -49,6 +49,7 @@ import TaskNotificationDeliveryStatus from './TaskNotificationDeliveryStatus'
 import TaskManualCompletionDialog from './TaskManualCompletionDialog'
 import TaskTimeEstimateEditor from './TaskTimeEstimateEditor'
 import TaskDueDateEditor from './TaskDueDateEditor'
+import TaskDetailsEditor from './TaskDetailsEditor'
 import { canManuallyCompleteTask, completionEvidenceSatisfied } from '@/lib/tasks/manualCompletion'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
@@ -122,14 +123,15 @@ export default function TaskDetailSheet({
   const [manualCompletionOpen, setManualCompletionOpen] = useState(false)
   const [estimateDirty, setEstimateDirty] = useState(false)
   const [dueDateDirty, setDueDateDirty] = useState(false)
-  const discardEstimate = useCallback(() => !(estimateDirty || dueDateDirty) || window.confirm('Stäng utan att spara ändringarna?'), [estimateDirty, dueDateDirty])
+  const [detailsEditing, setDetailsEditing] = useState(false), [detailsDirty, setDetailsDirty] = useState(false)
+  const discardEstimate = useCallback(() => !(estimateDirty || dueDateDirty || detailsDirty) || window.confirm('Stäng utan att spara ändringarna?'), [estimateDirty, dueDateDirty, detailsDirty])
   const requestClose = useCallback(() => { if (!busy && discardEstimate()) onClose() }, [busy, discardEstimate, onClose])
   useEffect(() => {
-    if (!estimateDirty && !dueDateDirty) return
+    if (!estimateDirty && !dueDateDirty && !detailsDirty) return
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', beforeUnload)
     return () => window.removeEventListener('beforeunload', beforeUnload)
-  }, [estimateDirty, dueDateDirty])
+  }, [estimateDirty, dueDateDirty, detailsDirty])
   const [deleteSubmitting, setDeleteSubmitting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [recurrenceInterval, setRecurrenceInterval] = useState<TaskRecurrenceInterval | ''>('')
@@ -150,6 +152,7 @@ export default function TaskDetailSheet({
     setEditingTranscriptId(null)
     setTranscriptDraft('')
     setTranscriptError(null)
+    setDetailsEditing(false)
   }, [task?.id, task?.recurrenceInterval])
 
   const saveTranscript = async (attachmentId: string) => {
@@ -479,6 +482,7 @@ export default function TaskDetailSheet({
             <h2 id="task-detail-title" className="mt-3 text-xl font-semibold leading-tight text-slate-950 sm:text-2xl">
               {task.title}
             </h2>
+            {task.canEditDetails && !detailsEditing ? <button type="button" disabled={busy} onClick={() => { if (discardEstimate()) setDetailsEditing(true) }} className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#206961]"><Pencil size={16} />Redigera uppgift</button> : null}
           </div>
           <button
             type="button"
@@ -492,6 +496,11 @@ export default function TaskDetailSheet({
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-6" data-task-detail-scroll>
+          {detailsEditing && task.canEditDetails ? <TaskDetailsEditor key={task.id} task={task} workspace={workspace} busy={busy} onDirtyChange={setDetailsDirty}
+            onCancel={() => { if (!detailsDirty || window.confirm('Avbryt redigeringen utan att spara?')) setDetailsEditing(false) }}
+            onSave={async payload => { await onAction('edit_task_details', payload); setDetailsEditing(false) }} /> : null}
+          {!detailsEditing ? <>
+          {task.detailsManaged ? <p className="mb-3 text-xs text-[#596368]">Grunduppgifterna ändras i uppgiftens ursprungsfunktion.</p> : null}
           {task.description ? <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{task.description}</p> : null}
 
           <dl className="mt-5 grid grid-cols-2 gap-3">
@@ -607,7 +616,7 @@ export default function TaskDetailSheet({
                 </>
               ) : ['assigned', 'waiting', 'returned'].includes(task.status) ? (
                 <>
-                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">{task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta att du börjar'}</h3>
+                  <h3 id="task-next-step-heading" className="mt-2 text-base font-semibold text-indigo-950">{task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta att du har tagit emot uppdraget'}</h3>
                   <p className="mt-1 text-sm leading-6 text-indigo-900">Då ser uppdragsansvarig att uppgiften är omhändertagen.</p>
                   <button
                     type="button"
@@ -615,7 +624,7 @@ export default function TaskDetailSheet({
                     onClick={() => transition('in_progress')}
                     className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
                   >
-                    <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Starta uppdraget'}
+                    <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
                   </button>
                 </>
               ) : task.status === 'in_progress' ? (
@@ -1066,10 +1075,10 @@ export default function TaskDetailSheet({
           <div className="mt-4">
             <TaskHistoryDisclosure events={task.events} />
           </div>
-
+          </> : null}
         </div>
 
-        {isActive || task.canDelete ? (
+        {(!detailsEditing && (isActive || task.canDelete)) ? (
           <footer aria-label="Uppdragsåtgärder" className="flex min-h-0 shrink flex-col border-t border-slate-200 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-6">
             {isActive && panel !== 'none' ? (
               <div className="mb-3 min-h-0 max-h-[35dvh] shrink overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -1165,7 +1174,7 @@ export default function TaskDetailSheet({
                   onClick={() => transition('in_progress')}
                   className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:opacity-50"
                 >
-                  <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta' : 'Starta'}
+                  <ArrowRight size={17} /> {task.status === 'waiting' ? 'Återuppta' : 'Bekräfta mottaget'}
                 </button>
               ) : null}
               {canActAsAssignee && task.dueAt && ['assigned', 'in_progress', 'waiting', 'returned'].includes(task.status) ? (

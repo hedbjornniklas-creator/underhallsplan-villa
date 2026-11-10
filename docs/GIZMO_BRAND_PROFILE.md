@@ -45,6 +45,21 @@ Verifiering: `node --experimental-strip-types --test test/task-workspace-cleanup
 och `node scripts/test-task-manual-completion-ui.mjs --test-actions` använder
 bara fiktiva uppgifter. Förhandsvisning: samma skript med `--actions`.
 
+Beslut 2026-11-10, efter granskning av Att göra: uppgiftens mottagarsida och
+tilldelningsmejl använder också Gizmos grafit, grönblå och återhållsamma gula
+identitet. Bekräfta mottaget har samma text överallt och behåller övergången
+till Pågår. Bottenraden visar en huvudhandling och Mer, utan sidrullning.
+Oskickade svar och textunderlag bevaras lokalt per mottagare och uppgift i
+samma flik, aldrig som delad dialog före Skicka. Avslutade uppgifter har ingen
+aktiv förseningsmätare. Att göra får en kompakt sammanfattningsrad och ett
+eget aktivt respektive avslutat urval. Se [Att göra: användbarhet](gizmo-task-usability.md).
+
+Kompletterande beslut samma dag: öppna manuella uppgifter får en samlad
+redigerare för grunduppgifter och mottagare. Spara skickar inget mejl.
+Mottagarbyte spärrar gammal åtkomst och kräver ett separat utskick, utan att
+återställa status eller historik. Automatiskt kopplade uppgifter ändras i sin
+ursprungsfunktion. Samma befintliga uppdragsansvarig/admin-behörighet gäller.
+
 Projektnavigering: Översikt, Projektarbete, Offert, Avtal, Val och tillval,
 Betalning och fakturering, Tidsplan, Frågor och beslut, Bilder och filer, Delning. Registerflikarna ligger
 över arbetsytan på både dator och mobil. Visa som beställare är en avskild

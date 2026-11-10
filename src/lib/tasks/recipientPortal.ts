@@ -2,6 +2,7 @@ import 'server-only'
 
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { hashAssignmentToken } from '@/lib/assignments/tokens'
 import { evaluateTaskRisk, isTaskStatus } from './domain'
 import type { TaskAttachmentActor } from './attachments'
 import type {
@@ -670,6 +671,7 @@ export async function getRecipientPortalTaskWorkspace(
     accessState: 'open',
     timeZone: normalizeTaskTimeZone(settingsResult.data?.timezone),
     recipientName,
+    draftScope: hashAssignmentToken(`task-draft:${scope.org_id}:${task.id}:${scope.contact_id}`),
     recipientAccount: { state: 'password_login', emailHint: '' },
     canDelegate: false,
     task: {

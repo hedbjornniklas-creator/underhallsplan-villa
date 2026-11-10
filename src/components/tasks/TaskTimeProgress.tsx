@@ -5,11 +5,14 @@ import {
   formatTaskDateTime,
   normalizeTaskTimeZone,
 } from '@/lib/tasks/dateTime'
+import type { TaskStatus } from '@/lib/tasks/contracts'
 
 type Props = {
   startedAt: string
   dueAt: string
   timeZone?: string | null
+  status?: TaskStatus
+  completedAt?: string | null
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -71,16 +74,18 @@ function progressTone(percent: number, overdue: boolean) {
   }
 }
 
-export default function TaskTimeProgress({ startedAt, dueAt, timeZone }: Props) {
+export default function TaskTimeProgress({ startedAt, dueAt, timeZone, status, completedAt }: Props) {
   const [now, setNow] = useState<number | null>(null)
   const effectiveTimeZone = normalizeTaskTimeZone(timeZone)
+  const closed = status === 'approved' || status === 'cancelled'
 
   useEffect(() => {
+    if (closed) return
     const update = () => setNow(Date.now())
     update()
     const timer = window.setInterval(update, MINUTE_MS)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [closed])
 
   const timeline = useMemo(() => {
     if (now === null) return null
@@ -97,6 +102,12 @@ export default function TaskTimeProgress({ startedAt, dueAt, timeZone }: Props) 
     return { start, due, now, percent, remaining: due - now }
   }, [dueAt, now, startedAt])
 
+  if (closed) {
+    return <section className="border-y border-[#D5DCDD] py-3 text-sm" aria-label="Avslutsstatus">
+      <p className="font-semibold">{status === 'approved' ? 'Godkänd och klar' : 'Uppdraget är avbrutet'}</p>
+      {completedAt ? <p className="mt-1 text-[#596368]">Avslutat {formatTaskDateTime(completedAt, effectiveTimeZone)}</p> : null}
+    </section>
+  }
   if (!timeline) {
     return <div className="h-24 animate-pulse rounded-2xl border border-slate-200 bg-white" aria-hidden="true" />
   }
@@ -108,7 +119,7 @@ export default function TaskTimeProgress({ startedAt, dueAt, timeZone }: Props) 
     : durationLabel(timeline.remaining, overdue)
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4" aria-labelledby="task-time-progress-heading">
+    <section className="border-y border-[#D5DCDD] bg-white py-3" aria-labelledby="task-time-progress-heading">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 id="task-time-progress-heading" className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
@@ -146,7 +157,7 @@ export default function TaskTimeProgress({ startedAt, dueAt, timeZone }: Props) 
 
       <div className="mt-2 flex items-center justify-between gap-3 text-[11px] leading-4 text-slate-500">
         <p className="min-w-0 truncate">
-          Start · <span className="font-semibold text-slate-700">{formatTaskDateTime(timeline.start, effectiveTimeZone, 'compact')}</span>
+          Skapad · <span className="font-semibold text-slate-700">{formatTaskDateTime(timeline.start, effectiveTimeZone, 'compact')}</span>
         </p>
         <p className="min-w-0 truncate text-right">
           Mål · <span className="font-semibold text-slate-700">{formatTaskDateTime(timeline.due, effectiveTimeZone, 'compact')}</span>

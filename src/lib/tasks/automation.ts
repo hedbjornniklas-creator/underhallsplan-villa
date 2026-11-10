@@ -183,6 +183,7 @@ type Recipient = {
 }
 
 type TaskHistory = {
+  reassigned?: boolean
   emittedKeys: string[]
   lastAssigneeReminderAt: string | null
   lastCreatorReminderAt: string | null
@@ -1158,7 +1159,7 @@ async function loadTaskHistory(
   admin: AdminClient,
   task: OperationalTask
 ): Promise<TaskHistory> {
-  const [messageResult, safetyState] = await Promise.all([
+  const [messageResult, safetyState, reassignmentResult] = await Promise.all([
     admin
       .from('task_messages')
       .select('id,created_at,message_type,metadata')
@@ -1167,9 +1168,13 @@ async function loadTaskHistory(
       .order('created_at', { ascending: false })
       .limit(300),
     loadTaskDeliverySafetyState(admin, task),
+    admin.from('task_events').select('created_at').eq('org_id', task.org_id).eq('task_id', task.id)
+      .eq('event_type', 'task_recipient_changed').order('created_at', { ascending: false }).limit(1),
   ])
   const { data: messageData, error: messageError } = messageResult
   if (messageError) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+  if (reassignmentResult.error) throw automationError('TASK_AUTOMATION_HISTORY_READ_FAILED')
+  const reassignedAt = reassignmentResult.data?.[0]?.created_at as string | undefined
 
   const messages = (messageData ?? []).map((value) => {
     const row = toObject(value)
@@ -1179,9 +1184,10 @@ async function loadTaskHistory(
       message_type: String(row.message_type ?? ''),
       metadata: toObject(row.metadata),
     } satisfies StoredMessage
-  }).filter((message) => message.id && message.created_at)
+  }).filter((message) => message.id && message.created_at && (!reassignedAt || Date.parse(message.created_at) >= Date.parse(reassignedAt)))
   if (messages.length === 0) {
     return {
+      reassigned: Boolean(reassignedAt),
       emittedKeys: safetyState.emittedKeys,
       lastAssigneeReminderAt: null,
       lastCreatorReminderAt: null,
@@ -1256,6 +1262,7 @@ async function loadTaskHistory(
   }
 
   return {
+    reassigned: Boolean(reassignedAt),
     emittedKeys: [...emittedKeys],
     lastAssigneeReminderAt: latestSuccessfulAssigneeAt,
     // A direct human event is meaningful contact. Counting it only for the
@@ -4532,7 +4539,7 @@ async function evaluateFollowupJob(admin: AdminClient, job: AutomationJob) {
     taskId: task.id,
     status: task.status,
     now: evaluationNow,
-    assignedAt: task.created_at,
+    assignedAt: history.reassigned ? null : task.created_at,
     dueAt: task.due_at,
     nextFollowUpAt: task.next_followup_at,
     reviewDueAt: task.next_followup_at,

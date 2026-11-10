@@ -20,6 +20,7 @@ import {
   Loader2,
   MessageSquareText,
   Mic,
+  MoreHorizontal,
   Paperclip,
   Pencil,
   Send,
@@ -44,7 +45,9 @@ import TaskAttachmentDropZone from './TaskAttachmentDropZone'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskTimeProgress from './TaskTimeProgress'
-import { SigneMark } from './SigneMark'
+import UppdragBrand from './UppdragBrand'
+import UppdragScope from './UppdragScope'
+import useTaskRecipientDraft from './useTaskRecipientDraft'
 import { TaskStatusBadge } from './TaskStatusBadge'
 
 type Props = {
@@ -156,7 +159,7 @@ export default function TaskRecipientClient({
   } = useToast()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [comment, setComment] = useState('')
+  const { comment, setComment, evidenceText, setEvidenceText, hasDraft, storageAvailable } = useTaskRecipientDraft(initialWorkspace.draftScope)
   const [panel, setPanel] = useState<ActionPanel>(null)
   const [waitingReason, setWaitingReason] = useState('')
   const [waitingDate, setWaitingDate] = useState('')
@@ -176,7 +179,6 @@ export default function TaskRecipientClient({
   const [delegatePrimaryChannel, setDelegatePrimaryChannel] = useState<TaskChannel>('email')
   const [delegateFallbackChannel, setDelegateFallbackChannel] = useState<TaskChannel | ''>('whatsapp')
   const [delegateEvidenceRequirements, setDelegateEvidenceRequirements] = useState<TaskCompletionEvidenceType[]>([])
-  const [evidenceText, setEvidenceText] = useState('')
   const [editingTranscriptId, setEditingTranscriptId] = useState<string | null>(null)
   const [transcriptDraft, setTranscriptDraft] = useState('')
   const [transcriptError, setTranscriptError] = useState<string | null>(null)
@@ -191,8 +193,12 @@ export default function TaskRecipientClient({
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const recordingChunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef<number | null>(null)
+  const moreActionsRef = useRef<HTMLDetailsElement>(null)
 
   const task = workspace.task
+  const completedAt = useMemo(() => task.events
+    .filter(event => event.type === 'status_changed' && event.toStatus === task.status)
+    .map(event => event.createdAt).sort().at(-1) ?? null, [task.events, task.status])
   const effectiveTimeZone = normalizeTaskTimeZone(task.dueTimeZone)
   const creationTimeZone = normalizeTaskTimeZone(workspace.timeZone)
   const markMessagesRead = useCallback(async (throughEventId: string) => {
@@ -250,6 +256,21 @@ export default function TaskRecipientClient({
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
   }, [isBusy, panel])
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !moreActionsRef.current?.contains(event.target) && moreActionsRef.current) moreActionsRef.current.open = false
+    }
+    const closeMenu = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && moreActionsRef.current?.open) {
+        moreActionsRef.current.open = false
+        moreActionsRef.current.querySelector('summary')?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeMenu)
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeMenu) }
+  }, [])
 
   useEffect(() => {
     if (!isRecording) return
@@ -505,6 +526,7 @@ export default function TaskRecipientClient({
   }
 
   const openPanel = (nextPanel: Exclude<ActionPanel, null>) => {
+    if (moreActionsRef.current) moreActionsRef.current.open = false
     if (nextPanel === 'waiting') {
       const suggestedDate = addTaskDateInputDays(todayInput, 1)
       const suggestedTime = '09:00'
@@ -694,9 +716,9 @@ export default function TaskRecipientClient({
   if (workspace.accessState !== 'open') {
     const copy = accessClosedCopy(workspace.accessState)
     return (
-      <main className="flex min-h-dvh items-center bg-[#f6f4ef] px-4 py-10 text-slate-950">
-        <section className="mx-auto w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
-          <SigneMark />
+      <UppdragScope><main className="flex min-h-dvh items-center bg-white px-4 py-10 text-[#252A2D]">
+        <section className="mx-auto w-full max-w-md p-6 sm:p-8">
+          <UppdragBrand />
           <div className="mt-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-700">
             <Link2Off size={23} aria-hidden="true" />
           </div>
@@ -704,7 +726,7 @@ export default function TaskRecipientClient({
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{copy.title}</h1>
           <p className="mt-3 text-sm leading-7 text-slate-600">{copy.text}</p>
         </section>
-      </main>
+      </main></UppdragScope>
     )
   }
 
@@ -753,9 +775,9 @@ export default function TaskRecipientClient({
   }
 
   return (
-    <main className={`min-h-dvh bg-[#f6f4ef] text-slate-950 ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
-      <header className="border-b border-amber-200/70 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-xl items-center gap-3 px-4 py-4 sm:px-6">
+    <UppdragScope><main className={`gizmo-recipient min-h-dvh bg-white text-[#252A2D] ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
+      <header className="border-b border-[#D5DCDD] bg-white">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 py-3 sm:px-6">
           {backHref ? (
             <Link
               href={backHref}
@@ -766,9 +788,9 @@ export default function TaskRecipientClient({
               <span className="hidden sm:inline">{backLabel}</span>
             </Link>
           ) : null}
-          <SigneMark />
+          <UppdragBrand compact />
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Gizmo följer upp</p>
+            <p className="text-sm font-semibold text-[#252A2D]">Gizmo</p>
             <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
           </div>
           {showRecipientAccountAction ? (
@@ -781,34 +803,32 @@ export default function TaskRecipientClient({
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-xl px-4 py-5 sm:px-6 sm:py-7">
-        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} />
-
-        <section className="mt-3 overflow-hidden rounded-3xl border border-amber-200/80 bg-white shadow-xl shadow-amber-950/5">
-          <div className="bg-gradient-to-br from-amber-50 via-white to-orange-50 px-5 py-5 sm:px-6">
+      <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:px-6 sm:py-6">
+        <section className="border-b border-[#D5DCDD] bg-white pb-4">
+          <div className="pb-4">
             <div className="flex flex-wrap items-center gap-2">
               <TaskStatusBadge status={task.status} />
               {task.contextLabel ? <span className="text-xs font-semibold text-slate-500">{task.contextLabel}</span> : null}
             </div>
-            <h1 className="mt-4 text-2xl font-semibold leading-tight tracking-tight text-slate-950 sm:text-3xl">{task.title}</h1>
+            <h1 className="mt-3 font-semibold leading-tight">{task.title}</h1>
             {task.description ? <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{task.description}</p> : null}
           </div>
 
-          <dl className="grid grid-cols-2 gap-px bg-slate-200">
-            <div className="min-w-0 bg-white p-4">
+          <dl className="grid grid-cols-2 gap-4">
+            <div className="min-w-0">
               <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500"><CalendarClock size={14} /> Ska vara klart</dt>
               <dd className="mt-2 text-sm font-semibold leading-5 text-slate-900">{formatTaskDateTime(task.dueAt, effectiveTimeZone)}</dd>
               <dd className="mt-1 text-xs text-slate-500">{taskTimeZoneLabel(effectiveTimeZone)}</dd>
             </div>
-            <div className="min-w-0 bg-white p-4">
+            <div className="min-w-0">
               <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Uppdragsansvarig</dt>
               <dd className="mt-2 break-words text-sm font-semibold text-slate-900">{task.issuerName}</dd>
             </div>
           </dl>
         </section>
 
-        <section className="mt-4 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 shadow-sm" aria-labelledby="recipient-next-step-heading">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-700">Ditt nästa steg</p>
+        <section className="gizmo-recipient-next-step my-4 border-l-3 border-[#206961] bg-[#F1F6F5] px-4 py-3" aria-labelledby="recipient-next-step-heading">
+          <p className="text-xs font-semibold text-[#596368]">Ditt nästa steg</p>
           {activeForAssignee ? (
             <>
               <h2 id="recipient-next-step-heading" className="mt-2 text-lg font-semibold text-indigo-950">
@@ -887,6 +907,8 @@ export default function TaskRecipientClient({
           )}
         </section>
 
+        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} status={task.status} completedAt={completedAt} />
+
         {pendingDeadlineRequest ? (
           <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <div className="flex items-start gap-3">
@@ -930,6 +952,9 @@ export default function TaskRecipientClient({
         ) : null}
 
         <div className="mt-6">
+          {hasDraft ? <p role="status" className={`mb-3 border-l-3 px-3 py-2 text-sm ${storageAvailable ? 'border-[#206961] bg-[#F1F6F5]' : 'border-amber-600 bg-amber-50'}`}>
+            <strong>Utkast – inte skickat.</strong> {storageAvailable ? 'Texten bevaras vid omladdning i den här fliken i upp till ett dygn.' : 'Texten kan inte sparas på den här enheten. Lämna inte sidan innan du skickat den.'}
+          </p> : null}
           <TaskConversationCard
             headingId={`recipient-conversation-${task.id}`}
             messages={task.events}
@@ -1314,30 +1339,39 @@ export default function TaskRecipientClient({
       </div>
 
       {showActionBar ? (
-        <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-amber-200 bg-white/95 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
-          <div className="mx-auto flex w-full max-w-xl gap-2 overflow-x-auto px-4 sm:px-6">
+        <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-[#D5DCDD] bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+          <div className="mx-auto flex w-full max-w-2xl gap-2 px-4 sm:px-6">
             {canStart ? (
               <button
                 type="button"
                 disabled={isBusy || prestartBlocked}
-                onClick={() => void runAction('start', { taskId: task.id, version: task.version }, 'Uppgiften är startad.')}
+                onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Mottagandet är bekräftat. Uppgiften är omhändertagen.')}
                 title={prestartBlocked ? 'Förberedande kontrollpunkter återstår.' : undefined}
-                className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-[#252A2D] px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
-                {task.status === 'waiting' ? 'Återuppta' : 'Starta'}
+                {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
               </button>
             ) : null}
-            <button
+            {!canStart ? <button
               type="button"
               disabled={isBusy || readyForReviewBlocked}
               onClick={() => void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.')}
               title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}
-              className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-[#252A2D] px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busyAction === 'ready_for_review' ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
               Klar för kontroll
-            </button>
+            </button> : null}
+            <details ref={moreActionsRef} className="relative shrink-0">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden" aria-label="Fler åtgärder">
+                <MoreHorizontal size={19} aria-hidden="true" /> Mer
+              </summary>
+              <div className="absolute bottom-full right-0 mb-2 grid w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border border-[#D5DCDD] bg-white p-2 shadow-lg" aria-label="Övriga uppdragsåtgärder">
+                {canStart ? <button type="button" disabled={isBusy || readyForReviewBlocked}
+                  onClick={() => { if (moreActionsRef.current) moreActionsRef.current.open = false; void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.') }}
+                  title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}
+                  className="inline-flex min-h-12 items-center gap-2 px-3 text-left text-sm font-semibold disabled:opacity-50"><Check size={18} /> Klar för kontroll</button> : null}
             {canMarkWaiting ? (
               <button
                 type="button"
@@ -1357,6 +1391,8 @@ export default function TaskRecipientClient({
             >
               <CalendarClock size={18} /> Begär mer tid
             </button>
+              </div>
+            </details>
           </div>
         </footer>
       ) : null}
@@ -1679,6 +1715,6 @@ export default function TaskRecipientClient({
           </section>
         </div>
       ) : null}
-    </main>
+    </main></UppdragScope>
   )
 }

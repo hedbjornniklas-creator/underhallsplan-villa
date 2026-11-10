@@ -1000,6 +1000,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     return {
       id: task.id,
       estimatedMinutes: estimatesByTask.get(task.id)?.estimated_minutes ?? null,
+      canEditDetails: task.created_source === 'manual' && !isTerminalTaskStatus(task.status)
+        && (task.issuer_profile_id === input.userId || input.isOrgAdmin),
+      detailsManaged: task.created_source !== 'manual',
       estimateVersion: estimatesByTask.get(task.id)?.version ?? 0,
       canEditEstimate: rows.timeEstimatesAvailable && !isTerminalTaskStatus(task.status)
         && (task.issuer_profile_id === input.userId || task.assignee_profile_id === input.userId),
@@ -1501,6 +1504,36 @@ async function setTaskRecurrence(input: TaskActionInput) {
     : 'Återkommande uppgift har stängts av.'
 }
 
+async function editTaskDetails(input: TaskActionInput) {
+  const task = await requireTask(input.orgId, asText(input.payload.taskId))
+  if (task.issuer_profile_id !== input.userId && !input.isOrgAdmin) throw new Error('TASK_DETAILS_FORBIDDEN')
+  if (task.created_source !== 'manual') throw new Error('TASK_DETAILS_MANAGED')
+  if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
+  const title = asText(input.payload.title), description = optionalText(input.payload.description), contextLabel = optionalText(input.payload.contextLabel)
+  if (!title || title.length > 500 || (description?.length ?? 0) > 20_000 || (contextLabel?.length ?? 0) > 500) throw new Error('TASK_DETAILS_INPUT_INVALID')
+  const assigneeRef = asText(input.payload.assigneeRef)
+  if (!/^(profile|contact):[0-9a-f-]{36}$/i.test(assigneeRef)) throw new Error('TASK_ASSIGNEE_REQUIRED')
+  const assignee = await resolveAssignee({ orgId: input.orgId, assigneeRef })
+  const primary = input.payload.primaryChannel, fallback = input.payload.fallbackChannel || null
+  const retainedLegacyChannel = (value: unknown, previous: string | null) => value === 'in_app' && previous === 'in_app'
+  if ((!isTaskChannel(primary) && !retainedLegacyChannel(primary, task.primary_channel)) || (fallback !== null && ((!isTaskChannel(fallback) && !retainedLegacyChannel(fallback, task.fallback_channel)) || fallback === primary))) throw new Error('TASK_DETAILS_INPUT_INVALID')
+  if (assignee.assignee_contact_id && !assignee.contactEmail) throw new Error('TASK_CONTACT_EMAIL_REQUIRED')
+  if (assignee.assignee_contact_id && (primary === 'whatsapp' || fallback === 'whatsapp') && !assignee.contactPhone) throw new Error('TASK_CONTACT_WHATSAPP_REQUIRED')
+  const dueAt = input.payload.dueAt === null ? null : parseIsoTimestamp(input.payload.dueAt, 'TASK_DUE_REQUIRED')
+  const nextFollowupAt = input.payload.nextFollowupAt === null ? null : parseIsoTimestamp(input.payload.nextFollowupAt, 'TASK_FOLLOWUP_REQUIRED')
+  const { error } = await createSupabaseAdminClient().rpc('edit_operational_task_details', {
+    p_org_id: input.orgId, p_task_id: task.id, p_actor_profile_id: input.userId, p_expected_version: requireExpectedVersion(input.payload.version),
+    p_confirm_recipient_change: input.payload.confirmRecipientChange === true,
+    p_changes: { title, description, contextLabel, dueAt, nextFollowupAt, primaryChannel: primary, fallbackChannel: fallback,
+      assigneeProfileId: assignee.assignee_profile_id, assigneeContactId: assignee.assignee_contact_id },
+  })
+  if (error) {
+    if (error.code === 'PGRST202' || error.code === '42883') throw new Error('TASK_DETAILS_SCHEMA_REQUIRED')
+    throw taskDatabaseError(error, 'TASK_DETAILS_SAVE_FAILED')
+  }
+  return 'Ändringarna har sparats i historiken. Inget mejl har skickats. Ett mottagarbyte skickas separat med Skicka uppdraget.'
+}
+
 async function dispatchTaskAssignment(input: TaskActionInput) {
   const taskId = asText(input.payload.taskId)
   if (!taskId) throw new Error('TASK_NOT_FOUND')
@@ -1512,6 +1545,11 @@ async function dispatchTaskAssignment(input: TaskActionInput) {
   if (task.due_at === null) return 'Egen uppgift utan datum sparades. Ingen automatisk uppföljning är schemalagd.'
 
   const admin = createSupabaseAdminClient()
+  const { data: reassigned, error: reassignError } = await admin.rpc('dispatch_internal_task_reassignment', {
+    p_org_id: input.orgId, p_task_id: task.id, p_actor_profile_id: input.userId,
+  })
+  if (reassignError) throw taskDatabaseError(reassignError, 'TASK_DETAILS_SCHEMA_REQUIRED')
+  if (reassigned === true) return 'Uppdraget har skickats till den nya mottagaren via dialogen. Statusen är oförändrad.'
   const { error } = await admin.rpc('finalize_operational_task_initial_dispatch', {
     p_org_id: input.orgId,
     p_task_id: task.id,
@@ -1848,6 +1886,8 @@ export async function performTaskInternalAction(input: TaskActionInput): Promise
     }
   } else if (input.action === 'archive_task') {
     notice = await archiveTask(input)
+  } else if (input.action === 'edit_task_details') {
+    notice = await editTaskDetails(input)
   } else if (input.action === 'set_recurrence') {
     notice = await setTaskRecurrence(input)
   } else if (input.action === 'set_time_estimate') {

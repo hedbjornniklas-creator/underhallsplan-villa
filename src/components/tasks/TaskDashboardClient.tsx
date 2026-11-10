@@ -45,7 +45,7 @@ import UppdragScope from './UppdragScope'
 import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
 import { compareTaskEstimates, parseTaskEstimate, taskEstimateLabel, taskHasMyBall, taskIsTimeCandidate, TASK_ESTIMATE_PRESETS } from '@/lib/tasks/timeEstimate'
 
-type FilterKey = 'all' | 'my_ball' | 'review' | 'overdue' | 'unread'
+type FilterKey = 'all' | 'active' | 'closed' | 'my_ball' | 'review' | 'overdue' | 'unread'
 type WorkspaceView = 'current' | 'action_cases' | 'supplier_invoices' | 'statistics'
 type TaskListMode = 'grouped' | 'all' | 'attention'
 type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated' | 'estimate'
@@ -77,6 +77,8 @@ type TaskGroupStats = {
 }
 
 function taskMatchesFilter(task: TaskView, filter: FilterKey, userId: string) {
+  if (filter === 'active') return !['approved', 'cancelled'].includes(task.status)
+  if (filter === 'closed') return ['approved', 'cancelled'].includes(task.status)
   if (filter === 'unread') return task.unreadMessageCount > 0
   if (filter === 'overdue') return task.risk === 'red' && !['approved', 'cancelled'].includes(task.status)
   if (filter === 'review') {
@@ -202,22 +204,25 @@ function SummaryCard({
   icon,
   tone,
   onClick,
+  active,
 }: {
   label: string
   value: number
   icon: React.ReactNode
   tone: string
   onClick: () => void
+  active: boolean
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="min-w-0 rounded-2xl border border-white/70 bg-white/90 p-4 text-left shadow-sm ring-1 ring-slate-950/5 transition hover:-translate-y-0.5 hover:shadow-md"
+      aria-pressed={active}
+      className="gizmo-task-stat min-w-0 text-left"
     >
-      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${tone}`}>{icon}</span>
-      <span className="mt-3 block text-2xl font-semibold tracking-tight text-slate-950">{value}</span>
-      <span className="mt-0.5 block truncate text-xs font-medium text-slate-600 sm:text-sm">{label}</span>
+      <span className={`inline-flex shrink-0 items-center justify-center ${tone}`}>{icon}</span>
+      <span className="text-xl font-semibold">{value}</span>
+      <span className="text-xs font-medium text-[#596368] sm:text-sm">{label}</span>
     </button>
   )
 }
@@ -446,7 +451,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     initialWorkspace?.analytics.defaultPeriod ?? '90d'
   )
   const [taskDrilldown, setTaskDrilldown] = useState<TaskDrilldown | null>(null)
-  const [filter, setFilter] = useState<FilterKey>('all')
+  const [filter, setFilter] = useState<FilterKey>('active')
   const [search, setSearch] = useState('')
   const [listMode, setListMode] = useState<TaskListMode>('grouped')
   const [timeBudgetMode, setTimeBudgetMode] = useState('all'), [customTimeBudget, setCustomTimeBudget] = useState('')
@@ -499,7 +504,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           pageSize: number
           listMode: TaskListMode
         }>
-        if (['all', 'my_ball', 'review', 'overdue', 'unread'].includes(parsed.filter ?? '')) {
+        if (['all', 'active', 'closed', 'my_ball', 'review', 'overdue', 'unread'].includes(parsed.filter ?? '')) {
           setFilter(parsed.filter as FilterKey)
         }
         if (typeof parsed.search === 'string') setSearch(parsed.search)
@@ -601,7 +606,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   const unestimatedTasks = useMemo(() => timeBudgetActive ? matchingTasks.filter(({ task }) => task.estimatedMinutes == null) : [], [matchingTasks, timeBudgetActive])
 
   const filterCounts = useMemo(() => {
-    if (!workspace) return { all: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
+    if (!workspace) return { all: 0, active: 0, closed: 0, my_ball: 0, review: 0, overdue: 0, unread: 0 }
     const candidates = (effectiveListMode === 'all' ? workspace.tasks : taskHierarchy.roots)
       .filter(task => !timeBudgetActive || (taskIsTimeCandidate(task, workspace.currentUser.id) && task.estimatedMinutes != null && timeBudget !== null && task.estimatedMinutes <= timeBudget))
     const groupFor = (task: TaskView) => effectiveListMode === 'all'
@@ -618,6 +623,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     }).length
     return {
       all: count('all'),
+      active: count('active'),
+      closed: count('closed'),
       my_ball: count('my_ball'),
       review: count('review'),
       overdue: count('overdue'),
@@ -914,49 +921,31 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 <SupplierInvoiceWorkspace cases={initialActionCases?.cases ?? []} />
               ) : (
                 <>
-                  <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-                    <SummaryCard label="Din åtgärd" value={workspace.summary.userHasBall} icon={<UserRoundCheck size={19} />} tone="bg-indigo-100 text-indigo-700" onClick={() => selectTaskFilter('my_ball')} />
-                    <SummaryCard label="Väntar på kontroll" value={workspace.summary.awaitingReview} icon={<CheckCircle2 size={19} />} tone="bg-violet-100 text-violet-700" onClick={() => selectTaskFilter('review')} />
-                    <SummaryCard label="Nya meddelanden" value={workspace.summary.unreadMessages} icon={<MessageCircle size={19} />} tone="bg-blue-100 text-blue-700" onClick={() => selectTaskFilter('unread')} />
-                    <SummaryCard label="Försenade" value={workspace.summary.overdue} icon={<AlertTriangle size={19} />} tone="bg-rose-100 text-rose-700" onClick={() => selectTaskFilter('overdue')} />
-                    <SummaryCard label="Aktiva totalt" value={workspace.summary.totalActive} icon={<CircleDot size={19} />} tone="bg-amber-100 text-amber-800" onClick={() => selectTaskFilter('all')} />
+                  <section className="gizmo-task-summary" aria-label="Filtrera uppgifter">
+                    <SummaryCard label="Din åtgärd" value={workspace.summary.userHasBall} icon={<UserRoundCheck size={18} />} tone="text-[#206961]" onClick={() => selectTaskFilter('my_ball')} active={filter === 'my_ball'} />
+                    <SummaryCard label="Att kontrollera" value={workspace.summary.awaitingReview} icon={<CheckCircle2 size={18} />} tone="text-[#206961]" onClick={() => selectTaskFilter('review')} active={filter === 'review'} />
+                    <SummaryCard label="Nya meddelanden" value={workspace.summary.unreadMessages} icon={<MessageCircle size={18} />} tone="text-[#206961]" onClick={() => selectTaskFilter('unread')} active={filter === 'unread'} />
+                    <SummaryCard label="Försenade" value={workspace.summary.overdue} icon={<AlertTriangle size={18} />} tone="text-[#A52E42]" onClick={() => selectTaskFilter('overdue')} active={filter === 'overdue'} />
+                    <SummaryCard label="Aktiva totalt" value={workspace.summary.totalActive} icon={<CircleDot size={18} />} tone="text-[#596368]" onClick={() => selectTaskFilter('active')} active={filter === 'active'} />
                   </section>
 
-                  <section ref={taskListRef} className="mt-7 scroll-mt-24">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {([
-                      ['all', 'Alla'],
-                      ['my_ball', 'Din åtgärd'],
-                      ['review', 'Att kontrollera'],
-                      ['unread', 'Olästa'],
-                      ['overdue', 'Försenade'],
-                    ] as Array<[FilterKey, string]>).map(([key, label]) => (
-                      <button
-                        type="button"
-                        key={key}
-                        onClick={() => selectTaskFilter(key)}
-                        className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold transition ${filter === key ? 'bg-slate-950 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        {label}
-                        <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[11px] ${filter === key ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                          {filterCounts[key]}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <label className="relative block w-full lg:max-w-sm">
+                  <section ref={taskListRef} className="mt-4 scroll-mt-24">
+                <div className="gizmo-task-toolbar">
+                  <label className="relative block min-w-0 flex-1">
                     <Search className="pointer-events-none absolute left-3.5 top-3 text-slate-400" size={18} />
                     <input
                       value={search}
+                      aria-label="Sök uppgifter"
                       onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Sök uppgift, projekt, uppdragsansvarig eller mottagare"
+                      placeholder="Sök uppgift, projekt eller person"
                       className="min-h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
                     />
                   </label>
-                </div>
-
-                {workspace.timeEstimatesAvailable && <div className="mt-4 flex flex-wrap items-end gap-3 border-y border-[#D5DCDD] py-3">
+                  <label className="sr-only" htmlFor="task-list-selection">Uppgiftsurval</label>
+                  <select id="task-list-selection" value={filter} onChange={event => selectTaskFilter(event.target.value as FilterKey)} className="min-h-11 rounded-md border border-[#D5DCDD] bg-white px-3 text-sm">
+                    {([['active', 'Aktiva'], ['closed', 'Avslutade'], ['all', 'Alla'], ['my_ball', 'Din åtgärd'], ['review', 'Att kontrollera'], ['unread', 'Olästa'], ['overdue', 'Försenade']] as Array<[FilterKey, string]>).map(([key, label]) => <option key={key} value={key}>{label} ({filterCounts[key]})</option>)}
+                  </select>
+                {workspace.timeEstimatesAvailable && <div className="flex flex-wrap items-center gap-2">
                   <label className="text-sm font-medium text-slate-700">Jag har
                     <select aria-label="Jag har tid" value={timeBudgetMode} onChange={event => { setTimeBudgetMode(event.target.value); if (event.target.value !== 'all') { setSortField('estimate'); setSortDirection('asc') } }}
                       className="ml-2 min-h-10 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
@@ -970,34 +959,20 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   {timeBudgetActive && <span className="text-sm text-[#596368]">Bollen hos mig</span>}
                   {invalidTimeBudget && <p role="alert" className="w-full text-sm text-[#A52E42]">Ange 1–10080 hela minuter.</p>}
                 </div>}
+                <details className="gizmo-task-options">
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden"><ListFilter size={17} aria-hidden="true" /> Fler filter</summary>
+                  <div className="gizmo-task-options-panel">
                 <label className="mt-3 block text-sm md:hidden">Sortera
                   <select aria-label="Sortering" value={`${sortField}:${sortDirection}`} onChange={event => { const [field, direction] = event.target.value.split(':'); setSortField(field as SortField); setSortDirection(direction as SortDirection) }} className="ml-2 min-h-10 max-w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm">
                     {([['due:asc','Slutdatum, tidigast'],['due:desc','Slutdatum, senast'],['estimate:asc','Tidsåtgång, kortast'],['estimate:desc','Tidsåtgång, längst'],['title:asc','Uppgift A–Ö'],['title:desc','Uppgift Ö–A'],['updated:desc','Senast uppdaterad'],['updated:asc','Äldst uppdaterad'],['status:asc','Status, stigande'],['status:desc','Status, fallande'],['assignee:asc','Mottagare A–Ö'],['assignee:desc','Mottagare Ö–A']] as const).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
-                <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 sm:w-auto" aria-label="Välj listvisning">
-                    {([
-                      ['grouped', 'Grupperad'],
-                      ['all', 'Alla uppgifter'],
-                      ['attention', 'Kräver uppmärksamhet'],
-                    ] as Array<[TaskListMode, string]>).map(([mode, label]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        aria-pressed={effectiveListMode === mode}
-                        disabled={timeBudgetActive}
-                        onClick={() => setListMode(mode)}
-                        className={`min-h-10 flex-1 rounded-lg px-3 text-xs font-semibold transition sm:flex-none ${
-                          effectiveListMode === mode
-                            ? 'bg-white text-slate-950 shadow-sm'
-                            : 'text-slate-600 hover:text-slate-950'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex flex-col gap-3">
+                  <label className="flex flex-wrap items-center gap-2 text-sm">Visning
+                    <select aria-label="Välj listvisning" value={effectiveListMode} disabled={timeBudgetActive} onChange={event => setListMode(event.target.value as TaskListMode)} className="min-h-11 rounded-md border border-[#D5DCDD] bg-white px-3">
+                      <option value="grouped">Grupperad</option><option value="all">Alla uppgifter</option><option value="attention">Kräver uppmärksamhet</option>
+                    </select>
+                  </label>
                   <p className="px-2 text-xs leading-5 text-slate-500">
                     {effectiveListMode === 'grouped'
                       ? 'Huvuduppdrag visas först. Öppna en grupp för att se underuppgifterna.'
@@ -1008,9 +983,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500">
-                  <span className="inline-flex items-center gap-2">
-                    <ListFilter size={15} /> {visibleTasks.length} {groupedList ? 'huvuduppdrag' : 'uppgifter'} visas
-                  </span>
                   <label className="inline-flex items-center gap-2">
                     Rader per sida
                     <select
@@ -1022,6 +994,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                     </select>
                   </label>
                 </div>
+                  </div>
+                </details>
+                </div>
+                <p className="mt-3 text-xs font-medium text-[#596368]" role="status">{visibleTasks.length} {groupedList ? 'huvuduppdrag' : 'uppgifter'} visas · {effectiveListMode === 'grouped' ? 'Grupperad vy' : effectiveListMode === 'attention' ? 'Kräver uppmärksamhet' : 'Alla uppgifter'}{groupedList ? ' · Underuppgifter ingår i sammanfattningen ovan' : ''}</p>
 
                 {taskDrilldown ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2" role="status">
