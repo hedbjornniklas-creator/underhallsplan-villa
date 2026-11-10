@@ -28,9 +28,22 @@ Gizmos befintliga tokens i `src/components/tasks/uppdrag-theme.css` behålls.
 2. **Projektarbetsyta:** ett projekt, ett huvud och en gemensam navigering.
 3. **Åtgärd:** sidopanel för omfattning, underlag och intern kalkyl.
 
-Projekt är standardvyn på /uppdrag. Aktuellt och Statistik behålls som
+Projekt är standardvyn på /uppdrag. Att göra och Statistik behålls som
 separata tvärgående vyer. Länkar till en specifik befintlig uppgift öppnar fortsatt
-uppgiften i Aktuellt; uppgifter och projekt slås inte ihop i databasen.
+uppgiften i Att göra; uppgifter och projekt slås inte ihop i databasen.
+
+Beslut 2026-11-10: Aktuellt byter visningsnamn till **Att göra**, både i
+fliken och sidrubriken. Den tekniska vyn `current` och befintliga uppgiftslänkar
+behålls. AI-avsnittet för förslag på nästa steg tas bort ur uppgiftspanelen;
+vanliga underuppgifter, historik och tidigare sparade data behålls.
+**Radera uppdrag** flyttas från rullinnehållet till samma fasta nederkant som
+**Klarmarkera manuellt** och **Avbryt uppdrag**. Kontrollerna radbryts på smal
+skärm. Befintliga behörigheter, spärr för underuppgifter och raderingsbekräftelse
+behålls, även när ett avslutat uppdrag får raderas. Avtal och kalkyl ändras inte.
+
+Verifiering: `node --experimental-strip-types --test test/task-workspace-cleanup.test.mjs`
+och `node scripts/test-task-manual-completion-ui.mjs --test-actions` använder
+bara fiktiva uppgifter. Förhandsvisning: samma skript med `--actions`.
 
 Projektnavigering: Översikt, Projektarbete, Offert, Avtal, Val och tillval,
 Betalning och fakturering, Tidsplan, Frågor och beslut, Bilder och filer, Delning. Registerflikarna ligger

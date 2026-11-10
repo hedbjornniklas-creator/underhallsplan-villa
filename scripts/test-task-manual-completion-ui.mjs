@@ -7,15 +7,17 @@ import postcss from 'postcss'
 import tailwind from '@tailwindcss/postcss'
 
 const require = createRequire(import.meta.url), { webpack } = require('next/dist/compiled/webpack/webpack')
-const output = resolve('tmp/task-manual-completion-ui')
+const testActions = process.argv.includes('--test-actions'), actionsPreview = testActions || process.argv.includes('--actions')
+const entry = actionsPreview ? 'test/fixtures/task-detail-actions-view.tsx' : 'test/fixtures/task-manual-completion-view.tsx'
+const output = resolve(actionsPreview ? 'tmp/task-detail-actions-ui' : 'tmp/task-manual-completion-ui')
 await mkdir(output, { recursive: true })
 await new Promise((done, reject) => webpack({ mode: 'development', devtool: false,
-  entry: resolve('test/fixtures/task-manual-completion-view.tsx'),
+  entry: resolve(entry),
   plugins: [new webpack.DefinePlugin({ 'process.env': JSON.stringify({ NODE_ENV: 'development' }) })],
   output: { path: output, filename: 'view.js' }, resolve: { extensions: ['.tsx', '.ts', '.js'], alias: { '@': resolve('src') } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }, { test: /\.css$/, type: 'asset/source' }] },
 }, (error, stats) => error || stats.hasErrors() ? reject(error ?? Error(stats.toString('errors-only'))) : done()))
-const globals = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../../test/fixtures/task-manual-completion-view.tsx";')
+const globals = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', `@import "tailwindcss" source(none);\n@source "../components/tasks";\n@source "../../${entry}";`)
 const { css } = await postcss([tailwind({ base: resolve('src') })]).process(globals, { from: resolve('src/app/globals.css') })
 const theme = await readFile('src/components/tasks/uppdrag-theme.css', 'utf8')
 await writeFile(resolve(output, 'style.css'), css + theme)
@@ -26,4 +28,12 @@ const server = createServer(async (request, response) => {
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
   response.end('<!doctype html><html lang="sv"><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Fiktivt test av klarmarkering</title><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script src="/view.js"></script></body></html>')
 })
-if (!process.argv.includes('--build-only')) server.listen(0, '127.0.0.1', () => console.log(`TEST_URL=http://127.0.0.1:${server.address().port}`))
+if (!process.argv.includes('--build-only')) {
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok))
+  const base = `http://127.0.0.1:${server.address().port}`
+  console.log(`TEST_URL=${base}`)
+  if (testActions) {
+    try { const { testTaskDetailActions } = await import('../test/helpers/task-detail-actions-browser.mjs'); await testTaskDetailActions(base, output) }
+    finally { await new Promise(ok => server.close(ok)) }
+  }
+}

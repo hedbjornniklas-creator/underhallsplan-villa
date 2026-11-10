@@ -27,7 +27,6 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import type {
   TaskActionResponse,
   TaskAnalyticsPeriod,
-  TaskAiSuggestionView,
   TaskView,
   TaskWorkspace,
 } from '@/lib/tasks/contracts'
@@ -468,7 +467,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [composerOpen, setComposerOpen] = useState(false)
   const [composerParentId, setComposerParentId] = useState<string | null>(null)
-  const [composerSuggestion, setComposerSuggestion] = useState<TaskAiSuggestionView | null>(null)
 
   const selectedTask = workspace?.tasks.find((task) => task.id === selectedTaskId) ?? null
   const composerParent = workspace?.tasks.find((task) => task.id === composerParentId) ?? null
@@ -812,12 +810,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     return { uploaded, failed }
   }
 
-  const openComposer = (
-    parent: TaskView | null = null,
-    suggestion: TaskAiSuggestionView | null = null
-  ) => {
+  const openComposer = (parent: TaskView | null = null) => {
     setComposerParentId(parent?.id ?? null)
-    setComposerSuggestion(suggestion)
     setComposerOpen(true)
   }
 
@@ -829,7 +823,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="gizmo-eyebrow">Gizmo</p>
-              <h1>{workspaceView === 'action_cases' ? 'Projekt' : workspaceView === 'statistics' ? 'Statistik' : workspaceView === 'supplier_invoices' ? 'Leverantörsfakturor' : 'Aktuellt'}</h1>
+              <h1>{workspaceView === 'action_cases' ? 'Projekt' : workspaceView === 'statistics' ? 'Statistik' : workspaceView === 'supplier_invoices' ? 'Leverantörsfakturor' : 'Att göra'}</h1>
             </div>
             <button
               type="button"
@@ -885,7 +879,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   onClick={() => setWorkspaceView('current')}
                   className={`min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold transition sm:flex-none ${workspaceView === 'current' ? 'bg-slate-950 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
                 >
-                  Aktuellt
+                  Att göra
                 </button>
                 <button
                   type="button"
@@ -1206,9 +1200,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 }}
                 onUpload={uploadEvidence}
                 onUpdateTranscript={updateTranscript}
-                onCreateSubtask={(task, suggestion) => {
+                onCreateSubtask={(task) => {
                   setSelectedTaskId(null)
-                  openComposer(task, suggestion ?? null)
+                  openComposer(task)
                 }}
                 onSelectTask={setSelectedTaskId}
                 onReload={async () => { if (!await refresh()) throw new Error('Uppgiften kunde inte hämtas.') }}
@@ -1216,10 +1210,10 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
             ) : null}
             {composerOpen ? (
               <TaskComposerSheet
-                key={`${composerParentId ?? 'root'}:${composerSuggestion?.id ?? 'manual'}`}
+                key={`${composerParentId ?? 'root'}:manual`}
                 open
                 parentTask={composerParent}
-                suggestion={composerSuggestion}
+                suggestion={null}
                 people={workspace.people}
                 currentUserId={workspace.currentUser.id}
                 timeZone={workspaceTimeZone}
@@ -1227,7 +1221,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 busy={busy}
                 onClose={() => {
                   setComposerOpen(false)
-                  setComposerSuggestion(null)
                 }}
                 onCreate={async (payload) => {
                   const { attachments, aiSubtasks, ...taskPayload } = payload
@@ -1250,7 +1243,6 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   }
                   setComposerOpen(false)
                   setComposerParentId(null)
-                  setComposerSuggestion(null)
 
                   let latestResult = created
                   const createdTaskIds = [createdTaskId]

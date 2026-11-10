@@ -28,7 +28,6 @@ import {
   XCircle,
 } from 'lucide-react'
 import type {
-  TaskAiSuggestionView,
   TaskStatus,
   TaskRecurrenceInterval,
   TaskView,
@@ -51,7 +50,6 @@ import TaskManualCompletionDialog from './TaskManualCompletionDialog'
 import TaskTimeEstimateEditor from './TaskTimeEstimateEditor'
 import TaskDueDateEditor from './TaskDueDateEditor'
 import { canManuallyCompleteTask, completionEvidenceSatisfied } from '@/lib/tasks/manualCompletion'
-import { SigneCheckIcon } from './SigneMark'
 import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
 
 type Props = {
@@ -62,7 +60,7 @@ type Props = {
   onAction: (action: string, payload: Record<string, unknown>) => Promise<void>
   onUpload: (taskId: string, formData: FormData, transcribe?: boolean) => Promise<void>
   onUpdateTranscript: (taskId: string, attachmentId: string, transcript: string) => Promise<void>
-  onCreateSubtask: (task: TaskView, suggestion?: TaskAiSuggestionView) => void
+  onCreateSubtask: (task: TaskView) => void
   onSelectTask: (taskId: string) => void
   onReload?: () => Promise<void>
 }
@@ -120,9 +118,6 @@ export default function TaskDetailSheet({
   const [dropUploadBusy, setDropUploadBusy] = useState(false)
   const [recording, setRecording] = useState(false)
   const [mediaError, setMediaError] = useState<string | null>(null)
-  const [rejectingSuggestionId, setRejectingSuggestionId] = useState<string | null>(null)
-  const [suggestionRejectReason, setSuggestionRejectReason] = useState('')
-  const [suggestionFormError, setSuggestionFormError] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [manualCompletionOpen, setManualCompletionOpen] = useState(false)
   const [estimateDirty, setEstimateDirty] = useState(false)
@@ -256,6 +251,7 @@ export default function TaskDetailSheet({
   }))
   const canActAsAssignee = task.assignee.kind === 'profile' && task.assignee.id === currentId
   const canActAsIssuer = workspace.currentUser.isOrgAdmin || isTaskIssuer
+  const isActive = !['approved', 'cancelled'].includes(task.status)
   const conversationPartnerName = canActAsAssignee ? task.issuerName : task.assignee.name
   const canCreateChild =
     task.dueAt !== null &&
@@ -263,11 +259,6 @@ export default function TaskDetailSheet({
     task.depth < workspace.limits.maxDepth &&
     task.openChildCount < workspace.limits.maxOpenChildren &&
     (canActAsAssignee || canActAsIssuer)
-  const canRequestSigneSuggestions =
-    task.dueAt !== null &&
-    canActAsIssuer &&
-    !['approved', 'cancelled'].includes(task.status) &&
-    task.depth < workspace.limits.maxDepth
   const prestartRequirements = task.requirements.filter((requirement) =>
     ['written_quote', 'written_client_approval', 'warranty_basis'].includes(requirement.key)
   )
@@ -343,22 +334,6 @@ export default function TaskDetailSheet({
     if (!comment.trim()) return
     await onAction('comment', { taskId: task.id, message: comment.trim() })
     setComment('')
-  }
-
-  const rejectSuggestion = async (suggestionId: string) => {
-    const reason = suggestionRejectReason.trim()
-    if (reason.length < 3) {
-      setSuggestionFormError('Beskriv kort varför förslaget inte ska användas.')
-      return
-    }
-    setSuggestionFormError(null)
-    await onAction('reject_signe_suggestion', {
-      taskId: task.id,
-      suggestionId,
-      reason,
-    })
-    setRejectingSuggestionId(null)
-    setSuggestionRejectReason('')
   }
 
   const archiveTask = async () => {
@@ -489,7 +464,7 @@ export default function TaskDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-detail-title"
-        className="relative flex max-h-[95dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl lg:h-full lg:max-h-none lg:max-w-2xl lg:rounded-none lg:rounded-l-3xl"
+        className="relative flex h-[95dvh] max-h-[95dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-slate-50 shadow-2xl lg:h-full lg:max-h-none lg:max-w-2xl lg:rounded-none lg:rounded-l-3xl"
       >
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
           <div className="min-w-0">
@@ -516,7 +491,7 @@ export default function TaskDetailSheet({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-[calc(7rem+env(safe-area-inset-bottom))] pt-5 sm:px-6 lg:pb-8">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-5 sm:px-6" data-task-detail-scroll>
           {task.description ? <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">{task.description}</p> : null}
 
           <dl className="mt-5 grid grid-cols-2 gap-3">
@@ -817,137 +792,6 @@ export default function TaskDetailSheet({
             </section>
           ) : null}
 
-          <section className="mt-6 rounded-2xl border border-violet-200 bg-violet-50/70 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-violet-950">
-                  <SigneCheckIcon size={19} /> Gizmo · förslag på nästa steg
-                </h3>
-                <p className="mt-1 text-xs leading-5 text-violet-800">
-                  Gizmo kan föreslå högst tre underuppgifter. Förslagen skapar inget och skickar inget förrän du själv väljer hur du vill gå vidare.
-                </p>
-              </div>
-              {canRequestSigneSuggestions ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => onAction('request_signe_suggestions', { taskId: task.id })}
-                  className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-violet-700 px-4 text-sm font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
-                >
-                  <SigneCheckIcon size={18} /> Be Gizmo föreslå nästa steg
-                </button>
-              ) : null}
-            </div>
-
-            {task.aiSuggestions.length > 0 ? (
-              <div className="mt-4 space-y-3">
-                {task.aiSuggestions.map((suggestion) => {
-                  const rejecting = rejectingSuggestionId === suggestion.id
-                  return (
-                    <article key={suggestion.id} className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-                      <div className="flex items-start gap-3">
-                        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                          <SigneCheckIcon size={19} />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
-                            Väntande AI-förslag · ingen uppgift skapad
-                          </p>
-                          <h4 className="mt-1 text-sm font-semibold text-slate-950">{suggestion.title}</h4>
-                          {suggestion.description ? (
-                            <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-slate-700">
-                              {suggestion.description}
-                            </p>
-                          ) : null}
-                          {suggestion.rationale ? (
-                            <p className="mt-2 rounded-xl bg-violet-50 px-3 py-2 text-xs leading-5 text-violet-900">
-                              Varför Gizmo föreslår detta: {suggestion.rationale}
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      {canActAsIssuer ? (
-                        rejecting ? (
-                          <div className="mt-3 border-t border-violet-100 pt-3">
-                            <label className="block text-xs font-semibold text-slate-700">
-                              Varför ska förslaget avvisas?
-                              <textarea
-                                value={suggestionRejectReason}
-                                onChange={(event) => {
-                                  setSuggestionRejectReason(event.target.value)
-                                  setSuggestionFormError(null)
-                                }}
-                                rows={2}
-                                maxLength={1000}
-                                className={`${smallInput} mt-1.5`}
-                                placeholder="Exempel: detta ingår redan i ett befintligt underuppdrag."
-                              />
-                            </label>
-                            {suggestionFormError ? (
-                              <p className="mt-1.5 text-xs font-medium text-red-700">{suggestionFormError}</p>
-                            ) : null}
-                            <div className="mt-3 flex gap-2">
-                              <button
-                                type="button"
-                                disabled={busy || suggestionRejectReason.trim().length < 3}
-                                onClick={() => void rejectSuggestion(suggestion.id)}
-                                className="min-h-10 rounded-xl bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                              >
-                                Avvisa med anledning
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => {
-                                  setRejectingSuggestionId(null)
-                                  setSuggestionRejectReason('')
-                                  setSuggestionFormError(null)
-                                }}
-                                className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700"
-                              >
-                                Avbryt
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-3 flex flex-wrap gap-2 border-t border-violet-100 pt-3">
-                            {canCreateChild ? (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => { if (discardEstimate()) onCreateSubtask(task, suggestion) }}
-                                className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-violet-700 px-3 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
-                              >
-                                <Plus size={15} /> Skapa underuppgift manuellt
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => {
-                                setRejectingSuggestionId(suggestion.id)
-                                setSuggestionRejectReason('')
-                                setSuggestionFormError(null)
-                              }}
-                              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                            >
-                              <XCircle size={15} /> Avvisa
-                            </button>
-                          </div>
-                        )
-                      ) : null}
-                    </article>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="mt-3 rounded-xl border border-dashed border-violet-200 bg-white/60 px-4 py-3 text-xs leading-5 text-violet-800">
-                Inga väntande Gizmo-förslag för uppgiften.
-              </p>
-            )}
-          </section>
-
           <section className="mt-6">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-950">Underuppgifter</h3>
@@ -1223,42 +1067,12 @@ export default function TaskDetailSheet({
             <TaskHistoryDisclosure events={task.events} />
           </div>
 
-          {task.canDelete ? (
-            <section className="mt-8 rounded-2xl border border-rose-200 bg-rose-50 p-4 sm:p-5" aria-labelledby="task-delete-heading">
-              <div className="flex items-start gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-rose-700 ring-1 ring-rose-200">
-                  <Trash2 size={18} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h3 id="task-delete-heading" className="text-sm font-semibold text-rose-950">Radera uppdrag</h3>
-                  <p className="mt-1 text-xs leading-5 text-rose-900">
-                    {task.childCount > 0
-                      ? 'Underuppgifterna måste raderas först. Därefter kan du radera detta uppdrag.'
-                      : 'Uppdraget tas bort från arbetsvyerna. Historik och bilagor sparas för spårbarhet.'}
-                  </p>
-                </div>
-              </div>
-              <button
-                ref={deleteTriggerButtonRef}
-                type="button"
-                disabled={deleteBusy || task.childCount > 0}
-                onClick={() => {
-                  setDeleteError(null)
-                  setDeleteDialogOpen(true)
-                }}
-                title={task.childCount > 0 ? 'Radera underuppgifterna först.' : 'Radera uppdrag'}
-                className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-800 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Trash2 size={18} /> Radera uppdrag
-              </button>
-            </section>
-          ) : null}
         </div>
 
-        {!['approved', 'cancelled'].includes(task.status) ? (
-          <footer className="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6 lg:static lg:shrink-0">
-            {panel !== 'none' ? (
-              <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        {isActive || task.canDelete ? (
+          <footer aria-label="Uppdragsåtgärder" className="flex min-h-0 shrink flex-col border-t border-slate-200 bg-white px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 sm:px-6">
+            {isActive && panel !== 'none' ? (
+              <div className="mb-3 min-h-0 max-h-[35dvh] shrink overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
                 <label className="block text-xs font-semibold text-slate-700">
                   {panel === 'waiting'
                     ? 'Vad väntar uppgiften på?'
@@ -1337,8 +1151,8 @@ export default function TaskDetailSheet({
               </p>
             ) : null}
 
-            <div className="flex gap-2 overflow-x-auto">
-              {canManuallyCompleteTask(task, currentId) ? (
+            <div className="flex shrink-0 flex-wrap gap-2">
+              {isActive && canManuallyCompleteTask(task, currentId) ? (
                 <button type="button" disabled={busy} onClick={() => setManualCompletionOpen(true)}
                   className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
                   <CheckCircle2 size={17} /> Klarmarkera manuellt
@@ -1402,7 +1216,7 @@ export default function TaskDetailSheet({
                   </button>
                 </>
               ) : null}
-              {canCreateChild ? (
+              {isActive && canCreateChild ? (
                 <button
                   type="button"
                   disabled={busy}
@@ -1412,7 +1226,7 @@ export default function TaskDetailSheet({
                   <Plus size={17} /> Underuppgift
                 </button>
               ) : null}
-              {canActAsIssuer ? (
+              {isActive && canActAsIssuer ? (
                 <button
                   type="button"
                   disabled={busy || task.openChildCount > 0}
@@ -1423,7 +1237,24 @@ export default function TaskDetailSheet({
                   <XCircle size={17} /> Avbryt uppdrag
                 </button>
               ) : null}
+              {task.canDelete ? (
+                <button
+                  ref={deleteTriggerButtonRef}
+                  type="button"
+                  disabled={deleteBusy || task.childCount > 0}
+                  aria-describedby={task.childCount > 0 ? 'task-delete-blocked' : undefined}
+                  onClick={() => {
+                    setDeleteError(null)
+                    setDeleteDialogOpen(true)
+                  }}
+                  title={task.childCount > 0 ? 'Radera underuppgifterna först.' : 'Radera uppdrag'}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-800 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Trash2 size={17} /> Radera uppdrag
+                </button>
+              ) : null}
             </div>
+            {task.canDelete && task.childCount > 0 ? <p id="task-delete-blocked" className="mt-2 shrink-0 text-xs text-slate-600">Radera underuppgifterna först.</p> : null}
           </footer>
         ) : null}
       </section>
