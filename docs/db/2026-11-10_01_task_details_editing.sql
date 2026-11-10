@@ -21,6 +21,10 @@ begin
     and (t.issuer_profile_id=p_actor_profile_id or role='admin')) then raise exception 'TASK_DETAILS_FORBIDDEN'; end if;
   if not public.task_profile_has_module_access(p_org_id,p_actor_profile_id) then raise exception 'TASK_DETAILS_FORBIDDEN'; end if;
   if t.created_source <> 'manual' then raise exception 'TASK_DETAILS_MANAGED'; end if;
+  -- Older project questions were created as manual operational tasks.
+  if to_regclass('public.action_case_question_events') is not null then
+    if exists(select 1 from public.action_case_question_events where org_id=p_org_id and task_id=t.id) then raise exception 'TASK_DETAILS_MANAGED'; end if;
+  end if;
   if t.status in ('approved','cancelled') then raise exception 'TASK_TERMINAL'; end if;
   if p_expected_version is null or p_expected_version < 1 then raise exception 'TASK_VERSION_REQUIRED'; end if;
   if t.version <> p_expected_version then raise exception 'TASK_VERSION_CONFLICT'; end if;
@@ -105,7 +109,9 @@ begin
   if exists(select 1 from public.task_events where task_id=t.id and event_type='comment' and metadata->>'reassignmentEventId'=change_event.id::text) then return true; end if;
   if not exists(select 1 from public.task_followup_rules where task_id=t.id and initial_dispatch_pending) then return false; end if;
   select coalesce(nullif(btrim(full_name),''),email,'Uppdragsansvarig') into actor_name_value from public.profiles where id=p_actor_profile_id;
-  update public.task_followup_rules set initial_dispatch_pending=false,is_active=(t.due_at is not null) where task_id=t.id;
+  -- Reuse the normal release RPC so follow-up is queued again after the save
+  -- cancelled jobs belonging to the previous recipient.
+  perform public.finalize_operational_task_initial_dispatch(p_org_id,t.id,p_actor_profile_id);
   insert into public.task_events(org_id,task_id,event_type,actor_type,actor_profile_id,actor_name,message,metadata)
     values(p_org_id,t.id,'comment','profile',p_actor_profile_id,actor_name_value,
       'Du har tilldelats uppdraget ”'||t.title||'”. Uppgiftens befintliga status är oförändrad. Läs beskrivningen och återkom här i dialogen.',

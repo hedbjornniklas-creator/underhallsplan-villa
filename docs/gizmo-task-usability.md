@@ -58,6 +58,9 @@ kan redigera en oppen, manuellt skapad uppgifts rubrik, beskrivning, sammanhang,
 mottagare, slutdatum, uppfoljning och kanaler. Tidsuppskattning och aterkomst
 har kvar sina egna befintliga redigerare. Avslutade uppgifter ateroppnas inte.
 Automatiskt kopplade uppgifter andras i sin ursprungsfunktion, inte har.
+Detta styrs ocksa av den faktiska fragelankningen, eftersom aldre projektfragor
+kan vara lagrade med created_source=manual. Kopplingen kontrolleras i bade
+listans behorigheter och den atomiska databasfunktionen.
 
 - Spara ar uttryckligt. Det skickar inget mejl eller bakgrundsutskick.
 - Mottagarbyte kravs bekraftat. Alla gamla personliga lankar, portalgrant och

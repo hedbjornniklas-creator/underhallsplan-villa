@@ -20,6 +20,7 @@ before(async () => {
     create table task_recipient_portal_grants(recipient_identity_id uuid,org_id uuid,contact_id uuid,task_id uuid,grant_role text,revoked_at timestamptz,revocation_reason text,granted_at timestamptz default now(),updated_at timestamptz,unique(task_id,recipient_identity_id,contact_id));
     create table task_recipient_activation_tokens(task_id uuid,consumed_at timestamptz,revoked_at timestamptz);
     create table task_recurrence_rules(task_id uuid,is_active boolean);
+    create table action_case_question_events(org_id uuid,task_id uuid);
     create function task_profile_has_module_access(uuid,uuid) returns boolean language sql as $$select exists(select 1 from org_members where org_id=$1 and profile_id=$2 and is_active and module_access)$$;`)
   for (const name of ['operational_tasks', 'task_events', 'task_followup_rules', 'task_message_deliveries', 'task_automation_jobs', 'task_deadline_change_requests']) await db.exec(table(name))
   await db.exec("alter table task_message_deliveries drop constraint task_message_deliveries_status_check;alter table task_message_deliveries add constraint task_message_deliveries_status_check check(status in ('queued','sending','sent','delivered','read','replied','failed','cancelled','ambiguous'));")
@@ -28,6 +29,7 @@ before(async () => {
   await db.exec(fn(foundation, 'operational_task_set_updated_at_and_version'))
   await db.exec(fn(foundation, 'touch_operational_task_from_event'))
   await db.exec(fn(identities, 'sync_task_recipient_grant_for_task'))
+  await db.exec(fn(sql('2026-08-20_02_operational_task_initial_attachments'), 'finalize_operational_task_initial_dispatch'))
   await db.exec(sql('2026-10-30_02_undated_personal_tasks'))
   await db.exec(`create trigger real_version before update on operational_tasks for each row execute function operational_task_set_updated_at_and_version();
     create trigger real_event after insert on task_events for each row execute function touch_operational_task_from_event();
@@ -78,6 +80,8 @@ test('internal reassignment notifies only after explicit send, retries are idemp
   assert.equal(messages.length, 1); assert.ok(messages[0].metadata.reassignmentEventId)
   const latest = await read(t.id); assert.equal(latest.status, 'in_progress'); assert.equal(latest.version, u.version)
   assert.equal((await db.query('select initial_dispatch_pending from task_followup_rules where task_id=$1', [t.id])).rows[0].initial_dispatch_pending, false)
+  assert.equal((await db.query('select is_active from task_followup_rules where task_id=$1', [t.id])).rows[0].is_active, true)
+  assert.equal((await db.query("select count(*) n from task_automation_jobs where task_id=$1 and job_type='evaluate_followup' and status='queued'", [t.id])).rows[0].n, 1)
 })
 test('stale writes, wrong tenant, non-issuer, managed/closed tasks and invalid schedules are rejected', async () => {
   const t = await create()
@@ -141,4 +145,12 @@ test('an in-flight or uncertain delivery cannot be cancelled by a recipient chan
   await db.query("update task_message_deliveries set status='ambiguous' where task_id=$1", [t.id])
   await assert.rejects(edit(t, { assigneeProfileId: other }, true), /DELIVERY_PENDING/)
   await db.exec('alter table task_message_deliveries enable trigger all')
+})
+
+test('legacy linked questions remain origin-managed even when created_source is manual', async () => {
+  const t = await create(true)
+  await db.query('insert into action_case_question_events values($1,$2)', [org,t.id])
+  await assert.rejects(edit(t, { title: 'Fel vy' }), /TASK_DETAILS_MANAGED/)
+  await assert.rejects(edit(t, { assigneeContactId: contact2 }, true), /TASK_DETAILS_MANAGED/)
+  assert.deepEqual(await read(t.id), t)
 })

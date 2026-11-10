@@ -27,10 +27,13 @@ test('details API enforces same origin and trusted actor, never sending backgrou
   assert.equal(calls[0].userId, 'trusted'); assert.equal(background, 0)
 })
 test('editor sends a whitelisted snapshot/version to the audited RPC, not client actor, status, costs or source', async () => {
-  const calls = []
+  const calls = []; let linked = false
   const row = { id: 'task', org_id: 'org', issuer_profile_id: 'trusted', status: 'in_progress', created_source: 'manual', primary_channel: 'email', fallback_channel: null }
   const admin = { from(table) {
-    const query = new Proxy({}, { get(_, method) { return method === 'maybeSingle' ? async () => ({ data: table === 'operational_tasks' ? row : { profile_id: person } }) : () => query } })
+    const query = new Proxy({}, { get(_, method) {
+      if (method === 'then') return resolve => resolve({ data: table === 'action_case_question_events' && linked ? [{ task_id: 'task' }] : [], error: null })
+      return method === 'maybeSingle' ? async () => ({ data: table === 'operational_tasks' ? row : { profile_id: person } }) : () => query
+    } })
     return query
   }, async rpc(name, args) { calls.push({ name, args }); return { error: null } } }
   const server = load('src/lib/tasks/server.ts', {
@@ -45,6 +48,9 @@ test('editor sends a whitelisted snapshot/version to the audited RPC, not client
   assert.deepEqual(Object.keys(args.p_changes).sort(), ['title','description','contextLabel','dueAt','nextFollowupAt','primaryChannel','fallbackChannel','assigneeProfileId','assigneeContactId'].sort())
   assert.equal(args.p_changes.title, 'Ny rubrik'); assert.equal(args.p_changes.dueAt, payload.dueAt)
   await assert.rejects(server.editTaskDetails({ orgId: 'org', userId: 'someone-else', payload }), /FORBIDDEN/)
+  linked = true
+  await assert.rejects(server.editTaskDetails({ orgId: 'org', userId: 'trusted', payload }), /MANAGED/)
+  linked = false
   row.created_source = 'system'
   await assert.rejects(server.editTaskDetails({ orgId: 'org', userId: 'trusted', payload }), /MANAGED/)
   assert.equal(calls.length, 1)
@@ -69,4 +75,23 @@ test('reassignment starts a new reminder history without destroying old audit me
   reassignment = []
   assert.equal((await loadTaskHistory(admin, task)).reassigned, false)
   assert.match(read('src/lib/tasks/automation.ts'), /assignedAt: history.reassigned \? null : task.created_at/)
+})
+
+test('managed lookup uses real question links scoped to the loaded organization and task IDs, failing closed on query errors', async () => {
+  const calls = []; let failure = null
+  const admin = { from(table) {
+    calls.push(['from',table])
+    const query = new Proxy({}, { get(_, method) {
+      if (method === 'then') return resolve => resolve({ data: failure ? null : [{ task_id: 'linked' }], error: failure })
+      return (...args) => { calls.push([method,...args]); return query }
+    } }); return query
+  } }
+  const { loadManagedTaskIds } = load('src/lib/tasks/server.ts', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './domain': domain }, '\nexport { loadManagedTaskIds };')
+  assert.equal((await loadManagedTaskIds('org',[])).size,0); assert.equal(calls.length,0)
+  assert.deepEqual([...(await loadManagedTaskIds('org',['linked','manual']))],['linked'])
+  assert.ok(calls.some(call => call[0] === 'eq' && call[1] === 'org_id' && call[2] === 'org'))
+  assert.ok(calls.some(call => call[0] === 'in' && call[1] === 'task_id' && call[2].join(',') === 'linked,manual'))
+  failure = { code:'57014' }; await assert.rejects(loadManagedTaskIds('org',['linked']),/SCHEMA_REQUIRED/)
+  failure = { code:'42P01' }; assert.equal((await loadManagedTaskIds('org',['manual'])).size,0)
+  assert.match(read('src/lib/tasks/server.ts'), /canEditDetails: task.created_source === 'manual' && !rows.managedTaskIds.has\(task.id\)/)
 })

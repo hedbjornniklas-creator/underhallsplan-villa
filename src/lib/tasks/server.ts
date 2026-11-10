@@ -464,6 +464,14 @@ function requirementTemplates(kind: TaskKind, evidence: readonly TaskCompletionE
   return requirements
 }
 
+async function loadManagedTaskIds(orgId: string, taskIds: string[]) {
+  if (!taskIds.length) return new Set<string>()
+  const { data, error } = await createSupabaseAdminClient().from('action_case_question_events')
+    .select('task_id').eq('org_id', orgId).in('task_id', taskIds)
+  if (error && !['42P01', 'PGRST205'].includes(error.code)) throw new Error('TASKS_SCHEMA_REQUIRED')
+  return new Set<string>((data ?? []).map(row => String(row.task_id)))
+}
+
 async function loadRows(orgId: string, directoryOnly = false) {
   const admin = createSupabaseAdminClient()
   const [taskResult, contactResult, memberResult, settingsResult] = await Promise.all([
@@ -500,6 +508,7 @@ async function loadRows(orgId: string, directoryOnly = false) {
   if (estimateResult.error && !['42P01', 'PGRST205', 'PGRST204'].includes(estimateResult.error.code)) throw new Error('TASK_ESTIMATE_READ_FAILED')
 
   const tasks = (taskResult.data ?? []) as OperationalTaskRow[]
+  const managedTaskIds = await loadManagedTaskIds(orgId, tasks.map(task => task.id))
   const contacts = (contactResult.data ?? []) as ContactRow[]
   const memberProfileIds = (memberResult.data ?? []).map((row) => String(row.profile_id))
   const taskModuleProfileIdsPromise = getInternalTaskModuleAccessProfileIds({
@@ -616,6 +625,7 @@ async function loadRows(orgId: string, directoryOnly = false) {
     timeEstimatesAvailable,
     timeEstimates: (estimateResult.data ?? []) as { task_id: string; estimated_minutes: number | null; version: number }[],
     tasks,
+    managedTaskIds,
     contacts,
     profiles,
     taskModuleProfileIds,
@@ -1000,9 +1010,9 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
     return {
       id: task.id,
       estimatedMinutes: estimatesByTask.get(task.id)?.estimated_minutes ?? null,
-      canEditDetails: task.created_source === 'manual' && !isTerminalTaskStatus(task.status)
+      canEditDetails: task.created_source === 'manual' && !rows.managedTaskIds.has(task.id) && !isTerminalTaskStatus(task.status)
         && (task.issuer_profile_id === input.userId || input.isOrgAdmin),
-      detailsManaged: task.created_source !== 'manual',
+      detailsManaged: task.created_source !== 'manual' || rows.managedTaskIds.has(task.id),
       estimateVersion: estimatesByTask.get(task.id)?.version ?? 0,
       canEditEstimate: rows.timeEstimatesAvailable && !isTerminalTaskStatus(task.status)
         && (task.issuer_profile_id === input.userId || task.assignee_profile_id === input.userId),
@@ -1508,6 +1518,7 @@ async function editTaskDetails(input: TaskActionInput) {
   const task = await requireTask(input.orgId, asText(input.payload.taskId))
   if (task.issuer_profile_id !== input.userId && !input.isOrgAdmin) throw new Error('TASK_DETAILS_FORBIDDEN')
   if (task.created_source !== 'manual') throw new Error('TASK_DETAILS_MANAGED')
+  if ((await loadManagedTaskIds(input.orgId, [task.id])).has(task.id)) throw new Error('TASK_DETAILS_MANAGED')
   if (isTerminalTaskStatus(task.status)) throw new Error('TASK_TERMINAL')
   const title = asText(input.payload.title), description = optionalText(input.payload.description), contextLabel = optionalText(input.payload.contextLabel)
   if (!title || title.length > 500 || (description?.length ?? 0) > 20_000 || (contextLabel?.length ?? 0) > 500) throw new Error('TASK_DETAILS_INPUT_INVALID')
