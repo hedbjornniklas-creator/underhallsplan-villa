@@ -15,6 +15,7 @@ import {
 import type { TuObservation } from '@/lib/tu/evidence'
 import { resolveTuPrintImageCaption } from '@/lib/tu/imageAppendix'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import { readTuCustomer, TU_CUSTOMER_LABELS } from '@/lib/tu/customer'
 import { formatTuMeasurementAssessment, formatTuMeasurementResult } from '@/lib/tu/measurementConfig'
 import type { TuInvestigationDetails, TuInvestigationImage } from '@/lib/tu/server'
 
@@ -285,6 +286,8 @@ function parseAssignmentPartiesFields(value: string | null | undefined): Assignm
 
 function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPartiesSection {
   const assignment = investigation.assignment
+  const customer = readTuCustomer(investigation.tuCustomer)
+    ?? readTuCustomer(assignment?.assignment_details?.tuCustomer)
   const inspector = investigation.inspector
   const assignmentPartiesText =
     investigation.reportDraft.sections.find((section) => section.key === 'assignment_parties')?.text ?? ''
@@ -331,7 +334,11 @@ function buildPartiesSection(investigation: TuInvestigationDetails): TuPrintPart
     ].filter((row): row is TuPrintMetaRow => Boolean(row)),
     rightRows: [
       toPrintRow('Uppdragsgivare', customerName),
-      toPrintRow('Roll/beställartyp', customerRole),
+      toPrintRow('Beställartyp', customer ? TU_CUSTOMER_LABELS[customer.kind] : null),
+      toPrintRow('Org.nr', customer?.kind !== 'consumer' ? customer?.identityNumber : null),
+      toPrintRow('Kontaktperson', customer?.contactName),
+      toPrintRow('Kontaktpersonens roll', customer?.contactRole),
+      toPrintRow(customer ? 'Roll' : 'Roll/beställartyp', customerRole),
       toPrintRow('Telefon', customerPhone),
       toPrintRow('E-post', customerEmail),
       toPrintRow('Fastighetsägare', propertyOwnerName),

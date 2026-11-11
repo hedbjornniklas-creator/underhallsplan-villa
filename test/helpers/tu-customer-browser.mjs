@@ -36,6 +36,8 @@ export async function testTuCustomers(base, output) {
         assert.equal(await value('Beställartyp'), kind)
         assert.equal(await page.$eval('select[aria-label="Beställartyp"]', el => el.disabled), true)
         assert.match(await page.evaluate(() => document.body.innerText), /Totalt inkl\. moms/)
+        const termsHeading = { consumer: 'privatperson', business: 'företag', association: 'förening' }[kind]
+        assert.match(await page.$eval('h2', el => el.textContent), new RegExp(`Villkor för teknisk utredning - ${termsHeading}`, 'i'))
         if (kind === 'consumer') assert.match(await page.evaluate(() => document.body.innerText), /14 dagars ångerrätt/)
         else assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /14 dagars ångerrätt/)
         await fill('Fakturareferens', 'Projekt 42')
@@ -91,8 +93,21 @@ export async function testTuCustomers(base, output) {
       assert.equal(await value('Pris exkl. moms, SEK'), '5000', 'changing category does not reinterpret an entered price')
       await overflow()
       await page.screenshot({ path: resolve(output, `create-${width}.png`), fullPage: true })
+
+      for (const screen of width === 1440 ? ['digital', 'print'] : ['digital']) {
+        await page.goto(`${base}/tu?screen=${screen}&kind=association`, { waitUntil: 'networkidle0' })
+        if (screen === 'print') await page.waitForSelector('[data-tu-print-pagination-ready="1"]')
+        else await page.waitForSelector('dl')
+        const text = await page.evaluate(() => document.body.innerText)
+        for (const expected of ['Exempelforeningen', 'Förening', 'Org.nr', '769600-0000', 'Kontaktperson', 'Anna Exempel', 'Kontaktpersonens roll', 'Erik Besiktningsman', 'Besiktningsmannens egen text.']) {
+          assert.ok(text.toLocaleLowerCase('sv-SE').includes(expected.toLocaleLowerCase('sv-SE')), `${screen} missing ${expected}`)
+        }
+        await overflow()
+        assert.deepEqual(await page.$$eval('dl dt,dl dd', elements => elements.filter(el => el.clientWidth && el.scrollWidth > el.clientWidth + 2).map(el => el.textContent)), [], 'party row overflow')
+        await page.screenshot({ path: resolve(output, `${screen}-${width}.png`), fullPage: true })
+      }
     }
     assert.deepEqual(errors, [])
-    console.log('TU customer browser: public acceptance, editing, category defaults and overflow passed at 390/1440px')
+    console.log('TU customer browser: public acceptance, editing, category defaults, report details and overflow passed at 390/1440px')
   } finally { await browser.close() }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { TuCustomerFields, TuInvoiceFields, tuCustomerFormFromAssignment, tuCustomerFromForm, type TuCustomerForm } from '@/components/tu/TuCustomerFields'
 import { TuPriceSummary } from '@/components/tu/TuPriceFields'
-import { TU_CUSTOMER_LABELS, readTuCustomer, readTuPricing, parseTuCustomerAcceptance, tuUsesApartment } from '@/lib/tu/customer'
+import { TU_CUSTOMER_LABELS, readTuCustomer, readTuPricing, parseTuCustomerAcceptance, tuCustomerKind, tuUsesApartment } from '@/lib/tu/customer'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
 import { obInspectionProfileLabel, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
@@ -1160,9 +1160,7 @@ export default function AssignmentAcceptPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
                   {isTechnicalAssignment
-                    ? isConsumerTechnicalAssignment
-                      ? 'Villkor för teknisk utredning - privatperson'
-                      : 'Villkor för teknisk utredning - företag'
+                    ? `Villkor för teknisk utredning - ${TU_CUSTOMER_LABELS[tuCustomerKind(data.assignment.assignment_details)].toLocaleLowerCase('sv-SE')}`
                     : isEbAssignment
                       ? isConsumerEbAssignment
                         ? 'Villkor för entreprenadbesiktning – privat konsument'

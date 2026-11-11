@@ -1,6 +1,6 @@
 ﻿import 'server-only'
 
-import { tuPriceText, tuUsesApartment } from '@/lib/tu/customer'
+import { readTuCustomer, TU_CUSTOMER_LABELS, tuPriceText, tuUsesApartment } from '@/lib/tu/customer'
 
 type TermsRole =
   | 'seller'
@@ -252,6 +252,27 @@ function buildObjectSection(
   }
 }
 
+function buildTuCustomerDetails(assignment: AssignmentForEmail) {
+  const customer = assignment.assignment_type === 'TU'
+    ? readTuCustomer(assignment.assignment_details?.tuCustomer)
+    : null
+  if (!customer) return { html: '', text: '' }
+
+  const rows = [
+    ['Beställartyp', TU_CUSTOMER_LABELS[customer.kind]],
+    ['Organisationsnummer', customer.kind !== 'consumer' ? customer.identityNumber : ''],
+    ['Kontaktperson', customer.contactName],
+    ['Kontaktpersonens roll', customer.contactRole],
+  ].filter(([, value]) => value.trim())
+
+  return {
+    html: rows.map(([label, value]) =>
+      `<div style="font-size:13px;line-height:1.5;overflow-wrap:anywhere;"><strong>${label}:</strong> ${escapeHtml(value)}</div>`
+    ).join('\n'),
+    text: rows.map(([label, value]) => `- ${label}: ${value}\n`).join(''),
+  }
+}
+
 function buildBulletproofButton(options: CtaButtonOptions) {
   const href = escapeHtml(options.href)
   const label = escapeHtml(options.label)
@@ -295,6 +316,7 @@ export function buildAssignmentConfirmationEmail(
   const customerAddress = toDisplayValue(input.assignment.customer_address)
   const customerPhone = toDisplayValue(input.assignment.customer_phone)
   const customerEmail = toDisplayValue(input.assignment.customer_email)
+  const tuCustomerDetails = buildTuCustomerDetails(input.assignment)
   const inspectionDate = toSwedishDateString(input.assignment.preferred_date)
   const inspectionTime = toSwedishTimeString(input.assignment.preferred_time)
   const priceText = input.assignment.assignment_type === 'TU' ? tuPriceText(input.assignment.price_amount, input.assignment.assignment_details) : formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
@@ -396,6 +418,7 @@ export function buildAssignmentConfirmationEmail(
                         <tr><td style="padding:14px;">
                           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Uppdragsgivare</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Namn:</strong> ${escapeHtml(customerName)}</div>
+                          ${tuCustomerDetails.html}
                           <div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(customerAddress)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Telefon:</strong> ${escapeHtml(customerPhone)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>E-post:</strong> ${escapeHtml(customerEmail)}</div>
@@ -455,6 +478,7 @@ export function buildAssignmentConfirmationEmail(
     `${objectSection.text}\n` +
     `Uppdragsgivare\n` +
     `- Namn: ${customerName}\n` +
+    tuCustomerDetails.text +
     `- Adress: ${customerAddress}\n` +
     `- Telefon: ${customerPhone}\n` +
     `- E-post: ${customerEmail}\n\n` +
@@ -490,6 +514,7 @@ export function buildAssignmentOrderReceiptEmail(
   const customerAddress = toDisplayValue(input.assignment.customer_address)
   const customerPhone = toDisplayValue(input.assignment.customer_phone)
   const customerEmail = toDisplayValue(input.assignment.customer_email)
+  const tuCustomerDetails = buildTuCustomerDetails(input.assignment)
   const inspectionDate = toSwedishDateString(input.assignment.preferred_date)
   const inspectionTime = toSwedishTimeString(input.assignment.preferred_time)
   const priceText = input.assignment.assignment_type === 'TU' ? tuPriceText(input.assignment.price_amount, input.assignment.assignment_details) : formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
@@ -599,6 +624,7 @@ export function buildAssignmentOrderReceiptEmail(
                         <tr><td style="padding:14px;">
                           <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:#1f2937;">Uppdragsgivare</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Namn:</strong> ${escapeHtml(customerName)}</div>
+                          ${tuCustomerDetails.html}
                           <div style="font-size:13px;line-height:1.5;"><strong>Adress:</strong> ${escapeHtml(customerAddress)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>Telefon:</strong> ${escapeHtml(customerPhone)}</div>
                           <div style="font-size:13px;line-height:1.5;"><strong>E-post:</strong> ${escapeHtml(customerEmail)}</div>
@@ -678,6 +704,7 @@ export function buildAssignmentOrderReceiptEmail(
     `${objectSection.text}\n` +
     `Uppdragsgivare\n` +
     `- Namn: ${customerName}\n` +
+    tuCustomerDetails.text +
     `- Adress: ${customerAddress}\n` +
     `- Telefon: ${customerPhone}\n` +
     `- E-post: ${customerEmail}\n\n` +

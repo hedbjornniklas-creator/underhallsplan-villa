@@ -3,6 +3,8 @@ import { useRef, useState } from 'react'
 import TuInvestigationCustomerEditor from '../../src/components/tu/TuInvestigationCustomerEditor'
 import TuDashboardClient from '../../src/components/tu/TuDashboardClient'
 import TuAssignmentEditor from '../../src/components/tu/TuAssignmentEditor'
+import TuPrintPagedDocument from '../../src/components/tu/TuPrintPagedDocument'
+import TuPublicReportSnapshotView from '../../src/components/tu/TuPublicReportSnapshotView'
 import AcceptPage from '../../src/app/accept/[token]/page'
 import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
 import { TU_STANDARD_REPORT_TEMPLATES } from '../../src/lib/tu/reportTemplates'
@@ -11,6 +13,8 @@ import { tuAssignment, tuPreviewOrg } from './tu-overview-data'
 import { tuCopyDemo } from './tu-copy-data'
 import { parseTuAssignmentEdit } from '../../src/lib/tu/assignmentEditing'
 import type { AssignmentDetails } from '../../src/lib/assignments/server'
+import { createTuReportSnapshotPayloadV1 } from '../../src/lib/tu/reportSnapshot'
+import type { TuInvestigationDetails } from '../../src/lib/tu/server'
 
 const query = new URLSearchParams(location.search)
 const kind = (query.get('kind') ?? 'association') as TuCustomerKind
@@ -61,8 +65,25 @@ function InvestigationCustomer() {
     setValue(next)
   }} /></main>
 }
+function Report() {
+  const snapshot = createTuReportSnapshotPayloadV1({
+    investigation: {
+      inspectionId: 'synthetic-report', inspection: { customer_name: record.customer_name },
+      assignment: record, tuCustomer: customer, objectType: 'villa', cadastralId: 'TEST 1:1',
+      title: 'Tekniskt utlåtande', reportTemplateKey: 'short_technical_statement',
+      property: { address: 'Objektgatan 1', city: 'Stockholm' },
+      inspector: { full_name: 'Erik Besiktningsman', company_name: 'Testbolaget', email: 'erik@example.test', phone: '0701112233' },
+      reportDraft: { sections: [{ id: 'scope', key: 'assignment_scope', title: 'Uppdrag och avgränsning',
+        text: 'Besiktningsmannens egen text. Detta är enbart ett syntetiskt layouttest.' }] },
+    } as unknown as TuInvestigationDetails,
+    coverImages: [], appendixImages: [], createdAt: new Date('2026-11-11T12:00:00Z'),
+  })
+  return query.get('screen') === 'print'
+    ? <TuPrintPagedDocument {...snapshot.report} />
+    : <TuPublicReportSnapshotView snapshot={snapshot} shareEndpoint={null} shareUrl={null} pdfDownloadUrl={null} />
+}
 createRoot(document.getElementById('root')!).render(<AppToastProvider>
-  {query.get('screen') === 'customer' ? <InvestigationCustomer /> : query.get('screen') === 'accept' ? <AcceptPage /> : query.get('screen') === 'edit' ? <Edit /> :
+  {['print', 'digital'].includes(query.get('screen') ?? '') ? <Report /> : query.get('screen') === 'customer' ? <InvestigationCustomer /> : query.get('screen') === 'accept' ? <AcceptPage /> : query.get('screen') === 'edit' ? <Edit /> :
     <TuDashboardClient organizationId={tuPreviewOrg} organizationName="Testbolaget"
       initialAssignments={[]} initialInvestigations={[]} initialReportTemplates={TU_STANDARD_REPORT_TEMPLATES}
       inspectorProfile={null} initialError={null} initialCopySource={{ ...tuCopyDemo, customerType: kind,
