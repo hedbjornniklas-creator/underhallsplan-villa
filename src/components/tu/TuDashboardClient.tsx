@@ -20,6 +20,9 @@ import {
 import Protected from '@/components/Protected'
 import PendingLink from '@/components/ui/PendingLink'
 import TuOverview from './TuOverview'
+import { TuCustomerFields, TuInvoiceFields, EMPTY_TU_CUSTOMER_FORM, tuCustomerFromForm, type TuCustomerForm } from './TuCustomerFields'
+import TuPriceFields from './TuPriceFields'
+import { calculateTuPricing, defaultTuPriceBasis, parseTuCustomer, type TuPriceBasis } from '@/lib/tu/customer'
 import { canStartTuOverviewAssignment, type TuOverviewInvestigation } from '@/lib/tu/overview'
 import '../ob/ob-home.css'
 import type { OrganizationCustomer } from '@/lib/customers/domain'
@@ -33,9 +36,8 @@ import type {
   TuReportTemplateOption,
 } from '@/lib/tu/server'
 
-type TuFormState = TuCopyExtraFields & {
+type TuFormState = TuCopyExtraFields & TuCustomerForm & {
   objectType: 'villa' | 'apartment'
-  customerType: 'consumer' | 'business'
   customerAddressMatchesObject: boolean
   customerIdentityNumber: string
   customerName: string
@@ -58,10 +60,12 @@ type TuFormState = TuCopyExtraFields & {
   preferredDate: string
   preferredTime: string
   priceAmount: string
+  priceBasis: TuPriceBasis
+  vatRate: number
   notesInternal: string
 }
 
-type ScratchFormState = TuCopyExtraFields & {
+type ScratchFormState = TuCopyExtraFields & TuCustomerForm & {
   reportTemplateKey: string
   objectType: 'villa' | 'apartment'
   title: string
@@ -89,6 +93,7 @@ type ScratchFormState = TuCopyExtraFields & {
 
 const EMPTY_TU_FORM: TuFormState = {
   ...EMPTY_TU_COPY_EXTRAS,
+  ...EMPTY_TU_CUSTOMER_FORM,
   objectType: 'villa',
   customerType: 'consumer',
   customerAddressMatchesObject: false,
@@ -113,11 +118,14 @@ const EMPTY_TU_FORM: TuFormState = {
   preferredDate: '',
   preferredTime: '',
   priceAmount: '',
+  priceBasis: 'inclusive',
+  vatRate: 25,
   notesInternal: '',
 }
 
 const EMPTY_SCRATCH_FORM: ScratchFormState = {
   ...EMPTY_TU_COPY_EXTRAS,
+  ...EMPTY_TU_CUSTOMER_FORM,
   reportTemplateKey: '',
   objectType: 'villa',
   title: '',
@@ -302,7 +310,8 @@ export default function TuDashboardClient({
         return {
           ...current,
           customerType: value as TuFormState['customerType'],
-          customerIdentityNumber: '',
+          customerIdentityNumber: current.customerType !== 'consumer' && value !== 'consumer' ? current.customerIdentityNumber : '',
+          priceBasis: current.priceAmount.trim() ? current.priceBasis : defaultTuPriceBasis(value as TuFormState['customerType']),
         }
       }
       if (key === 'customerAddressMatchesObject') {
@@ -346,7 +355,9 @@ export default function TuDashboardClient({
     }
     setForm((current) => ({
       ...current,
-      customerType: customer.customerType === 'business' ? 'business' : 'consumer',
+      customerType: customer.customerType === 'business' ? (current.customerType === 'association' ? 'association' : 'business') : 'consumer',
+      priceBasis: current.priceAmount.trim() ? current.priceBasis : defaultTuPriceBasis(customer.customerType === 'business' && current.customerType !== 'association' ? 'business' : 'consumer'),
+      invoiceReference: customer.invoiceReference ?? '',
       customerIdentityNumber: customer.identityNumber ?? '',
       customerAddressMatchesObject: false,
       customerName: customer.name,
@@ -433,6 +444,7 @@ export default function TuDashboardClient({
     setScratchForm((current) => ({
       ...current,
       objectType: form.objectType,
+      customerType: form.customerType, contactName: form.contactName, contactRole: form.contactRole, invoiceReference: form.invoiceReference,
       scopeDescription: form.scopeDescription,
       propertyAddress: form.propertyAddress,
       propertyPostalCode: form.propertyPostalCode,
@@ -470,6 +482,8 @@ export default function TuDashboardClient({
     setForm((current) => ({
       ...current,
       objectType: scratchForm.objectType,
+      customerType: scratchForm.customerType, contactName: scratchForm.contactName, contactRole: scratchForm.contactRole, invoiceReference: scratchForm.invoiceReference,
+      priceBasis: current.priceAmount.trim() ? current.priceBasis : defaultTuPriceBasis(scratchForm.customerType),
       scopeDescription: scratchForm.scopeDescription,
       propertyAddress: scratchForm.propertyAddress,
       propertyPostalCode: scratchForm.propertyPostalCode,
@@ -511,12 +525,12 @@ export default function TuDashboardClient({
       setNotice(null)
       return
     }
-    const customerIdentityType = form.customerType === 'business' ? 'business' : 'private'
+    const customerIdentityType = form.customerType !== 'consumer' ? 'business' : 'private'
     const normalizedIdentity = normalizeOrganizationCustomerIdentity(
       form.customerIdentityNumber,
       customerIdentityType
     )
-    if (form.customerType === 'business' && !normalizedIdentity) {
+    if (form.customerType !== 'consumer' && !normalizedIdentity) {
       setError('Ange ett giltigt organisationsnummer innan kunden kopplas.')
       setNotice(null)
       return
@@ -552,12 +566,15 @@ export default function TuDashboardClient({
     setError(null)
     setNotice(null)
     try {
+      const tuCustomer = parseTuCustomer({ ...tuCustomerFromForm(form), identityNumber: normalizedIdentity ?? '' }, sendNow)
+      const tuPricing = form.priceAmount.trim() ? calculateTuPricing(form.priceAmount, form.priceBasis, form.vatRate) : null
       const response = await fetch(sendNow ? '/api/tu/assignments/quick-send' : '/api/tu/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orgId: organizationId,
           ...form,
+          tuCustomer, tuPricing,
           customerBinding:
             customerBinding.mode === 'create'
               ? {
@@ -643,17 +660,18 @@ export default function TuDashboardClient({
     setError(null)
     setNotice(null)
     try {
+      const tuCustomer = parseTuCustomer(tuCustomerFromForm(scratchForm))
       const response = await fetch('/api/tu/investigations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orgId: organizationId, ...scratchForm, ...(copySource ? {
+        body: JSON.stringify({ orgId: organizationId, ...scratchForm, tuCustomer, ...({
           customerDetails: {
             customerIdentityNumber: scratchForm.customerIdentityNumber,
             customerRole: scratchForm.customerRole,
             invoiceName: scratchForm.invoiceName,
             invoiceAddress: scratchForm.invoiceAddress,
           },
-        } : {}) }),
+        }) }),
       })
       const payload = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(payload.error ?? 'Kunde inte skapa TU-utredning.')
@@ -696,8 +714,10 @@ export default function TuDashboardClient({
       <input type="checkbox" className="mt-1" checked={reusePrice} disabled={Boolean(busy)} onChange={event => {
         const checked = event.target.checked
         setReusePrice(checked)
-        setForm(current => ({ ...current, priceAmount: checked ? copySource.priceAmount : current.priceAmount === copySource.priceAmount ? '' : current.priceAmount }))
-      }} />Återanvänd pris: {copySource.priceAmount} kr
+        setForm(current => ({ ...current, priceAmount: checked ? copySource.priceAmount : current.priceAmount === copySource.priceAmount ? '' : current.priceAmount,
+          priceBasis: checked ? copySource.tuPricing?.basis ?? 'inclusive' : current.priceBasis,
+          vatRate: checked ? copySource.tuPricing?.vatRate ?? 25 : current.vatRate }))
+      }} />Återanvänd pris: {copySource.priceAmount} kr{copySource.tuPricing ? (copySource.tuPricing.basis === 'inclusive' ? ' inkl. moms' : ' exkl. moms') : ' (momsuppgift saknas)'}
     </label>}
   </section> : null
 
@@ -1059,24 +1079,12 @@ function QuickAssignmentDialog({
           <h3 className="text-sm font-semibold text-slate-950">Beställare</h3>
           <p className="mt-1 text-xs text-slate-600">Uppdragsbekräftelsen skickas till beställarens e-postadress.</p>
         </div>
-        <CustomerTypeControl
-          value={form.customerType}
-          onChange={(value) => onChange('customerType', value)}
-        />
+        <TuCustomerFields value={form} onChange={(key, value) => onChange(key, value as TuFormState[typeof key])} />
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
+          <Field label={form.customerType === 'consumer' ? 'Beställarens namn' : 'Företagets eller föreningens namn'} value={form.customerName} onChange={(value) => onChange('customerName', value)} />
           <Field label="Beställarmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
-          <Field
-            label={
-              form.customerType === 'business'
-                ? 'Organisationsnummer'
-                : 'Personnummer (valfritt)'
-            }
-            required={form.customerType === 'business'}
-            value={form.customerIdentityNumber}
-            onChange={(value) => onChange('customerIdentityNumber', value)}
-          />
+
         </div>
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-violet-100 bg-violet-50/50 px-3 py-2.5 text-sm text-slate-800">
           <input
@@ -1105,7 +1113,7 @@ function QuickAssignmentDialog({
           organizationId={organizationId}
           value={customerBinding}
           draft={{
-            customerType: form.customerType,
+            customerType: form.customerType === 'consumer' ? 'consumer' : 'business',
             identityNumber: form.customerIdentityNumber,
             name: form.customerName,
             email: form.customerEmail,
@@ -1127,15 +1135,8 @@ function QuickAssignmentDialog({
           <p className="mt-1 text-xs text-slate-600">Beskriv uppdraget och ange det pris som kunden ska godkänna.</p>
         </div>
         <Textarea label="Utredningens omfattning" required value={form.scopeDescription} onChange={(value) => onChange('scopeDescription', value)} rows={4} />
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <Field
-            label={form.customerType === 'consumer' ? 'Pris inkl. moms, SEK' : 'Pris, SEK'}
-            required
-            value={form.priceAmount}
-            onChange={(value) => onChange('priceAmount', value)}
-            type="number"
-          />
-        </div>
+        <TuPriceFields amount={form.priceAmount} basis={form.priceBasis} vatRate={form.vatRate}
+          onChange={value => { onChange('priceAmount', value.amount); onChange('priceBasis', value.basis); onChange('vatRate', value.vatRate) }} />
       </section>
 
       <section className="border-b border-slate-200 py-4">
@@ -1155,7 +1156,7 @@ function QuickAssignmentDialog({
           <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
-        {copyOptions && <CopyExtraFields form={form} onChange={onChange} includeIdentity={false} />}
+        <TuInvoiceFields value={form} onChange={(key, value) => onChange(key, value as TuFormState[typeof key])} />
       </section>
 
       <section className="py-4">
@@ -1275,8 +1276,9 @@ function ScratchInvestigationDialog({
           <h3 className="text-sm font-semibold text-slate-950">Beställare</h3>
           <p className="mt-1 text-xs text-slate-600">Kontaktmejlet används när utlåtandet ska levereras.</p>
         </div>
+        <TuCustomerFields value={form} onChange={(key, value) => onChange(key, value as ScratchFormState[typeof key])} />
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label="Namn" value={form.customerName} onChange={(value) => onChange('customerName', value)} />
+          <Field label={form.customerType === 'consumer' ? 'Beställarens namn' : 'Företagets eller föreningens namn'} value={form.customerName} onChange={(value) => onChange('customerName', value)} />
           <Field label="Kontaktmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
         </div>
@@ -1330,7 +1332,7 @@ function ScratchInvestigationDialog({
           <p className="mt-1 text-xs text-slate-600">Ange endast en fakturae-post om fakturan ska gå till en annan adress.</p>
         </div>
         <Field label="Fakturae-post" value={form.invoiceEmail} onChange={(value) => onChange('invoiceEmail', value)} type="email" />
-        {copyOptions && <CopyExtraFields form={form} onChange={onChange} includeIdentity />}
+        <TuInvoiceFields value={form} onChange={(key, value) => onChange(key, value as ScratchFormState[typeof key])} />
       </section>
 
       <div className="sticky -bottom-4 -mx-4 mt-4 border-t border-slate-200 bg-white px-4 pb-4 pt-3 sm:-bottom-5 sm:-mx-5 sm:px-5 sm:pb-5">
@@ -1352,18 +1354,6 @@ function ScratchInvestigationDialog({
   )
 }
 
-function CopyExtraFields({ form, onChange, includeIdentity }: {
-  form: TuCopyExtraFields
-  onChange: <K extends keyof TuCopyExtraFields>(key: K, value: string) => void
-  includeIdentity: boolean
-}) {
-  return <div className="mt-3 grid gap-3 md:grid-cols-2">
-    {includeIdentity && <Field label="Person-/org.nr" value={form.customerIdentityNumber} onChange={value => onChange('customerIdentityNumber', value)} />}
-    <Field label="Roll/beställartyp" value={form.customerRole} onChange={value => onChange('customerRole', value)} />
-    <Field label="Fakturanamn" value={form.invoiceName} onChange={value => onChange('invoiceName', value)} />
-    <Textarea label="Fakturaadress" rows={2} value={form.invoiceAddress} onChange={value => onChange('invoiceAddress', value)} />
-  </div>
-}
 
 function TemplateSelect({
   label,
@@ -1498,7 +1488,7 @@ function ObjectTypeControl({
       <legend className="text-xs font-medium text-slate-600">Objekttyp</legend>
       <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
         {[
-          { value: 'villa' as const, label: 'Villa' },
+          { value: 'villa' as const, label: 'Fastighet/byggnad' },
           { value: 'apartment' as const, label: 'Lägenhet' },
         ].map((option) => {
           const active = value === option.value
@@ -1523,44 +1513,7 @@ function ObjectTypeControl({
   )
 }
 
-function CustomerTypeControl({
-  value,
-  onChange,
-}: {
-  value: 'consumer' | 'business'
-  onChange: (value: 'consumer' | 'business') => void
-}) {
-  return (
-    <fieldset className="mb-3 space-y-1">
-      <legend className="text-xs font-medium text-slate-600">
-        Beställartyp<span className="ml-0.5 text-rose-600" aria-hidden>*</span>
-      </legend>
-      <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-1">
-        {[
-          { value: 'consumer' as const, label: 'Privatperson' },
-          { value: 'business' as const, label: 'Företag/organisation' },
-        ].map((option) => {
-          const active = value === option.value
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(option.value)}
-              className={
-                active
-                  ? 'rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm'
-                  : 'rounded-md px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-white'
-              }
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-    </fieldset>
-  )
-}
+
 
 function Field({
   label,

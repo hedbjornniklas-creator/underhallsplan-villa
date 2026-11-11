@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseTuCustomer, parseTuPricing, TuCustomerError } from '@/lib/tu/customer'
 import {
   createTuAssignmentDraft,
   getTuAssignmentById,
@@ -78,11 +79,14 @@ export async function POST(request: Request) {
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const scopeDescription = text(body, 'scopeDescription')
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
-    const customerType = text(body, 'customerType') === 'business' ? 'business' : 'consumer'
+    const tuCustomer = body.tuCustomer === undefined ? null : parseTuCustomer(body.tuCustomer, true)
+    const customerType = tuCustomer ? (tuCustomer.kind === 'consumer' ? 'consumer' : 'business') : text(body, 'customerType') === 'business' ? 'business' : 'consumer'
+    const tuPricing = parseTuPricing(body.tuPricing)
+    if (tuCustomer && customerBinding.mode === 'create' && (customerBinding.customerType !== (customerType === 'business' ? 'business' : 'private') || (customerBinding.identityNumber ?? '').replace(/\D/g, '') !== tuCustomer.identityNumber.replace(/\D/g, ''))) throw new TuCustomerError('Kontrollera beställartyp och organisationsnummer i kundkopplingen.')
     const cadastralId = text(body, 'cadastralId')
     const brfName = text(body, 'brfName')
     const apartmentNumber = text(body, 'apartmentNumber')
-    const price = parsePrice(text(body, 'priceAmount'))
+    const price = tuPricing?.gross ?? parsePrice(text(body, 'priceAmount'))
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
@@ -129,6 +133,7 @@ export async function POST(request: Request) {
       invoiceEmail: invoiceEmail || null,
       objectType,
       customerType,
+      tuCustomer, tuPricing,
       scopeDescription,
       preferredDate: text(body, 'preferredDate') || null,
       preferredTime: text(body, 'preferredTime') || null,
@@ -195,6 +200,7 @@ export async function POST(request: Request) {
       )
     }
 
+    if (error instanceof TuCustomerError) return jsonError(error.message, 400)
     const accessError = mapAccessError(error)
     if (accessError) return accessError
 

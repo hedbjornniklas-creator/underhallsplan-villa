@@ -169,6 +169,7 @@ function harness(routePath: string, options: HarnessOptions = {}) {
   const dependencies: Record<string, unknown> = {
     'next/server': nextServer,
     '@/lib/tu/server': tuServer,
+    '@/lib/tu/customer': load('src/lib/tu/customer.ts', {}),
     '@/lib/assignment-customers/server': assignmentCustomerServer,
     '@/lib/assignment-customers/http': http,
   }
@@ -233,6 +234,34 @@ async function json(response: Response) {
 
 function callNames(calls: Array<{ name: string }>) {
   return calls.map((call) => call.name)
+}
+
+for (const kind of ['consumer', 'business', 'association'] as const) {
+  for (const suffix of ['', '/quick-send']) {
+    test(`TU ${suffix || 'draft'} preserves ${kind}, separate object and server-calculated VAT`, async () => {
+      const setup = harness(`src/app/api/tu/assignments${suffix}/route.ts`)
+      const customer = { version: 1, kind, identityNumber: kind === 'consumer' ? '' : '769000-0000',
+        contactName: 'Kontaktperson', contactRole: 'Styrelse', invoiceName: 'Fakturamottagare',
+        invoiceAddress: 'Fakturavagen 3', invoiceReference: 'Projekt 42' }
+      const response = await setup.route.POST(request(`/api/tu/assignments${suffix}`, {
+        ...validBody(), customerType: kind, tuCustomer: customer,
+        customerBinding: { mode: 'create', customerType: kind === 'consumer' ? 'private' : 'business', identityNumber: customer.identityNumber || null },
+        objectType: kind === 'consumer' ? 'apartment' : 'villa',
+        brfName: 'Objektets BRF', apartmentNumber: '1201',
+        tuPricing: { version: 1, amount: 5000, basis: 'exclusive', vatRate: 25, gross: 1, net: 1, vat: 0 },
+        priceAmount: '1',
+      }))
+      assert.equal(response.status, suffix ? 200 : 201)
+      const created = setup.calls.find(call => call.name === 'create')?.value as Record<string, unknown>
+      assert.deepEqual(created.tuCustomer, customer)
+      assert.equal(created.customerType, kind === 'consumer' ? 'consumer' : 'business')
+      assert.equal(created.priceAmount, 6250)
+      assert.deepEqual(created.tuPricing, { version: 1, amount: 5000, basis: 'exclusive', vatRate: 25, net: 5000, vat: 1250, gross: 6250 })
+      assert.equal(created.brfName, kind === 'consumer' ? 'Objektets BRF' : null)
+      assert.equal(created.propertyAddress, 'Objektgatan 2')
+      assert.equal(created.customerAddress, 'Kundgatan 1')
+    })
+  }
 }
 
 test('TU quick-send allows apartment confirmations without BRF or apartment number', async () => {

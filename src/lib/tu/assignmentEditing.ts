@@ -1,3 +1,4 @@
+import { parseTuCustomer, parseTuPricing, readTuPricing } from './customer'
 import type { AssignmentDetails } from '@/lib/assignments/server'
 
 export const TU_ASSIGNMENT_FIELDS = [
@@ -33,13 +34,13 @@ export function tuAssignmentForm(assignment: AssignmentDetails): TuAssignmentFor
   ])) as TuAssignmentForm
 }
 
-export function parseTuAssignmentEdit(body: unknown): { patch: Record<string, string | number | null>; expectedUpdatedAt: string } {
+export function parseTuAssignmentEdit(body: unknown, existingDetails: Record<string, unknown> | null = null): { patch: Record<string, unknown>; expectedUpdatedAt: string } {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('Ogiltiga uppgifter.')
   const input = body as Record<string, unknown>
-  const allowed = new Set<string>(['expectedUpdatedAt', ...TU_ASSIGNMENT_FIELDS.map(field => field.key)])
+  const allowed = new Set<string>(['expectedUpdatedAt', 'tuCustomer', 'tuPricing', 'objectType', ...TU_ASSIGNMENT_FIELDS.map(field => field.key)])
   if (Object.keys(input).some(key => !allowed.has(key))) throw new Error('Ändringen innehåller fält som inte kan redigeras här.')
   if (typeof input.expectedUpdatedAt !== 'string' || !Number.isFinite(Date.parse(input.expectedUpdatedAt))) throw new Error('Hämta aktuella uppgifter innan du sparar.')
-  const patch: Record<string, string | number | null> = {}
+  const patch: Record<string, unknown> = {}
   for (const { key } of TU_ASSIGNMENT_FIELDS) {
     if (!(key in input)) continue
     if (typeof input[key] !== 'string' || input[key].length > (key === 'scope_description' || key === 'notes_internal' ? 20000 : 1000)) throw new Error('Kontrollera textfälten. Någon uppgift är för lång eller ogiltig.')
@@ -52,6 +53,27 @@ export function parseTuAssignmentEdit(body: unknown): { patch: Record<string, st
       patch[key] = price === null ? null : Math.round(price * 100) / 100
     } else patch[key] = value || null
   }
+  const details = { ...existingDetails }
+  if ('tuCustomer' in input) {
+    const customer = parseTuCustomer(input.tuCustomer)
+    details.tuCustomer = customer
+    details.customerType = customer.kind === 'consumer' ? 'consumer' : 'business'
+    patch.personal_identity_number = customer.identityNumber || null
+    patch.invoice_name = customer.invoiceName || null
+    patch.invoice_address = customer.invoiceAddress || null
+  }
+  if ('tuPricing' in input) {
+    const price = parseTuPricing(input.tuPricing)
+    details.tuPricing = price
+    patch.price_amount = price?.gross ?? null
+  } else if (readTuPricing(existingDetails) && 'price_amount' in input) {
+    throw new Error('Ange priset med momsuppgifterna.')
+  }
+  if ('objectType' in input) {
+    if (input.objectType !== 'villa' && input.objectType !== 'apartment') throw new Error('Välj objekttyp.')
+    details.objectType = input.objectType
+  }
+  if ('tuCustomer' in input || 'tuPricing' in input || 'objectType' in input) patch.assignment_details = details
   if (!Object.keys(patch).length) throw new Error('Inga ändringar att spara.')
   return { patch, expectedUpdatedAt: input.expectedUpdatedAt }
 }

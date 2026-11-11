@@ -9,6 +9,8 @@ import {
   type DocumentProps,
 } from '@react-pdf/renderer'
 
+import { readTuCustomer, readTuPricing, TU_CUSTOMER_LABELS, tuUsesApartment, tuMoney } from '@/lib/tu/customer'
+
 type AssignmentType = 'OB' | 'STATUS' | 'UHP' | 'EB' | 'TU'
 
 type PdfAssignment = {
@@ -584,6 +586,8 @@ function AcceptedAssignmentConfirmationDocument({
   const payload = acceptancePayload
   const detailsValue = snapshotValue(payload, 'assignment_details', assignment.assignment_details)
   const details = isRecord(detailsValue) ? detailsValue : {}
+  const tuCustomer = assignment.assignment_type === 'TU' ? readTuCustomer(details.tuCustomer) : null
+  const tuPricing = assignment.assignment_type === 'TU' ? readTuPricing(details) : null
   const currency = snapshotValue(payload, 'currency', assignment.currency ?? 'SEK')
   const acceptedAt = assignment.accepted_at
   const customerName = snapshotValue(payload, 'customer_name', assignment.customer_name)
@@ -633,7 +637,7 @@ function AcceptedAssignmentConfirmationDocument({
   const statusObjectType = assignment.assignment_type === 'STATUS' &&
     (details.objectType === 'property' || details.objectType === 'apartment') ? details.objectType : null
   const isApartment = statusObjectType ? statusObjectType === 'apartment'
-    : Boolean(normalizePdfText(brfName) || normalizePdfText(apartmentNumber))
+    : assignment.assignment_type === 'TU' ? tuUsesApartment(details, normalizePdfText(brfName), normalizePdfText(apartmentNumber)) : Boolean(normalizePdfText(brfName) || normalizePdfText(apartmentNumber))
   const isEb = assignment.assignment_type === 'EB'
   const isTu = assignment.assignment_type === 'TU'
   const isConsumerEb = terms.role === 'construction_consumer'
@@ -682,13 +686,17 @@ function AcceptedAssignmentConfirmationDocument({
   const inspectionFacts: Fact[] = [
     { label: 'Datum', value: formatDate(preferredDate) },
     { label: 'Tid', value: formatTime(preferredTime) },
-    { label: priceLabel, value: formatMoney(priceAmount, currency) },
+    ...(tuPricing ? [
+      { label: 'Pris exkl. moms', value: tuMoney(tuPricing.net) },
+      { label: `Moms (${tuPricing.vatRate} %)`, value: tuMoney(tuPricing.vat) },
+      { label: 'Totalt inkl. moms', value: tuMoney(tuPricing.gross) },
+    ] : [{ label: priceLabel, value: formatMoney(priceAmount, currency) }]),
   ]
 
   if (isTu && (details.customerType === 'consumer' || details.customerType === 'business')) {
     inspectionFacts.push({
       label: 'Beställartyp',
-      value: details.customerType === 'consumer' ? 'Privatperson' : 'Företag/organisation',
+      value: tuCustomer ? TU_CUSTOMER_LABELS[tuCustomer.kind] : details.customerType === 'consumer' ? 'Privatperson' : 'Företag/organisation',
     })
   }
 
@@ -697,6 +705,15 @@ function AcceptedAssignmentConfirmationDocument({
       label: 'Moms',
       value: details.vatIncluded === true ? 'Ingår i angivna priser' : 'Tillkommer',
     })
+  }
+
+  if (tuCustomer) {
+    inspectionFacts.push(
+      { label: 'Kontaktperson', value: displayText(tuCustomer.contactName) },
+      { label: 'Kontaktpersonens roll', value: displayText(tuCustomer.contactRole) },
+      { label: 'Person-/organisationsnummer', value: displayText(tuCustomer.identityNumber) },
+      { label: 'Fakturareferens', value: displayText(tuCustomer.invoiceReference) },
+    )
   }
 
   const ebFacts: Fact[] = isEb

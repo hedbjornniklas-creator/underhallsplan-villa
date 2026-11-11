@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseTuCustomer, TuCustomerError } from '@/lib/tu/customer'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { createScratchTuInvestigation, listTuInvestigations, requireTuContext } from '@/lib/tu/server'
 
@@ -165,6 +166,7 @@ export async function GET(request: Request) {
       })),
     })
   } catch (error) {
+    if (error instanceof TuCustomerError) return jsonError(error.message, 400)
     const accessError = mapAccessError(error)
     if (accessError) return accessError
     return jsonError('Kunde inte hämta TU-utredningar.', 500)
@@ -189,7 +191,9 @@ export async function POST(request: Request) {
       return jsonError('Ange en giltig fakturae-post.', 400)
     }
 
+    const tuCustomer = body.tuCustomer === undefined ? null : parseTuCustomer(body.tuCustomer)
     const result = await createScratchTuInvestigation({
+      tuCustomer,
       orgId: context.orgId,
       createdBy: context.userId,
       reportTemplateKey: text(body, 'reportTemplateKey') || null,

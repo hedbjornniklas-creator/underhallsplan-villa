@@ -18,6 +18,7 @@ function load<T>(path: string, dependencies: Record<string, unknown> = {}, sourc
 }
 const copy = load<typeof Copy>('src/lib/tu/copy.ts')
 const roles = load('src/lib/tu/customerRole.ts')
+const customers = load('src/lib/tu/customer.ts')
 const ORG = '11111111-1111-4111-8111-111111111111'
 const ID = '22222222-2222-4222-8222-222222222222'
 
@@ -55,7 +56,7 @@ function harness(options: { foreign?: boolean; noAssignment?: boolean; inactiveC
     return query
   } }
   const server = load<typeof CopyServer>('src/lib/tu/copyServer.ts', {
-    'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './copy': copy, './customerRole': roles,
+    'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => admin }, './copy': copy, './customerRole': roles, './customer': customers,
   })
   return { server, calls }
 }
@@ -183,6 +184,7 @@ test('creation API only forwards editable customer fields, never copied IDs or r
   const route = load<{ POST: (request: Request) => Promise<Response> }>('src/app/api/tu/investigations/route.ts', {
     'next/server': { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } },
     '@/lib/supabase/admin': {},
+    '@/lib/tu/customer': customers,
     '@/lib/tu/server': {
       requireTuContext: async (orgId: string) => { assert.equal(orgId, ORG); return { orgId: ORG, userId: 'current-user' } },
       createScratchTuInvestigation: async (input: Record<string, unknown>) => { calls.push(input); return { inspectionId: 'new' } },

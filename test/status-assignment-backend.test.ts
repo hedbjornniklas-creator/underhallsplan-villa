@@ -247,6 +247,7 @@ test('public STATUS GET and acceptance use the issued exact source, never today\
     'next/server':{NextResponse:{json:(body:unknown,init?:ResponseInit)=>Response.json(body,init)},after:()=>{}},
     'node:crypto':{randomUUID},'node:net':{isIP},
     '@/lib/assignments/statusIssueSource':sourceParser,
+    '@/lib/tu/customer':load('src/lib/tu/customer.ts', {}),
     '@/lib/assignments/server':{
       resolvePublicAssignmentByToken:async()=>issued,listAddonOffersForProfile:async()=>[],
       consumeAssignmentToken:async(input:{payload:Record<string,unknown>})=>{consumed=input.payload},
@@ -376,7 +377,7 @@ test('STATUS booking receipt reads frozen text and recipient, not today\'s place
 
 test('STATUS apartment emails show apartment data without changing the status terms role', () => {
   const emails=load<{buildAssignmentConfirmationEmail:(input:unknown)=>{text:string;html:string};
-    buildAssignmentOrderReceiptEmail:(input:unknown)=>{text:string;html:string}}>('src/lib/assignments/emailTemplates.ts',{'server-only':{}})
+    buildAssignmentOrderReceiptEmail:(input:unknown)=>{text:string;html:string}}>('src/lib/assignments/emailTemplates.ts',{'server-only':{}, '@/lib/tu/customer': load('src/lib/tu/customer.ts', {})})
   const assignment={assignment_type:'STATUS',customer_name:'Customer',customer_email:'customer@example.test',
     property_address:'Test street',assignment_details:{objectType:'apartment'},apartment_number:'1201',
     brf_name:'',apartment_holder_name:'',property_owner_name:'Must not appear'}

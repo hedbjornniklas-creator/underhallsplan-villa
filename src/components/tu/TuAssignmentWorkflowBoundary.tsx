@@ -3,9 +3,15 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Check, FileCheck2, RefreshCw, X } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
-import { comparableObAssignmentValue, formatObAssignmentValue, getObAssignmentChanges, obAssignmentFieldLabels } from '@/lib/ob/assignmentWorkflow'
+import { comparableObAssignmentValue, formatObAssignmentValue, obAssignmentFieldLabels } from '@/lib/ob/assignmentWorkflow'
 import type { TuAssignmentWorkflow } from '@/lib/tu/assignmentWorkflow'
 import { allowTuAssignmentNavigation, tuActionButton } from './TuAssignmentActions'
+
+const fieldLabels = { ...obAssignmentFieldLabels, tu_customer_kind: 'Beställartyp',
+  tu_contact_name: 'Kontaktperson', tu_contact_role: 'Kontaktpersonens roll',
+  tu_identity_number: 'Person-/organisationsnummer', tu_invoice_reference: 'Fakturareferens',
+  tu_price_net: 'Pris exkl. moms', tu_price_vat: 'Momsbelopp', tu_vat_rate: 'Momssats, %', tu_price_gross: 'Totalt inkl. moms',
+} as Record<string, string>
 
 export default function TuAssignmentWorkflowBoundary({ initialWorkflow, inspectionId, orgId, children }: {
   initialWorkflow: TuAssignmentWorkflow | null; inspectionId: string; orgId: string; children: ReactNode
@@ -48,8 +54,8 @@ export default function TuAssignmentWorkflowBoundary({ initialWorkflow, inspecti
     finally { inFlight.current = false; setBusy(false) }
   }
 
-  const changed = comparison ? getObAssignmentChanges(comparison.initialSnapshot, comparison.currentSnapshot) : []
-  const fields = comparison ? Object.keys(obAssignmentFieldLabels).filter(key =>
+  const changed = comparison ? Object.keys(fieldLabels).filter(key => JSON.stringify(comparison.initialSnapshot[key] ?? null) !== JSON.stringify(comparison.currentSnapshot[key] ?? null)) : []
+  const fields = comparison ? Object.keys(fieldLabels).filter(key =>
     changed.includes(key) || (comparison.inspectionSnapshot && key in comparison.inspectionSnapshot &&
       comparableObAssignmentValue(key, comparison.inspectionSnapshot[key]) !== comparableObAssignmentValue(key, comparison.currentSnapshot[key]))) : []
 
@@ -75,7 +81,7 @@ export default function TuAssignmentWorkflowBoundary({ initialWorkflow, inspecti
         <button type="button" className={tuActionButton} aria-label="Stäng" disabled={busy} onClick={() => dialog.current?.close()}><X size={18} aria-hidden /></button></div>
       <p className="my-4 text-sm">Kontrollera att utredningen stämmer med kundens godkända uppdrag. Avstämningen ändrar inte uppgifter eller rapporttexter.</p>
       {fields.length ? <div className="space-y-4">{fields.map(key => <div key={key} className="border-b border-slate-200 pb-3">
-        <h3 className="mb-2 text-sm font-semibold">{obAssignmentFieldLabels[key]}</h3>
+        <h3 className="mb-2 text-sm font-semibold">{fieldLabels[key]}</h3>
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           {[['Vid start', comparison?.initialSnapshot[key]], ['Kundens godkända uppgift', comparison?.currentSnapshot[key]], ['Utredningens grunduppgifter', comparison?.inspectionSnapshot?.[key]]].map(([label, value]) =>
             <div key={String(label)} className="min-w-0"><dt className="text-slate-500">{String(label)}</dt><dd className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{formatObAssignmentValue(value ?? null)}</dd></div>)}

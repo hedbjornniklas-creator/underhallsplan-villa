@@ -4,7 +4,38 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import React from 'react'
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
-import { buildAcceptedAssignmentConfirmationFilename, renderAcceptedAssignmentConfirmationPdf } from '../src/lib/assignments/acceptedConfirmationPdf.ts'
+import { loadTuModule } from './helpers/load-tu-module.ts'
+const { buildAcceptedAssignmentConfirmationFilename, renderAcceptedAssignmentConfirmationPdf } = loadTuModule<typeof import('../src/lib/assignments/acceptedConfirmationPdf')>('src/lib/assignments/acceptedConfirmationPdf.ts')
+
+test('TU confirmation PDF uses accepted customer, representative and VAT rather than later edits', async () => {
+  const texts: string[] = []
+  function visit(node: unknown): void {
+    if (typeof node === 'string') { texts.push(node); return }
+    if (Array.isArray(node)) { node.forEach(visit); return }
+    if (!node || typeof node !== 'object') return
+    const element = node as { type?: unknown; props?: { children?: unknown } }
+    if (typeof element.type === 'function') visit(element.type(element.props))
+    else visit(element.props?.children)
+  }
+  const renderer = loadTuModule<{ renderAcceptedAssignmentConfirmationPdf: (input: unknown) => Promise<Buffer> }>('src/lib/assignments/acceptedConfirmationPdf.ts', {
+    '@react-pdf/renderer': { Document: 'DOCUMENT', Page: 'PAGE', Text: 'TEXT', View: 'VIEW', StyleSheet: { create: (styles: unknown) => styles },
+      renderToBuffer: async (document: unknown) => { visit(document); return Buffer.from('%PDF-tree-check') } },
+  })
+  await renderer.renderAcceptedAssignmentConfirmationPdf({
+    assignment: { id: 'tu-test', assignment_type: 'TU', customer_name: 'Later name', accepted_at: '2026-11-11T10:00:00Z', price_amount: 99,
+      assignment_details: { objectType: 'apartment' }, brf_name: 'Stale BRF', apartment_number: 'Stale apartment' },
+    issuerName: 'Testforetaget', inspector: null, addonOrders: [],
+    acceptancePayload: { customer_name: 'Accepted association', assignment_details: { objectType: 'villa', customerType: 'business',
+      tuCustomer: { version: 1, kind: 'association', contactName: 'Accepted contact', contactRole: 'Chair', identityNumber: '769000-0000',
+        invoiceName: '', invoiceAddress: '', invoiceReference: 'REF-42' },
+      tuPricing: { version: 1, amount: 5000, basis: 'exclusive', vatRate: 25 } } },
+    terms: { role: 'technical', version: 'test', documentHash: 'a'.repeat(64), text: 'Testvillkor.' },
+  })
+  assert.ok(texts.includes('Förening'))
+  for (const value of ['Accepted association', 'Accepted contact', 'Chair', '769000-0000', 'REF-42', 'Pris exkl. moms', 'Moms (25 %)', 'Totalt inkl. moms']) assert.ok(texts.includes(value), value)
+  assert.match(texts.join(' ').replace(/\s/g, ''), /6250,00/)
+  for (const value of ['Later name', 'Stale BRF', 'Stale apartment']) assert.ok(!texts.includes(value), value)
+})
 
 test('renders a complete accepted assignment confirmation as a PDF buffer', async () => {
   const acceptedAt = '2026-09-03T08:42:13.000Z'
@@ -98,6 +129,7 @@ test('the actual STATUS document tree uses status headings and no seller fallbac
   }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', output)((name: string) => {
+    if (name === '@/lib/tu/customer') return loadTuModule('src/lib/tu/customer.ts')
     if (name === 'react') return React
     if (name === '@react-pdf/renderer') return {
       Document: 'DOCUMENT', Page: 'PAGE', Text: 'TEXT', View: 'VIEW', StyleSheet: { create: (styles: unknown) => styles },

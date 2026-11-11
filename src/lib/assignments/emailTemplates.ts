@@ -1,5 +1,7 @@
 ﻿import 'server-only'
 
+import { tuPriceText, tuUsesApartment } from '@/lib/tu/customer'
+
 type TermsRole =
   | 'seller'
   | 'buyer'
@@ -197,14 +199,7 @@ function getConstructionEmailFacts(assignment: AssignmentForEmail, role: TermsRo
   return { underlyingContract, vatLabel }
 }
 
-function roleLooksLikeApartment(value: string | null | undefined) {
-  const normalized = (value ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-  return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
-}
+
 
 function buildObjectSection(
   termsRole: TermsRole,
@@ -216,9 +211,7 @@ function buildObjectSection(
     (assignment.assignment_type === 'STATUS' && assignment.assignment_details?.objectType === 'apartment') ||
     termsRole === 'apartment' ||
     (assignment.assignment_type === 'TU' &&
-      (roleLooksLikeApartment(assignment.orderer_role) ||
-        Boolean(assignment.brf_name?.trim()) ||
-        Boolean(assignment.apartment_number?.trim())))
+      tuUsesApartment(assignment.assignment_details, assignment.brf_name, assignment.apartment_number, assignment.orderer_role))
 
   if (isApartmentObject) {
     const brfName = toDisplayValue(assignment.brf_name)
@@ -304,7 +297,7 @@ export function buildAssignmentConfirmationEmail(
   const customerEmail = toDisplayValue(input.assignment.customer_email)
   const inspectionDate = toSwedishDateString(input.assignment.preferred_date)
   const inspectionTime = toSwedishTimeString(input.assignment.preferred_time)
-  const priceText = formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
+  const priceText = input.assignment.assignment_type === 'TU' ? tuPriceText(input.assignment.price_amount, input.assignment.assignment_details) : formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
   const expiresDate = toSwedishDateString(input.expiresAt)
   const roleLabelHtml = termsRoleToLabel(input.termsRole, 'html')
   const roleLabelText = termsRoleToLabel(input.termsRole, 'text')
@@ -499,7 +492,7 @@ export function buildAssignmentOrderReceiptEmail(
   const customerEmail = toDisplayValue(input.assignment.customer_email)
   const inspectionDate = toSwedishDateString(input.assignment.preferred_date)
   const inspectionTime = toSwedishTimeString(input.assignment.preferred_time)
-  const priceText = formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
+  const priceText = input.assignment.assignment_type === 'TU' ? tuPriceText(input.assignment.price_amount, input.assignment.assignment_details) : formatPriceAmount(input.assignment.price_amount, input.assignment.currency)
   const acceptedAt = input.acceptedAt
     ? new Date(input.acceptedAt).toLocaleString('sv-SE')
     : 'Ej satt'

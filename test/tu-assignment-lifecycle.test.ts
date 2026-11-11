@@ -20,7 +20,7 @@ function load<T>(path: string, dependencies: Record<string, unknown> = {}): T {
 }
 const domain = load<typeof Domain>('src/lib/tu/assignmentProgress.ts')
 const workflow = load<typeof Workflow>('src/lib/tu/assignmentWorkflow.ts')
-const editing = load<typeof Editing>('src/lib/tu/assignmentEditing.ts')
+const editing = load<typeof Editing>('src/lib/tu/assignmentEditing.ts', { './customer': load('src/lib/tu/customer.ts') })
 const http = load('src/lib/assignment-customers/http.ts', { 'server-only': {} })
 const ORG = '11111111-1111-4111-8111-111111111111'
 const VERSION = '2026-10-15T08:00:00.000123Z'
@@ -43,7 +43,7 @@ test('paused work and delivery guards return useful messages in every TU editing
     const mapper = ast.statements.find(statement => ts.isFunctionDeclaration(statement) && statement.name?.text === 'mapError')
     assert.ok(mapper, route)
     const compiled = ts.transpileModule(mapper.getText(ast), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-    const mapError = new Function('jsonError', `${compiled}; return mapError`)((error: string, status: number) => ({ error, status }))
+    const mapError = new Function('jsonError', 'TuCustomerError', `${compiled}; return mapError`)((error: string, status: number) => ({ error, status }), (load('src/lib/tu/customer.ts') as { TuCustomerError: typeof Error }).TuCustomerError)
     for (const code of ['TU_WORK_PAUSED', 'TU_DELIVERY_BLOCKED']) {
       const response = mapError(new Error(code))
       assert.equal(response.status, 409, route)

@@ -1,5 +1,6 @@
 'use client'
 
+import { readTuCustomer, tuPriceText, TU_CUSTOMER_LABELS } from '@/lib/tu/customer'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -63,11 +64,6 @@ function address(parts: Array<string | null | undefined>) {
   return parts.filter((part): part is string => Boolean(part?.trim())).join(', ') || 'Ej angivet'
 }
 
-function money(value: number | null, currency: string, customerType: DetailResponse['customerType']) {
-  if (value === null || !Number.isFinite(value)) return 'Ej angivet'
-  const formatted = `${value.toLocaleString('sv-SE', { maximumFractionDigits: 2 })} ${currency || 'SEK'}`
-  return customerType === 'consumer' ? `${formatted} inklusive moms` : formatted
-}
 
 function organizationUrl(path: string, organizationId: string) {
   const separator = path.includes('?') ? '&' : '?'
@@ -273,6 +269,11 @@ export default function TuAssignmentDetailPage() {
                 <DetailSection icon={<UserRound size={18} aria-hidden />} title="Beställare">
                   <FactGrid>
                     <Fact label="Namn" value={display(assignment.customer_name)} />
+                    {readTuCustomer(assignment.assignment_details?.tuCustomer) ? <>
+                      <Fact label="Beställartyp" value={TU_CUSTOMER_LABELS[readTuCustomer(assignment.assignment_details?.tuCustomer)!.kind]} />
+                      <Fact label="Kontaktperson" value={display(readTuCustomer(assignment.assignment_details?.tuCustomer)?.contactName)} />
+                      <Fact label="Kontaktpersonens roll" value={display(readTuCustomer(assignment.assignment_details?.tuCustomer)?.contactRole)} />
+                    </> : null}
                     <Fact label="E-post" value={assignment.customer_email} breakAll />
                     <Fact label="Telefon" value={display(assignment.customer_phone)} />
                     <Fact label="Adress" value={address([assignment.customer_address, assignment.customer_postal_code, assignment.customer_city])} />
@@ -287,7 +288,7 @@ export default function TuAssignmentDetailPage() {
                       onSaved={updated => setData(current => current?.assignment.id === updated.id && current.assignment.org_id === updated.org_id
                         ? { ...current, assignment: { ...current.assignment, ...updated } } : current)}
                     />
-                    <Fact label="Pris" value={money(assignment.price_amount, assignment.currency, data.customerType)} />
+                    <Fact label="Pris" value={tuPriceText(assignment.price_amount, assignment.assignment_details)} />
                   </FactGrid>
                 </DetailSection>
 
@@ -299,6 +300,7 @@ export default function TuAssignmentDetailPage() {
 
                 <DetailSection icon={<CircleDollarSign size={18} aria-hidden />} title="Fakturering">
                   <FactGrid>
+                    <Fact label="Fakturareferens" value={display(readTuCustomer(assignment.assignment_details?.tuCustomer)?.invoiceReference)} />
                     <Fact label="Fakturanamn" value={display(assignment.invoice_name)} />
                     <Fact label="Faktura-e-post" value={display(assignment.invoice_email)} breakAll />
                     <Fact label="Fakturaadress" value={display(assignment.invoice_address)} />

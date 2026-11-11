@@ -85,6 +85,8 @@ before(async () => {
   await db.exec(sql('2026-09-10_02_ob_early_start.sql'))
   await db.exec(migration)
   await db.exec(migration)
+  await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
+  await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
 })
 after(async () => { await db.close() })
 
@@ -241,6 +243,43 @@ test('reapplying the migration leaves locked reports and existing approvals unto
   const before=(await db.query('select id,status,accepted_at,inspection_id from assignments order by id')).rows
   const reports=(await db.query('select inspection_id,report_draft from technical_investigation_details order by inspection_id')).rows
   await db.exec(migration)
+  await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
   assert.deepEqual((await db.query('select id,status,accepted_at,inspection_id from assignments order by id')).rows,before)
   assert.deepEqual((await db.query('select inspection_id,report_draft from technical_investigation_details order by inspection_id')).rows,reports)
 })
+
+for (const kind of ['consumer', 'business', 'association']) {
+  test(`TU ${kind}: customer metadata survives early start and approval atomically`, async () => {
+    const a = await assignment()
+    const customer = { version: 1, kind, identityNumber: kind === 'consumer' ? '' : '769600-0000',
+      contactName: 'Before', contactRole: '', invoiceName: 'Invoice party', invoiceAddress: 'Invoice street', invoiceReference: 'Project 1' }
+    const pricing = { version: 1, amount: 1250, basis: 'inclusive', vatRate: 25, net: 1000, vat: 250, gross: 1250 }
+    const details = { customerType: kind === 'consumer' ? 'consumer' : 'business', objectType: 'villa', tuCustomer: customer, tuPricing: pricing }
+    await db.query('update assignments set assignment_details=$2::jsonb,price_amount=1250 where id=$1', [a.id, JSON.stringify(details)])
+    const investigation = await start(a.id)
+    const readCustomer = async () => (await db.query<{ customer_details: unknown }>('select customer_details from technical_investigation_details where inspection_id=$1', [investigation.inspectionId])).rows[0].customer_details
+    assert.deepEqual(await readCustomer(), customer)
+    const changedCustomer = { ...customer, contactName: 'After', invoiceReference: 'Project 2' }
+    const payload = { terms_document_hash: 'a'.repeat(64), customer_name: 'Approved party', addon_service_ids: [],
+      invoice_email: 'accounts@example.test', assignment_details: { ...details, tuCustomer: changedCustomer, representativeConfirmed: kind !== 'consumer' } }
+    if (kind !== 'consumer') {
+      const invalid = { ...payload, assignment_details: { ...payload.assignment_details, representativeConfirmed: false } }
+      await assert.rejects(db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)', [a.token, 'v1', JSON.stringify(invalid)]), /tu_customer_acceptance_invalid/)
+      assert.equal((await db.query<{ used_at: null }>('select used_at from assignment_links where assignment_id=$1', [a.id])).rows[0].used_at, null)
+    }
+    await db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)', [a.token, 'v1', JSON.stringify(payload)])
+    const saved = (await db.query<{ assignment_details: { tuCustomer: unknown; tuPricing: unknown }; invoice_email: string; price_amount: string }>('select assignment_details,invoice_email,price_amount from assignments where id=$1', [a.id])).rows[0]
+    assert.deepEqual(saved.assignment_details.tuCustomer, changedCustomer)
+    assert.deepEqual(saved.assignment_details.tuPricing, pricing)
+    assert.equal(Number(saved.price_amount), 1250)
+    assert.equal(saved.invoice_email, 'accounts@example.test')
+    assert.deepEqual(await readCustomer(), customer, 'approval must not silently overwrite an inspection in progress')
+    await book(a.id)
+    const status = await state(investigation.inspectionId)
+    assert.equal(status.needsReview, true)
+    assert.equal(status.currentSnapshot.tu_contact_name, 'After')
+    assert.equal(status.inspectionSnapshot?.tu_contact_name, 'Before')
+    assert.equal((await review(investigation.inspectionId)).canDeliver, true)
+    assert.deepEqual((await db.query<{ payload: unknown }>('select payload from assignment_acceptances where assignment_id=$1', [a.id])).rows[0].payload, payload)
+  })
+}

@@ -110,7 +110,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     if (!existing) return jsonError('TU-uppdraget hittades inte.', 404)
     if (!canEditTuAssignmentDetails(existing)) return jsonError('Skapa en ny version för att ändra ett skickat eller godkänt uppdrag. Datum och tid ändras separat före godkännande.', 409)
     let edit: ReturnType<typeof parseTuAssignmentEdit>
-    try { edit = parseTuAssignmentEdit(await request.json().catch(() => null)) }
+    try { edit = parseTuAssignmentEdit(await request.json().catch(() => null), existing.assignment_details) }
     catch (error) { return jsonError(error instanceof Error ? error.message : 'Kontrollera uppgifterna.', 400) }
     const assignment = await updateAssignmentById({
       orgId: org.orgId, assignmentId: existing.id, updatedBy: org.userId,

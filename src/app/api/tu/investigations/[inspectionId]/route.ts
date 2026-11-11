@@ -1,3 +1,4 @@
+import { parseTuCustomer, TuCustomerError } from '@/lib/tu/customer'
 import { NextResponse } from 'next/server'
 import {
   deleteTuInvestigation,
@@ -15,6 +16,7 @@ function jsonError(message: string, status: number) {
 }
 
 function mapError(error: unknown) {
+  if (error instanceof TuCustomerError) return jsonError(error.message, 400)
   const message = error instanceof Error ? error.message : ''
   if (message === 'TU_WORK_PAUSED') return jsonError('Arbetet är pausat. Öppna uppdragsbekräftelsen och kontrollera dess status innan du fortsätter.', 409)
   if (message === 'TU_DELIVERY_BLOCKED') return jsonError('Uppdraget måste godkännas, accepteras och stämmas av innan utlåtandet kan fastställas eller skickas.', 409)
@@ -68,6 +70,7 @@ export async function PATCH(
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const patch: Parameters<typeof updateTuInvestigationDraft>[0]['patch'] = {}
 
+    if ('tuCustomer' in body) patch.tuCustomer = parseTuCustomer(body.tuCustomer)
     if ('inspectionDate' in body) {
       if (body.inspectionDate !== null && typeof body.inspectionDate !== 'string') {
         throw new Error('TU_INSPECTION_DATE_INVALID')

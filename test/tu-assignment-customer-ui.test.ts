@@ -319,7 +319,7 @@ test('TU submit payload carries the explicit binding and customer edits invalida
   assert.match(dashboardSource, /identityNumber:\s*normalizedIdentity/)
   assert.match(dashboardSource, /CUSTOMER_BINDING_FORM_KEYS\.has\(key\)/)
   assert.match(dashboardSource, /setCustomerBinding\(null\)/)
-  assert.match(dashboardSource, /form\.customerType === ['"]business['"] && !normalizedIdentity/)
+  assert.match(dashboardSource, /form\.customerType !== ['"]consumer['"] && !normalizedIdentity/)
   assert.match(dashboardSource, /payload\.deliveryFailed === true/)
   assert.match(dashboardSource, /Försök igen från det sparade uppdraget/)
   assert.doesNotMatch(dashboardSource, /find\([^\n]*customerEmail/)

@@ -1,3 +1,5 @@
+import type { TuCustomer, TuCustomerKind, TuPricing } from './customer'
+
 export type TuCopyExtraFields = {
   customerIdentityNumber: string
   customerRole: string
@@ -10,7 +12,9 @@ export type TuCopySource = {
   title: string
   reportTemplateKey: string
   objectType: 'villa' | 'apartment'
-  customerType: 'consumer' | 'business'
+  customerType: TuCustomerKind
+  tuCustomer?: TuCustomer | null
+  tuPricing?: TuPricing | null
   customerName: string
   customerEmail: string
   customerPhone: string
@@ -47,7 +51,7 @@ export type TuCopyRegisteredCustomer = {
 export function tuCopyMatchesCustomer(source: TuCopySource, customer: TuCopyRegisteredCustomer) {
   const text = (value: string | null) => (value ?? '').trim()
   return customer.is_active &&
-    source.customerType === (customer.customer_type === 'business' ? 'business' : 'consumer') &&
+    (source.customerType === 'consumer' ? 'consumer' : 'business') === (customer.customer_type === 'business' ? 'business' : 'consumer') &&
     [
       [source.customerName, customer.name], [source.customerEmail.toLowerCase(), customer.email?.toLowerCase() ?? ''],
       [source.customerPhone, customer.phone], [source.customerAddress, customer.address],
@@ -65,6 +69,10 @@ export function tuCopyHref(inspectionId: string, organizationId: string) {
 // Only identity fields are reusable. Never spread a source report into a new draft.
 export function tuCopyPrefill(source: TuCopySource) {
   return {
+    customerType: source.customerType,
+    contactName: source.tuCustomer?.contactName ?? '',
+    contactRole: source.tuCustomer?.contactRole ?? '',
+    invoiceReference: source.tuCustomer?.invoiceReference ?? '',
     objectType: source.objectType,
     customerAddressMatchesObject: false,
     customerName: source.customerName,

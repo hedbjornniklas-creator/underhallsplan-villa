@@ -1,4 +1,5 @@
 import { after, NextResponse } from 'next/server'
+import { parseTuCustomerAcceptance, tuUsesApartment, TuCustomerError } from '@/lib/tu/customer'
 import { randomUUID } from 'node:crypto'
 import { publicLinkErrorCode, recordPublicLinkFailure, resolvePublicLinkFailures, type LinkOperation } from '@/lib/assignments/linkIncidents'
 import { isIP } from 'node:net'
@@ -180,18 +181,7 @@ function parsePrice(value: unknown) {
   return null
 }
 
-function normalizeRoleText(value: string | null | undefined) {
-  return (value ?? '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-}
 
-function roleLooksLikeApartment(value: string | null | undefined) {
-  const normalized = normalizeRoleText(value)
-  return normalized.includes('lagenhet') || normalized.includes('apartment') || normalized.includes('apt')
-}
 
 function toState(link: PublicLink): PublicState {
   const now = Date.now()
@@ -535,6 +525,7 @@ export async function POST(
     }
 
     const isTechnicalAssignment = assignment.assignment_type === 'TU'
+    const tuAcceptance = isTechnicalAssignment ? parseTuCustomerAcceptance(assignment.assignment_details, body) : null
     const isEbAssignment = assignment.assignment_type === 'EB'
     const termsRole = resolveAssignmentTermsRole({
       assignmentType: assignment.assignment_type,
@@ -624,8 +615,7 @@ export async function POST(
     const isApartmentObject = statusSource
       ? statusSource.statusObjectType === 'apartment'
       : isTechnicalAssignment
-      ? assignment.assignment_details?.objectType === 'apartment' ||
-        roleLooksLikeApartment(assignment.orderer_role) || Boolean(brfName || apartmentNumber)
+      ? tuUsesApartment(assignment.assignment_details, brfName, apartmentNumber, assignment.orderer_role)
       : termsRole === 'apartment'
 
     if (isApartmentObject) {
@@ -706,7 +696,17 @@ export async function POST(
       if (statusSource.statusObjectType) acceptanceDetails.objectType = statusSource.statusObjectType
       else delete acceptanceDetails.objectType
     }
+    if (tuAcceptance) {
+      acceptanceDetails.tuCustomer = tuAcceptance.customer
+      acceptanceDetails.representativeConfirmed = tuAcceptance.representativeConfirmed
+    }
     const payload = {
+      ...(tuAcceptance ? {
+        invoice_name: tuAcceptance.customer.invoiceName || null,
+        invoice_address: tuAcceptance.customer.invoiceAddress || null,
+        invoice_email: tuAcceptance.invoiceEmail || null,
+        personal_identity_number: tuAcceptance.customer.identityNumber || null,
+      } : {}),
       customer_name: typeof body.customerName === 'string' ? body.customerName.trim() : null,
       customer_email: customerEmail,
       customer_phone: typeof body.customerPhone === 'string' ? body.customerPhone.trim() : null,
@@ -828,6 +828,7 @@ export async function POST(
       confirmationEmailSent,
     })
   } catch (error) {
+    if (error instanceof TuCustomerError) return jsonError(error.message, 400)
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     const lowered = message.toLowerCase()
 

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { parseTuCustomer, parseTuPricing, TuCustomerError } from '@/lib/tu/customer'
 import {
   createTuAssignmentDraft,
   getTuAssignmentById,
@@ -80,8 +81,11 @@ export async function POST(request: Request) {
     const customerEmail = text(body, 'customerEmail').toLowerCase()
     const invoiceEmail = text(body, 'invoiceEmail').toLowerCase()
     const objectType = text(body, 'objectType') === 'apartment' ? 'apartment' : 'villa'
-    const customerType = text(body, 'customerType') === 'business' ? 'business' : 'consumer'
-    const price = parsePrice(text(body, 'priceAmount'))
+    const tuCustomer = body.tuCustomer === undefined ? null : parseTuCustomer(body.tuCustomer, false)
+    const customerType = tuCustomer ? (tuCustomer.kind === 'consumer' ? 'consumer' : 'business') : text(body, 'customerType') === 'business' ? 'business' : 'consumer'
+    const tuPricing = parseTuPricing(body.tuPricing)
+    if (tuCustomer && customerBinding.mode === 'create' && (customerBinding.customerType !== (customerType === 'business' ? 'business' : 'private') || (customerBinding.identityNumber ?? '').replace(/\D/g, '') !== tuCustomer.identityNumber.replace(/\D/g, ''))) throw new TuCustomerError('Kontrollera beställartyp och organisationsnummer i kundkopplingen.')
+    const price = tuPricing?.gross ?? parsePrice(text(body, 'priceAmount'))
 
     if (!customerEmail || !EMAIL_REGEX.test(customerEmail)) {
       return jsonError('Ange en giltig kundmejl.', 400)
@@ -119,6 +123,7 @@ export async function POST(request: Request) {
       invoiceEmail: invoiceEmail || null,
       objectType,
       customerType,
+      tuCustomer, tuPricing,
       scopeDescription: text(body, 'scopeDescription') || null,
       preferredDate: text(body, 'preferredDate') || null,
       preferredTime: text(body, 'preferredTime') || null,
@@ -159,6 +164,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const accessError = mapAccessError(error)
     if (accessError) return accessError
+    if (error instanceof TuCustomerError) return jsonError(error.message, 400)
     const customerFailure = assignmentCustomerFailure(error)
     if (customerFailure.code !== 'ASSIGNMENT_CUSTOMER_REQUEST_FAILED') {
       return jsonError(customerFailure.message, customerFailure.status, customerFailure.code)

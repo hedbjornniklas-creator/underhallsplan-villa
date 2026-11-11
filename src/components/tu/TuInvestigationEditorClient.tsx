@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Images, Loader2, MessageSquareText, MoveDown, MoveUp, Paperclip, Pencil, Plus, Printer, Sparkles, Trash2, Upload, X } from 'lucide-react'
 import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
+import TuInvestigationCustomerEditor from '@/components/tu/TuInvestigationCustomerEditor'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
 import TuFieldLogWorkspace from '@/components/tu/TuFieldLogWorkspace'
 import TuImageAppendixProposalDrawer, { type TuAppendixProposalApplyResult } from '@/components/tu/TuImageAppendixProposalDrawer'
@@ -837,6 +838,7 @@ export default function TuInvestigationEditorClient({
     initialWorkspaceView ?? (postDamageWorkflowEnabled ? 'preparation' : aiWorkflowEnabled ? 'field' : 'report')
   )
   const billingPanelRef = useRef<TuInvestigationBillingPanelHandle>(null)
+  const customerEditsPendingRef = useRef(false)
   const [billingHost, setBillingHost] = useState<HTMLDivElement | null>(null)
   const [billingStarted, setBillingStarted] = useState(workspaceView === 'delivery')
   const registerBillingHost = useCallback((node: HTMLDivElement | null) => {
@@ -858,11 +860,12 @@ export default function TuInvestigationEditorClient({
     setWorkspaceView('evidence')
   }, [])
   const changeWorkspaceView = useCallback(async (view: TuWorkspaceView) => {
+    if (customerEditsPendingRef.current) { toast.error('Spara beställaruppgifterna innan du byter steg.'); return }
     if (workspaceView === 'delivery' && view !== 'delivery' && billingPanelRef.current &&
       !(await billingPanelRef.current.flush())) return
     setEvidenceFocusRequest(null)
     setWorkspaceView(view)
-  }, [workspaceView])
+  }, [workspaceView, toast])
   const handleFieldImageUploaded = useCallback((image: TuFieldServerImage) => {
     setImages((current) => upsertImages(current, [image]))
   }, [])
@@ -2702,7 +2705,10 @@ export default function TuInvestigationEditorClient({
             </div>
             <button
               type="button"
-              onClick={() => setReportDetailsOpen((current) => !current)}
+              onClick={() => {
+                if (customerEditsPendingRef.current) { toast.error('Spara beställaruppgifterna innan du stänger.'); return }
+                setReportDetailsOpen((current) => !current)
+              }}
               aria-expanded={reportDetailsOpen}
               className="inline-flex h-9 items-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-50"
             >
@@ -2748,13 +2754,13 @@ export default function TuInvestigationEditorClient({
                 </label>
               </div>
 
-              <div className="grid gap-4 border-t border-violet-100 pt-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="grid gap-4 border-t border-violet-100 pt-4 lg:grid-cols-[300px_minmax(0,1fr)]">
                 <fieldset className="space-y-1">
                   <legend className="text-xs font-medium text-gray-600">Objekttyp</legend>
                   <div className="grid grid-cols-2 gap-1 rounded-md border border-gray-200 bg-gray-50 p-1">
                     {[
-                      { value: 'villa' as const, label: 'Villa' },
-                      { value: 'apartment' as const, label: 'BRF/lgh' },
+                      { value: 'villa' as const, label: 'Fastighet/byggnad' },
+                      { value: 'apartment' as const, label: 'Lägenhet' },
                     ].map((option) => {
                       const active = objectDetails.objectType === option.value
                       return (
@@ -2833,11 +2839,30 @@ export default function TuInvestigationEditorClient({
                 />
               </dl>
 
+              <TuInvestigationCustomerEditor
+                pendingRef={customerEditsPendingRef}
+                customer={investigation.tuCustomer ?? {
+                  version: 1, kind: investigation.assignment?.assignment_details?.customerType === 'business' ? 'business' : 'consumer',
+                  contactName: '', contactRole: '', identityNumber: assignmentParties.customerIdentityNumber,
+                  invoiceName: assignmentParties.invoiceName, invoiceAddress: assignmentParties.invoiceAddress, invoiceReference: '',
+                }}
+                disabled={locked}
+                onSave={async customer => {
+                  const nextParties = { ...assignmentPartiesRef.current, customerIdentityNumber: customer.identityNumber,
+                    invoiceName: customer.invoiceName, invoiceAddress: customer.invoiceAddress }
+                  const nextDraft = cloneDraftWithSection(draftRef.current, 'assignment_parties', buildAssignmentPartiesText(nextParties))
+                  assignmentPartiesRef.current = nextParties
+                  setAssignmentParties(nextParties)
+                  draftRef.current = nextDraft
+                  setDraft(nextDraft)
+                  await savePatch({ tuCustomer: customer, reportDraft: nextDraft })
+                }}
+              />
               <div className="grid gap-4 border-t border-violet-100 pt-4 lg:grid-cols-2">
                 <div className="rounded-md border border-gray-200 bg-gray-50/60 p-3">
                   <h3 className="mb-3 text-sm font-semibold text-gray-950">Beställare</h3>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {CUSTOMER_PARTY_FIELDS.map((field) => (
+                    {CUSTOMER_PARTY_FIELDS.filter(field => !['customerIdentityNumber', 'invoiceName', 'invoiceAddress'].includes(field.key)).map((field) => (
                       <AssignmentPartiesInput
                         key={field.key}
                         field={field}

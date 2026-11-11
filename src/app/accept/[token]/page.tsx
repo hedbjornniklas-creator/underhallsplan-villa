@@ -1,6 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { TuCustomerFields, TuInvoiceFields, tuCustomerFormFromAssignment, tuCustomerFromForm, type TuCustomerForm } from '@/components/tu/TuCustomerFields'
+import { TuPriceSummary } from '@/components/tu/TuPriceFields'
+import { TU_CUSTOMER_LABELS, readTuCustomer, readTuPricing, parseTuCustomerAcceptance, tuUsesApartment } from '@/lib/tu/customer'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
 import { obInspectionProfileLabel, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
@@ -116,6 +119,9 @@ type AcceptReadResponse = {
 }
 
 type FormState = {
+  tuCustomer: TuCustomerForm
+  invoiceEmail: string
+  representativeConfirmed: boolean
   cadastralId: string
   propertyAddress: string
   propertyPostalCode: string
@@ -181,6 +187,9 @@ function toFormState(
   const availableAddonIds = new Set(addonOffers.map((offer) => offer.addon_service_id))
   const normalizedSelectedAddons = selectedAddonServiceIds.filter((id) => availableAddonIds.has(id))
   return {
+    tuCustomer: tuCustomerFormFromAssignment(assignment),
+    invoiceEmail: assignment.invoice_email ?? '',
+    representativeConfirmed: false,
     cadastralId: assignment.cadastral_id ?? '',
     propertyAddress: assignment.property_address ?? assignment.preliminary_address ?? '',
     propertyPostalCode: assignment.property_postal_code ?? '',
@@ -351,14 +360,13 @@ export default function AssignmentAcceptPage() {
       form?.consumerWithdrawalAcknowledged &&
         (!consumerEarlyStartConsentRequired || form?.startDuringWithdrawalPeriod)
     )
+  const hasTuCustomer = isTechnicalAssignment && Boolean(readTuCustomer(data?.assignment.assignment_details?.tuCustomer))
+  const tuPricing = isTechnicalAssignment ? readTuPricing(data?.assignment.assignment_details) : null
   const usesApartmentObject =
     lockedOrdererRole === 'status'
       ? resolveObObjectType('status', data?.assignment.assignment_details?.objectType) === 'apartment'
       : lockedOrdererRole === 'apartment' ||
-        (isTechnicalAssignment && (
-          data?.assignment.assignment_details?.objectType === 'apartment' ||
-          Boolean(form?.brfName.trim() || form?.apartmentNumber.trim())
-        ))
+        (isTechnicalAssignment && tuUsesApartment(data?.assignment.assignment_details, form?.brfName, form?.apartmentNumber))
 
   const activeTerms = useMemo(() => {
     if (!data) return null
@@ -399,7 +407,7 @@ export default function AssignmentAcceptPage() {
       : INSPECTOR_FALLBACK.addressLine
   const inspectorAvatarSrc = resolvePublicMediaUrl(data?.inspector?.avatar_path)
 
-  const updateField = (key: keyof FormState, value: string | boolean) => {
+  const updateField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
@@ -458,6 +466,10 @@ export default function AssignmentAcceptPage() {
       return
     }
 
+    if (hasTuCustomer) {
+      try { parseTuCustomerAcceptance(data.assignment.assignment_details, { tuCustomer: tuCustomerFromForm(form.tuCustomer), invoiceEmail: form.invoiceEmail, representativeConfirmed: form.representativeConfirmed }) }
+      catch (error) { setError(error instanceof Error ? error.message : 'Kontrollera beställaruppgifterna.'); return }
+    }
     const missingObjectFields = usesApartmentObject
       ? lockedOrdererRole === 'status'
         ? !form.apartmentNumber.trim()
@@ -514,6 +526,7 @@ export default function AssignmentAcceptPage() {
           propertyCity: form.propertyCity,
           propertyMunicipality: form.propertyMunicipality,
           propertyOwnerName: form.propertyOwnerName,
+          ...(hasTuCustomer ? { tuCustomer: tuCustomerFromForm(form.tuCustomer), invoiceEmail: form.invoiceEmail, representativeConfirmed: form.representativeConfirmed } : {}),
           customerName: form.customerName,
           customerAddress: form.customerAddress,
           customerPostalCode: form.customerPostalCode,
@@ -845,8 +858,10 @@ export default function AssignmentAcceptPage() {
 
                 <section className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                   <h3 className="text-sm font-semibold text-gray-900">Uppdragsgivare</h3>
+                  {hasTuCustomer ? <TuCustomerFields value={form.tuCustomer} kindReadOnly disabled={!canSubmit}
+                    onChange={(key, value) => updateField('tuCustomer', { ...form.tuCustomer, [key]: value })} /> : null}
                   <Field
-                    label="Namn *"
+                    label={hasTuCustomer && form.tuCustomer.customerType !== 'consumer' ? 'Organisationens namn *' : 'Namn *'}
                     value={form.customerName}
                     onChange={(value) => updateField('customerName', value)}
                     disabled={!canSubmit}
@@ -937,7 +952,7 @@ export default function AssignmentAcceptPage() {
                       />
                       <div className="space-y-2 pt-5">
                         <p className="text-xs font-semibold uppercase tracking-wide text-gray-700">Kostnad</p>
-                        <Field
+                        {tuPricing ? <TuPriceSummary price={tuPricing} /> : <Field
                           label={
                             isEbAssignment && ebDetails?.pricingModel === 'hourly'
                               ? 'Timpris (SEK) *'
@@ -953,7 +968,7 @@ export default function AssignmentAcceptPage() {
                           value={form.priceAmount}
                           onChange={(value) => updateField('priceAmount', value)}
                           disabled
-                        />
+                        />}
                       </div>
                     </div>
                     <Field
@@ -1068,7 +1083,7 @@ export default function AssignmentAcceptPage() {
                     <AssignmentFact
                       label="Beställartyp"
                       value={
-                        isConsumerTechnicalAssignment
+                        hasTuCustomer ? TU_CUSTOMER_LABELS[form.tuCustomer.customerType] : isConsumerTechnicalAssignment
                           ? 'Privatperson'
                           : 'Företag/organisation'
                       }
@@ -1076,7 +1091,7 @@ export default function AssignmentAcceptPage() {
                     <AssignmentFact
                       label="Prisangivelse"
                       value={
-                        isConsumerTechnicalAssignment
+                        tuPricing ? 'Totalbeloppet ovan är inklusive moms' : isConsumerTechnicalAssignment
                           ? 'Angivet pris är inklusive moms'
                           : 'Enligt uppdragsbekräftelsen'
                       }
@@ -1157,6 +1172,15 @@ export default function AssignmentAcceptPage() {
                 <span className="text-xs font-medium text-gray-500">Version {data.terms.version}</span>
               </div>
 
+              {hasTuCustomer ? <section className="space-y-3 border-b border-gray-200 pb-4">
+                <h3 className="font-semibold">Fakturering</h3>
+                <TuInvoiceFields value={form.tuCustomer} disabled={!canSubmit} onChange={(key, value) => updateField('tuCustomer', { ...form.tuCustomer, [key]: value })} />
+                <Field label="Faktura-e-post (om annan)" type="email" value={form.invoiceEmail} disabled={!canSubmit} onChange={value => updateField('invoiceEmail', value)} />
+                {form.tuCustomer.customerType !== 'consumer' ? <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" checked={form.representativeConfirmed} disabled={!canSubmit} onChange={event => updateField('representativeConfirmed', event.target.checked)} className="mt-1 h-4 w-4" />
+                  <span>Jag har rätt att beställa och godkänna uppdraget för organisationens räkning.</span>
+                </label> : null}
+              </section> : null}
               <label className="mt-1 flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
                 <input
                   type="checkbox"
@@ -1229,7 +1253,7 @@ export default function AssignmentAcceptPage() {
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={!canSubmit || !activeTerms || saving || !form.termsAccepted || !consumerRequirementsMet}
+                disabled={!canSubmit || !activeTerms || saving || !form.termsAccepted || !consumerRequirementsMet || (hasTuCustomer && form.tuCustomer.customerType !== 'consumer' && !form.representativeConfirmed)}
                 className={`inline-flex h-10 items-center justify-center rounded-lg px-5 text-sm font-semibold text-white transition disabled:cursor-not-allowed ${
                   isTechnicalAssignment
                     ? 'bg-violet-600 hover:bg-violet-700 disabled:bg-violet-300'

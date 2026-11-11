@@ -33,6 +33,7 @@ import {
   type TuReportAuthoringMode,
 } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
+import { readTuCustomer, parseTuCustomer, type TuCustomer, type TuPricing } from '@/lib/tu/customer'
 import { EMPTY_TU_COPY_EXTRAS, tuCopyPartiesText, type TuCopyExtraFields } from '@/lib/tu/copy'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type {
@@ -149,6 +150,7 @@ export type TuInspectorProfileCard = {
 }
 
 export type TuInvestigationDetails = TuInspectionSummary & {
+  tuCustomer?: TuCustomer | null
   orgId: string
   inspectorProfileId: string | null
   reportTemplateKey: string | null
@@ -196,6 +198,7 @@ export type TuInvestigationImage = {
 }
 
 type TuDetailRow = {
+  customer_details?: unknown
   inspection_id: string
   org_id: string
   inspector_profile_id: string | null
@@ -394,6 +397,7 @@ function normalizeTuObjectType(value: string | null | undefined): TuObjectType {
 }
 
 function resolveTuDetailObjectType(detail: Pick<TuDetailRow, 'property_object_type' | 'brf_name' | 'apartment_number'>): TuObjectType {
+  if (detail.property_object_type === 'villa') return 'villa'
   if (normalizeTuObjectType(detail.property_object_type) === 'apartment') return 'apartment'
   if (cleanText(detail.brf_name) || cleanText(detail.apartment_number)) return 'apartment'
   return 'villa'
@@ -1094,6 +1098,8 @@ export async function createTuAssignmentDraft(input: {
   invoiceAddress?: string | null
   customerRole?: string | null
   customerIdentityNumber?: string | null
+  tuCustomer?: TuCustomer | null
+  tuPricing?: TuPricing | null
 }) {
   const objectType = inferTuObjectType({
     objectType: input.objectType,
@@ -1123,9 +1129,9 @@ export async function createTuAssignmentDraft(input: {
     apartmentNumber: objectType === 'apartment' ? input.apartmentNumber : null,
     apartmentHolderName: objectType === 'apartment' ? input.apartmentHolderName : null,
     invoiceEmail: input.invoiceEmail,
-    invoiceName: input.invoiceName,
-    invoiceAddress: input.invoiceAddress,
-    personalIdentityNumber: input.customerIdentityNumber,
+    invoiceName: input.tuCustomer?.invoiceName || input.invoiceName,
+    invoiceAddress: input.tuCustomer?.invoiceAddress || input.invoiceAddress,
+    personalIdentityNumber: input.tuCustomer?.identityNumber || input.customerIdentityNumber,
     scopeDescription: input.scopeDescription,
     ordererRole: normalizeTuOrdererRole(input.customerRole),
     preferredDate: input.preferredDate,
@@ -1136,6 +1142,8 @@ export async function createTuAssignmentDraft(input: {
     assignmentDetails: {
       objectType,
       customerType: input.customerType === 'business' ? 'business' : 'consumer',
+      ...(input.tuCustomer ? { tuCustomer: input.tuCustomer } : {}),
+      ...(input.tuPricing ? { tuPricing: input.tuPricing } : {}),
     },
   })
 }
@@ -1279,6 +1287,7 @@ async function createTuDetail(input: {
   invoiceEmail?: string | null
   createdBy: string
   reportDraft?: TuReportDraft
+  tuCustomer?: TuCustomer | null
 }) {
   const admin = createSupabaseAdminClient() as unknown as TuSupabaseClient
   const objectType = normalizeTuObjectType(input.objectType)
@@ -1289,6 +1298,7 @@ async function createTuDetail(input: {
       org_id: input.orgId,
       inspector_profile_id: input.inspectorProfileId,
       assignment_id: input.assignmentId ?? null,
+      ...(input.tuCustomer ? { customer_details: input.tuCustomer } : {}),
       property_id: input.propertyId,
       title: cleanText(input.title) ?? 'Teknisk utredning',
       project_type: cleanText(input.projectType) ?? 'Fördjupad teknisk utredning',
@@ -1344,6 +1354,7 @@ export async function createScratchTuInvestigation(input: {
   date?: string | null
   time?: string | null
   customerDetails?: TuCopyExtraFields
+  tuCustomer?: TuCustomer | null
 }) {
   const reportTemplate = await getActiveTuReportTemplateByKey(input.reportTemplateKey ?? '')
   const ownerProfileId = cleanText(input.responsibleProfileId) ?? input.createdBy
@@ -1396,6 +1407,7 @@ export async function createScratchTuInvestigation(input: {
       apartmentNumber: input.apartmentNumber,
       apartmentHolderName: input.apartmentHolderName,
       invoiceEmail: input.invoiceEmail,
+      tuCustomer: input.tuCustomer,
       reportDraft: createTuReportDraftFromTemplate(reportTemplate, {
         assignment_scope: input.scopeDescription ?? '',
         ...(input.customerDetails ? {
@@ -1508,7 +1520,7 @@ export async function listTuInvestigations(orgId: string): Promise<TuInspectionL
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,customer_details,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
@@ -1565,7 +1577,7 @@ export async function getTuInvestigationById(input: {
   const { data: detailData, error: detailError } = await admin
     .from('technical_investigation_details')
     .select(
-      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
+      'inspection_id,org_id,inspector_profile_id,assignment_id,property_id,title,project_type,property_object_type,scope_description,brf_name,apartment_number,apartment_holder_name,background,basis,accessibility,report_draft,report_draft_updated_at,invoice_email,customer_details,report_template_key,report_template_title,report_template_version,report_template_applied_at,report_authoring_mode,report_workflow_profile,report_locked_at,created_by,created_at,updated_at'
     )
     .eq('org_id', input.orgId)
     .eq('inspection_id', input.inspectionId)
@@ -1624,13 +1636,14 @@ export async function getTuInvestigationById(input: {
     }
   }
   const summary = buildSummary(detail, inspection, property)
+  const tuCustomer = readTuCustomer(detail.customer_details) ?? readTuCustomer(assignment?.assignment_details?.tuCustomer)
   const assignmentBrfName = cleanText(assignment?.brf_name)
   const assignmentApartmentNumber = cleanText(assignment?.apartment_number)
   const assignmentApartmentHolderName = cleanText(assignment?.apartment_holder_name)
   const hasApartmentAssignmentFields = Boolean(assignmentBrfName || assignmentApartmentNumber)
   const resolvedSummary = {
     ...summary,
-    objectType: summary.objectType === 'apartment' || hasApartmentAssignmentFields ? 'apartment' : summary.objectType,
+    objectType: detail.property_object_type ? summary.objectType : hasApartmentAssignmentFields ? 'apartment' : summary.objectType,
     brfName: cleanText(summary.brfName) ?? assignmentBrfName,
     apartmentNumber: cleanText(summary.apartmentNumber) ?? assignmentApartmentNumber,
     apartmentHolderName: cleanText(summary.apartmentHolderName) ?? assignmentApartmentHolderName,
@@ -1645,6 +1658,7 @@ export async function getTuInvestigationById(input: {
 
   return {
     ...resolvedSummary,
+    tuCustomer,
     orgId: detail.org_id,
     inspectorProfileId,
     reportTemplateKey: cleanText(detail.report_template_key),
@@ -1756,6 +1770,7 @@ export async function updateTuInvestigationDraft(input: {
     basis?: string | null
     accessibility?: string | null
     reportDraft?: TuReportDraft
+    tuCustomer?: TuCustomer
   }
 }) {
   const hasInspectionDatePatch = 'inspectionDate' in input.patch
@@ -1799,6 +1814,7 @@ export async function updateTuInvestigationDraft(input: {
   }
 
   if ('title' in input.patch) payload.title = cleanText(input.patch.title) ?? existing.title
+  if ('tuCustomer' in input.patch) payload.customer_details = parseTuCustomer(input.patch.tuCustomer)
   if ('projectType' in input.patch) {
     payload.project_type = cleanText(input.patch.projectType) ?? existing.projectType ?? 'Fördjupad teknisk utredning'
   }
