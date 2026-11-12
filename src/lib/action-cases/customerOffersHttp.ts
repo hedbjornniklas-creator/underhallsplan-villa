@@ -73,6 +73,8 @@ export function customerOfferError(error: unknown) {
     PROJECT_QUESTION_ASSIGNEE: [400, 'Välj en tillgänglig ansvarig. Vid utskick behöver en extern mottagare en e-postadress.'],
     PROJECT_QUESTION_RECIPIENT_CHANGED: [409, 'Den ansvariges kontaktuppgifter har ändrats. Hämta frågorna, välj den ansvarige igen och spara före utskick.'],
     PROJECT_QUESTION_FILES: [409, 'En vald bilaga är inte längre tillgänglig för frågan.'],
+    PROJECT_QUESTION_FILES_UNCHANGED: [409, 'Alla bifogade filer är redan delade med den ansvariga. Inget nytt utskick behövs.'],
+    PROJECT_QUESTION_FILES_NOT_DISPATCHED: [409, 'Skicka först frågan till den nya ansvariga. Bilagorna följer med i samma utskick.'],
     PROJECT_QUESTION_STALE: [409, 'Frågan har ändrats i en annan session. Din text finns kvar. Hämta den sparade versionen innan du fortsätter.'],
     PROJECT_QUESTION_CLOSED: [409, 'Frågan är avslutad. Återöppna den innan du lägger till något.'],
     PROJECT_QUESTION_TASK_OPEN: [409, 'Frågan har en aktiv uppgift. Hantera eller avsluta den i Gizmo innan frågan avslutas eller skickas på nytt.'],

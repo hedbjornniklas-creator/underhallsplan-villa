@@ -4,7 +4,7 @@ import { randomUUID, createHmac, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 import ts from 'typescript'
-import { emptyQuestion, questionAssigneeOptions, questionMutation, questionUuid } from '../src/lib/action-cases/projectQuestions.ts'
+import { emptyQuestion, questionAssigneeOptions, questionMutation, questionUuid, questionFileUpdateMutation } from '../src/lib/action-cases/projectQuestions.ts'
 
 const dialogueModule = { exports: {} }
 new Function('require', 'module', 'exports', ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/questionDialogue.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(() => ({ questionUuid }), dialogueModule, dialogueModule.exports)
@@ -423,4 +423,88 @@ test('deadline-only dispatch works against the unchanged SQL/task pipeline and p
   assert.equal(new Date(task.next_followup_at).toISOString(), new Date(task.due_at).toISOString())
   assert.equal((await db.query('select count(*)::int n from test_outbox where task_id=$1', [task.id])).rows[0].n, 1)
   assert.deepEqual((await db.query('select * from operational_tasks where id<>$1 order by id', [task.id])).rows, previous)
+})
+
+test('current attachments and supplements preserve the existing question, privacy and task lifecycle', async suite => {
+  await db.exec(`alter table operational_tasks add column version integer default 1,add column primary_channel text default 'email',add column fallback_channel text;
+    alter table task_events add column actor_contact_id uuid,add column to_status text;
+    alter table organization_contacts add column recipient_identity_id uuid;
+    create table task_recipient_identities(id uuid primary key,status text);
+    create table task_followup_rules(task_id uuid,initial_dispatch_pending boolean default false);
+    create function task_profile_has_module_access(uuid,uuid) returns boolean language sql as $$select true$$;`)
+  const notificationSql = readFileSync(new URL('../docs/db/2026-08-27_04_task_event_notifications.sql',import.meta.url),'utf8').replace(/\r/g,'')
+  const start=notificationSql.indexOf('create or replace function public.resolve_task_event_notification_target(')
+  await db.exec(notificationSql.slice(start,notificationSql.indexOf('\n$$;',start)+4))
+  const migration=readFileSync(new URL('../docs/db/2026-11-12_03_project_question_attachments.sql',import.meta.url),'utf8')
+  const baseline=(await db.query('select to_jsonb(q) value from action_case_questions q order by id')).rows
+  await db.exec(migration);await db.exec(migration)
+  assert.deepEqual((await db.query("select to_jsonb(q)-'attachment_ids' value from action_case_questions q order by id")).rows,baseline)
+  const effective=async q=>(await db.query('select project_question_attachment_ids($1,$2,$3) ids',[org,caseId,q])).rows[0].ids
+  const insertFile=async(n,questionId=null)=>{
+    const f=id(n);await db.query("insert into action_case_attachments(id,org_id,action_case_id,question_id,file_name,storage_bucket,file_path,content_type,file_size_bytes,attachment_type) values($1,$2,$3,$4,$5,$7,$6,'application/pdf',120,'document')",[f,org,caseId,questionId,`Fiktiv-${n}.pdf`,`fixture/${n}.pdf`,questionId?'project-question-files':'action-case-files']);return f
+  }
+  const setup=async(n)=>{
+    const q=id(n);await write(mutation(q,0,'create',{attachmentSelection:1,body:{...body(),assignee:{id:contact,kind:'contact',name:''}}}))
+    await write(mutation(q,1,'send',{attachmentSelection:1,confirmed:true,dueAt:'2030-01-20T15:00:00Z'}))
+    const t=(await db.query('select t.* from operational_tasks t join action_case_question_events e on e.task_id=t.id where e.question_id=$1',[q])).rows[0]
+    await db.query('update operational_tasks set issuer_profile_id=$1 where id=$2',[actor,t.id]);return {q,t}
+  }
+  const attach=async(q,ids)=>{const r=await row(q);const req=mutation(q,r.revision,'update',{attachmentSelection:1,body:r.body,fileIds:ids});await write(req);return req}
+  const shareRequest=async(q,t,ids)=>({operation:'share_files',requestId:randomUUID(),questionId:q,taskId:t.id,revision:(await row(q)).revision,taskVersion:1,fileIds:ids,confirmed:true})
+  const share=async(r,user=actor,organization=org)=>db.query('select share_project_question_files($1,$2,$3,$4)',[organization,caseId,user,JSON.stringify(questionFileUpdateMutation(r))])
+  await suite.test('legacy baseline excludes internal notes; an empty saved set and old tabs do not resurrect removed files',async()=>{
+    const q=id(810),f=await insertFile(811)
+    await write(mutation(q,0,'create',{body:body(),fileIds:[f]}));const secret=await insertFile(812,q)
+    await write(mutation(q,1,'note',{text:'Fiktiv intern notering',fileIds:[secret]}));assert.deepEqual(await effective(q),[f])
+    const removed=await attach(q,[]);assert.deepEqual(await effective(q),[])
+    await write(mutation(q,3,'update',{body:{...(await row(q)).body,title:'Metadata via gammal flik'},fileIds:[f]}));assert.deepEqual(await effective(q),[])
+    await write(removed);assert.deepEqual(await effective(q),[],'a late exact retry must not replay the old selection')
+    assert.equal((await db.query('select count(*)::int n from action_case_attachments where id=any($1)',[[f,secret]])).rows[0].n,2)
+  })
+  await suite.test('a supplement adds snapshots and one notification; question/task IDs, dates, body, status and initial dispatch stay unchanged',async()=>{
+    const {q,t}=await setup(820),f=await insertFile(821,q);await attach(q,[f])
+    const before=await row(q),taskBefore=(await db.query('select * from operational_tasks where id=$1',[t.id])).rows[0],request=await shareRequest(q,t,[f])
+    await share(request);await share(request)
+    assert.equal((await row(q)).revision,before.revision+1);assert.deepEqual((await row(q)).body,before.body)
+    assert.deepEqual((await db.query('select * from operational_tasks where id=$1',[t.id])).rows[0],taskBefore)
+    assert.equal((await db.query('select count(*)::int n from task_attachments where task_id=$1',[t.id])).rows[0].n,1)
+    assert.equal((await db.query('select count(*)::int n from task_events where task_id=$1',[t.id])).rows[0].n,1)
+    assert.equal((await db.query('select count(*)::int n from action_case_question_events where question_id=$1 and task_id is not null',[q])).rows[0].n,1)
+    assert.equal((await db.query('select count(*)::int n from test_comment_outbox where event_id=$1',[request.requestId])).rows[0].n,1)
+    const target=(await db.query('select resolve_task_event_notification_target($1) target',[request.requestId])).rows[0].target
+    assert.equal(target.skipped,false);assert.equal(target.recipientId,contact);assert.equal(target.target,'assignee')
+    await assert.rejects(share(await shareRequest(q,t,[f])),/UNCHANGED/)
+    await assert.rejects(share({...request,fileIds:[]}),/FILES/)
+  })
+  await suite.test('the current project manager can notify even if not original issuer, without broadening normal comment rights',async()=>{
+    const {q,t}=await setup(830),f=await insertFile(831,q),newManager=id(832)
+    await db.query("insert into profiles values($1,'Ny testledare','new@example.invalid');",[newManager])
+    await db.query("insert into org_members values($1,$2,true,'member')",[org,newManager])
+    await db.query('update action_cases set manager_profile_id=$1 where id=$2',[newManager,caseId])
+    await db.query("insert into action_case_question_participants(org_id,action_case_id,question_id,person_kind,person_id,name,email) values($1,$2,$3,'profile',$4,'Ny testledare','new@example.invalid')",[org,caseId,q,newManager])
+    await attach(q,[f]);const request=await shareRequest(q,t,[f]);await share(request,newManager)
+    assert.equal((await db.query('select resolve_task_event_notification_target($1) target',[request.requestId])).rows[0].target.recipientId,contact)
+    const event=randomUUID();await db.query("insert into task_events(id,org_id,task_id,event_type,actor_type,actor_profile_id,actor_name,message,metadata) values($1,$2,$3,'comment','profile',$4,'Ny testledare','Vanlig kommentar','{}')",[event,org,t.id,newManager])
+    assert.equal((await db.query('select resolve_task_event_notification_target($1) target',[event])).rows[0].target.reason,'actor_invalid')
+    await db.query('update action_cases set manager_profile_id=$1 where id=$2',[actor,caseId])
+  })
+  await suite.test('stale versions, wrong person/tenant, foreign private files, internal-only files and unconfirmed sends are rejected',async()=>{
+    const {q,t}=await setup(840),f=await insertFile(841,q);await attach(q,[f]);const request=await shareRequest(q,t,[f])
+    for(const patch of [{revision:1},{taskVersion:2}]) await assert.rejects(share({...request,...patch}),/STALE/)
+    await assert.rejects(share(request,other),/FORBIDDEN/);await assert.rejects(share(request,actor,other),/FORBIDDEN/)
+    await assert.rejects(share({...request,confirmed:false}),/FILES/)
+    const privateQ=id(842);await write(mutation(privateQ,0,'create',{body:body()}));const foreign=await insertFile(843,privateQ)
+    await assert.rejects(attach(q,[foreign]),/FILES/)
+    const secret=await insertFile(844,q);await write(mutation(q,(await row(q)).revision,'note',{text:'Internt',fileIds:[secret]}))
+    await assert.rejects(share(await shareRequest(q,t,[f,secret])),/FILES/)
+    assert.equal((await db.query('select count(*)::int n from task_attachments where task_id=$1',[t.id])).rows[0].n,0)
+  })
+  await suite.test('queue failure rolls back snapshots and history; removed files stay in recipient history, without being sent again',async()=>{
+    const {q,t}=await setup(850),f=await insertFile(851,q);await attach(q,[f]);const request=await shareRequest(q,t,[f]),before=await row(q)
+    await db.exec("set test.fail_comment_queue='yes'");await assert.rejects(share(request),/queue failed/);await db.exec("set test.fail_comment_queue='no'")
+    assert.deepEqual(await row(q),before);assert.equal((await db.query('select count(*)::int n from task_attachments where task_id=$1',[t.id])).rows[0].n,0)
+    await share(request);await attach(q,[]);assert.deepEqual(await effective(q),[])
+    assert.equal((await db.query('select count(*)::int n from task_attachments where task_id=$1',[t.id])).rows[0].n,1)
+    await share(request);assert.equal((await db.query('select count(*)::int n from task_events where task_id=$1',[t.id])).rows[0].n,1)
+  })
 })

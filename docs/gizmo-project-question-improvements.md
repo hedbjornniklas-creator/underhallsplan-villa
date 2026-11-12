@@ -233,6 +233,38 @@ mottagarfunktionen. Ingen historisk dataöverföring eller massändring ingår.
 Om den nya SQL-funktionen saknas fungerar den tidigare kontaktlistan fortsatt;
 redigeraren anger då att beställarlistan behöver aktiveras.
 
+### Bifogade filer och komplettering, 2026-11-12
+
+Fråga har en gemensam sektion **Bifogade filer** med **Från projektet**,
+**Från bildbanken** och **Ladda upp fil**. Tillagda filer ingår direkt i frågans
+aktuella bilageurval och autosparas, utan en extra kryssruta. Bildbanken
+återanvänder projektets befintliga bildvisare och dagboksimport.
+
+En filrad visar om filen är delad med den aktuella ansvariga eller ännu inte
+delad. Uppladdning och intern sparning skickar inte mejl. **Skicka uppdatering
+till [ansvarig]** delar nya filer på samma redan skickade uppgift och lägger en
+avisering i den befintliga utskickskön. Fråga, uppgiftslänk, status, datum,
+påminnelseschema och tidigare historik behålls. Bara projektansvarig kan skicka.
+Båda versionerna kontrolleras, och samma återförsök kan inte dubblera bilagor
+eller aviseringar. Ett köfel rullar tillbaka även filkopior och historikhändelsen.
+
+Aktuellt urval lagras separat från historiska bilagor. Borttagning raderar inte
+projektfilen och återkallar inte redan delade kopior; de visas under **Tidigare
+delade filer**. Äldre frågors filreferenser från registrering, ändring och utskick
+utgör en läsande utgångspunkt tills ett uttryckligt urval sparas. Interna
+anteckningar och återgivna svar tas inte med automatiskt. Gamla flikar kan inte
+tömma det nya urvalet genom en vanlig metadataändring.
+
+Kräver `docs/db/2026-11-12_03_project_question_attachments.sql`. Migreringen
+lägger till ett tomt nullable fält och funktioner, utan att skriva om befintliga
+frågor, avtal eller kalkyler. Gruppdialogens uttryckliga delning är oförändrad.
+Migreringen kördes i produktion 2026-11-12. Kontrollvärden för 13 tabeller i
+vardera Lokevägen, Gåshaga och Studio 4 var oförändrade efter körningen
+(det nya nullfältet jämförs som en schemaändring). Releasekopians 1 132 tester,
+produktionsbygge, typkontroll och riktad lint passerade. Klicktest av komplettering,
+omladdning och återförsök gjordes med fiktiva uppgifter; mobilbredd 390 px ryms
+utan sidrullning. Driftverifiering redovisas i separat releaseprotokoll.
+
 ## Beslutslogg
 
 - 2026-10-19: Användaren godkände direkt återanvändning av beställare utan extra
@@ -262,3 +294,7 @@ redigeraren anger då att beställarlistan behöver aktiveras.
   byggs i den ägande projektfrågan, med bevarad historik och ordinarie påminnelser.
 - 2026-11-12: Användaren godkänner SQL-körning och publicering av datumändringen
   tillsammans med hovrings- och fokusmarkeringen i mottagarens Mer-meny.
+- 2026-11-12: Användaren godkänner bildförslagets gemensamma bilagesektion utan
+  extra kryssrutor och komplettering av skickad fråga med bevarad historik.
+  Publicering är godkänd efter test. Inga filer ska skickas till Nail som del av
+  själva utvecklings- eller visningskontrollen.

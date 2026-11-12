@@ -7,8 +7,9 @@ import { projectLibraryImages } from '@/lib/action-cases/projectImageLibrary'
 import ActionCaseAttachmentPicker from './ActionCaseAttachmentPicker'
 import { useDiaryImages } from './useDiaryImages'
 
-export default function QuestionDiaryImagePicker({ caseId, questionId, disabled, remaining, onAttached, onWorking }: {
+export default function QuestionDiaryImagePicker({ caseId, questionId, disabled, remaining, onAttached, onWorking, projectFiles = [], buttonLabel = 'Välj från dagboken' }: {
   caseId: string; questionId: string; disabled: boolean; remaining: number
+  projectFiles?: ActionCaseAttachmentView[]; buttonLabel?: string
   onAttached: (files: ActionCaseAttachmentView[]) => void; onWorking: (busy: boolean) => void
 }) {
   const [open, setOpen] = useState(false), [selected, setSelected] = useState<string[]>([])
@@ -16,7 +17,7 @@ export default function QuestionDiaryImagePicker({ caseId, questionId, disabled,
   const running = useRef(false), callbacks = useRef({ onAttached, onWorking })
   callbacks.current = { onAttached, onWorking }
   const panelId = useId(), diary = useDiaryImages(caseId, open)
-  const images = projectLibraryImages(caseId, [], diary.images)
+  const images = projectLibraryImages(caseId, projectFiles, diary.images)
   const byId = new Map(images.map(image => [image.id, image]))
   async function attach() {
     if (running.current || disabled || !selected.length || selected.length > remaining) return
@@ -25,6 +26,8 @@ export default function QuestionDiaryImagePicker({ caseId, questionId, disabled,
     try {
       // Sequential transfers keep mobile memory and request concurrency bounded.
       for (const id of selected) {
+        const projectFile = projectFiles.find(file => file.id === id)
+        if (projectFile) { completed.push(projectFile); done.add(id); continue }
         const response = await fetch(`/api/action-cases/${caseId}/questions/${questionId}/diary-photos`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photoId: id.slice('diary:'.length) }),
         })
@@ -41,9 +44,9 @@ export default function QuestionDiaryImagePicker({ caseId, questionId, disabled,
     }
   }
   return <section className="mt-3" aria-label="Bifoga dagboksbilder">
-    <button type="button" className="gizmo-button" aria-expanded={open} aria-controls={panelId} disabled={working || (!open && disabled)} onClick={() => setOpen(value => !value)}><Images size={17} />Välj från dagboken{open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
+    <button type="button" className="gizmo-button" aria-expanded={open} aria-controls={panelId} disabled={working || (!open && disabled)} onClick={() => setOpen(value => !value)}><Images size={17} />{buttonLabel}{open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>
     {open && <div id={panelId} className="mt-3 border-t border-slate-200 pt-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h4>Dagboksbilder</h4><button type="button" className="gizmo-button gizmo-icon-button" title="Uppdatera dagboksbilder" aria-label="Uppdatera dagboksbilder" disabled={diary.loading || working} onClick={() => void diary.refresh()}><RefreshCw size={16} /></button></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h4>{projectFiles.length ? 'Projektets bilder och dagboksbilder' : 'Dagboksbilder'}</h4><button type="button" className="gizmo-button gizmo-icon-button" title="Uppdatera dagboksbilder" aria-label="Uppdatera dagboksbilder" disabled={diary.loading || working} onClick={() => void diary.refresh()}><RefreshCw size={16} /></button></div>
       {diary.loading && <p role="status" className="flex items-center gap-2 text-sm"><Loader2 size={16} className="animate-spin" />Hämtar bilder…</p>}
       {diary.error && <div role="alert" className="gizmo-question-error"><p>{diary.error}</p><button type="button" className="gizmo-button" disabled={diary.loading} onClick={() => void diary.retry()}>Försök hämta igen</button></div>}
       {images.length > 0 && <div className="max-h-[420px] overflow-y-auto pr-1"><ActionCaseAttachmentPicker caseId={caseId} files={images} selectedIds={selected} inputName={`${panelId}-photo`} disabled={disabled || working} selectionLimit={remaining} urlForFile={id => byId.get(id)!.url} captionForFile={id => byId.get(id)!.caption} selectionLabel="Välj dagboksbild" onChange={(id, checked) => { setSelected(current => checked ? [...new Set([...current, id])] : current.filter(value => value !== id)); setNotice('') }} /></div>}

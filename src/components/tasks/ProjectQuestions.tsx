@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CalendarClock, ClipboardList, ExternalLink, History, Loader2, MessageSquare, Plus, RefreshCw, Save, Search, Send, Upload, Users, X } from 'lucide-react'
+import { CalendarClock, ClipboardList, ExternalLink, History, Loader2, MessageSquare, Plus, RefreshCw, Save, Search, Send, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { taskDateTimeInputToIso, taskIsoToDateTimeInput, formatTaskDateTime } from '@/lib/tasks/dateTime'
-import { emptyQuestion, questionAssigneeOptions, questionStatuses, questionSendRequirements, questionTaskEventText, questionDeliveryLabels, type ProjectQuestion, type QuestionBody, type QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
+import { emptyQuestion, questionAttachmentIds, questionAssigneeOptions, questionStatuses, questionSendRequirements, questionTaskEventText, questionDeliveryLabels, type ProjectQuestion, type QuestionBody, type QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import './project-questions.css'
 import QuestionDialogue from './QuestionDialogue'
-import QuestionDiaryImagePicker from './QuestionDiaryImagePicker'
+import QuestionAttachments from './QuestionAttachments'
 import QuestionReminderSchedule from './QuestionReminderSchedule'
 import { useQuestionAutosave } from './useQuestionAutosave'
 
@@ -53,7 +53,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const autosave = useQuestionAutosave<{ questionId: string; body: QuestionBody; fileIds: string[] }>({
     valid: value => Boolean(value.body.title.trim() && value.body.description.trim()),
     save: async attempt => {
-      const response = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attempt.value, requestId: attempt.requestId, revision: attempt.revision, operation: attempt.revision ? 'update' : 'create', text: '', reportedBy: '' }) })
+      const response = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attempt.value, attachmentSelection: 1, requestId: attempt.requestId, revision: attempt.revision, operation: attempt.revision ? 'update' : 'create', text: '', reportedBy: '' }) })
       const result = await response.json()
       if (!response.ok || result.questionId !== attempt.value.questionId) throw new Error(result.error || 'Sparningen kunde inte bekräftas. Utkastet finns kvar.')
     },
@@ -62,7 +62,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       setData(current => {
         if (!current) return current
         const existing = current.questions.find(q => q.id === value.questionId)
-        const saved = { ...(existing || { id: value.questionId, number: Math.max(0, ...current.questions.map(q => q.number)) + 1, createdAt: new Date().toISOString(), events: [], tasks: [], participants: [] }), body: value.body, revision, updatedAt: new Date().toISOString() }
+        const saved = { ...(existing || { id: value.questionId, number: Math.max(0, ...current.questions.map(q => q.number)) + 1, createdAt: new Date().toISOString(), events: [], tasks: [], participants: [] }), body: value.body, attachmentIds: value.fileIds, revision, updatedAt: new Date().toISOString() }
         return { ...current, questions: existing ? current.questions.map(q => q.id === saved.id ? saved : q) : [...current.questions, saved] }
       })
       void refresh()
@@ -127,7 +127,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   function restoreMode(id: string, section: string) {
     compositionEdited.current = false
     setReplacement(''); setAssignmentConfirmed(false)
-    setFileIds([]); setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); pending.current = null; setLocalError('')
+    setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); pending.current = null; setLocalError('')
     if (section === 'reschedule' && activeTask) {
       const current = taskIsoToDateTimeInput(activeTask.dueAt, 'Europe/Stockholm')
       setDue(current?.date || ''); setDueTime(current?.time || '16:00')
@@ -143,7 +143,6 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       if (typeof stored.dueTime === 'string') setDueTime(stored.dueTime)
       if (typeof stored.followupTime === 'string') setFollowupTime(stored.followupTime)
       if (typeof stored.replacement === 'string') setReplacement(stored.replacement)
-      if (Array.isArray(stored.fileIds)) setFileIds(stored.fileIds.filter((v: unknown) => typeof v === 'string'))
       if (stored.pending && typeof stored.pending.id === 'string' && typeof stored.pending.key === 'string') pending.current = stored.pending
     } catch { setLocalError('Det lokala utkastet kunde inte läsas.') }
   }
@@ -156,7 +155,8 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     if (!q) try { const previous = localStorage.getItem(draftKey('new', 'identity')); if (previous && /^[0-9a-f-]{36}$/i.test(previous)) id = previous; localStorage.setItem(draftKey('new', 'identity'), id) } catch { /* The autosave hook reports storage failures for the draft. */ }
     const body = q ? structuredClone(q.body) : emptyQuestion()
     reset(body); setSelected(id); setNotice(''); setError('')
-    const restored = autosave.seed(draftKey(id, 'details'), { questionId: id, body, fileIds: [] }, q?.revision || 0)
+    const attached = questionAttachmentIds(q); setFileIds(attached)
+    const restored = autosave.seed(draftKey(id, 'details'), { questionId: id, body, fileIds: attached }, q?.revision || 0)
     if (restored) { setDraft(restored.body); setFileIds(restored.fileIds) }
   }
   const openContext = useRef({ open, dirty, busy })
@@ -181,14 +181,14 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     return () => controller.abort()
   }, [active, openRequest, refresh])
   async function close() { if (running.current || busy || !rememberMode()) return; if (dialogueFlush.current && !await dialogueFlush.current()) return; await autosave.flush(); if (!autosave.isLocal()) return; setSelected(null); setError(''); void refresh() }
-  function patch(value: Partial<QuestionBody>) { const next = { ...draft, ...value }; setDraft(next); if (selected) autosave.change({ questionId: selected, body: next, fileIds: mode === 'details' ? fileIds : autosave.value()?.fileIds || [] }) }
-  function changeFiles(next: string[]) { if (mode !== 'details') compositionEdited.current = true; setFileIds(next); if (mode === 'details' && selected) autosave.change({ questionId: selected, body: draft, fileIds: next }) }
+  function patch(value: Partial<QuestionBody>) { const next = { ...draft, ...value }; setDraft(next); if (selected) autosave.change({ questionId: selected, body: next, fileIds }) }
+  function changeFiles(next: string[]) { setFileIds(next); if (selected) autosave.change({ questionId: selected, body: draft, fileIds: next }) }
   function compose(set: (value: string) => void, value: string) { compositionEdited.current = true; set(value) }
   async function switchMode(next: string) {
     if (running.current || busy) return
     if (!rememberMode()) return
     if (dialogueFlush.current && !await dialogueFlush.current()) return
-    if (mode === 'details') { await autosave.flush(); if (!autosave.isLocal()) return }
+    if (['details', 'send'].includes(mode)) { await autosave.flush(); if (!autosave.isLocal()) return }
     if (selected) restoreMode(selected, next)
     if (next === 'details') { const current = autosave.value(); if (current) { setDraft(current.body); setFileIds(current.fileIds) } }
     setMode(next); setError(''); setNotice('')
@@ -207,13 +207,16 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     if (operation === 'send' && !pending.current && (!confirmed || !dueAt || (followup && !followupAt) || (followupAt && followupAt > dueAt))) { setError('Ange svarsdatum och bekräfta utskicket. Om uppföljning väljs behöver den vara giltig och senast vid svarstiden.'); return }
     const assignment = operation === 'reassign' || operation === 'dispatch_reassignment'
     const reschedule = operation === 'reschedule'
-    const linkedChange = assignment || reschedule
+    const sharing = operation === 'share_files'
+    const linkedChange = assignment || reschedule || sharing
     if (reschedule && !pending.current && (!activeTask?.version || !data?.canManageParticipants || !dueAt || Date.parse(dueAt) === Date.parse(activeTask.dueAt))) { setError('Välj ett nytt giltigt färdigdatum och klockslag.'); return }
     if (assignment && !pending.current && (!activeTask?.version || !data?.canManageParticipants || (operation === 'reassign' && (!replacement || !assignmentConfirmed)) || (operation === 'dispatch_reassignment' && !confirmed))) { setError('Välj den nya ansvariga och bekräfta åtgärden.'); return }
-    const body = pending.current ? JSON.parse(pending.current.key) : reschedule ? { questionId: selected, revision: autosave.revision(), operation, taskId: activeTask!.id, taskVersion: activeTask!.version, dueAt }
+    if (sharing && !pending.current && (!activeTask?.version || !data?.canManageParticipants || awaitingDispatch || !newFileIds.length)) return
+    const body = pending.current ? JSON.parse(pending.current.key) : sharing ? { questionId: selected, revision: autosave.revision(), operation, taskId: activeTask!.id, taskVersion: activeTask!.version, fileIds, confirmed: true }
+      : reschedule ? { questionId: selected, revision: autosave.revision(), operation, taskId: activeTask!.id, taskVersion: activeTask!.version, dueAt }
       : assignment ? { questionId: selected, revision: autosave.revision(), operation, taskId: activeTask!.id, taskVersion: activeTask!.version,
       confirmed: true, fileIds: operation === 'reassign' ? [] : fileIds, ...(operation === 'reassign' ? { assignee: assignees.find(a => `${a.kind}:${a.id}` === replacement) } : {}) }
-      : { questionId: selected, revision: autosave.revision(), operation, body: draft, text: message, reportedBy: mode === 'answer' ? reportedBy : '', fileIds, dueAt, followupAt, confirmed }
+      : { questionId: selected, revision: autosave.revision(), operation, body: draft, text: message, reportedBy: mode === 'answer' ? reportedBy : '', fileIds, dueAt, followupAt, confirmed, ...(operation === 'send' ? { attachmentSelection: 1 } : {}) }
     const key = JSON.stringify(body)
     if (!pending.current || pending.current.key !== key) pending.current = { key, id: crypto.randomUUID() }
     if (!rememberMode()) return
@@ -225,8 +228,9 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
         if (saved) {
           localStorage.removeItem(draftKey(selected, mode))
           reset(saved.body); setSelected(saved.id)
-          autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: [] }, saved.revision, true)
-          if (saved.body.status !== 'closed') { setMode(reschedule ? 'reschedule' : operation === 'reassign' ? 'reassign' : 'send'); setReplacement(replacement); setFileIds(body.fileIds || []); if (reschedule) { compositionEdited.current = true; setDue(due); setDueTime(dueTime) } }
+          const attached = questionAttachmentIds(saved); setFileIds(attached)
+          autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached }, saved.revision, true)
+          if (saved.body.status !== 'closed') { setMode(sharing ? 'details' : reschedule ? 'reschedule' : operation === 'reassign' ? 'reassign' : 'send'); setReplacement(replacement); if (reschedule) { compositionEdited.current = true; setDue(due); setDueTime(dueTime) } }
         }
         throw new Error(`${result.error || 'Uppgifterna har ändrats.'}${saved ? ' Aktuella uppgifter har hämtats. Granska och bekräfta på nytt.' : ''}`)
       }
@@ -234,13 +238,13 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       if (result.questionId !== selected) throw new Error('Sparningen kunde inte bekräftas. Din text är kvar.')
       try { localStorage.removeItem(draftKey(selected, mode)) } catch { /* The acknowledged action remains authoritative. */ }
       // The mutation result is authoritative even if the following refresh fails.
-      setNotice(createNext ? 'Frågan är sparad. Nästa fråga är tom.' : reschedule ? 'Färdigdatumet är ändrat. Påminnelserna följer den nya tiden. Ingen ny tilldelning har skickats.' : operation === 'reassign' ? 'Ansvarig har bytts. Inget nytt utskick har gjorts.' : operation === 'send' || operation === 'dispatch_reassignment' ? 'Uppgiften är sparad i utskickskön. Leveransstatus finns i Gizmo.' : 'Sparat i historiken.')
+      setNotice(createNext ? 'Frågan är sparad. Nästa fråga är tom.' : sharing ? 'Bilagorna är delade. Aviseringen är sparad i utskickskön. Samma fråga och uppgiftslänk behålls.' : reschedule ? 'Färdigdatumet är ändrat. Påminnelserna följer den nya tiden. Ingen ny tilldelning har skickats.' : operation === 'reassign' ? 'Ansvarig har bytts. Inget nytt utskick har gjorts.' : operation === 'send' || operation === 'dispatch_reassignment' ? 'Uppgiften är sparad i utskickskön. Leveransstatus finns i Gizmo.' : 'Sparat i historiken.')
       if (createNext) { reset(emptyQuestion()); setSelected(crypto.randomUUID()) }
       else { reset({ ...draft, status: operation === 'close' ? 'closed' : operation === 'reopen' ? 'open' : draft.status }); setSelected(null) }
       const next = await refresh()
       if (linkedChange) {
         const saved = next?.questions.find(q => q.id === selected)
-        if (saved) { reset(saved.body); setSelected(saved.id); autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: [] }, saved.revision, true) }
+        if (saved) { reset(saved.body); setSelected(saved.id); const attached = questionAttachmentIds(saved); setFileIds(attached); autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached }, saved.revision, true) }
       }
       if (!createNext) requestAnimationFrame(() => focusBefore.current?.focus())
     } catch (e) { setError(e instanceof Error ? e.message : 'Åtgärden kunde inte bekräftas. Din text är kvar.') }
@@ -248,7 +252,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   }
   async function upload(file?: File) {
     if (!file || running.current) return
-    if (fileIds.length >= 20) { setError('Högst 20 bilagor kan väljas åt gången. Avmarkera en bilaga först.'); return }
+    if (fileIds.length >= 20) { setError('Högst 20 filer kan bifogas. Ta bort en bilaga från frågan först.'); return }
     if (!file.size || file.size > 25 * 1024 * 1024) { setError('Välj en fil, högst 25 MB.'); return }
     running.current = true; setBusy(true); setError('')
     try {
@@ -270,13 +274,12 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const rows = (data?.questions || []).filter(q => (filter === 'all' || (filter === 'closed' ? q.body.status === 'closed' : q.body.status !== 'closed')) && `${q.number} ${q.body.title} ${q.body.description} ${q.body.assignee?.name || ''}`.toLocaleLowerCase('sv').includes(search.toLocaleLowerCase('sv')))
   const historicalFiles = [...new Map((question?.events.flatMap(e => e.files) || []).map(f => [f.id, f])).values()]
   const questionFiles = [...files, ...(data?.privateFiles || []).filter(f => f.questionId === selected)]
-  const availableFiles = mode === 'send' ? questionFiles.filter(f => !f.isQuoteDocument) : questionFiles
-  const sendFiles = mode === 'send' ? historicalFiles.filter(f => availableFiles.some(a => a.id === f.id)) : []
-  const choices = [...new Map([...sendFiles.map(f => ({ id: f.id, fileName: f.name })), ...availableFiles].map(f => [f.id, f])).values()]
   const closed = question?.body.status === 'closed'
   const taskOpen = Boolean(question?.tasks.some(t => t.active ?? !['approved', 'cancelled'].includes(t.status)))
   const activeTask = question?.tasks.find(t => t.active ?? !['approved', 'cancelled'].includes(t.status))
   const awaitingDispatch = Boolean(activeTask?.awaitingDispatch)
+  const sharedFileIds = new Set(activeTask?.files.flatMap(file => file.sourceAttachmentId ? [file.sourceAttachmentId] : []) || [])
+  const newFileIds = fileIds.filter(id => !sharedFileIds.has(id))
   const taskReply = awaitingDispatch ? undefined : (question?.tasks.find(t => t.active && t.replyTarget) || question?.tasks.filter(t => t.replyTarget).at(-1))?.replyTarget || undefined
   const detailsDisabled = busy || autosave.busy || !draft.title.trim() || !draft.description.trim()
   const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: awaitingDispatch ? activeTask!.dueAt : taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: awaitingDispatch ? null : taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), hasFollowup: !awaitingDispatch && Boolean(followup), confirmed })
@@ -307,7 +310,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       <div className="gizmo-question-panel-body" role={question ? 'tabpanel' : undefined} id={`${headingId}-panel`} aria-labelledby={question ? `${headingId}-${selectedTab}` : undefined}>
         {error && <p role="alert" className="gizmo-question-error">{error}</p>}
         {refreshError && <p role="alert" className="gizmo-question-error">{refreshError}</p>}
-        {autosave.error && <div role="alert" className="gizmo-question-error"><p>{autosave.error}</p><button type="button" className={button} disabled={autosave.busy} onClick={() => void autosave.retry()}><RefreshCw size={16} />Försök spara igen</button><button type="button" className={button} disabled={autosave.busy} onClick={() => { if (!selected || !window.confirm('Ersätt det lokala frågeutkastet med den sparade frågan?')) return; const body = question?.body || emptyQuestion(); autosave.seed(draftKey(selected, 'details'), { questionId: selected, body, fileIds: [] }, question?.revision || 0, true); setDraft(body); setFileIds([]) }}>Hämta sparad fråga</button></div>}
+        {autosave.error && <div role="alert" className="gizmo-question-error"><p>{autosave.error}</p><button type="button" className={button} disabled={autosave.busy} onClick={() => void autosave.retry()}><RefreshCw size={16} />Försök spara igen</button><button type="button" className={button} disabled={autosave.busy} onClick={() => { if (!selected || !window.confirm('Ersätt det lokala frågeutkastet med den sparade frågan?')) return; const body = question?.body || emptyQuestion(), attached = questionAttachmentIds(question); autosave.seed(draftKey(selected, 'details'), { questionId: selected, body, fileIds: attached }, question?.revision || 0, true); setDraft(body); setFileIds(attached) }}>Hämta sparad fråga</button></div>}
         {localError && <p role="alert" className="gizmo-question-error">{localError}</p>}
         {notice && <p role="status">{notice}</p>}
         <fieldset className="gizmo-question-form" disabled={busy || Boolean(pending.current)}>
@@ -331,16 +334,18 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
             <label>{mode === 'answer' ? 'Svar' : mode === 'note' ? 'Intern anteckning' : mode === 'close' ? 'Avslutningsanteckning' : 'Skäl till återöppning'}<textarea className={field} rows={6} maxLength={12000} value={message} onChange={e => compose(setMessage, e.target.value)} /></label>
           </>}
           {mode === 'reassign' && <section className="gizmo-question-callout"><h3>Byt ansvarig</h3><p>Nuvarande ansvarig: {question?.body.assignee?.name || 'Ej tilldelad'}</p><label>Ny ansvarig<select className={field} value={replacement} onChange={e => { compose(setReplacement, e.target.value); setAssignmentConfirmed(false) }}><option value="">Välj person</option>{assignees.filter(a => a.id !== question?.body.assignee?.id || a.kind !== question.body.assignee.kind).map(a => <option key={`${a.kind}:${a.id}`} value={`${a.kind}:${a.id}`}>{a.name}{a.email ? ` (${a.email})` : ''}</option>)}</select></label><p>Historik, bilagor, status och svarstid behålls. Den gamla uppgiftslänken spärras. Ett nytt utskick görs separat. Deltagandet i gruppdialogen ändras inte för den tidigare ansvariga.</p><label className="gizmo-question-confirm"><input type="checkbox" checked={assignmentConfirmed} onChange={e => setAssignmentConfirmed(e.target.checked)} />Jag bekräftar bytet av ansvarig.</label></section>}
-          {question && ['details', 'send'].includes(mode) && data?.canManageParticipants && !closed && <details className="gizmo-question-dispatch" open={mode === 'send'}><summary onClick={event => { event.preventDefault(); void switchMode(mode === 'send' ? 'details' : 'send') }}>{awaitingDispatch ? 'Skicka till ny ansvarig' : 'Skicka till ansvarig'}{taskOpen && !awaitingDispatch ? ' · Redan skickad' : ''}</summary>{taskOpen && !awaitingDispatch ? <p>Frågan har redan en aktiv uppgift. Status och länk till uppgiften visas nedan. Ett nytt utskick skapas inte.</p> : <>
+          {question && ['details', 'send'].includes(mode) && data?.canManageParticipants && !closed && (!taskOpen || awaitingDispatch) && <details className="gizmo-question-dispatch" open={mode === 'send'}><summary onClick={event => { event.preventDefault(); void switchMode(mode === 'send' ? 'details' : 'send') }}>{awaitingDispatch ? 'Skicka till ny ansvarig' : 'Skicka till ansvarig'}</summary><>
             <section className="gizmo-question-callout"><h3>{draft.assignee ? `Skickas till ${draft.assignee.name}` : 'Ingen ansvarig vald'}</h3>{!draft.assignee && <p>Välj ansvarig ovan under Fråga → Ansvarig. Valet sparas automatiskt.</p>}{draft.assignee?.email && <p>{draft.assignee.email}</p>}</section>
             {awaitingDispatch ? <p>Den nya ansvariga är sparad men uppgiften är inte skickad. Befintlig status och svarstid behålls: {stamp(activeTask!.dueAt)}. Tidigare uppgiftsbilagor finns kvar.</p> : <div className="gizmo-question-pair"><label>Svar senast<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={due} onChange={e => compose(setDue, e.target.value)} required /></label><label>Klockslag för svar (Stockholm)<input className={field} type="time" value={dueTime} onChange={e => compose(setDueTime, e.target.value)} required /></label><label>Första uppföljning (valfritt)<input className={field} type="date" min="0001-01-01" max={due || '9999-12-31'} value={followup} onChange={e => compose(setFollowup, e.target.value)} /></label><label>Klockslag för uppföljning (Stockholm)<input className={field} type="time" value={followupTime} disabled={!followup} onChange={e => compose(setFollowupTime, e.target.value)} required={Boolean(followup)} /></label></div>}
             <QuestionReminderSchedule />
-          </>}</details>}
-          {!['history', 'dialogue', 'participants', 'reassign', 'reschedule'].includes(mode) && !closed && <section className="gizmo-question-files"><h3>{mode === 'send' ? 'Bilagor till mottagaren' : 'Bilder och dokument till frågan'}</h3><button className={button} type="button" onClick={() => uploadInput.current?.click()} disabled={fileIds.length >= 20 || !draft.title.trim() || !draft.description.trim()} title="Ladda upp direkt till frågan"><Upload size={16} />Lägg till bild eller dokument</button><input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} /><ul>{choices.map(f => <li key={f.id}><label><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => changeFiles(e.target.checked ? [...fileIds, f.id] : fileIds.filter(id => id !== f.id))} />{f.fileName}</label><a href={`/api/action-cases/${caseId}/attachments/${f.id}`} target="_blank" rel="noreferrer" aria-label={`Öppna ${f.fileName}`} title="Öppna i ny flik"><ExternalLink size={16} /></a></li>)}</ul></section>}
-          {question && !closed && !['history', 'dialogue', 'participants', 'reassign', 'reschedule'].includes(mode) && <QuestionDiaryImagePicker key={question.id} caseId={caseId} questionId={question.id} remaining={20 - fileIds.length} disabled={busy || Boolean(pending.current)} onWorking={value => { running.current = value; setBusy(value) }} onAttached={added => {
+          </></details>}
+          {['details', 'send'].includes(mode) && <QuestionAttachments caseId={caseId} questionId={question?.id || null} attachedIds={fileIds} files={questionFiles} historicalFiles={historicalFiles} projectFiles={files} task={activeTask} disabled={busy || Boolean(pending.current) || !draft.title.trim() || !draft.description.trim()} readOnly={Boolean(closed)} onChange={changeFiles} onUpload={() => uploadInput.current?.click()} onWorking={value => { running.current = value; setBusy(value) }} onAttached={added => {
+            if (!question) return
             setData(current => current ? { ...current, privateFiles: [...new Map([...(current.privateFiles || []), ...added.map(file => ({ ...file, questionId: question.id }))].map(file => [file.id, file])).values()] } : current)
             changeFiles([...new Set([...fileIds, ...added.map(file => file.id)])])
           }} />}
+          <input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} />
+          {mode === 'details' && activeTask && !awaitingDispatch && !closed && <section className="gizmo-question-attachment-update" aria-label="Uppdatera mottagaren"><h3>Uppdatera mottagaren</h3><p>{sharedFileIds.size ? `${sharedFileIds.size} ${sharedFileIds.size === 1 ? 'fil är delad' : 'filer är delade'} med ${activeTask.assigneeName}.` : `${activeTask.assigneeName} har fått frågan, men inga filer.`}</p><p>{newFileIds.length ? `${newFileIds.length} ${newFileIds.length === 1 ? 'ny bilaga är ännu inte delad' : 'nya bilagor är ännu inte delade'}.` : fileIds.length ? 'Alla aktuella bilagor är redan delade.' : 'Inga nya bilagor att dela.'}</p></section>}
           {mode === 'send' && <label className="gizmo-question-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Jag har granskat mottagaren, frågetexten och de valda bilagorna inför utskick.</label>}
           {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <section className="gizmo-question-callout" aria-label="Kvar inför utskick" id={`${headingId}-send-requirements`}><h3>Kvar inför utskick</h3><ul className="gizmo-question-requirements">{sendRequirements.map(item => <li key={item.field}>{item.message}</li>)}</ul></section>}
         </fieldset>
@@ -377,17 +382,17 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
             </>}
           </li>)}</ol>
         </>}
-        {question && historicalFiles.length > 0 && mode === 'details' && <section className="gizmo-question-files"><h3>Sparade bilagor</h3>{historicalFiles.map(f => <a className="gizmo-question-file-link" key={f.id} target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/attachments/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}</section>}
-        {['details', 'send'].includes(mode) && question?.tasks.map(task => <section className="gizmo-question-task" key={task.id}><div className="flex flex-wrap justify-between gap-2"><h3>Uppgift till {task.assigneeName}</h3><a className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/uppdrag?task=${task.id}`}><ExternalLink size={16} />Öppna uppgiften</a></div><p>{taskLabels[task.status] || task.status} · Svar senast {stamp(task.dueAt)}</p>{task.files.map(f => f.text !== null ? <div className="gizmo-question-task-event" key={f.id}><h4>{f.name}</h4><p className="whitespace-pre-wrap">{f.text}</p></div> : <a className="gizmo-question-file-link" key={f.id} target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/questions/tasks/${task.id}/files/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}</section>)}
+        {['details', 'send'].includes(mode) && question?.tasks.map(task => <details className="gizmo-question-task" key={task.id}><summary>Uppgift till {task.assigneeName} · {taskLabels[task.status] || task.status}</summary><a className="gizmo-question-file-link" target="_blank" rel="noreferrer" href={`/uppdrag?task=${task.id}`}><ExternalLink size={16} />Öppna uppgiften</a><p>Svar senast {stamp(task.dueAt)}</p>{task.files.filter(f => !f.sourceAttachmentId).map(f => f.text !== null ? <div className="gizmo-question-task-event" key={f.id}><h4>{f.name}</h4><p className="whitespace-pre-wrap">{f.text}</p></div> : <a className="gizmo-question-file-link" key={f.id} target="_blank" rel="noreferrer" href={`/api/action-cases/${caseId}/questions/tasks/${task.id}/files/${f.id}`}><ExternalLink size={16} />{f.name}</a>)}</details>)}
       </div>
       <footer>
         <span role="status">{busy ? 'Arbetar…' : autosave.busy ? 'Sparar…' : autosave.error || localError ? 'Sparfel · utkastet finns kvar' : ['dialogue', 'participants'].includes(mode) && dialogueSaveStatus ? dialogueSaveStatus : mode === 'send' ? pending.current ? 'Utskicket kunde inte bekräftas' : 'Inte skickat · utkast på den här enheten' : autosave.dirty || !['details', 'history', 'participants', 'dialogue'].includes(mode) ? 'Utkast sparat på den här enheten' : question ? 'Sparat internt' : 'Ny fråga'}</span>
         <div className="flex flex-wrap gap-2">
-          {question && mode === 'details' && <button className={button} disabled={busy || dirty || (closed && projectClosed) || (!closed && taskOpen)} title={projectClosed ? 'Återöppna projektet först' : taskOpen ? 'Hantera den aktiva uppgiften i Gizmo först' : undefined} onClick={() => switchMode(closed ? 'reopen' : 'close')}>{closed ? 'Återöppna' : 'Avsluta fråga'}</button>}
+          {question && mode === 'details' && (closed || !taskOpen) && <button className={button} disabled={busy || dirty || (closed && projectClosed)} title={projectClosed ? 'Återöppna projektet först' : undefined} onClick={() => switchMode(closed ? 'reopen' : 'close')}>{closed ? 'Återöppna' : 'Avsluta fråga'}</button>}
           <button className={button} onClick={close} disabled={busy}>Stäng</button>
           {mode === 'participants' && <div ref={setDialogueFooter} className="gizmo-question-footer-actions" />}
           {mode === 'details' && !question && <button className={`${button} gizmo-question-primary`} disabled={detailsDisabled} onClick={() => void write('create')}><Save size={16} />{autosave.busy ? 'Skapar…' : autosave.error ? 'Försök skapa igen' : 'Skapa fråga'}</button>}
-          {mode === 'details' && !closed && <button className={button} disabled={detailsDisabled} onClick={() => void write(question ? 'update' : 'create', true)}><Plus size={16} />Spara och skapa nästa</button>}
+          {mode === 'details' && !closed && <button className={`${button}${activeTask ? ' gizmo-icon-button' : ''}`} title="Spara och skapa nästa" aria-label="Spara och skapa nästa" disabled={detailsDisabled || Boolean(pending.current)} onClick={() => void write(question ? 'update' : 'create', true)}><Plus size={16} />{!activeTask && 'Spara och skapa nästa'}</button>}
+          {mode === 'details' && activeTask && !awaitingDispatch && !closed && data?.canManageParticipants && <button className={`${button} gizmo-question-primary`} disabled={busy || autosave.busy || autosave.dirty || !activeTask.version || (!pending.current && !newFileIds.length)} onClick={() => void write('share_files')}><Send size={16} />{busy ? 'Skickar uppdateringen…' : pending.current ? 'Försök skicka uppdateringen igen' : `Skicka uppdatering till ${activeTask.assigneeName}`}</button>}
           {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <span className="gizmo-secondary">{sendRequirements.length} {sendRequirements.length === 1 ? 'uppgift' : 'uppgifter'} kvar inför utskick</span>}
           {mode === 'reassign' && !pending.current && <button className={button} disabled={busy} onClick={() => void switchMode('details')}>Avbryt byte</button>}
           {mode === 'reschedule' && !pending.current && <button className={button} disabled={busy} onClick={() => void switchMode('details')}>Avbryt datumändring</button>}

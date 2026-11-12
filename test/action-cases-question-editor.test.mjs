@@ -51,7 +51,7 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso, taskIsoToDateTimeInput, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': questionModel,
     './QuestionDialogue': { default: () => null },
-    './QuestionDiaryImagePicker': { default: () => null },
+    './QuestionAttachments': { default: () => null },
     './QuestionReminderSchedule': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
   }
@@ -81,7 +81,9 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
           question.tasks[0] = { ...question.tasks[0], version: question.tasks[0].version + 1, awaitingDispatch: true, assigneeName: question.body.assignee.name }
         } else if (request.operation === 'reschedule') question.tasks[0] = { ...question.tasks[0], dueAt: request.dueAt, version: question.tasks[0].version + 1 }
         else if (request.operation === 'dispatch_reassignment') question.tasks[0].awaitingDispatch = false
+        else if (request.operation === 'share_files') question.tasks[0].files.push(...request.fileIds.filter(id => !question.tasks[0].files.some(f => f.sourceAttachmentId === id)).map(sourceAttachmentId => ({ id: sourceAttachmentId, sourceAttachmentId, name: 'Testbilaga.pdf', text: null, createdAt: new Date().toISOString() })))
         else question.body = request.body
+        if (request.attachmentSelection === 1 && ['create','update'].includes(request.operation)) question.attachmentIds = request.fileIds
         Object.assign(question, { revision: request.revision + 1, updatedAt: new Date().toISOString() })
       }
       requests[index].resolve({ ok: !error, status: status || (error ? 500 : 200), json: async () => error ? { error } : { questionId: questionId || request.questionId } }); await tick(); render()
@@ -92,6 +94,28 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
     dispose() { globalThis.fetch = original.fetch; globalThis.document = original.document; globalThis.requestAnimationFrame = original.raf; globalThis.localStorage = original.storage }
   }
 }
+
+test('supplementing an existing question autosaves attachments, retries exactly and never creates a second task', async () => {
+  const h=harness()
+  try {
+    const task={id:id(61),version:4,active:true,awaitingDispatch:false,status:'in_progress',dueAt:'2030-01-20T15:00:00Z',assigneeName:h.customer.name,events:[],files:[]}
+    const body={...emptyQuestion(),title:'Bilagetest',description:'Underlag',assignee:h.customer}
+    h.workspace.questions.push({id:id(60),number:1,revision:1,body,attachmentIds:[],createdAt:'2026-11-12',updatedAt:'2026-11-12',events:[],tasks:[task],participants:[]})
+    await h.click('Hämta sparade frågor och svar');h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}});h.render()
+    h.nodes().find(n=>n.props?.attachedIds).props.onChange([id(80)]);h.render()
+    assert.equal(h.button('Skicka uppdatering till Testbeställare').props.disabled,true)
+    await new Promise(r=>setTimeout(r,730));h.render();assert.equal(h.requests[0].body.operation,'update');assert.equal(h.requests[0].body.attachmentSelection,1)
+    await h.reply(0);assert.deepEqual(h.workspace.questions[0].attachmentIds,[id(80)])
+    await h.click('Skicka uppdatering till Testbeställare');const attempt=structuredClone(h.requests[1].body)
+    assert.equal(attempt.operation,'share_files');assert.equal(attempt.taskId,task.id);assert.equal(attempt.taskVersion,4);assert.deepEqual(attempt.fileIds,[id(80)])
+    await h.reply(1,'Fiktivt utskicksfel');await h.click('Försök skicka uppdateringen igen');assert.deepEqual(h.requests[2].body,attempt)
+    await h.reply(2);assert.equal(h.workspace.questions[0].tasks.length,1);assert.equal(h.workspace.questions[0].tasks[0].status,'in_progress')
+    assert.deepEqual(h.workspace.questions[0].body,body);assert.match(h.text(),/Aviseringen är sparad i utskickskön/)
+    assert.equal(h.button('Skicka uppdatering till Testbeställare').props.disabled,true)
+    await h.click('Stäng');h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}});h.render()
+    assert.deepEqual(h.nodes().find(n=>n.props?.attachedIds).props.attachedIds,[id(80)])
+  } finally {h.dispose()}
+})
 
 test('manager edits a sent question deadline with Stockholm time, exact retry and unchanged recipient/status', async () => {
   const h=harness()
@@ -205,7 +229,7 @@ test('a direct document upload saves a new question first and selects its acknow
   const h = harness({ directFiles: true })
   try {
     await h.start(); h.input('Rubrik', 'Ny fråga med PDF'); h.input('Fråga', 'Fiktivt underlag')
-    assert.equal(h.button('Lägg till bild eller dokument').props.disabled, false)
+    assert.equal(h.nodes().find(n => n.props?.attachedIds).props.disabled, false)
     const input = h.nodes().find(n => n.props?.['aria-label'] === 'Ladda upp bilaga till frågan')
     input.props.onChange({ target: { files: [new File(['test'], 'Ritning.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()
     input.props.onChange({ target: { files: [new File(['second'], 'Andra.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()

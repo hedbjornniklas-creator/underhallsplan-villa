@@ -13,8 +13,8 @@ export type QuestionDialogueAudit = {
   deliveries: Array<{ id: string; name: string; status: string; sentAt: string | null }>;
 }
 export type QuestionTaskReplyTarget = { taskId: string; name: string; recipient: { kind: 'contact' | 'profile'; id: string; email: string | null } }
-export type QuestionTask = { id: string; status: string; active?: boolean; version?: number; awaitingDispatch?: boolean; dueAt: string; assigneeName: string; replyTarget?: QuestionTaskReplyTarget | null; events: Array<{ id: string; actorName: string; type: string; text: string; createdAt: string }>; files: Array<{ id: string; name: string; text: string | null; createdAt: string }> }
-export type ProjectQuestion = { id: string; number: number; revision: number; createdAt: string | null; updatedAt: string; body: QuestionBody; events: QuestionEvent[]; tasks: QuestionTask[]; participants: QuestionParticipant[]; dialogueHistory?: QuestionDialogueAudit[] }
+export type QuestionTask = { id: string; status: string; active?: boolean; version?: number; awaitingDispatch?: boolean; dueAt: string; assigneeName: string; replyTarget?: QuestionTaskReplyTarget | null; events: Array<{ id: string; actorName: string; type: string; text: string; createdAt: string }>; files: Array<{ id: string; name: string; text: string | null; createdAt: string; sourceAttachmentId?: string | null }> }
+export type ProjectQuestion = { id: string; number: number; revision: number; attachmentIds?: string[]; createdAt: string | null; updatedAt: string; body: QuestionBody; events: QuestionEvent[]; tasks: QuestionTask[]; participants: QuestionParticipant[]; dialogueHistory?: QuestionDialogueAudit[] }
 export type QuestionWorkspace = { questions: ProjectQuestion[]; assignees: QuestionAssignee[]; privateFiles?: Array<import('./contracts').ActionCaseAttachmentView & { questionId: string }>; customersAvailable?: boolean; userId: string; managerId: string | null; canManageParticipants: boolean }
 export const emptyQuestion = (): QuestionBody => ({ title: '', description: '', source: '', meetingDate: '', assignee: null, status: 'open' })
 export const questionDeliveryLabels: Record<string, string> = { pending: 'Köad', sending: 'Skickas', sent: 'Överlämnad till e-posttjänsten', failed: 'Utskicket misslyckades', cancelled: 'Återkallad' }
@@ -50,6 +50,17 @@ export function questionAssigneeOptions(people: QuestionAssignee[], selected: Qu
   return [...options.values()]
 }
 export const questionUuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+export function questionAttachmentIds(question?: Pick<ProjectQuestion, 'attachmentIds' | 'events'>): string[] {
+  // Legacy event history is only a baseline until an explicit current selection is saved.
+  return question?.attachmentIds ?? [...new Set(question?.events.filter(e => ['create', 'update', 'send'].includes(e.operation)).flatMap(e => e.files.map(f => f.id)) || [])]
+}
+export function questionFileUpdateMutation(value: Record<string, unknown>) {
+  if (value.operation !== 'share_files' || !questionUuid(value.questionId) || !questionUuid(value.requestId) || !questionUuid(value.taskId)
+    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 || !Number.isSafeInteger(value.taskVersion) || Number(value.taskVersion) < 1
+    || !Array.isArray(value.fileIds) || value.fileIds.length < 1 || value.fileIds.length > 20 || !value.fileIds.every(questionUuid) || new Set(value.fileIds).size !== value.fileIds.length
+    || value.confirmed !== true) throw new Error('PROJECT_QUESTION_FILES')
+  return { operation: 'share_files', questionId: value.questionId, requestId: value.requestId, taskId: value.taskId, revision: Number(value.revision), taskVersion: Number(value.taskVersion), fileIds: value.fileIds as string[], confirmed: true }
+}
 export function questionDueDateMutation(value: Record<string, unknown>) {
   if (!questionUuid(value.questionId) || !questionUuid(value.requestId) || !questionUuid(value.taskId)
     || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 || !Number.isSafeInteger(value.taskVersion) || Number(value.taskVersion) < 1
@@ -112,5 +123,6 @@ export function questionMutation(v: Record<string, unknown>) {
     followupAt = v.followupAt ? new Date(String(v.followupAt)).toISOString() : dueAt
     if (followupAt > dueAt || v.confirmed !== true) throw new Error('PROJECT_QUESTION_DATES')
   }
-  return { questionId: v.questionId, requestId: v.requestId, revision: Number(v.revision), operation, body, text: message, reportedBy, fileIds: v.fileIds as string[], dueAt, followupAt }
+  if (v.attachmentSelection !== undefined && (v.attachmentSelection !== 1 || !['create', 'update', 'send'].includes(operation))) throw new Error('PROJECT_QUESTION_INVALID')
+  return { questionId: v.questionId, requestId: v.requestId, revision: Number(v.revision), operation, body, text: message, reportedBy, fileIds: v.fileIds as string[], dueAt, followupAt, ...(v.attachmentSelection === 1 ? { attachmentSelection: 1 } : {}) }
 }

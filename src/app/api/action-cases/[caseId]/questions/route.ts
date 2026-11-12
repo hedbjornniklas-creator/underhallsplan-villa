@@ -13,7 +13,7 @@ export async function POST(request: Request, route: Route) {
   try {
     const ctx = await customerOfferContext(), body = await offerRequestBody(request)
     const result = await mutateProjectQuestion(ctx, (await route.params).caseId, body)
-    if (body.operation === 'send' || body.operation === 'dispatch_reassignment') after(async () => {
+    if (body.operation === 'send' || body.operation === 'dispatch_reassignment' || body.operation === 'share_files') after(async () => {
       try { await runTaskFollowupBatch({ limit: 5 }) } catch { console.error('PROJECT_QUESTION_FOLLOWUP_FAILED') }
     })
     return NextResponse.json(result, { headers: { 'Cache-Control': 'no-store' } })

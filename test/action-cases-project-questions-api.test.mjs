@@ -64,7 +64,8 @@ test('questions route requires session/module and same-origin body before mutati
       await route.POST(req('send'),{params:Promise.resolve({caseId})});assert.equal(followups.length,1)
       await route.POST(req('reassign'),{params:Promise.resolve({caseId})});assert.equal(followups.length,1)
       await route.POST(req('dispatch_reassignment'),{params:Promise.resolve({caseId})});assert.equal(followups.length,2)
-      const bad=await route.POST(req('create','https://foreign.invalid'),{params:Promise.resolve({caseId})});assert.equal(bad.status,410);assert.equal(calls.length,4)
+      await route.POST(req('share_files'),{params:Promise.resolve({caseId})});assert.equal(followups.length,3)
+      const bad=await route.POST(req('create','https://foreign.invalid'),{params:Promise.resolve({caseId})});assert.equal(bad.status,410);assert.equal(calls.length,5)
     }
   }
 })
@@ -112,7 +113,7 @@ test('creation dates come from the immutable create event, never the latest upda
   const calls = []
   const db = { async rpc() { return { data: [] } }, from(table) {
     const call = { table, filters: [] }; calls.push(call)
-    const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, in(...args) { call.filters.push(args); return q }, order() { return q },
+    const q = { select() { return q }, eq(...args) { call.filters.push(args); return q }, in(...args) { call.filters.push(args); return q }, or(...args) { call.filters.push(args); return q }, order() { return q },
       async maybeSingle() { return { data: { id: caseId, manager_profile_id: ctx.userId } } },
       async range(from, to) { return { data: (table === 'action_case_questions' ? questions : table === 'action_case_attachments' || table === 'action_case_question_messages' ? [] : table === 'action_case_question_participants' ? questions.map(row => ({ id: id(100 + row.number), question_id: row.id, person_kind: 'profile', person_id: ctx.userId, name: 'Test', active: true })) : events).slice(from, to + 1) } } }
     return q
@@ -145,7 +146,7 @@ test('history reads immutable participant selections and dispatch evidence only 
   const calls = []
   const db = { async rpc() { return { data: [] } }, from(table) {
     const filters = [], call = { table, filters }; calls.push(call)
-    const query = { select() { return query }, eq(key, value) { filters.push([key, value]); return query }, in(key, value) { filters.push([key, value]); return query }, order() { return query },
+    const query = { select() { return query }, eq(key, value) { filters.push([key, value]); return query }, in(key, value) { filters.push([key, value]); return query }, or() { return query }, order() { return query },
       async maybeSingle() { return { data: { id: caseId, manager_profile_id: ctx.userId } } },
       async range(from, to) { return { data: (rows[table] || []).filter(row => filters.every(([key, value]) => Array.isArray(value) ? value.includes(row[key]) : row[key] === value)).slice(from, to + 1) } }
     }

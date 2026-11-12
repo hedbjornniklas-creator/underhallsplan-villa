@@ -23,6 +23,7 @@ group.dialogueHistory = [
   { id: id(204), operation: 'participants', actorName: manager.name, createdAt: '2026-11-05T10:04:00Z', selected: [hp(manager), hp(jn)], added: [], removed: [hp(nh)], snapshot: null, files: [], deliveries: [] },
 ]
 const workspace: QuestionWorkspace = { questions: [single, group], assignees: [manager, jn, nh], userId: manager.id, managerId: manager.id, canManageParticipants: true, privateFiles: [] }
+const projectFiles = [71,72,73].map(n=>({id:id(n),fileName:`Fiktivt underlag ${n-70}.pdf`,type:'document' as const,actionCaseItemId:null,title:null,contentType:'application/pdf',fileSizeBytes:120,createdAt,grantedParticipantIds:[]}))
 const storageKey = 'question-stability-fixture-v3'
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey) || 'null')
@@ -69,17 +70,19 @@ window.fetch = async (input, options) => {
   if (body.revision !== q.revision) return json({ error: 'Fiktiv versionskonflikt' }, 409)
   writes++
   if (body.operation === 'send') sends++
-  if (['reassign','dispatch_reassignment','reschedule'].includes(body.operation)) {
+  if (['reassign','dispatch_reassignment','reschedule','share_files'].includes(body.operation)) {
     const task=q.tasks.find(t=>t.id===body.taskId)
     if (!task || task.version!==body.taskVersion) return json({error:'Fiktiv versionskonflikt'},409)
-    if (body.operation==='reschedule') task.dueAt=body.dueAt
+    if (body.operation==='share_files') { for(const sourceAttachmentId of body.fileIds) if(!task.files.some(f=>f.sourceAttachmentId===sourceAttachmentId)) task.files.push({id:crypto.randomUUID(),sourceAttachmentId,name:projectFiles.find(f=>f.id===sourceAttachmentId)?.fileName||'Testbilaga',text:null,createdAt:new Date().toISOString()}); sends++ }
+    else if (body.operation==='reschedule') task.dueAt=body.dueAt
     else if (body.operation==='reassign') {
       const person=workspace.assignees.find(a=>a.id===body.assignee.id&&a.kind===body.assignee.kind)!
       q.body={...q.body,assignee:person}; task.assigneeName=person.name; task.awaitingDispatch=true; task.replyTarget=null
     } else { task.awaitingDispatch=false; sends++ }
-    task.version=(task.version||0)+1
+    if (body.operation!=='share_files') task.version=(task.version||0)+1
   }
   if (['create', 'update'].includes(body.operation)) q.body = body.body
+  if (body.attachmentSelection===1 && ['create','update'].includes(body.operation)) q.attachmentIds=body.fileIds
   if (body.operation === 'close') q.body.status = 'closed'
   if (body.operation === 'reopen') q.body.status = 'open'
   q.revision++; q.updatedAt = new Date().toISOString()
@@ -97,6 +100,6 @@ function View() {
     persist(); setCount(count + 1)
   }
   const changeRecipient = () => { workspace.questions.find(q => q.id === id(1))!.tasks[0].replyTarget = { taskId: id(50), name: nh.name, recipient: { kind: 'contact', id: nh.id, email: nh.email } }; persist(); setCount(count + 1) }
-  return <UppdragScope><aside className="fixture-controls"><details><summary>Fiktiva testverktyg</summary><button onClick={simulate}>Simulera mottagarsvar</button><button onClick={changeRecipient}>Byt fiktiv mottagare</button><button onClick={() => { failNext = true; setCount(count + 1) }}>Fel vid nasta sparning</button><p>Simuleringar: {count} · Skrivningar: {writes} · Utskick: {sends}</p></details></aside><main className="fixture-workspace"><h1>TEST - Fragor och beslut</h1><ProjectQuestions caseId={id(99)} active files={[]} onFiles={() => {}} onDirty={() => {}} /></main></UppdragScope>
+  return <UppdragScope><aside className="fixture-controls"><details><summary>Fiktiva testverktyg</summary><button onClick={simulate}>Simulera mottagarsvar</button><button onClick={changeRecipient}>Byt fiktiv mottagare</button><button onClick={() => { failNext = true; setCount(count + 1) }}>Fel vid nasta sparning</button><p>Simuleringar: {count} · Skrivningar: {writes} · Utskick: {sends}</p></details></aside><main className="fixture-workspace"><h1>TEST - Fragor och beslut</h1><ProjectQuestions caseId={id(99)} active files={projectFiles} onFiles={() => {}} onDirty={() => {}} /></main></UppdragScope>
 }
 createRoot(document.getElementById('root')!).render(<View />)
