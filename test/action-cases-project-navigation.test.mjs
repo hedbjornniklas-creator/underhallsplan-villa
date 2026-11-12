@@ -43,7 +43,7 @@ function loadPage(path, deps) {
   return loaded.exports.default
 }
 const id = '00000000-0000-4000-8000-000000000001'
-function setup({ authorized = true, found = true, offerFails = false, companyFails = false } = {}) {
+function setup({ authorized = true, found = true, offerFails = false, companyFails = false, workspaceWait } = {}) {
   const calls = []
   const page = loadPage('../src/app/(dashboard)/uppdrag/[caseId]/page.tsx', {
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: (path) => { throw new Error('REDIRECT:' + path) } },
@@ -53,7 +53,7 @@ function setup({ authorized = true, found = true, offerFails = false, companyFai
     '@/lib/auth/serverRecovery': { currentAuthReturnPath: async (fallback) => fallback },
     '@/lib/assignments/server': { requireOrgContext: async () => ({ orgId: 'org-a', userId: 'user-a', role: 'admin' }) },
     '@/lib/access/server': { requireModuleAccess: async (scope) => { calls.push(['access', scope]); if (!authorized) throw new Error('DENIED') } },
-    '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); return { cases: found ? [{ id: caseId }] : [] } } },
+    '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); await workspaceWait; return { cases: found ? [{ id: caseId }] : [] } } },
     '@/lib/action-cases/customerOffersServer': { getCustomerOfferWorkspace: async (ctx, caseId) => { calls.push(['offer', ctx, caseId]); if (offerFails) throw new Error('unavailable'); return { revision: 1 } } },
     '@/lib/tasks/server': { getTaskPeople: async (ctx) => { calls.push(['people', ctx]); return [] } },
     '@/lib/organizations/companyProfile': { readOrganizationBranding: async (orgId) => {
@@ -72,8 +72,21 @@ test('project page checks module access before loading organization-scoped data'
   assert.equal(calls[0][0], 'access')
   assert.equal(calls[0][1].scopeId, 'org-a')
   assert.deepEqual(calls[1], ['workspace', { orgId: 'org-a', userId: 'user-a' }, id])
-  assert.deepEqual(calls[2], ['offer', { orgId: 'org-a', userId: 'user-a' }, id])
-  assert.equal(calls[3][1].isOrgAdmin, true)
+  assert.deepEqual(calls.find(([name]) => name === 'offer'), ['offer', { orgId: 'org-a', userId: 'user-a' }, id])
+  assert.equal(calls.find(([name]) => name === 'people')[1].isOrgAdmin, true)
+})
+
+test('people and branding load during the workspace read, but offers still wait for project existence', async () => {
+  let release
+  const h = setup({ workspaceWait: new Promise(resolve => { release = resolve }) })
+  const result = h.run()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.ok(h.calls.some(([name]) => name === 'people'))
+  assert.ok(h.calls.some(([name]) => name === 'company'))
+  assert.equal(h.calls.some(([name]) => name === 'offer'), false)
+  release()
+  await result
+  assert.ok(h.calls.some(([name]) => name === 'offer'))
 })
 
 test('denied access never loads project or offer data', async () => {

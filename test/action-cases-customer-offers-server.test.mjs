@@ -73,6 +73,7 @@ function harness(options = {}) {
       const read = { table, columns: '', filters: [] }
       reads.push(read)
       const result = () => {
+        if (table === 'action_cases' && options.caseMissing) return { data: null, error: null }
         if (table === 'action_case_customer_planning' && options.planningMissing)
           return { error: { code: '42P01' } }
         if (table === 'action_case_customer_planning' && read.columns.includes('categories') && options.categoriesMissing)
@@ -123,6 +124,7 @@ function harness(options = {}) {
           }[table]
         }
       }
+      const readResult = async () => { await options.beforeRead?.(read); return result() }
       const chain = {
         select(cols) {
           read.columns = cols
@@ -140,13 +142,13 @@ function harness(options = {}) {
           return chain
         },
         maybeSingle() {
-          return Promise.resolve(result())
+          return readResult()
         },
         single() {
-          return Promise.resolve(result())
+          return readResult()
         },
         then(done) {
-          return Promise.resolve(result()).then(done)
+          return readResult().then(done)
         }
       }
       return chain
@@ -321,6 +323,37 @@ function harness(options = {}) {
       )
   }
 }
+
+test('independent offer reads overlap without bypassing the organization-scoped case lookup', async () => {
+  let release
+  const gate = new Promise(resolve => { release = resolve }), started = []
+  const h = harness({ beforeRead: async read => {
+    started.push(read.table)
+    if (read.table === 'action_case_customer_contract_drafts') await gate
+  } })
+  const result = h.api.getCustomerOfferWorkspace({ orgId: id(90), userId: id(91) }, id(1))
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(started[0], 'action_cases')
+  for (const table of ['action_case_customer_offer_drafts', 'action_case_participants', 'action_case_customer_offers', 'action_case_contract_senders', 'action_case_customer_planning']) assert.ok(started.includes(table), table)
+  release()
+  const workspace = await result
+  assert.equal(workspace.revision, 1)
+  assert.deepEqual(workspace.draft, domain.normalizeCustomerOffer(h.draft))
+  assert.equal(h.calls.length, 0)
+  assert.equal(h.sent.length + h.copies.length + h.prepared.length, 0)
+  const missing = harness({ caseMissing: true })
+  await assert.rejects(() => missing.api.getCustomerOfferWorkspace({ orgId: id(90), userId: id(91) }, id(1)), /CUSTOMER_OFFER_NOT_FOUND/)
+  assert.deepEqual(missing.reads.map(read => read.table), ['action_cases'])
+})
+
+test('parallel draft reads retain the legacy costing fallback and its revision', async () => {
+  const h = harness({ costingMissing: true })
+  const workspace = await h.api.getCustomerOfferWorkspace({ orgId: id(90), userId: id(91) }, id(1))
+  assert.equal(workspace.costingAvailable, false)
+  assert.equal(workspace.revision, 1)
+  assert.deepEqual(workspace.draft, domain.normalizeCustomerOffer(h.draft))
+  assert.equal(h.calls.length, 0)
+})
 
 test('workspace exposes an independent saved offer alongside the contract, without source aliasing', async () => {
   const offerDraft = { ...workspace.draft, title: 'Bara offert' }

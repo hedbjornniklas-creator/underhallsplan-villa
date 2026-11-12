@@ -26,11 +26,14 @@ export default async function ProjectPage({ params, searchParams }: {
   })
   await requireModuleAccess({ productKey: 'dashboard', moduleKey: 'tasks', scopeType: 'organization', scopeId: org.orgId })
   const ctx = { orgId: org.orgId, userId: org.userId }
-  const workspace = await getActionCaseWorkspace(ctx, caseId)
-  if (!workspace.cases.some((item) => item.id === caseId)) notFound()
+  const workspaceRead = getActionCaseWorkspace(ctx, caseId).then(workspace => {
+    if (!workspace.cases.some(item => item.id === caseId)) notFound()
+    return workspace
+  })
   const db = createSupabaseAdminClient()
-  const [offerResult, peopleResult, organization, profile, company] = await Promise.all([
-    getCustomerOfferWorkspace(ctx, caseId).then((data) => ({ data, error: null })).catch(() => ({
+  const [workspace, offerResult, peopleResult, organization, profile, company] = await Promise.all([
+    workspaceRead,
+    workspaceRead.then(() => getCustomerOfferWorkspace(ctx, caseId)).then((data) => ({ data, error: null })).catch(() => ({
       data: null, error: 'Offertuppgifterna kunde inte hämtas. Försök igen. Projektarbete och filer är fortfarande tillgängliga.',
     })),
     getTaskPeople({ ...ctx, isOrgAdmin: org.role === 'admin' }).then((people) => ({ people, unavailable: false }))

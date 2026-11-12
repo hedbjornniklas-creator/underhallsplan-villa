@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowRight, ArrowUpRight, CalendarCheck2, CalendarClock, CircleAlert, FileText, HardHat, LockKeyhole, MessageCircle, PanelsTopLeft, Plus, RefreshCw, ShieldCheck, WalletCards } from 'lucide-react'
 import type { ActionCaseView } from '@/lib/action-cases/contracts'
 import { money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
@@ -22,9 +22,9 @@ function SectionHead({ title, children }: { title: string; children?: ReactNode 
   return <div className="gizmo-home-sectionhead"><h3>{title}</h3>{children}</div>
 }
 
-export default function ProjectOverview({ project, offer, active, refreshKey, questionsDirty, sharingDirty, onManagerChanged, onNavigate, onQuestion, senderControls, completionBlocked, onStatus, onCompletionDirty }: {
+export default function ProjectOverview({ project, offer, active, refreshKey, questionsDirty, scheduleDirty = false, sharingDirty, onManagerChanged, onNavigate, onQuestion, senderControls, completionBlocked, onStatus, onCompletionDirty }: {
   project: ActionCaseView; offer: CustomerOfferWorkspace | null; active: boolean; refreshKey: number
-  questionsDirty: boolean; sharingDirty: boolean; onManagerChanged: () => void
+  questionsDirty: boolean; scheduleDirty?: boolean; sharingDirty: boolean; onManagerChanged: () => void
   onNavigate: (view: ProjectView) => void; onQuestion: (id: string | null) => void
   senderControls?: ReactNode
   completionBlocked: boolean; onStatus: (status: ActionCaseStatus) => void; onCompletionDirty: (dirty: boolean) => void
@@ -32,12 +32,19 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
   const [questions, setQuestions] = useState<Resource<QuestionWorkspace>>(pending)
   const [schedule, setSchedule] = useState<Resource<ProjectSchedule>>(pending)
   const [reload, setReload] = useState(0), [mine, setMine] = useState(false), [all, setAll] = useState(false)
+  const loaded = useRef<{ key: string; at: number } | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [now, setNow] = useState(Date.now)
   const today = overviewToday(new Date(now))
   useEffect(() => {
-    if (!active) return
+    if (questionsDirty || scheduleDirty) loaded.current = null
+    if (!active || questionsDirty || scheduleDirty) return
+    const key = `${project.id}:${refreshKey}:${reload}`
+    if (loaded.current?.key === key && Date.now() - loaded.current.at < 30_000) return
     const controller = new AbortController()
-    setQuestions(pending()); setSchedule(pending())
+    // This cache lives only in this mounted overview; changed access/refresh keys discard it.
+    if (loaded.current?.key !== key) { setQuestions(pending()); setSchedule(pending()) }
+    setRefreshing(true)
     const load = async <T,>(endpoint: string, set: (value: Resource<T>) => void) => {
       try {
         const response = await fetch(`/api/action-cases/${project.id}/${endpoint}`, { signal: controller.signal, cache: 'no-store' })
@@ -45,12 +52,18 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
         if (!response.ok) throw new Error('Read failed')
         if (endpoint === 'questions' ? !Array.isArray(data.questions) || !Array.isArray(data.assignees) || typeof data.userId !== 'string'
           : !Array.isArray(data.rows) || typeof data.available !== 'boolean') throw new Error('Invalid overview response')
-        if (!controller.signal.aborted) set({ data, loading: false, error: false })
-      } catch { if (!controller.signal.aborted) set({ data: null, loading: false, error: true }) }
+        if (controller.signal.aborted) return false
+        set({ data, loading: false, error: false })
+        return true
+      } catch { if (!controller.signal.aborted) set({ data: null, loading: false, error: true }); return false }
     }
-    void load('questions', setQuestions); void load('schedule', setSchedule)
+    void Promise.all([load('questions', setQuestions), load('schedule', setSchedule)]).then(results => {
+      if (controller.signal.aborted) return
+      if (results.every(Boolean)) loaded.current = { key, at: Date.now() }
+      setRefreshing(false)
+    })
     return () => controller.abort()
-  }, [active, project.id, refreshKey, reload])
+  }, [active, project.id, refreshKey, reload, questionsDirty, scheduleDirty])
   useEffect(() => {
     if (!active) return
     setNow(Date.now())
@@ -79,7 +92,7 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
   const missing = model.missingPrices
   return <section className="gizmo-home" aria-label="Projektöversikt" hidden={!active}>
     <div className="gizmo-home-heading"><div><h2>Projektöversikt</h2><p><time dateTime={today}>{overviewDate(today, { weekday: 'long', day: 'numeric', month: 'long' })}</time></p></div>
-      <div className="gizmo-home-actions"><button type="button" className="gizmo-home-icon-button" aria-label="Uppdatera översikten" title="Uppdatera översikten" disabled={loading} onClick={() => setReload(value => value + 1)}><RefreshCw size={17} aria-hidden="true" /></button><button type="button" className="gizmo-home-command" disabled={project.status === 'completed' || questionsDirty || questions.loading || questions.error} onClick={() => onQuestion(null)}><Plus size={17} aria-hidden="true" />Ny fråga</button></div>
+      <div className="gizmo-home-actions"><button type="button" className="gizmo-home-icon-button" aria-label="Uppdatera översikten" title="Uppdatera översikten" disabled={refreshing} onClick={() => setReload(value => value + 1)}><RefreshCw size={17} aria-hidden="true" /></button><button type="button" className="gizmo-home-command" disabled={project.status === 'completed' || questionsDirty || questions.loading || questions.error} onClick={() => onQuestion(null)}><Plus size={17} aria-hidden="true" />Ny fråga</button></div>
     </div>
     <details className="gizmo-home-manager"><summary>Projektansvarig · {questions.loading ? 'Hämtar…' : questions.error ? 'Kunde inte hämtas' : questions.data?.managerId ? questions.data.assignees.find(person => person.kind === 'profile' && person.id === questions.data?.managerId)?.name || 'Utsedd' : 'Ej utsedd'}</summary><ProjectManagerField caseId={project.id} active={active} disabled={questionsDirty || sharingDirty} onChanged={onManagerChanged} /></details>
     {senderControls}

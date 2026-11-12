@@ -82,41 +82,53 @@ export async function getCustomerOfferWorkspace(
 ): Promise<CustomerOfferWorkspace> {
   const c = await requireCase(ctx, caseId),
     db = createSupabaseAdminClient()
-  const draft = await db
-    .from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
-    .select('body,revision,internal_costing')
-    .eq('action_case_id', caseId)
-    .eq('org_id', ctx.orgId)
-    .maybeSingle()
-  let costingAvailable = true
-  let savedDraft = draft.data
-  let draftError = draft.error
-  if (draft.error && ['42703', 'PGRST204'].includes(draft.error.code)) {
-    // Older deployments retain manual pricing until migration 03 is applied.
-    costingAvailable = false
-    const legacy = await db.from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
-      .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle()
-    savedDraft = legacy.data ? { ...legacy.data, internal_costing: {} } : null
-    draftError = legacy.error
+  const readDraft = async () => {
+    const draft = await db
+      .from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
+      .select('body,revision,internal_costing')
+      .eq('action_case_id', caseId)
+      .eq('org_id', ctx.orgId)
+      .maybeSingle()
+    let costingAvailable = true
+    let savedDraft = draft.data
+    let draftError = draft.error
+    if (draft.error && ['42703', 'PGRST204'].includes(draft.error.code)) {
+      // Older deployments retain manual pricing until migration 03 is applied.
+      costingAvailable = false
+      const legacy = await db.from(target === 'contract' ? 'action_case_customer_contract_drafts' : 'action_case_customer_offer_drafts')
+        .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle()
+      savedDraft = legacy.data ? { ...legacy.data, internal_costing: {} } : null
+      draftError = legacy.error
+    }
+    checked(draftError)
+    const body = savedDraft ? normalizeCustomerOffer(savedDraft.body) : emptyCustomerOffer(c.title)
+    const standardTermsFile = body.contractForm === 'abs18' || body.contractForm === 'hf17'
+      ? await findStandardTermsFile(ctx.orgId, caseId, body.contractForm) : null
+    return { savedDraft, costingAvailable, body, standardTermsFile }
   }
-  checked(draftError)
-  const estimate = target === 'contract' ? await db.from('action_case_customer_offer_drafts')
-    .select('body,revision,internal_costing').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : null
+  // Keep authorization first; only independent, organization-scoped reads overlap.
+  const [draftResult, estimate, contractSource, offers, sender, recipient, linked, propertyLink, signing, planning] = await Promise.all([
+    readDraft(),
+    target === 'contract' ? db.from('action_case_customer_offer_drafts')
+      .select('body,revision,internal_costing').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : Promise.resolve(null),
+    target === 'offer' ? db.from('action_case_customer_contract_drafts')
+      .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : Promise.resolve(null),
+    db.from('action_case_customer_offers').select(CUSTOMER_OFFER_COLUMNS)
+      .eq('action_case_id', caseId).eq('org_id', ctx.orgId).order('version', { ascending: false }),
+    db.from('action_case_contract_senders').select('snapshot').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle(),
+    db.from('action_case_participants').select('id,role,name,company_name,email,phone')
+      .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('role', 'customer').maybeSingle(),
+    c.organization_customer_id ? db.from('organization_customers').select('customer_number')
+      .eq('org_id', ctx.orgId).eq('id', c.organization_customer_id).maybeSingle() : Promise.resolve(null),
+    getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
+    target === 'contract' ? getContractSigningVersions(ctx, caseId) : Promise.resolve({}),
+    getCustomerPlanning(ctx, caseId),
+  ])
+  const { savedDraft, costingAvailable, standardTermsFile } = draftResult
   if (estimate) checked(estimate.error)
-  const contractSource = target === 'offer' ? await db.from('action_case_customer_contract_drafts')
-    .select('body,revision').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : null
   if (contractSource) checked(contractSource.error)
-  const offers = await db
-    .from('action_case_customer_offers')
-    .select(CUSTOMER_OFFER_COLUMNS)
-    .eq('action_case_id', caseId)
-    .eq('org_id', ctx.orgId)
-    .order('version', { ascending: false })
   checked(offers.error)
-  let body = savedDraft
-      ? normalizeCustomerOffer(savedDraft.body)
-      : emptyCustomerOffer(c.title)
-  const sender = await db.from('action_case_contract_senders').select('snapshot').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
+  let body = draftResult.body
   if (sender.error && !schemaMissing(sender.error.code)) checked(sender.error)
   const offerSender = (draft: CustomerOfferDraft): CustomerOfferDraft => {
     const profile = sender.data?.snapshot
@@ -127,32 +139,24 @@ export async function getCustomerOfferWorkspace(
         companyName: profile.name, organizationNumber: profile.organizationNumber, street: profile.address ?? '', postalCode: profile.postalCode ?? '', city: profile.city ?? '', email: profile.email ?? '', phone: profile.phone ?? '' } } } : {}) })
   }
   if (target === 'offer') body = offerSender(body)
-  const recipient = await db.from('action_case_participants').select('id,role,name,company_name,email,phone')
-    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('role', 'customer').maybeSingle()
   checked(recipient.error)
-  let customerNumber: string | null = null
-  if (c.organization_customer_id) {
-    const linked = await db.from('organization_customers').select('customer_number')
-      .eq('org_id', ctx.orgId).eq('id', c.organization_customer_id).maybeSingle()
-    checked(linked.error)
-    customerNumber = linked.data ? String(linked.data.customer_number) : null
-  }
-  const propertyLink = await getProjectPropertyLink(c.property_id ?? null, 'property_id' in c)
+  if (linked) checked(linked.error)
+  const customerNumber = linked?.data ? String(linked.data.customer_number) : null
   const projectDetails = offerProjectDetails(target === 'contract' ? body
     : contractSource?.data ? normalizeCustomerOffer(contractSource.data.body) : emptyCustomerOffer(c.title),
     target === 'contract' ? savedDraft?.revision ?? 0 : contractSource?.data?.revision ?? 0, propertyLink.property)
   return {
     offerProjectDetails: projectDetails,
-    ...(target === 'contract' ? await getContractSigningVersions(ctx, caseId) : {}),
+    ...signing,
     ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),
       revision: estimate.data?.revision ?? 0, costing: estimate.data?.internal_costing ?? {} } } : {}),
-    standardTermsFile: body.contractForm === 'abs18' || body.contractForm === 'hf17' ? await findStandardTermsFile(ctx.orgId, caseId, body.contractForm) : null,
+    standardTermsFile,
     propertyLink,
     customerLink: { organizationId: ctx.orgId, available: 'organization_customer_id' in c, customerId: c.organization_customer_id ?? null, customerNumber },
     recipient: recipient.data ? { id: recipient.data.id, role: 'customer', name: recipient.data.name,
       companyName: recipient.data.company_name, email: recipient.data.email, phone: recipient.data.phone } : null,
     draft: body,
-    planning: await getCustomerPlanning(ctx, caseId),
+    planning,
     costingAvailable,
     costing: normalizeCustomerOfferCosting(savedDraft?.internal_costing, body.items),
     revision: savedDraft?.revision ?? 0,

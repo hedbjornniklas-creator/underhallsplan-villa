@@ -26,18 +26,17 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       scopeType: 'organization',
       scopeId: context.orgId,
     })
-    initialWorkspace = await getTaskWorkspace({
-      orgId: context.orgId,
-      userId: context.userId,
-      isOrgAdmin: context.role === 'admin',
-    })
-    try {
-      initialActionCases = await getActionCaseWorkspace({ orgId: context.orgId, userId: context.userId })
-    } catch (error) {
-      initialActionCasesError = error instanceof Error && error.message === 'ACTION_CASES_SCHEMA_REQUIRED'
-        ? 'Kör databasmigrationen för åtgärdsärenden för att aktivera vyn.'
-        : 'Kunde inte läsa åtgärdsärendena just nu.'
-    }
+    const [tasks, projects] = await Promise.all([
+      getTaskWorkspace({ orgId: context.orgId, userId: context.userId, isOrgAdmin: context.role === 'admin' }),
+      getActionCaseWorkspace({ orgId: context.orgId, userId: context.userId })
+        .then(workspace => ({ workspace, error: null }))
+        .catch((error: unknown) => ({ workspace: null, error: error instanceof Error && error.message === 'ACTION_CASES_SCHEMA_REQUIRED'
+          ? 'Kör databasmigrationen för åtgärdsärenden för att aktivera vyn.'
+          : 'Kunde inte läsa åtgärdsärendena just nu.' })),
+    ])
+    initialWorkspace = tasks
+    initialActionCases = projects.workspace
+    initialActionCasesError = projects.error
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
     if (message === 'UNAUTHORIZED') redirect(authLoginUrl(await currentAuthReturnPath('/uppdrag')))

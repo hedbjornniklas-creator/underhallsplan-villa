@@ -139,10 +139,11 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
   }
 
   const caseIds = (cases ?? []).map((row) => row.id)
-  const contractLinks = caseIds.length ? await getContractWorkLinks(context, caseId) : {}
   // These reads depend on the authorized case IDs, not on one another.
-  const [itemResult, partResult, participantResult, attachmentResult, costResult, suggestionResult, requestResult, packageResult, deliveryResult] = caseIds.length
-    ? await Promise.all([
+  const [contractLinks, results] = await Promise.all([
+    caseIds.length ? getContractWorkLinks(context, caseId) : Promise.resolve<Awaited<ReturnType<typeof getContractWorkLinks>>>({}),
+    caseIds.length
+    ? Promise.all([
         admin.from('action_case_items').select('*').in('action_case_id', caseIds).order('sort_order'),
         admin.from('action_case_work_parts').select('*').eq('org_id', context.orgId).in('action_case_id', caseIds).order('sort_order'),
         admin.from('action_case_participants').select('*').in('action_case_id', caseIds).order('created_at'),
@@ -154,7 +155,9 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
         admin.from('action_case_quote_packages').select(`${PACKAGE_VIEW_COLUMNS},action_case_id`).eq('org_id', context.orgId).in('action_case_id', caseIds),
         admin.from('action_case_rfq_deliveries').select(RFQ_DELIVERY_COLUMNS).eq('org_id', context.orgId).in('action_case_id', caseIds),
       ])
-    : Array.from({ length: 9 }, () => ({ data: [], error: null }))
+    : Promise.resolve(Array.from({ length: 9 }, () => ({ data: [], error: null }))),
+  ])
+  const [itemResult, partResult, participantResult, attachmentResult, costResult, suggestionResult, requestResult, packageResult, deliveryResult] = results
   const { data: items, error: itemsError } = itemResult
   const { data: workParts, error: workPartsError } = partResult
   const { data: participants, error: participantError } = participantResult
@@ -179,15 +182,16 @@ export async function getActionCaseWorkspace(context: Context, caseId?: string):
   const packages = (packageRows ?? []) as unknown as Record<string, unknown>[]
   if (deliveryError && !['42P01', 'PGRST205'].includes(deliveryError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   const deliveries = (deliveryRows ?? []) as unknown as Record<string, unknown>[]
-  const { data: quotes, error: quoteError } = caseIds.length
-    ? await admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id') + (packageError ? '' : ',package_request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
-    : { data: [], error: null }
-  if (quoteError && !['42P01', 'PGRST205'].includes(quoteError.code)) throw new Error('ACTION_CASES_READ_FAILED')
-
   const attachmentIds = (attachments ?? []).map((row) => row.id)
-  const { data: grants, error: grantsError } = attachmentIds.length
-    ? await admin.from('action_case_attachment_grants').select('attachment_id,participant_id').in('attachment_id', attachmentIds)
-    : { data: [], error: null }
+  const [{ data: quotes, error: quoteError }, { data: grants, error: grantsError }] = await Promise.all([
+    caseIds.length
+      ? admin.from('action_case_work_quotes').select(QUOTE_VIEW_COLUMNS + (requestError ? '' : ',request_id') + (packageError ? '' : ',package_request_id')).eq('org_id', context.orgId).in('action_case_id', caseIds).order('created_at')
+      : Promise.resolve({ data: [], error: null }),
+    attachmentIds.length
+      ? admin.from('action_case_attachment_grants').select('attachment_id,participant_id').in('attachment_id', attachmentIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (quoteError && !['42P01', 'PGRST205'].includes(quoteError.code)) throw new Error('ACTION_CASES_READ_FAILED')
   if (grantsError) throw new Error('ACTION_CASES_READ_FAILED')
 
   const costLinesByItem = new Map<string, ActionCaseCostLineView[]>()

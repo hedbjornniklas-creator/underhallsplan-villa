@@ -11,7 +11,7 @@ const content = node => typeof node === 'string' ? node : Array.isArray(node) ? 
 function nodes(tree) { return !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)] }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
-function harness() {
+function harness({ onWorkspaceChanged } = {}) {
   const states = [], refs = [], requests = [], reads = []
   let stateIndex = 0, refIndex = 0, tree, failRefresh = false, deferReads = false
   const customer = { id: id(2), kind: 'customer', name: 'Testbeställare', email: 'test@example.invalid' }
@@ -55,7 +55,7 @@ function harness() {
   const code = ts.transpileModule(readFileSync(new URL('../src/components/tasks/ProjectQuestions.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const module = { exports: {} }
   new Function('require', 'module', 'exports', code)(name => { assert.ok(name in dependencies, name); return dependencies[name] }, module, module.exports)
-  const render = () => { stateIndex = 0; refIndex = 0; tree = module.exports.default({ caseId: id(1), active: true, files: [], onFiles() {}, onDirty() {} }); return tree }
+  const render = () => { stateIndex = 0; refIndex = 0; tree = module.exports.default({ caseId: id(1), active: true, files: [], onFiles() {}, onDirty() {}, onWorkspaceChanged }); return tree }
   const button = name => { const b = nodes(tree).find(n => n.type === 'button' && (content(n) === name || n.props['aria-label'] === name)); assert.ok(b, name); return b }
   const field = label => { const n = nodes(tree).find(n => n.type === 'label' && content(n).startsWith(label)); assert.ok(n, label); return nodes(n).find(child => ['input', 'textarea', 'select'].includes(child.type)) }
   render()
@@ -78,6 +78,21 @@ function harness() {
     dispose() { globalThis.fetch = original.fetch; globalThis.document = original.document; globalThis.requestAnimationFrame = original.raf; globalThis.localStorage = original.storage }
   }
 }
+
+test('successful question reads notify the overview after save, but failed reads do not invalidate it', async () => {
+  let updates = 0
+  const h = harness({ onWorkspaceChanged: () => { updates++ } })
+  try {
+    await h.start()
+    assert.equal(updates, 1)
+    h.input('Rubrik', 'Testfråga'); h.input('Fråga', 'Fiktivt underlag')
+    await h.click('Skapa fråga'); await h.reply(0)
+    assert.ok(updates > 1, 'the saved question must invalidate a recently loaded overview')
+    const before = updates
+    h.failRefresh(); await h.click('Hämta sparade frågor och svar')
+    assert.equal(updates, before)
+  } finally { h.dispose() }
+})
 
 test('save and create next keeps text on failure, reuses retry identity and opens a clean question only after acknowledgement', async () => {
   const h = harness()

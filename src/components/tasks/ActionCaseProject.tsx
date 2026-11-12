@@ -73,12 +73,20 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   const [diaryDirty, setDiaryDirty] = useState(false)
   const [sharingDirty, setSharingDirty] = useState(false)
   const [questionsRefresh, setQuestionsRefresh] = useState(0)
+  const [overviewRefresh, setOverviewRefresh] = useState(0)
+  const overviewChanged = useCallback(() => setOverviewRefresh(value => value + 1), [])
   const [questionOpenRequest, setQuestionOpenRequest] = useState<QuestionOpenRequest | null>(null)
   const managerChanged = useCallback(() => setQuestionsRefresh(v => v + 1), [])
   const questionFiles = useCallback((files: ActionCaseAttachmentView[]) => {
     setWorkspace(current => ({ ...current, cases: current.cases.map(c => c.id === caseId ? { ...c, attachments: files } : c) }))
   }, [caseId])
   const [sharedSchedule, setSharedSchedule] = useState<ProjectScheduleRow[]>([])
+  const scheduleLoaded = useRef(false)
+  const receiveSchedule = useCallback((rows: ProjectScheduleRow[]) => {
+    setSharedSchedule(rows)
+    if (scheduleLoaded.current) overviewChanged()
+    scheduleLoaded.current = true
+  }, [overviewChanged])
   const [customerRefresh, setCustomerRefresh] = useState(0)
   const estimateScope = useRef(sharedWorkScopeKey(estimate?.draft.items ?? []))
   const receiveEstimate = useCallback((next: CustomerOfferWorkspace) => {
@@ -220,9 +228,9 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
           onClick={(event) => { if (!event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) { event.preventDefault(); navigate(key) } }}><Icon size={18} /><span>{label}</span></a>)}
       </nav>
       <div className="gizmo-project-content" id={`project-content-${caseId}`} role="tabpanel" aria-label={sectionLabel}>
-        <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh}
+        <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh + overviewRefresh}
           completionBlocked={senderPending || offerDirty || estimateDirty || workDirty || workBusy || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameBusy || renameDirty} onStatus={receiveStatus} onCompletionDirty={setCompletionDirty}
-          questionsDirty={questionsDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion}
+          questionsDirty={questionsDirty} scheduleDirty={scheduleDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion}
           senderControls={offer && <details className="gizmo-home-manager"><summary>Projektets avsändarprofil · {offer.draft.senderProfile?.name ?? issuerName}{senderLocked ? ' · Låst' : ''}</summary>
             {senderLocked ? <p className="py-3 text-sm">{offer.draft.senderProfile?.legalName ?? issuerName}{offer.draft.senderProfile && <> · {offer.draft.senderProfile.organizationNumber}</>}</p> : <CustomerContractSenderProfile project caseId={caseId} organizationId={offer.customerLink?.organizationId}
               selected={offer.draft.senderProfile ?? null} revision={offer.revision} currentCompanyName={issuerName} active={view === 'overview'}
@@ -230,7 +238,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
               onPendingChange={setSenderPending} onApplied={applyProjectSender} onReload={reloadProjectSender} />}
           </details>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
-        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} projectClosed={project.status === 'completed'} />
+        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} onWorkspaceChanged={overviewChanged} projectClosed={project.status === 'completed'} />
         <ProjectDiary key={caseId} caseId={caseId} active={view === 'diary'} refreshKey={questionsRefresh} onDirty={setDiaryDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}
@@ -249,7 +257,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
         </div>
         <section hidden={view !== 'schedule'}>
           <div className="gizmo-section-heading"><h2>Tidsplan</h2></div>
-          <ProjectScheduleEditor caseId={caseId} items={project.items} onDirty={setScheduleDirty} onShared={setSharedSchedule} customerRefresh={customerRefresh} />
+          <ProjectScheduleEditor caseId={caseId} items={project.items} onDirty={setScheduleDirty} onShared={receiveSchedule} customerRefresh={customerRefresh} />
           <section className="gizmo-schedule-section"><h3>{accepted || paper?.delivery?.signedCopy ? 'Avtalade tider' : published ? 'Tider i publicerat avtal' : paper ? 'Tider i låst avtalsversion' : 'Planerade tider i avtalsutkast'}</h3>
             <p className="whitespace-pre-wrap">{(contract?.snapshot.schedule ?? offer?.draft.schedule)?.trim() || 'Inga tider angivna.'}</p>
             {contract ? <p className="gizmo-secondary">Grundavtal version {contract.version}{accepted ? ' · Godkänt' : ' · Inte godkänt'}</p> : open('contract', 'Ange tider i grundavtalet')}

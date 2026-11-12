@@ -19,9 +19,10 @@ const button = 'gizmo-button', field = 'gizmo-question-field'
 const stamp = (value: string) => formatTaskDateTime(value, 'Europe/Stockholm', 'compact')
 export type QuestionOpenRequest = { id: string | null; token: number }
 
-export default function ProjectQuestions({ caseId, active, refreshKey = 0, openRequest, files, onDirty, projectClosed = false }: {
+export default function ProjectQuestions({ caseId, active, refreshKey = 0, openRequest, files, onDirty, onWorkspaceChanged, projectClosed = false }: {
   caseId: string; active: boolean; refreshKey?: number; openRequest?: QuestionOpenRequest | null; files: ActionCaseAttachmentView[]; onFiles: (files: ActionCaseAttachmentView[]) => void; onDirty: (dirty: boolean) => void
   projectClosed?: boolean
+  onWorkspaceChanged?: () => void
 }) {
   const [data, setData] = useState<QuestionWorkspace | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(false)
   const [refreshError, setRefreshError] = useState('')
@@ -77,10 +78,11 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       if (signal?.aborted || sequence !== readSequence.current) return
       if (openSaved.current && !next.questions.some((q: ProjectQuestion) => q.id === openSaved.current)) { setSelected(null); setDraft(emptyQuestion()); setMessage(''); setFileIds([]); setDialogueDirty(false) }
       setData(current => ({ ...next, questions: next.questions.map((q: ProjectQuestion) => { const old = current?.questions.find(p => p.id === q.id); return old && old.revision > q.revision ? old : q }) })); setRefreshError(''); initialized.current = true
+      onWorkspaceChanged?.()
       return next as QuestionWorkspace
     } catch (e) { if (!signal?.aborted && sequence === readSequence.current) setRefreshError(e instanceof Error ? e.message : 'Frågorna kunde inte hämtas.') }
     finally { if (sequence === readSequence.current) setLoading(false) }
-  }, [caseId])
+  }, [caseId, onWorkspaceChanged])
   const dialogueChanged = useCallback(() => { void refresh() }, [refresh])
   const refreshLinkedTasks = useCallback(async () => { await refresh(undefined, true) }, [refresh])
   useEffect(() => { if (!active || (openRequest && handledOpen.current !== openRequest.token) || (initialized.current && loadedKey.current === refreshKey)) return; loadedKey.current = refreshKey; const c = new AbortController(); void refresh(c.signal); return () => c.abort() }, [active, refresh, refreshKey, openRequest])
