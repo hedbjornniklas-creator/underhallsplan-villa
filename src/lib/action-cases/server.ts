@@ -571,7 +571,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
   if (registered.error) throw new Error('ACTION_CASE_FILE_SAVE_FAILED')
   if (registered.data?.length) {
     const saved = registered.data[0]
-    if (saved.file_name === safeName(fileName) && saved.content_type === allowed.contentType && Number(saved.file_size_bytes) === fileSize) return
+    if (saved.file_name === safeName(fileName) && saved.content_type === allowed.contentType && Number(saved.file_size_bytes) === fileSize) return saved.id as string
     throw new Error('ACTION_CASE_FILE_IN_USE')
   }
   const { data: storedObject, error: storedObjectError } = await admin.storage
@@ -621,6 +621,7 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     }
   }
   if (!questionId) await admin.from('action_case_events').insert({ org_id: context.orgId, action_case_id: caseId, action_case_item_id: itemId, event_type: 'attachment_added', message: `${allowed.type === 'image' ? 'Bild' : 'Dokument'} lades till: ${safeName(fileName)}.`, performed_by: context.userId })
+  return attachment.id as string
 }
 
 export async function updateActionCaseAttachmentGrants(context: Context, payload: Record<string, unknown>) {

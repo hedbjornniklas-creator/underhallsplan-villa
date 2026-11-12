@@ -2,12 +2,16 @@ import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getTaskPeople } from '@/lib/tasks/server'
 import { createTaskAttachmentSignedUrl } from '@/lib/tasks/attachments'
-import { questionMutation, questionUuid, questionParticipantSelection, questionParticipantDifference, type ProjectQuestion, type QuestionAssignee, type QuestionBody, type QuestionWorkspace, type QuestionTask, type QuestionDialogueAudit, type QuestionHistoryPerson } from './projectQuestions'
+import { questionMutation, questionAssignmentMutation, questionUuid, questionParticipantSelection, questionParticipantDifference, type ProjectQuestion, type QuestionAssignee, type QuestionBody, type QuestionWorkspace, type QuestionTask, type QuestionDialogueAudit, type QuestionHistoryPerson } from './projectQuestions'
 
 type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(error.code || '')) throw new Error('PROJECT_QUESTION_SCHEMA')
+  const taskError = error.message?.match(/(?:^|\s)(TASK_[A-Z_]+)/)?.[1]
+  if (taskError) throw new Error(({ TASK_VERSION_CONFLICT: 'PROJECT_QUESTION_STALE', TASK_DETAILS_DELIVERY_PENDING: 'PROJECT_QUESTION_ASSIGNMENT_DELIVERY_PENDING',
+    TASK_DETAILS_PENDING_REQUEST: 'PROJECT_QUESTION_ASSIGNMENT_PENDING_REQUEST', TASK_DETAILS_FORBIDDEN: 'PROJECT_QUESTION_FORBIDDEN',
+    TASK_ASSIGNEE_TASK_ACCESS_REQUIRED: 'PROJECT_QUESTION_ASSIGNEE', TASK_CONTACT_METHOD_REQUIRED: 'PROJECT_QUESTION_ASSIGNEE' } as Record<string, string>)[taskError] || 'PROJECT_QUESTION_FAILED')
   const code = error.message?.match(/PROJECT_QUESTION_[A-Z_]+/)?.[0]
   throw new Error(code || 'PROJECT_QUESTION_FAILED')
 }
@@ -64,18 +68,22 @@ export async function getProjectQuestions(ctx: Context, caseId: string): Promise
     dialogueHistory.set(questionId, [...dialogueHistory.get(questionId) || [], entry])
   }
   const tasks = new Map<string, QuestionTask>()
+  const taskIds = [...new Set(events.flatMap(event => typeof event.task_id === 'string' ? [event.task_id] : []))]
+  const rules = taskIds.length ? await pages<{ task_id: string; initial_dispatch_pending: boolean }>((a, b) => db.from('task_followup_rules').select('task_id,initial_dispatch_pending').eq('org_id', ctx.orgId).in('task_id', taskIds).order('task_id').range(a, b)) : []
   for (const event of events) {
     if (typeof event.task_id !== 'string') continue
     const tid = event.task_id
-    const t = await db.from('operational_tasks').select('id,status,due_at,archived_at,issuer_profile_id,assignee_profile_id,assignee_contact_id').eq('org_id', ctx.orgId).eq('id', tid).maybeSingle(); checked(t.error)
+    const t = await db.from('operational_tasks').select('id,status,version,due_at,archived_at,issuer_profile_id,assignee_profile_id,assignee_contact_id').eq('org_id', ctx.orgId).eq('id', tid).maybeSingle(); checked(t.error)
     if (!t.data) continue
     const comments = await pages<Record<string, unknown>>((a, b) => db.from('task_events').select('id,event_type,actor_name,message,created_at').eq('org_id', ctx.orgId).eq('task_id', tid).in('event_type', ['comment', 'status_changed', 'task_submitted_for_review', 'task_approved', 'task_returned']).order('created_at').order('id').range(a, b))
     const files = await pages<Record<string, unknown>>((a, b) => db.from('task_attachments').select('id,file_name,title,text_content,created_at').eq('org_id', ctx.orgId).eq('task_id', tid).order('created_at').order('id').range(a, b))
     const recipient = t.data.assignee_profile_id === ctx.userId ? { kind: 'profile' as const, id: t.data.issuer_profile_id } : t.data.assignee_profile_id ? { kind: 'profile' as const, id: t.data.assignee_profile_id } : { kind: 'contact' as const, id: t.data.assignee_contact_id }
     const target = directory.assignees.find(p => p.kind === recipient.kind && p.id === recipient.id)
     const canReply = !t.data.archived_at && [t.data.issuer_profile_id, t.data.assignee_profile_id].includes(ctx.userId)
-    tasks.set(tid, { id: tid, status: t.data.status, active: !t.data.archived_at && !['approved', 'cancelled'].includes(t.data.status), dueAt: t.data.due_at, assigneeName: (event.body as QuestionBody).assignee?.name || '',
-      replyTarget: canReply && target?.email?.trim() ? { taskId: tid, name: target.name, recipient: { ...recipient, email: target.email.trim().toLowerCase() } } : null,
+    const awaitingDispatch = rules.some(rule => rule.task_id === tid && rule.initial_dispatch_pending)
+    tasks.set(tid, { id: tid, status: t.data.status, version: t.data.version, awaitingDispatch, active: !t.data.archived_at && !['approved', 'cancelled'].includes(t.data.status), dueAt: t.data.due_at,
+      assigneeName: (rows.find(row => row.id === event.question_id)?.body as QuestionBody | undefined)?.assignee?.name || (event.body as QuestionBody).assignee?.name || '',
+      replyTarget: !awaitingDispatch && canReply && target?.email?.trim() ? { taskId: tid, name: target.name, recipient: { ...recipient, email: target.email.trim().toLowerCase() } } : null,
       events: comments.map(c => ({ id: String(c.id), actorName: String(c.actor_name || 'Mottagare'), type: String(c.event_type), text: String(c.message || ''), createdAt: String(c.created_at) })),
       files: files.map(f => ({ id: String(f.id), name: String(f.file_name || f.title || 'Bilaga'), text: f.text_content as string | null, createdAt: String(f.created_at) })) })
   }
@@ -91,6 +99,13 @@ export async function getProjectQuestions(ctx: Context, caseId: string): Promise
   return { questions, privateFiles, userId: ctx.userId, managerId, canManageParticipants: managerId === ctx.userId, ...directory }
 }
 export async function mutateProjectQuestion(ctx: Context, caseId: string, payload: Record<string, unknown>) {
+  if (['reassign', 'dispatch_reassignment'].includes(String(payload.operation))) {
+    const request = questionAssignmentMutation(payload)
+    await requireProject(ctx, caseId)
+    const result = await createSupabaseAdminClient().rpc('write_project_question_assignment', { p_org_id: ctx.orgId, p_case_id: caseId, p_actor_id: ctx.userId, p_request: request })
+    checked(result.error)
+    return { questionId: String(result.data) }
+  }
   const request = questionMutation(payload)
   await requireProject(ctx, caseId)
   if (request.body?.assignee || request.operation === 'send') {

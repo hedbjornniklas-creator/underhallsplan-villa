@@ -31,6 +31,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const [mode, setMode] = useState('details'), [message, setMessage] = useState(''), [reportedBy, setReportedBy] = useState('')
   const [due, setDue] = useState(''), [followup, setFollowup] = useState(''), [confirmed, setConfirmed] = useState(false)
   const [dueTime, setDueTime] = useState('16:00'), [followupTime, setFollowupTime] = useState('09:00')
+  const [replacement, setReplacement] = useState(''), [assignmentConfirmed, setAssignmentConfirmed] = useState(false)
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState('')
   const [dialogueDirty, setDialogueDirty] = useState(false)
   const [dialogueSaveStatus, setDialogueSaveStatus] = useState('')
@@ -115,16 +116,17 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     if (selected && active && !dialog.current?.contains(document.activeElement)) dialog.current?.focus()
   }, [busy, selected, active])
   useEffect(() => { if (selected && active && !question && !busy) titleInput.current?.focus() }, [selected, active, question, busy])
-  function reset(next: QuestionBody) { compositionEdited.current = false; setDraft(next); setFileIds([]); setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); setMode('details'); setDialogueDirty(false); pending.current = null }
+  function reset(next: QuestionBody) { compositionEdited.current = false; setDraft(next); setFileIds([]); setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); setReplacement(''); setAssignmentConfirmed(false); setMode('details'); setDialogueDirty(false); pending.current = null }
   const draftKey = (id: string, section: string) => `gizmo-question:${data?.userId}:${caseId}:${id}:${section}`
   function rememberMode() {
     if (!selected || ['details', 'history', 'dialogue', 'participants'].includes(mode)) return true
     if (!compositionEdited.current && !pending.current) return true
-    try { localStorage.setItem(draftKey(selected, mode), JSON.stringify({ message, reportedBy, due, followup, dueTime, followupTime, fileIds, pending: pending.current })); setLocalError(''); return true }
+    try { localStorage.setItem(draftKey(selected, mode), JSON.stringify({ message, reportedBy, due, followup, dueTime, followupTime, replacement, fileIds, pending: pending.current })); setLocalError(''); return true }
     catch { setLocalError('Utkastet kan inte sparas på den här enheten. Lämna inte vyn innan texten är omhändertagen.'); return false }
   }
   function restoreMode(id: string, section: string) {
     compositionEdited.current = false
+    setReplacement(''); setAssignmentConfirmed(false)
     setFileIds([]); setMessage(''); setReportedBy(''); setDue(''); setFollowup(''); setDueTime('16:00'); setFollowupTime('09:00'); setConfirmed(false); pending.current = null; setLocalError('')
     if (['details', 'history', 'dialogue', 'participants'].includes(section)) return
     try {
@@ -136,11 +138,12 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       if (typeof stored.followup === 'string') setFollowup(stored.followup)
       if (typeof stored.dueTime === 'string') setDueTime(stored.dueTime)
       if (typeof stored.followupTime === 'string') setFollowupTime(stored.followupTime)
+      if (typeof stored.replacement === 'string') setReplacement(stored.replacement)
       if (Array.isArray(stored.fileIds)) setFileIds(stored.fileIds.filter((v: unknown) => typeof v === 'string'))
       if (stored.pending && typeof stored.pending.id === 'string' && typeof stored.pending.key === 'string') pending.current = stored.pending
     } catch { setLocalError('Det lokala utkastet kunde inte läsas.') }
   }
-  useEffect(() => { rememberMode() }, [selected, mode, message, reportedBy, due, followup, dueTime, followupTime, fileIds]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { rememberMode() }, [selected, mode, message, reportedBy, due, followup, dueTime, followupTime, replacement, fileIds]) // eslint-disable-line react-hooks/exhaustive-deps
   function open(q?: ProjectQuestion) {
     if (!q && projectClosed) { setError('Projektet är avslutat. Återöppna projektet innan du skapar en fråga.'); return }
     if (autosave.busy) return
@@ -198,30 +201,50 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     const dueAt = mode === 'send' ? taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm') : null
     const followupAt = mode === 'send' ? taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm') : null
     if (operation === 'send' && !pending.current && (!confirmed || !dueAt || (followup && !followupAt) || (followupAt && followupAt > dueAt))) { setError('Ange svarsdatum och bekräfta utskicket. Om uppföljning väljs behöver den vara giltig och senast vid svarstiden.'); return }
-    const body = pending.current ? JSON.parse(pending.current.key) : { questionId: selected, revision: autosave.revision(), operation, body: draft, text: message, reportedBy: mode === 'answer' ? reportedBy : '', fileIds, dueAt, followupAt, confirmed }
+    const assignment = operation === 'reassign' || operation === 'dispatch_reassignment'
+    if (assignment && !pending.current && (!activeTask?.version || !data?.canManageParticipants || (operation === 'reassign' && (!replacement || !assignmentConfirmed)) || (operation === 'dispatch_reassignment' && !confirmed))) { setError('Välj den nya ansvariga och bekräfta åtgärden.'); return }
+    const body = pending.current ? JSON.parse(pending.current.key) : assignment ? { questionId: selected, revision: autosave.revision(), operation, taskId: activeTask!.id, taskVersion: activeTask!.version,
+      confirmed: true, fileIds: operation === 'reassign' ? [] : fileIds, ...(operation === 'reassign' ? { assignee: assignees.find(a => `${a.kind}:${a.id}` === replacement) } : {}) }
+      : { questionId: selected, revision: autosave.revision(), operation, body: draft, text: message, reportedBy: mode === 'answer' ? reportedBy : '', fileIds, dueAt, followupAt, confirmed }
     const key = JSON.stringify(body)
     if (!pending.current || pending.current.key !== key) pending.current = { key, id: crypto.randomUUID() }
     if (!rememberMode()) return
     running.current = true; setBusy(true); setError(''); setNotice('')
     try {
       const r = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, requestId: pending.current.id }) }), result = await r.json()
+      if (!r.ok && assignment && r.status === 409) {
+        const next = await refresh(), saved = next?.questions.find(q => q.id === selected)
+        if (saved) {
+          localStorage.removeItem(draftKey(selected, mode))
+          reset(saved.body); setSelected(saved.id)
+          autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: [] }, saved.revision, true)
+          if (saved.body.status !== 'closed') { setMode(operation === 'reassign' ? 'reassign' : 'send'); setReplacement(replacement); setFileIds(body.fileIds || []) }
+        }
+        throw new Error(`${result.error || 'Uppgifterna har ändrats.'}${saved ? ' Aktuella uppgifter har hämtats. Granska och bekräfta på nytt.' : ''}`)
+      }
       if (!r.ok) throw new Error(result.error || 'Åtgärden kunde inte bekräftas.')
       if (result.questionId !== selected) throw new Error('Sparningen kunde inte bekräftas. Din text är kvar.')
       try { localStorage.removeItem(draftKey(selected, mode)) } catch { /* The acknowledged action remains authoritative. */ }
       // The mutation result is authoritative even if the following refresh fails.
-      setNotice(createNext ? 'Frågan är sparad. Nästa fråga är tom.' : operation === 'send' ? 'Uppgiften är sparad i utskickskön. Leveransstatus finns i Gizmo.' : 'Sparat i historiken.')
+      setNotice(createNext ? 'Frågan är sparad. Nästa fråga är tom.' : operation === 'reassign' ? 'Ansvarig har bytts. Inget nytt utskick har gjorts.' : operation === 'send' || operation === 'dispatch_reassignment' ? 'Uppgiften är sparad i utskickskön. Leveransstatus finns i Gizmo.' : 'Sparat i historiken.')
       if (createNext) { reset(emptyQuestion()); setSelected(crypto.randomUUID()) }
       else { reset({ ...draft, status: operation === 'close' ? 'closed' : operation === 'reopen' ? 'open' : draft.status }); setSelected(null) }
-      await refresh()
+      const next = await refresh()
+      if (assignment) {
+        const saved = next?.questions.find(q => q.id === selected)
+        if (saved) { reset(saved.body); setSelected(saved.id); autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: [] }, saved.revision, true) }
+      }
       if (!createNext) requestAnimationFrame(() => focusBefore.current?.focus())
     } catch (e) { setError(e instanceof Error ? e.message : 'Åtgärden kunde inte bekräftas. Din text är kvar.') }
     finally { running.current = false; setBusy(false) }
   }
   async function upload(file?: File) {
     if (!file || running.current) return
+    if (fileIds.length >= 20) { setError('Högst 20 bilagor kan väljas åt gången. Avmarkera en bilaga först.'); return }
     if (!file.size || file.size > 25 * 1024 * 1024) { setError('Välj en fil, högst 25 MB.'); return }
     running.current = true; setBusy(true); setError('')
     try {
+      if (!await autosave.flush()) { setError('Ange rubrik och frågetext och spara frågan före uppladdning.'); return }
       const post = async (action: string, payload: Record<string, unknown>) => {
         const r = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, payload: { ...payload, caseId, questionId: selected } }) }), v = await r.json()
         if (!r.ok) throw new Error(v.error || 'Uppladdningen kunde inte bekräftas.'); return v
@@ -229,12 +252,10 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       const signed = await post('create_signed_upload', { fileName: file.name, contentType: file.type, fileSize: file.size })
       const r = await supabase.storage.from(signed.upload.bucket).uploadToSignedUrl(signed.upload.filePath, signed.upload.token, file, { contentType: signed.upload.contentType })
       if (r.error) { await post('abort_upload', { filePath: signed.upload.filePath }).catch(() => undefined); throw new Error('Uppladdningen misslyckades.') }
-      await post('complete_upload', { filePath: signed.upload.filePath, fileName: file.name, contentType: file.type, fileSize: file.size, participantIds: [] })
-      const next = (await refresh())?.privateFiles?.filter(f => f.questionId === selected) || []
-      const name = file.name.replace(/[\u0000-\u001f\u007f/\\]+/g, '_').trim().slice(0, 180) || 'bilaga'
-      const added = next.filter(f => !data?.privateFiles?.some(old => old.id === f.id) && f.fileName === name && f.fileSizeBytes === file.size)
-      if (added.length !== 1) throw new Error('Filen finns i projektet men kunde inte kopplas automatiskt. Välj filen i listan.')
-      changeFiles([...fileIds, added[0].id])
+      const result = await post('complete_upload', { filePath: signed.upload.filePath, fileName: file.name, contentType: file.type, fileSize: file.size, participantIds: [] })
+      if (typeof result.attachmentId !== 'string') throw new Error('Filen kunde inte kopplas till frågan. Hämta sparade frågor innan du försöker igen.')
+      changeFiles([...new Set([...fileIds, result.attachmentId])])
+      await refresh()
     } catch (e) { setError(e instanceof Error ? e.message : 'Filen kunde inte laddas upp.') }
     finally { running.current = false; setBusy(false); if (uploadInput.current) uploadInput.current.value = '' }
   }
@@ -246,13 +267,15 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const choices = [...new Map([...sendFiles.map(f => ({ id: f.id, fileName: f.name })), ...availableFiles].map(f => [f.id, f])).values()]
   const closed = question?.body.status === 'closed'
   const taskOpen = Boolean(question?.tasks.some(t => t.active ?? !['approved', 'cancelled'].includes(t.status)))
-  const taskReply = (question?.tasks.find(t => t.active && t.replyTarget) || question?.tasks.filter(t => t.replyTarget).at(-1))?.replyTarget || undefined
+  const activeTask = question?.tasks.find(t => t.active ?? !['approved', 'cancelled'].includes(t.status))
+  const awaitingDispatch = Boolean(activeTask?.awaitingDispatch)
+  const taskReply = awaitingDispatch ? undefined : (question?.tasks.find(t => t.active && t.replyTarget) || question?.tasks.filter(t => t.replyTarget).at(-1))?.replyTarget || undefined
   const detailsDisabled = busy || autosave.busy || !draft.title.trim() || !draft.description.trim()
-  const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), hasFollowup: Boolean(followup), confirmed })
+  const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: awaitingDispatch ? activeTask!.dueAt : taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: awaitingDispatch ? null : taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), hasFollowup: !awaitingDispatch && Boolean(followup), confirmed })
   const history = [...question?.events || [], ...question?.dialogueHistory || []].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   const availablePeople = (data?.assignees || []).filter(p => data?.canManageParticipants || (p.kind === 'profile' && [data?.userId, data?.managerId].includes(p.id)) || question?.participants?.some(m => m.kind === p.kind && m.personId === p.id))
   const assignees = questionAssigneeOptions(availablePeople, draft.assignee)
-  const selectedTab = ['send', 'close', 'reopen'].includes(mode) ? 'details' : mode
+  const selectedTab = ['send', 'close', 'reopen', 'reassign'].includes(mode) ? 'details' : mode
   const tabs = [['details', 'Fråga', ClipboardList], ['dialogue', 'Kommunikation', MessageSquare], ['participants', 'Deltagare', Users], ['history', 'Historik', History]] as const
   const panel = selected && active && typeof document !== 'undefined' ? createPortal(<div className="uppdrag-scope gizmo-dialog-scope gizmo-questions-overlay" onPointerDown={e => { backdrop.current = e.target === e.currentTarget }} onClick={e => { if (e.target === e.currentTarget && backdrop.current) close(); backdrop.current = false }}>
     <div ref={dialog} className="gizmo-question-panel" role="dialog" aria-modal="true" aria-labelledby={headingId} aria-busy={busy} tabIndex={-1} onKeyDown={e => {
@@ -282,7 +305,8 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
             <label>Rubrik<input ref={titleInput} className={field} value={draft.title} maxLength={250} readOnly={closed} onChange={e => patch({ title: e.target.value })} /></label>
             <label>Fråga<textarea className={field} rows={5} value={draft.description} maxLength={12000} readOnly={closed} onChange={e => patch({ description: e.target.value })} /></label>
             <div className="gizmo-question-pair"><label>Sammanhang / möte<input className={field} value={draft.source} maxLength={500} readOnly={closed} onChange={e => patch({ source: e.target.value })} /></label><label>Mötesdatum (valfritt)<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={draft.meetingDate} readOnly={closed} onChange={e => patch({ meetingDate: e.target.value })} /></label></div>
-            <label>Ansvarig<select className={field} disabled={closed || taskOpen} title={taskOpen ? 'Hantera den aktiva uppgiften i Gizmo innan ansvarig byts' : undefined} value={draft.assignee ? `${draft.assignee.kind}:${draft.assignee.id}` : ''} onChange={e => patch({ assignee: assignees.find(a => `${a.kind}:${a.id}` === e.target.value) || null })}><option value="">Ej tilldelad</option>{draft.assignee && !assignees.some(a => a.id === draft.assignee?.id && a.kind === draft.assignee.kind) && <option value={`${draft.assignee.kind}:${draft.assignee.id}`}>{draft.assignee.name} (inte tillgänglig)</option>}{assignees.map(a => <option value={`${a.kind}:${a.id}`} key={`${a.kind}:${a.id}`}>{a.name}{a.email ? ` (${a.email})` : ''}{a.kind === 'customer' ? ' · Beställare' : a.kind === 'profile' ? ' · Intern' : ' · Kontakt'}</option>)}</select></label>
+            <label>Ansvarig<select className={field} disabled={closed || taskOpen} title={taskOpen ? 'Byt ansvarig med knappen nedan' : undefined} value={draft.assignee ? `${draft.assignee.kind}:${draft.assignee.id}` : ''} onChange={e => patch({ assignee: assignees.find(a => `${a.kind}:${a.id}` === e.target.value) || null })}><option value="">Ej tilldelad</option>{draft.assignee && !assignees.some(a => a.id === draft.assignee?.id && a.kind === draft.assignee.kind) && <option value={`${draft.assignee.kind}:${draft.assignee.id}`}>{draft.assignee.name} (inte tillgänglig)</option>}{assignees.map(a => <option value={`${a.kind}:${a.id}`} key={`${a.kind}:${a.id}`}>{a.name}{a.email ? ` (${a.email})` : ''}{a.kind === 'customer' ? ' · Beställare' : a.kind === 'profile' ? ' · Intern' : ' · Kontakt'}</option>)}</select></label>
+            {taskOpen && !closed && data?.canManageParticipants && <button type="button" className={button} onClick={() => void switchMode('reassign')}><Users size={16} />Byt ansvarig</button>}
             {data?.customersAvailable === false && <p role="status" className="gizmo-secondary">Beställare i ansvariglistan behöver aktiveras i databasen.</p>}
             {!closed && <label>Status<select className={field} value={draft.status} onChange={e => patch({ status: e.target.value as QuestionBody['status'] })}>{Object.entries(questionStatuses).filter(([key]) => key !== 'closed').map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>}
           </>}
@@ -290,13 +314,14 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
             {mode === 'answer' && <label>Återgivet svar från (lämnas tomt för eget svar)<input className={field} maxLength={250} value={reportedBy} onChange={e => compose(setReportedBy, e.target.value)} /></label>}
             <label>{mode === 'answer' ? 'Svar' : mode === 'note' ? 'Intern anteckning' : mode === 'close' ? 'Avslutningsanteckning' : 'Skäl till återöppning'}<textarea className={field} rows={6} maxLength={12000} value={message} onChange={e => compose(setMessage, e.target.value)} /></label>
           </>}
-          {question && ['details', 'send'].includes(mode) && data?.canManageParticipants && !closed && <details className="gizmo-question-dispatch" open={mode === 'send'}><summary onClick={event => { event.preventDefault(); void switchMode(mode === 'send' ? 'details' : 'send') }}>Skicka till ansvarig{taskOpen ? ' · Redan skickad' : ''}</summary>{taskOpen ? <p>Frågan har redan en aktiv uppgift. Status och länk till uppgiften visas nedan. Ett nytt utskick skapas inte.</p> : <>
+          {mode === 'reassign' && <section className="gizmo-question-callout"><h3>Byt ansvarig</h3><p>Nuvarande ansvarig: {question?.body.assignee?.name || 'Ej tilldelad'}</p><label>Ny ansvarig<select className={field} value={replacement} onChange={e => { compose(setReplacement, e.target.value); setAssignmentConfirmed(false) }}><option value="">Välj person</option>{assignees.filter(a => a.id !== question?.body.assignee?.id || a.kind !== question.body.assignee.kind).map(a => <option key={`${a.kind}:${a.id}`} value={`${a.kind}:${a.id}`}>{a.name}{a.email ? ` (${a.email})` : ''}</option>)}</select></label><p>Historik, bilagor, status och svarstid behålls. Den gamla uppgiftslänken spärras. Ett nytt utskick görs separat. Deltagandet i gruppdialogen ändras inte för den tidigare ansvariga.</p><label className="gizmo-question-confirm"><input type="checkbox" checked={assignmentConfirmed} onChange={e => setAssignmentConfirmed(e.target.checked)} />Jag bekräftar bytet av ansvarig.</label></section>}
+          {question && ['details', 'send'].includes(mode) && data?.canManageParticipants && !closed && <details className="gizmo-question-dispatch" open={mode === 'send'}><summary onClick={event => { event.preventDefault(); void switchMode(mode === 'send' ? 'details' : 'send') }}>{awaitingDispatch ? 'Skicka till ny ansvarig' : 'Skicka till ansvarig'}{taskOpen && !awaitingDispatch ? ' · Redan skickad' : ''}</summary>{taskOpen && !awaitingDispatch ? <p>Frågan har redan en aktiv uppgift. Status och länk till uppgiften visas nedan. Ett nytt utskick skapas inte.</p> : <>
             <section className="gizmo-question-callout"><h3>{draft.assignee ? `Skickas till ${draft.assignee.name}` : 'Ingen ansvarig vald'}</h3>{!draft.assignee && <p>Välj ansvarig ovan under Fråga → Ansvarig. Valet sparas automatiskt.</p>}{draft.assignee?.email && <p>{draft.assignee.email}</p>}</section>
-            <div className="gizmo-question-pair"><label>Svar senast<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={due} onChange={e => compose(setDue, e.target.value)} required /></label><label>Klockslag för svar (Stockholm)<input className={field} type="time" value={dueTime} onChange={e => compose(setDueTime, e.target.value)} required /></label><label>Första uppföljning (valfritt)<input className={field} type="date" min="0001-01-01" max={due || '9999-12-31'} value={followup} onChange={e => compose(setFollowup, e.target.value)} /></label><label>Klockslag för uppföljning (Stockholm)<input className={field} type="time" value={followupTime} disabled={!followup} onChange={e => compose(setFollowupTime, e.target.value)} required={Boolean(followup)} /></label></div>
+            {awaitingDispatch ? <p>Den nya ansvariga är sparad men uppgiften är inte skickad. Befintlig status och svarstid behålls: {stamp(activeTask!.dueAt)}. Tidigare uppgiftsbilagor finns kvar.</p> : <div className="gizmo-question-pair"><label>Svar senast<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={due} onChange={e => compose(setDue, e.target.value)} required /></label><label>Klockslag för svar (Stockholm)<input className={field} type="time" value={dueTime} onChange={e => compose(setDueTime, e.target.value)} required /></label><label>Första uppföljning (valfritt)<input className={field} type="date" min="0001-01-01" max={due || '9999-12-31'} value={followup} onChange={e => compose(setFollowup, e.target.value)} /></label><label>Klockslag för uppföljning (Stockholm)<input className={field} type="time" value={followupTime} disabled={!followup} onChange={e => compose(setFollowupTime, e.target.value)} required={Boolean(followup)} /></label></div>}
             <QuestionReminderSchedule />
           </>}</details>}
-          {!['history', 'dialogue', 'participants'].includes(mode) && !closed && <section className="gizmo-question-files"><h3>{mode === 'send' ? 'Bilagor till mottagaren' : 'Bilagor till denna historikpost'}</h3><ul>{choices.map(f => <li key={f.id}><label><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => changeFiles(e.target.checked ? [...fileIds, f.id] : fileIds.filter(id => id !== f.id))} />{f.fileName}</label><a href={`/api/action-cases/${caseId}/attachments/${f.id}`} target="_blank" rel="noreferrer" aria-label={`Öppna ${f.fileName}`} title="Öppna i ny flik"><ExternalLink size={16} /></a></li>)}</ul>{mode !== 'send' && <><button className={button} type="button" onClick={() => uploadInput.current?.click()} disabled={!question || fileIds.length >= 20} title={question ? 'Ladda upp bilaga' : 'Spara frågan före uppladdning'}><Upload size={16} /> Ladda upp bilaga</button><input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} /></>}</section>}
-          {question && !closed && !['history', 'dialogue', 'participants'].includes(mode) && <QuestionDiaryImagePicker key={question.id} caseId={caseId} questionId={question.id} remaining={20 - fileIds.length} disabled={busy || Boolean(pending.current)} onWorking={value => { running.current = value; setBusy(value) }} onAttached={added => {
+          {!['history', 'dialogue', 'participants', 'reassign'].includes(mode) && !closed && <section className="gizmo-question-files"><h3>{mode === 'send' ? 'Bilagor till mottagaren' : 'Bilder och dokument till frågan'}</h3><button className={button} type="button" onClick={() => uploadInput.current?.click()} disabled={fileIds.length >= 20 || !draft.title.trim() || !draft.description.trim()} title="Ladda upp direkt till frågan"><Upload size={16} />Lägg till bild eller dokument</button><input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} /><ul>{choices.map(f => <li key={f.id}><label><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => changeFiles(e.target.checked ? [...fileIds, f.id] : fileIds.filter(id => id !== f.id))} />{f.fileName}</label><a href={`/api/action-cases/${caseId}/attachments/${f.id}`} target="_blank" rel="noreferrer" aria-label={`Öppna ${f.fileName}`} title="Öppna i ny flik"><ExternalLink size={16} /></a></li>)}</ul></section>}
+          {question && !closed && !['history', 'dialogue', 'participants', 'reassign'].includes(mode) && <QuestionDiaryImagePicker key={question.id} caseId={caseId} questionId={question.id} remaining={20 - fileIds.length} disabled={busy || Boolean(pending.current)} onWorking={value => { running.current = value; setBusy(value) }} onAttached={added => {
             setData(current => current ? { ...current, privateFiles: [...new Map([...(current.privateFiles || []), ...added.map(file => ({ ...file, questionId: question.id }))].map(file => [file.id, file])).values()] } : current)
             changeFiles([...new Set([...fileIds, ...added.map(file => file.id)])])
           }} />}
@@ -348,7 +373,8 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
           {mode === 'details' && !question && <button className={`${button} gizmo-question-primary`} disabled={detailsDisabled} onClick={() => void write('create')}><Save size={16} />{autosave.busy ? 'Skapar…' : autosave.error ? 'Försök skapa igen' : 'Skapa fråga'}</button>}
           {mode === 'details' && !closed && <button className={button} disabled={detailsDisabled} onClick={() => void write(question ? 'update' : 'create', true)}><Plus size={16} />Spara och skapa nästa</button>}
           {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <span className="gizmo-secondary">{sendRequirements.length} {sendRequirements.length === 1 ? 'uppgift' : 'uppgifter'} kvar inför utskick</span>}
-          {!['details', 'history', 'dialogue', 'participants'].includes(mode) && !(mode === 'send' && taskOpen) && <button className={`${button} gizmo-question-primary`} aria-describedby={mode === 'send' && sendRequirements.length && !pending.current ? `${headingId}-send-requirements` : undefined} disabled={busy || autosave.busy || (!pending.current && (mode === 'send' ? sendRequirements.length > 0 : !message.trim()))} onClick={() => void write(mode)}>{busy ? <Loader2 size={16} className="animate-spin" /> : mode === 'send' ? <Send size={16} /> : <Save size={16} />}{busy ? mode === 'send' ? 'Skickar…' : 'Sparar…' : pending.current ? 'Försök igen' : mode === 'send' ? 'Skicka uppgift' : mode === 'note' ? 'Publicera intern anteckning' : mode === 'close' ? 'Avsluta fråga' : mode === 'reopen' ? 'Återöppna fråga' : 'Skicka svar'}</button>}
+          {mode === 'reassign' && !pending.current && <button className={button} disabled={busy} onClick={() => void switchMode('details')}>Avbryt byte</button>}
+          {!['details', 'history', 'dialogue', 'participants'].includes(mode) && !(mode === 'send' && taskOpen && !awaitingDispatch) && <button className={`${button} gizmo-question-primary`} aria-describedby={mode === 'send' && sendRequirements.length && !pending.current ? `${headingId}-send-requirements` : undefined} disabled={busy || autosave.busy || (!pending.current && (mode === 'send' ? sendRequirements.length > 0 : mode === 'reassign' ? !replacement || !assignmentConfirmed : !message.trim()))} onClick={() => void write(mode === 'send' && awaitingDispatch ? 'dispatch_reassignment' : mode)}>{busy ? <Loader2 size={16} className="animate-spin" /> : mode === 'send' ? <Send size={16} /> : <Save size={16} />}{busy ? mode === 'send' ? 'Skickar…' : 'Sparar…' : pending.current ? 'Försök igen' : mode === 'reassign' ? 'Bekräfta byte' : mode === 'send' ? awaitingDispatch ? 'Skicka till ny ansvarig' : 'Skicka uppgift' : mode === 'note' ? 'Publicera intern anteckning' : mode === 'close' ? 'Avsluta fråga' : mode === 'reopen' ? 'Återöppna fråga' : 'Skicka svar'}</button>}
         </div>
       </footer>
     </div>

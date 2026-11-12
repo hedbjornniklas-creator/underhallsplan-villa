@@ -14,7 +14,7 @@ const makeQuestion = (n: number, title: string): ProjectQuestion => {
   return { id: id(n), number: n, revision: 1, body, createdAt, updatedAt: createdAt, tasks: [], participants: [], events: [{ id: id(n + 100), operation: 'create', actorName: manager.name, createdAt, body: structuredClone(body), text: '', reportedBy: '', files: [], revision: 1, taskId: null }] }
 }
 const single = makeQuestion(1, 'TEST - En ansvarig'), group = makeQuestion(2, 'TEST - Grupp och historik')
-single.tasks = [{ id: id(50), status: 'assigned', active: true, dueAt: '2026-11-10T15:00:00Z', assigneeName: jn.name, replyTarget: { taskId: id(50), name: jn.name, recipient: { kind: 'contact', id: jn.id, email: jn.email } }, events: [], files: [] }]
+single.tasks = [{ id: id(50), version:1, awaitingDispatch:false, status: 'assigned', active: true, dueAt: '2026-12-10T15:00:00Z', assigneeName: jn.name, replyTarget: { taskId: id(50), name: jn.name, recipient: { kind: 'contact', id: jn.id, email: jn.email } }, events: [], files: [] }]
 const hp = (p: typeof manager | typeof jn) => ({ key: `${p.kind}:${p.id}`, name: p.name })
 group.dialogueHistory = [
   { id: id(201), operation: 'participants', actorName: manager.name, createdAt: '2026-11-05T10:01:00Z', selected: [hp(manager), hp(jn)], added: null, removed: null, snapshot: null, files: [], deliveries: [] },
@@ -23,7 +23,7 @@ group.dialogueHistory = [
   { id: id(204), operation: 'participants', actorName: manager.name, createdAt: '2026-11-05T10:04:00Z', selected: [hp(manager), hp(jn)], added: [], removed: [hp(nh)], snapshot: null, files: [], deliveries: [] },
 ]
 const workspace: QuestionWorkspace = { questions: [single, group], assignees: [manager, jn, nh], userId: manager.id, managerId: manager.id, canManageParticipants: true, privateFiles: [] }
-const storageKey = 'question-stability-fixture-v2'
+const storageKey = 'question-stability-fixture-v3'
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey) || 'null')
   if (saved?.questions) workspace.questions = saved.questions
@@ -69,6 +69,15 @@ window.fetch = async (input, options) => {
   if (body.revision !== q.revision) return json({ error: 'Fiktiv versionskonflikt' }, 409)
   writes++
   if (body.operation === 'send') sends++
+  if (['reassign','dispatch_reassignment'].includes(body.operation)) {
+    const task=q.tasks.find(t=>t.id===body.taskId)
+    if (!task || task.version!==body.taskVersion) return json({error:'Fiktiv versionskonflikt'},409)
+    if (body.operation==='reassign') {
+      const person=workspace.assignees.find(a=>a.id===body.assignee.id&&a.kind===body.assignee.kind)!
+      q.body={...q.body,assignee:person}; task.assigneeName=person.name; task.awaitingDispatch=true; task.replyTarget=null
+    } else { task.awaitingDispatch=false; sends++ }
+    task.version=(task.version||0)+1
+  }
   if (['create', 'update'].includes(body.operation)) q.body = body.body
   if (body.operation === 'close') q.body.status = 'closed'
   if (body.operation === 'reopen') q.body.status = 'open'

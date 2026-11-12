@@ -162,6 +162,39 @@ komplettering förklarar fortsatta påminnelser, pauser och utskickstider.
 
 ## Aktivering
 
+### Ansvarigbyte och direktbilagor, 2026-11-12
+
+Projektansvarig kan välja **Byt ansvarig** i en redan skickad, aktiv fråga.
+Bytet kräver granskning och sparas atomiskt med versionskontroll för både fråga
+och uppgift. Samma uppgift, status, svarstid och historik behålls. Den tidigare
+personliga uppgiftslänken spärras och dess påminnelser stoppas. **Skicka till ny
+ansvarig** är ett separat steg; själva bytet skickar inget. Ett osäkert utskick
+eller en öppen begäran om ändrad svarstid måste hanteras före byte.
+
+Gruppdeltagande är separat. Tidigare ansvarig tas inte bort från en befintlig
+gruppdialog. Ny ansvarig läggs till som odelad deltagare. Beställare återanvänder
+kontaktbryggan när en aktiv uppgift faktiskt byter ansvarig, utan att avtal eller
+delning ändras. Vanliga Att göra kan inte kringgå frågans ansvarigstyrning.
+
+**Lägg till bild eller dokument** sparar vid behov den nya frågan före uppladdning.
+Filen kopplas privat direkt till frågan (högst 25 MB per fil), väljs via sitt
+bekräftade fil-ID och delas inte automatiskt. Det krävs inget projektfilsteg.
+Högst 20 bilagor kan väljas per meddelande eller utskick.
+
+Mottagarsidorna använder gemensam Gizmo-profil. Uppgiftens primäråtgärd finns
+en gång i fast sidfot. Tid och uppföljning samt tomma underuppgifter är infällda.
+Gruppfrågan visar svarsfältet före meddelanden, de tre senaste meddelandena
+och äldre meddelanden i en infälld kronologisk del. Interna anteckningar
+delas aldrig. Befintliga länkar, statusflöden och mejlkanaler ändras inte.
+
+Kör `docs/db/2026-11-12_01_project_question_reassignment.sql` efter
+`2026-11-10_01_task_details_editing.sql` före publicering av ansvarigbytet.
+Migreringen ändrar funktioner, inte befintliga projektuppgifter. Den kördes i
+produktion 2026-11-12 efter användarens godkännande. Driftens CRLF-radbrytningar
+normaliseras före den fortsatt exakta kontrollen av befintlig behörighetskod.
+En jämförelse av 13 tabeller i Lokevägen och Gåshaga visar oförändrade uppgifter.
+Avtal och kalkyler ingår inte i ändringen.
+
 Kör `docs/db/2026-10-19_03_project_question_customers.sql` efter den befintliga
 frågemigreringen `2026-10-19_01_project_questions.sql` före publicering av den nya
 mottagarfunktionen. Ingen historisk dataöverföring eller massändring ingår.
@@ -180,3 +213,7 @@ redigeraren anger då att beställarlistan behöver aktiveras.
 - 2026-11-12: Användaren gör första uppföljning frivillig, behåller ordinarie
   påminnelser och vill se ett diskret schema vid utskicket. Publicering av detta
   och dagbokens bildval är uttryckligen godkänd.
+- 2026-11-12: Användaren godkänner ansvarigbyte direkt i projektfrågan med
+  bevarad historik och separat utskick, direktbilagor och förenklade
+  mottagarsidor enligt Gizmo-profilen. Ingen publicering ingår i godkännandet.
+- 2026-11-12: Användaren godkänner därefter SQL-körning och publicering av paketet.

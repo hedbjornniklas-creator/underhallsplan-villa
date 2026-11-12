@@ -154,3 +154,145 @@ test('legacy linked questions remain origin-managed even when created_source is 
   await assert.rejects(edit(t, { assigneeContactId: contact2 }, true), /TASK_DETAILS_MANAGED/)
   assert.deepEqual(await read(t.id), t)
 })
+
+test('project question reassignment uses the task engine with question authorization and separate dispatch', async suite => {
+  await db.exec(`create table action_cases(id uuid primary key,org_id uuid,manager_profile_id uuid);
+    create table action_case_questions(id uuid primary key,org_id uuid,action_case_id uuid,revision integer default 1,body jsonb,updated_at timestamptz default now());
+    alter table action_case_question_events add column id uuid default gen_random_uuid() unique,add column action_case_id uuid,add column question_id uuid,
+      add column revision integer,add column operation text,add column actor_id uuid,add column actor_name text,add column body jsonb,add column message text,
+      add column reported_by text,add column request jsonb;
+    create unique index question_revisions on action_case_question_events(question_id,revision);
+    create table action_case_question_participants(id uuid default gen_random_uuid(),org_id uuid,action_case_id uuid,question_id uuid,person_kind text,person_id uuid,name text,email text,
+      active boolean default true,shared boolean default false,removed_at timestamptz,unique(question_id,person_kind,person_id));
+    create table action_case_attachments(id uuid primary key,org_id uuid,action_case_id uuid,question_id uuid,attachment_type text,file_name text,storage_bucket text,file_path text,content_type text,file_size_bytes integer);
+    create table action_case_question_files(event_id uuid,attachment_id uuid,file_name text,primary key(event_id,attachment_id));
+    create table action_case_work_quotes(org_id uuid,document_id uuid);
+    create table action_case_quote_requests(org_id uuid,response_document_id uuid);
+    create table fixture_question_customers(org_id uuid,case_id uuid,id uuid,name text,email text);
+    create function project_question_customers(uuid,uuid) returns table(id uuid,name text,email text) language sql as $$select id,name,email from fixture_question_customers where org_id=$1 and case_id=$2$$;
+    create function project_question_internal_participant(uuid,uuid,uuid,uuid) returns boolean language sql as $$select exists(select 1 from action_case_question_participants p join org_members m on m.org_id=p.org_id and m.profile_id=p.person_id and m.is_active where p.org_id=$1 and p.action_case_id=$2 and p.question_id=$3 and p.person_kind='profile' and p.person_id=$4 and p.active)$$;
+    alter table organization_contacts alter column id set default gen_random_uuid(),add column preferred_channel text,add column created_by uuid,add column updated_by uuid;`)
+  await db.exec(table('task_attachments'))
+  const migration = sql('2026-11-12_01_project_question_reassignment')
+  const finalizer=(await db.query("select pg_get_functiondef('public.finalize_operational_task_initial_dispatch(uuid,uuid,uuid)'::regprocedure) value")).rows[0].value
+  await db.exec(finalizer.replace(/\r?\n/g,'\r\n'))
+  assert.ok((await db.query("select strpos(pg_get_functiondef('public.finalize_operational_task_initial_dispatch(uuid,uuid,uuid)'::regprocedure),chr(13)) value")).rows[0].value>0,'exercise the production CRLF definition without weakening the exact authorization guard')
+  const beforeInstall = (await db.query('select to_jsonb(t) value from operational_tasks t order by id')).rows
+  await db.exec(migration); await db.exec(migration)
+  assert.deepEqual((await db.query('select to_jsonb(t) value from operational_tasks t order by id')).rows, beforeInstall)
+  const setup = async (manager = issuer) => {
+    const task = await create(true), caseId = randomUUID(), questionId = randomUUID()
+    const body = { title: 'Fiktiv projektfråga', description: 'Underlag', status: 'investigating', assignee: { id: contact, kind: 'contact', name: 'Extern A', email: 'a@example.test' } }
+    await db.query('insert into action_cases values($1,$2,$3)', [caseId,org,manager])
+    await db.query('insert into action_case_questions(id,org_id,action_case_id,body) values($1,$2,$3,$4)', [questionId,org,caseId,JSON.stringify(body)])
+    await db.query("insert into action_case_question_events(org_id,task_id,action_case_id,question_id,revision,operation,body,request) values($1,$2,$3,$4,1,'send',$5,'{}')", [org,task.id,caseId,questionId,JSON.stringify(body)])
+    await db.query("insert into action_case_question_participants(org_id,action_case_id,question_id,person_kind,person_id,name,email,shared) values($1,$2,$3,'profile',$4,'Manager','manager@example.test',false),($1,$2,$3,'contact',$5,'Extern A','a@example.test',true)", [org,caseId,questionId,manager,contact])
+    return { task, caseId, questionId, manager, body }
+  }
+  const question = async h => (await db.query('select * from action_case_questions where id=$1', [h.questionId])).rows[0]
+  const request = async (h, assignee = { kind: 'contact', id: contact2 }) => ({ requestId: randomUUID(), questionId: h.questionId, taskId: h.task.id, taskVersion: (await read(h.task.id)).version, revision: (await question(h)).revision, operation: 'reassign', assignee, confirmed: true, fileIds: [] })
+  const command = async (h, r, actor = h.manager, organization = org) => (await db.query('select write_project_question_assignment($1,$2,$3,$4) id', [organization,h.caseId,actor,JSON.stringify(r)])).rows[0].id
+  const dispatch = async h => ({ ...await request(h), operation: 'dispatch_reassignment', assignee: undefined })
+  const count = async (table, taskId) => Number((await db.query(`select count(*) n from ${table} where task_id=$1`, [taskId])).rows[0].n)
+
+  await suite.test('ordinary tasks retain editing permissions and separate dispatch after the shared engine migration',async()=>{
+    const t=await create(), updated=await edit(t,{title:'Oförändrat vanligt flöde'})
+    assert.equal(updated.title,'Oförändrat vanligt flöde'); assert.equal(updated.status,t.status)
+    const changed=await edit(await read(t.id),{assigneeProfileId:other},true)
+    assert.equal(changed.assignee_profile_id,other)
+    await assert.rejects(edit(await read(t.id),{title:'Saknar behörighet'},false,other),/FORBIDDEN/)
+    await send(await read(t.id))
+    assert.equal((await db.query('select initial_dispatch_pending from task_followup_rules where task_id=$1',[t.id])).rows[0].initial_dispatch_pending,false)
+  })
+
+  await suite.test('a failed final audit rolls back the task, recipient, links and question together',async()=>{
+    const h=await setup(),r=await request(h),before=await question(h)
+    await db.query('insert into task_access_links(task_id) values($1)',[h.task.id])
+    await db.exec(`create function fixture_reject_question_audit() returns trigger language plpgsql as $$begin raise exception 'FIXTURE_AUDIT_FAILURE';end$$;
+      create trigger fixture_reject_audit before insert on action_case_question_events for each row when(new.operation='update') execute function fixture_reject_question_audit();`)
+    try {await assert.rejects(command(h,r),/FIXTURE_AUDIT_FAILURE/)} finally {await db.exec('drop trigger fixture_reject_audit on action_case_question_events;drop function fixture_reject_question_audit();')}
+    assert.deepEqual(await read(h.task.id),h.task);assert.deepEqual(await question(h),before)
+    assert.equal((await db.query('select count(*) n from task_access_links where task_id=$1 and revoked_at is null',[h.task.id])).rows[0].n,1)
+    assert.equal((await db.query('select count(*) n from action_case_question_participants where question_id=$1 and person_id=$2',[h.questionId,contact2])).rows[0].n,0)
+  })
+
+  await suite.test('external change is atomic, does not notify, retains task status/history, and retry is idempotent', async () => {
+    const h = await setup(), r = await request(h), old = await question(h)
+    await db.query('insert into task_access_links(task_id) values($1)', [h.task.id])
+    await db.query('insert into task_recipient_activation_tokens(task_id) values($1)', [h.task.id])
+    await command(h,r); await command(h,r)
+    const next = await read(h.task.id), q = await question(h)
+    assert.equal(q.revision, 2); assert.equal(q.body.status, old.body.status); assert.equal(q.body.assignee.id, contact2)
+    for (const key of ['id','status','due_at','next_followup_at','description','title']) assert.deepEqual(next[key], h.task[key], key)
+    assert.equal(next.assignee_contact_id, contact2)
+    assert.equal((await db.query('select count(*) n from task_access_links where task_id=$1 and revoked_at is null', [h.task.id])).rows[0].n, 0)
+    assert.equal((await db.query('select count(*) n from task_recipient_activation_tokens where task_id=$1 and revoked_at is null', [h.task.id])).rows[0].n, 0)
+    assert.equal((await db.query("select count(*) n from task_events where task_id=$1 and event_type='comment'", [h.task.id])).rows[0].n, 0)
+    assert.equal((await db.query("select count(*) n from task_automation_jobs where task_id=$1 and status in ('queued','processing')", [h.task.id])).rows[0].n, 0)
+    const rule = (await db.query('select * from task_followup_rules where task_id=$1',[h.task.id])).rows[0]
+    assert.equal(rule.initial_dispatch_pending,true); assert.equal(rule.is_active,false)
+    const history = (await db.query('select * from action_case_question_events where question_id=$1 order by revision',[h.questionId])).rows
+    assert.equal(history.length,2); assert.deepEqual(history[0].body,old.body); assert.match(history[1].message,/Extern A.*Extern B/)
+    const previous = (await db.query('select * from action_case_question_participants where question_id=$1 and person_id=$2',[h.questionId,contact])).rows[0]
+    assert.equal(previous.active,true); assert.equal(previous.shared,true)
+    assert.equal((await db.query('select shared from action_case_question_participants where question_id=$1 and person_id=$2',[h.questionId,contact2])).rows[0].shared,false)
+    await assert.rejects(command(h,{ ...r,requestId:randomUUID() }),/STALE/)
+    await assert.rejects(edit(next,{ assigneeContactId:contact },true),/MANAGED/)
+    const send = await dispatch(h); await command(h,send); await command(h,send)
+    assert.equal((await db.query('select initial_dispatch_pending from task_followup_rules where task_id=$1',[h.task.id])).rows[0].initial_dispatch_pending,false)
+    assert.equal((await question(h)).body.status,old.body.status)
+    assert.equal((await db.query("select count(*) n from task_events where task_id=$1 and event_type='initial_dispatch_released'",[h.task.id])).rows[0].n,1)
+  })
+  await suite.test('the current project manager can replace and dispatch an internal recipient without impersonating the original issuer',async()=>{
+    const h=await setup(other), r=await request(h,{kind:'profile',id:recipient})
+    await command(h,r)
+    const change=(await db.query("select * from task_events where task_id=$1 and event_type='task_recipient_changed'",[h.task.id])).rows[0]
+    assert.equal(change.actor_profile_id,other)
+    const send=await dispatch(h); await command(h,send); await command(h,send)
+    assert.equal((await read(h.task.id)).status,h.task.status)
+    assert.equal((await db.query("select count(*) n from task_events where task_id=$1 and event_type='comment'",[h.task.id])).rows[0].n,1)
+    assert.equal((await db.query("select actor_profile_id from task_events where task_id=$1 and event_type='initial_dispatch_released'",[h.task.id])).rows[0].actor_profile_id,other)
+  })
+  await suite.test('manager, organization, question identity and both revisions are enforced before any change',async()=>{
+    const h=await setup(),r=await request(h),otherQuestion=await setup(),before=await read(h.task.id)
+    for(const [input,actor,organization,pattern]of [[r,other,org,/FORBIDDEN/],[r,issuer,randomUUID(),/FORBIDDEN/],[{...r,taskId:otherQuestion.task.id},issuer,org,/NOT_FOUND/],[{...r,revision:99},issuer,org,/STALE/],[{...r,taskVersion:99},issuer,org,/STALE/]]) await assert.rejects(command(h,input,actor,organization),pattern)
+    assert.deepEqual(await read(h.task.id),before)
+    await db.exec('set role service_role')
+    await assert.rejects(db.query('select edit_operational_task_details_core($1,$2,$3,$4,$5,true,$6)',[org,h.task.id,issuer,h.task.version,JSON.stringify(changes(h.task)),h.questionId]),/permission denied/)
+    await db.exec('reset role')
+  })
+  await suite.test('uncertain delivery and changed contact details cannot be bypassed by question reassignment/dispatch',async()=>{
+    const h=await setup(),r=await request(h)
+    await db.exec('alter table task_message_deliveries disable trigger all')
+    const message=randomUUID();await db.query('insert into task_messages values($1)',[message])
+    await db.query("insert into task_message_deliveries(org_id,task_id,message_id,channel,recipient_address,status,idempotency_key) values($1,$2,$3,'email','a@example.test','ambiguous',$4)",[org,h.task.id,message,randomUUID()])
+    await assert.rejects(command(h,r),/DELIVERY_PENDING/)
+    assert.equal((await question(h)).revision,1)
+    await db.query("update task_message_deliveries set status='sent' where task_id=$1",[h.task.id]);await db.exec('alter table task_message_deliveries enable trigger all')
+    await command(h,r)
+    const send=await dispatch(h)
+    await db.query("update organization_contacts set email='changed@example.test' where id=$1",[contact2])
+    await assert.rejects(command(h,send),/RECIPIENT_CHANGED/)
+    await db.query("update organization_contacts set email='b@example.test' where id=$1",[contact2])
+  })
+  await suite.test('customer reassignment reuses a private contact bridge without dispatch or duplicate identities',async()=>{
+    const h=await setup(),customer=randomUUID()
+    await db.query("insert into fixture_question_customers values($1,$2,$3,'Kund Test','customer@example.test')",[org,h.caseId,customer])
+    const r=await request(h,{kind:'customer',id:customer});await command(h,r);await command(h,r)
+    assert.equal((await question(h)).body.assignee.kind,'customer')
+    const task=await read(h.task.id)
+    assert.ok(task.assignee_contact_id)
+    assert.equal((await db.query("select count(*) n from organization_contacts where email='customer@example.test'")).rows[0].n,1)
+    assert.equal((await db.query("select count(*) n from task_events where task_id=$1 and event_type='comment'",[h.task.id])).rows[0].n,0)
+  })
+  await suite.test('only explicitly selected same-question documents are attached at separate dispatch',async()=>{
+    const h=await setup(),otherQuestion=await setup(),file=randomUUID(),privateOther=randomUUID()
+    await db.query("insert into action_case_attachments values($1,$2,$3,$4,'document','Fråga.pdf','project-question-files','own/file','application/pdf',123),($5,$2,$3,$6,'document','Privat.pdf','project-question-files','other/file','application/pdf',456)",[file,org,h.caseId,h.questionId,privateOther,otherQuestion.questionId])
+    await command(h,await request(h))
+    assert.equal(await count('task_attachments',h.task.id),0)
+    await assert.rejects(command(h,{...await dispatch(h),fileIds:[privateOther]}),/FILES/)
+    const r={...await dispatch(h),fileIds:[file]};await command(h,r);await command(h,r)
+    assert.equal(await count('task_attachments',h.task.id),1)
+    assert.equal((await db.query('select count(*) n from action_case_question_files where event_id=$1',[r.requestId])).rows[0].n,1)
+  })
+})

@@ -49,6 +49,7 @@ import UppdragBrand from './UppdragBrand'
 import UppdragScope from './UppdragScope'
 import useTaskRecipientDraft from './useTaskRecipientDraft'
 import { TaskStatusBadge } from './TaskStatusBadge'
+import './gizmo-recipient-layout.css'
 
 type Props = {
   initialWorkspace: ExternalTaskWorkspace
@@ -788,11 +789,8 @@ export default function TaskRecipientClient({
               <span className="hidden sm:inline">{backLabel}</span>
             </Link>
           ) : null}
-          <UppdragBrand compact />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[#252A2D]">Gizmo</p>
-            <p className="mt-0.5 truncate text-sm text-slate-600">Hej {workspace.recipientName}</p>
-          </div>
+          <UppdragBrand />
+          <p className="gizmo-recipient-greeting">Hej {workspace.recipientName}</p>
           {showRecipientAccountAction ? (
             <RecipientAccountAction
               account={workspace.recipientAccount}
@@ -857,17 +855,7 @@ export default function TaskRecipientClient({
                   >
                     <Paperclip size={18} aria-hidden="true" /> Ladda upp offert eller dokument
                   </button>
-                ) : canStart ? (
-                  <button
-                    type="button"
-                    disabled={isBusy}
-                    onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Mottagandet är bekräftat. Uppgiften är omhändertagen.')}
-                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-700 px-4 text-sm font-semibold text-white hover:bg-indigo-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
-                    {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
-                  </button>
-                ) : (
+                ) : !canStart ? (
                   <button
                     type="button"
                     disabled={isBusy || isRecording}
@@ -876,7 +864,7 @@ export default function TaskRecipientClient({
                   >
                     <Camera size={18} aria-hidden="true" /> Lägg till underlag
                   </button>
-                )}
+                ) : null}
                 <button
                   type="button"
                   disabled={isBusy}
@@ -907,7 +895,10 @@ export default function TaskRecipientClient({
           )}
         </section>
 
-        <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} status={task.status} completedAt={completedAt} />
+        <details className="gizmo-recipient-disclosure">
+          <summary>Tid och uppföljning</summary>
+          <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} status={task.status} completedAt={completedAt} />
+        </details>
 
         {pendingDeadlineRequest ? (
           <section className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -1007,11 +998,7 @@ export default function TaskRecipientClient({
 
         <section ref={evidenceSectionRef} className="mt-6 scroll-mt-4" aria-labelledby="recipient-evidence-heading">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Underlag i uppdraget</p>
-            <h2 id="recipient-evidence-heading" className="mt-1 text-lg font-semibold">Bilagor och färdigbevis</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              Här finns bilder och dokument från uppdragsansvarig. Du kan också lägga till underlag som visar vad som har gjorts.
-            </p>
+            <h2 id="recipient-evidence-heading" className="text-lg font-semibold">Bilagor och underlag</h2>
           </div>
 
           {evidenceChecklist.length > 0 ? (
@@ -1258,7 +1245,9 @@ export default function TaskRecipientClient({
         </section>
 
         {workspace.children.length > 0 || workspace.canDelegate ? (
-          <section className="mt-6" aria-labelledby="recipient-children-heading">
+          <details className="gizmo-recipient-disclosure mt-6" open={workspace.children.length > 0}>
+            <summary>Underuppgifter{workspace.children.length ? ` (${workspace.children.length})` : ''}</summary>
+          <section aria-labelledby="recipient-children-heading">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 id="recipient-children-heading" className="text-lg font-semibold">Underuppgifter</h2>
@@ -1292,7 +1281,7 @@ export default function TaskRecipientClient({
             ) : (
               <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-5 text-center text-sm text-slate-500">Inga underuppgifter ännu.</p>
             )}
-          </section>
+          </section></details>
         ) : null}
 
         <div className="mt-4">
@@ -1335,7 +1324,6 @@ export default function TaskRecipientClient({
           </div>
         ) : null}
 
-        <p className="mt-8 text-center text-xs leading-5 text-slate-500">Gizmo är den digitala uppföljningsassistenten för det här uppdraget.</p>
       </div>
 
       {showActionBar ? (

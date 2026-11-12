@@ -7,6 +7,7 @@ import type { QuestionAssignee, QuestionTaskReplyTarget } from '@/lib/action-cas
 import { formatTaskDateTime } from '@/lib/tasks/dateTime'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import './project-questions.css'
+import './gizmo-recipient-layout.css'
 import { useQuestionAutosave } from './useQuestionAutosave'
 import TaskContactFields, { type TaskContactDraft } from './TaskContactFields'
 import QuestionDiaryImagePicker from './QuestionDiaryImagePicker'
@@ -190,12 +191,17 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
     onChanged?.()
   }} /> : null
   const timeline = data ? [...data.messages.map(m => ({ ...m, label: 'Delat med deltagarna', files: m.files.map(f => ({ ...f, href: `${fileBase}/${f.id}` })) })), ...(!publicView ? internalEvents.map(e => ({ ...e, operation: 'note', snapshot: null })) : [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)) : []
+  const message = (m: (typeof timeline)[number]) => <li key={m.id}><div className="gizmo-question-message-meta"><strong>{m.actorName}</strong><time dateTime={m.createdAt}>{formatTaskDateTime(m.createdAt, 'Europe/Stockholm', 'compact')}</time><span>{m.label}</span></div>
+    {m.operation === 'share' ? <details><summary>Frågan delades / uppdaterades</summary><strong>{m.snapshot?.title}</strong><p className="whitespace-pre-wrap">{m.snapshot?.description}</p></details> : <p className="whitespace-pre-wrap">{m.text}</p>}
+    {m.files.map(f => <a key={f.id} className="gizmo-question-file-link" href={f.href} target="_blank" rel="noreferrer"><ExternalLink size={16} />{f.name}</a>)}
+  </li>
+  const latestSharedFiles = publicView ? [...new Map(timeline.flatMap(m => m.files).map(f => [f.id, f])).values()] : []
   const participantActions = mode === 'participants' && data?.canManage ? <>
     {rosterSave.error && <button type="button" className={btn} disabled={busy || rosterSave.busy} onClick={() => void rosterSave.retry()}><RefreshCw size={16} />Försök spara igen</button>}
     <button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || closed || selectionDirty.current || (!confirmed && !pending.current)} onClick={() => void write('share')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{importing ? 'Bifogar bilder…' : busy ? 'Delar…' : pending.current ? 'Försök dela igen' : data.sharedAt ? 'Uppdatera och meddela deltagare' : 'Dela med deltagarna'}</button>
   </> : null
   return <section className="gizmo-question-dialogue" aria-label={mode === 'participants' ? 'Deltagare i frågan' : 'Frågans dialog'}>
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3>{mode === 'participants' ? 'Deltagare' : 'Kommunikation'}</h3><button type="button" className={`${btn} gizmo-icon-button`} aria-label="Hämta dialog och deltagare" title="Hämta dialog och deltagare" disabled={busy || rosterSave.busy} onClick={() => void refresh()}><RefreshCw size={16} /></button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2">{publicView ? <p className="gizmo-recipient-section-label">Projektfråga</p> : <h3>{mode === 'participants' ? 'Deltagare' : 'Kommunikation'}</h3>}<button type="button" className={`${btn} gizmo-icon-button`} aria-label="Hämta dialog och deltagare" title="Hämta dialog och deltagare" disabled={busy || rosterSave.busy} onClick={() => void refresh()}><RefreshCw size={16} /></button></div>
     {error && <p className="gizmo-question-error" role="alert">{error}</p>}{notice && <p className="gizmo-question-notice" role="status">{notice}</p>}
     {rosterSave.error && <p className="gizmo-question-error" role="alert">{rosterSave.error}</p>}
     {localError && <p className="gizmo-question-error" role="alert">{localError}</p>}
@@ -215,13 +221,11 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
         </section>}
         {participantActions && (footerTarget ? createPortal(participantActions, footerTarget) : footerTarget === undefined ? <div className="gizmo-question-commands">{participantActions}</div> : null)}
       </> : <>
-        {data.snapshot && <section className="gizmo-question-shared-body"><h3>{data.snapshot.title}</h3><p className="whitespace-pre-wrap">{data.snapshot.description}</p></section>}
-        <p className="gizmo-secondary">Deltagare: {data.participants.filter(p => p.shared || !publicView).map(p => p.name).join(', ')}</p>
+        {data.snapshot && <section className="gizmo-question-shared-body">{publicView ? <h1>{data.snapshot.title}</h1> : <h3>{data.snapshot.title}</h3>}<p className="whitespace-pre-wrap">{data.snapshot.description}</p></section>}
+        {publicView ? <details className="gizmo-question-roster-disclosure"><summary>Deltagare ({data.participants.filter(p => p.shared).length})</summary><p>{data.participants.filter(p => p.shared).map(p => p.name).join(', ')}</p></details> : <p className="gizmo-secondary">Deltagare: {data.participants.map(p => p.name).join(', ')}</p>}
+        {latestSharedFiles.length > 0 && <details className="gizmo-question-reply-files" open={latestSharedFiles.length <= 3}><summary>Bilagor ({latestSharedFiles.length})</summary>{latestSharedFiles.map(f => <a key={f.id} className="gizmo-question-file-link" href={f.href} target="_blank" rel="noreferrer"><ExternalLink size={16} />{f.name}</a>)}</details>}
         {!data.sharedAt && <p>{taskReply ? `Enskild dialog med ${taskReply.name} via Gizmo. Inte delad med övriga frågedeltagare.` : 'Frågan är inte delad ännu.'}</p>}
-        <ol className="gizmo-question-messages">{timeline.map(m => <li key={m.id}><div className="gizmo-question-message-meta"><strong>{m.actorName}</strong><time dateTime={m.createdAt}>{formatTaskDateTime(m.createdAt, 'Europe/Stockholm', 'compact')}</time><span>{m.label}</span></div>
-          {m.operation === 'share' ? <details><summary>Frågan delades / uppdaterades</summary><strong>{m.snapshot?.title}</strong><p className="whitespace-pre-wrap">{m.snapshot?.description}</p></details> : <p className="whitespace-pre-wrap">{m.text}</p>}
-          {m.files.map(f => <a key={f.id} className="gizmo-question-file-link" href={f.href} target="_blank" rel="noreferrer"><ExternalLink size={16} />{f.name}</a>)}
-        </li>)}</ol>
+        {!publicView && <ol className="gizmo-question-messages">{timeline.map(message)}</ol>}
         {!closed && <fieldset disabled={busy}>{!publicView && onNote && <fieldset className="gizmo-question-audience" disabled={Boolean(pending.current)}><legend>Synlighet och mottagare</legend>{audiences.map(([key, label]) => <label key={key}><input type="radio" name={`${storageKey}-audience`} checked={audience === key} onChange={() => { if (remember()) { setComposerReady(false); setText(''); setFileIds([]); setAudience(key); if (key === 'responsible') setTaskDraftTarget(taskReply) } }} />{label}</label>)}</fieldset>}
           {audience === 'responsible' && <p className="gizmo-secondary">Går endast till mottagaren i den enskilda uppgiften, inte till frågans övriga deltagare.</p>}
           {audience === 'shared' && data.sharedAt && <p className="gizmo-secondary">Mottagare: {data.participants.filter(p => p.shared && p.id !== data.viewerId).map(p => p.name).join(', ') || 'Inga andra delade deltagare'}</p>}
@@ -232,6 +236,10 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
           <div className="gizmo-question-commands"><button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || !text.trim() || (audience === 'shared' && !data.sharedAt) || (audience === 'responsible' && !pending.current && (!taskDraftTarget || taskRecipientChanged))} onClick={() => void write(audience === 'internal' ? 'note' : audience === 'responsible' ? 'task_reply' : 'reply')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{importing ? 'Bifogar bilder…' : busy ? audience === 'internal' ? 'Sparar anteckning…' : 'Skickar…' : pending.current ? 'Försök igen' : audience === 'internal' ? 'Publicera intern anteckning' : 'Skicka meddelande'}</button></div>
         </fieldset>}
         {closed && <p className="gizmo-question-notice">Frågan är avslutad.</p>}
+        {publicView && timeline.length > 0 && <section className="gizmo-recipient-conversation"><h2>Kommunikation</h2>
+          {timeline.length > 3 && <details className="gizmo-recipient-disclosure"><summary>Tidigare meddelanden ({timeline.length - 3})</summary><ol className="gizmo-question-messages">{timeline.slice(0, -3).map(message)}</ol></details>}
+          <ol className="gizmo-question-messages">{timeline.slice(-3).map(message)}</ol>
+        </section>}
       </>}
       {!publicView && data.deliveries.some(d => ['failed', 'sending', 'pending'].includes(d.status)) && <details className="gizmo-question-delivery-status"><summary>Notifieringsstatus</summary><ul>{data.deliveries.map(d => <li key={d.id}>{d.name}: {({ sent: 'E-posttjänsten har tagit emot utskicket', pending: 'I kö', sending: 'Skickas', failed: 'Utskicket misslyckades', cancelled: 'Återkallad' } as Record<string, string>)[d.status] || d.status}</li>)}</ul></details>}
     </>}

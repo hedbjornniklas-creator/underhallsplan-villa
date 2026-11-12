@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig-diary-image-library.json",
+  "include": [
+    "../next-env.d.ts",
+    "../src/components/tasks/ActionCaseWorkspace.tsx",
+    "../src/components/tasks/ProjectQuestions.tsx",
+    "../src/components/tasks/TaskRecipientClient.tsx",
+    "../src/app/fraga/[token]/page.tsx",
+    "../src/app/api/action-cases/route.ts",
+    "../src/app/api/action-cases/[caseId]/questions/route.ts"
+  ]
+}

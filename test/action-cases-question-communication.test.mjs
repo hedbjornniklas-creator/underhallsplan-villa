@@ -26,6 +26,7 @@ function harness(shared = false) {
   const roster={seed:(_key,value)=>value,value:()=>[],revision:()=>1,isBusy:()=>false,isLocal:()=>true,flush:async()=>true,local:true,busy:false,error:'',dirty:false}
   const deps={react,'react-dom':{createPortal:node=>node},'lucide-react':{},'./project-questions.css':{},'@/lib/tasks/dateTime':{formatTaskDateTime:value=>value},'./useQuestionAutosave':{useQuestionAutosave:()=>roster},'./TaskContactFields':{},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}}
   deps['./QuestionDiaryImagePicker'] = { default: () => null }
+  deps['./gizmo-recipient-layout.css'] = {}
   const module={exports:{}},source=ts.transpileModule(readFileSync(new URL('../src/components/tasks/QuestionDialogue.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText
   new Function('require','module','exports',source)(key=>{assert.ok(key in deps,key);return deps[key]},module,module.exports)
   const props={endpoint:'/dialogue',fileBase:'/files',initial:data,storageKey:'fixture',taskReply:{taskId:id(50),name:'Recipient',recipient:{kind:'contact',id:id(10),email:'recipient@example.invalid'}},hasSharedDialogue:shared,onRefresh:async()=>{refreshes++},onNote:async()=>{throw Error('No notes expected')},internalEvents:[{id:id(70),actorName:'Manager',text:'OLD PRIVATE MESSAGE',createdAt:'2026-11-05T10:00:00Z',label:'Private',files:[]}]}
@@ -57,6 +58,25 @@ test('individual question can reply in Communication through the existing task w
     assert.match(h.text(),/enskilda uppgiften/)
     assert.equal(h.data.status,'open')
   }finally{h.dispose()}
+})
+
+test('public question keeps reply above a compact chronological thread and never renders private notes or participant controls', async () => {
+  const h=harness(true)
+  try {
+    h.props.publicView=true
+    h.data.snapshot={title:'Fiktiv fråga',description:'Delad frågetext'}
+    h.data.messages=Array.from({length:5},(_,i)=>({id:id(100+i),actorName:'Deltagare',operation:'reply',text:`Meddelande ${i}`,createdAt:`2026-11-05T10:0${i}:00Z`,files:i===0?[{id:id(200),name:'Delad bilaga.pdf'}]:[]}))
+    const tree=h.render(), all=nodes(tree), output=h.text()
+    assert.equal(all.find(n=>n.type==='h1')?.props.children,'Fiktiv fråga')
+    assert.ok(output.indexOf('Meddelande till frågans deltagare') < output.indexOf('Meddelande 4'))
+    assert.ok(all.some(n=>n.type==='details'&&!n.props.open&&content(n).startsWith('Tidigare meddelanden (')))
+    assert.equal(all.filter(n=>n.type==='li').length,5)
+    assert.doesNotMatch(output,/OLD PRIVATE MESSAGE|Intern anteckning|Ny extern kontakt|Notifieringsstatus/)
+    assert.ok(all.some(n=>n.type==='a'&&n.props.href===`/files/${id(200)}`))
+    h.type('Ett nytt gruppsvar'); await h.click('Skicka meddelande')
+    assert.equal(h.requests[0].body.operation,'reply')
+    await h.settle(0); assert.equal(h.data.status,'open')
+  } finally { h.dispose() }
 })
 test('a group defaults to shared replies; individual and internal drafts remain separate',async()=>{
   const h=harness(true)

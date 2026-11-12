@@ -188,7 +188,10 @@ export async function POST(request: Request) {
     else if (action === 'add_participant') await addActionCaseParticipant(ctx, payload)
     else if (action === 'create_signed_upload') upload = await createActionCaseSignedUpload(ctx, payload)
     else if (action === 'abort_upload') await abortActionCaseUpload(ctx, payload)
-    else if (action === 'complete_upload') await completeActionCaseUpload(ctx, payload)
+    else if (action === 'complete_upload') {
+      const attachmentId = await completeActionCaseUpload(ctx, payload)
+      if (payload.questionId) return NextResponse.json({ attachmentId })
+    }
     else if (action === 'update_attachment_grants') await updateActionCaseAttachmentGrants(ctx, payload)
     else if (action === 'delete_attachment') await deleteActionCaseAttachment(ctx, payload)
     else if (action === 'issue_participant_link') accessUrl = await issueActionCaseParticipantLink(ctx, payload, new URL(request.url).origin)

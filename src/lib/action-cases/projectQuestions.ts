@@ -13,7 +13,7 @@ export type QuestionDialogueAudit = {
   deliveries: Array<{ id: string; name: string; status: string; sentAt: string | null }>;
 }
 export type QuestionTaskReplyTarget = { taskId: string; name: string; recipient: { kind: 'contact' | 'profile'; id: string; email: string | null } }
-export type QuestionTask = { id: string; status: string; active?: boolean; dueAt: string; assigneeName: string; replyTarget?: QuestionTaskReplyTarget | null; events: Array<{ id: string; actorName: string; type: string; text: string; createdAt: string }>; files: Array<{ id: string; name: string; text: string | null; createdAt: string }> }
+export type QuestionTask = { id: string; status: string; active?: boolean; version?: number; awaitingDispatch?: boolean; dueAt: string; assigneeName: string; replyTarget?: QuestionTaskReplyTarget | null; events: Array<{ id: string; actorName: string; type: string; text: string; createdAt: string }>; files: Array<{ id: string; name: string; text: string | null; createdAt: string }> }
 export type ProjectQuestion = { id: string; number: number; revision: number; createdAt: string | null; updatedAt: string; body: QuestionBody; events: QuestionEvent[]; tasks: QuestionTask[]; participants: QuestionParticipant[]; dialogueHistory?: QuestionDialogueAudit[] }
 export type QuestionWorkspace = { questions: ProjectQuestion[]; assignees: QuestionAssignee[]; privateFiles?: Array<import('./contracts').ActionCaseAttachmentView & { questionId: string }>; customersAvailable?: boolean; userId: string; managerId: string | null; canManageParticipants: boolean }
 export const emptyQuestion = (): QuestionBody => ({ title: '', description: '', source: '', meetingDate: '', assignee: null, status: 'open' })
@@ -50,6 +50,17 @@ export function questionAssigneeOptions(people: QuestionAssignee[], selected: Qu
   return [...options.values()]
 }
 export const questionUuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+export function questionAssignmentMutation(value: Record<string, unknown>) {
+  if (!questionUuid(value.questionId) || !questionUuid(value.requestId) || !questionUuid(value.taskId)
+    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 || !Number.isSafeInteger(value.taskVersion) || Number(value.taskVersion) < 1
+    || !['reassign', 'dispatch_reassignment'].includes(String(value.operation)) || value.confirmed !== true) throw new Error('PROJECT_QUESTION_INVALID')
+  const assignee = value.assignee as QuestionAssignee | undefined
+  if (value.operation === 'reassign' && (!assignee || !questionUuid(assignee.id) || !['profile', 'contact', 'customer'].includes(assignee.kind))) throw new Error('PROJECT_QUESTION_ASSIGNEE')
+  const fileIds = value.fileIds ?? []
+  if (!Array.isArray(fileIds) || fileIds.length > 20 || !fileIds.every(questionUuid) || new Set(fileIds).size !== fileIds.length || (value.operation === 'reassign' && fileIds.length)) throw new Error('PROJECT_QUESTION_FILES')
+  return { questionId: value.questionId, requestId: value.requestId, taskId: value.taskId, revision: Number(value.revision), taskVersion: Number(value.taskVersion),
+    operation: String(value.operation), confirmed: true, fileIds, ...(value.operation === 'reassign' ? { assignee: { id: assignee!.id, kind: assignee!.kind } } : {}) }
+}
 export function questionDate(v: unknown): v is string {
   if (v === '') return true
   if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || v < '0001-01-01' || v > '9999-12-31') return false

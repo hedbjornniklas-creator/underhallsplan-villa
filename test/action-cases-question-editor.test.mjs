@@ -11,8 +11,8 @@ const content = node => typeof node === 'string' ? node : Array.isArray(node) ? 
 function nodes(tree) { return !tree || typeof tree !== 'object' ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)] }
 const tick = () => new Promise(resolve => setImmediate(resolve))
 
-function harness({ onWorkspaceChanged } = {}) {
-  const states = [], refs = [], requests = [], reads = []
+function harness({ onWorkspaceChanged, directFiles = false } = {}) {
+  const states = [], refs = [], requests = [], reads = [], fileRequests = []
   let stateIndex = 0, refIndex = 0, tree, failRefresh = false, deferReads = false
   const customer = { id: id(2), kind: 'customer', name: 'Testbeställare', email: 'test@example.invalid' }
   const workspace = { questions: [], assignees: [customer], customersAvailable: true, userId: id(9), managerId: id(9), canManageParticipants: true }
@@ -22,6 +22,14 @@ function harness({ onWorkspaceChanged } = {}) {
   globalThis.document = { body: {}, activeElement: null }
   globalThis.requestAnimationFrame = fn => fn()
   globalThis.fetch = async (_url, options) => {
+    if (directFiles && _url === '/api/action-cases') {
+      const body = JSON.parse(options.body); fileRequests.push(body)
+      assert.ok(workspace.questions.some(q => q.id === body.payload.questionId), 'the private question must be saved before creating an upload')
+      if (body.action === 'create_signed_upload') return { ok: true, json: async () => ({ upload: { bucket: 'project-question-files', filePath: 'private/question/file', token: 'fictional', contentType: 'application/pdf' } }) }
+      assert.equal(body.action, 'complete_upload')
+      workspace.privateFiles = [{ id: id(80), questionId: body.payload.questionId, fileName: body.payload.fileName, fileSizeBytes: body.payload.fileSize, contentType: body.payload.contentType, type: 'document' }]
+      return { ok: true, json: async () => ({ attachmentId: id(80) }) }
+    }
     if (!options?.method) {
       const body = structuredClone(workspace)
       if (deferReads) return new Promise(resolve => reads.push({ body, resolve }))
@@ -39,7 +47,7 @@ function harness({ onWorkspaceChanged } = {}) {
     useEffect() {}, useCallback: fn => fn, useId: () => 'question-heading'
   }
   const dependencies = {
-    react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': {}, './project-questions.css': {},
+    react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': { supabase: { storage: { from(bucket) { assert.equal(bucket, 'project-question-files'); return { async uploadToSignedUrl() { return { error: null } } } } } } }, './project-questions.css': {},
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': questionModel,
     './QuestionDialogue': { default: () => null },
@@ -59,18 +67,23 @@ function harness({ onWorkspaceChanged } = {}) {
   const button = name => { const b = nodes(tree).find(n => n.type === 'button' && (content(n) === name || n.props['aria-label'] === name)); assert.ok(b, name); return b }
   const field = label => { const n = nodes(tree).find(n => n.type === 'label' && content(n).startsWith(label)); assert.ok(n, label); return nodes(n).find(child => ['input', 'textarea', 'select'].includes(child.type)) }
   render()
-  return { requests, reads, customer, workspace, render, button, field, nodes: () => nodes(tree), text: () => content(tree),
+  return { requests, reads, fileRequests, customer, workspace, render, button, field, nodes: () => nodes(tree), text: () => content(tree),
     async click(name) { button(name).props.onClick(); await tick(); render() },
     input(label, value) { field(label).props.onChange({ target: { value } }); render() },
     async start() { button('Hämta sparade frågor och svar').props.onClick(); await tick(); render(); button('Ny fråga').props.onClick(); render() },
-    async reply(index, error, questionId) {
+    async reply(index, error, questionId, status) {
       const request = requests[index].body
       if (!error && (!questionId || questionId === request.questionId)) {
         let question = workspace.questions.find(q => q.id === request.questionId)
         if (!question) { question = { id: request.questionId, number: workspace.questions.length + 1, events: [], tasks: [], participants: [], createdAt: new Date().toISOString() }; workspace.questions.push(question) }
-        Object.assign(question, { body: request.body, revision: request.revision + 1, updatedAt: new Date().toISOString() })
+        if (request.operation === 'reassign') {
+          question.body = { ...question.body, assignee: workspace.assignees.find(person => person.kind === request.assignee.kind && person.id === request.assignee.id) }
+          question.tasks[0] = { ...question.tasks[0], version: question.tasks[0].version + 1, awaitingDispatch: true, assigneeName: question.body.assignee.name }
+        } else if (request.operation === 'dispatch_reassignment') question.tasks[0].awaitingDispatch = false
+        else question.body = request.body
+        Object.assign(question, { revision: request.revision + 1, updatedAt: new Date().toISOString() })
       }
-      requests[index].resolve({ ok: !error, json: async () => error ? { error } : { questionId: questionId || request.questionId } }); await tick(); render()
+      requests[index].resolve({ ok: !error, status: status || (error ? 500 : 200), json: async () => error ? { error } : { questionId: questionId || request.questionId } }); await tick(); render()
     },
     failRefresh() { failRefresh = true },
     deferReads() { deferReads = true },
@@ -78,6 +91,83 @@ function harness({ onWorkspaceChanged } = {}) {
     dispose() { globalThis.fetch = original.fetch; globalThis.document = original.document; globalThis.requestAnimationFrame = original.raf; globalThis.localStorage = original.storage }
   }
 }
+
+test('manager changes a sent question with exact retry and dispatches separately without replacing its task/status', async () => {
+  const h = harness()
+  try {
+    const next = { id: id(10), kind: 'profile', name: 'Ny ansvarig', email: 'next@example.invalid' }
+    h.workspace.assignees.push(next)
+    const task = { id: id(61), version: 4, active: true, awaitingDispatch: false, status: 'in_progress', dueAt: '2030-01-20T16:00:00Z', events: [], files: [] }
+    h.workspace.questions.push({ id: id(60), number: 1, revision: 1, body: { ...emptyQuestion(), title: 'Fiktiv fråga', description: 'Underlag', assignee: h.customer }, createdAt: '2026-11-12', updatedAt: '2026-11-12', events: [], tasks: [task], participants: [] })
+    await h.click('Hämta sparade frågor och svar'); h.nodes().find(n => n.props?.className === 'gizmo-question-table-row').props.onClick({ target: { closest: () => null } }); h.render()
+    await h.click('Byt ansvarig'); h.input('Ny ansvarig', `profile:${next.id}`)
+    const confirm = () => h.nodes().find(n => n.type === 'label' && content(n).includes('Jag bekräftar bytet av ansvarig.')).props.children[0]
+    confirm().props.onChange({ target: { checked: true } }); h.render()
+    await h.click('Bekräfta byte')
+    assert.equal(h.requests[0].body.operation, 'reassign'); assert.equal(h.requests[0].body.taskId, task.id); assert.equal(h.requests[0].body.taskVersion, 4)
+    const attempt = structuredClone(h.requests[0].body)
+    await h.reply(0, 'Fiktivt nätfel'); await h.click('Försök igen'); assert.deepEqual(h.requests[1].body, attempt)
+    await h.reply(1)
+    assert.equal(h.workspace.questions[0].body.assignee.id, next.id)
+    assert.match(h.text(), /Inget nytt utskick har gjorts/)
+    assert.equal(h.requests.some(r => r.body.operation === 'dispatch_reassignment'), false)
+    h.nodes().find(n => n.type === 'summary' && content(n) === 'Skicka till ny ansvarig').props.onClick({ preventDefault() {} }); await tick(); h.render()
+    assert.equal(h.button('Skicka till ny ansvarig').props.disabled, true)
+    const reviewed = h.nodes().find(n => n.type === 'label' && content(n).includes('Jag har granskat mottagaren')).props.children[0]
+    reviewed.props.onChange({ target: { checked: true } }); h.render()
+    assert.equal(h.button('Skicka till ny ansvarig').props.disabled, false)
+    await h.click('Skicka till ny ansvarig')
+    assert.equal(h.requests[2].body.operation, 'dispatch_reassignment')
+    assert.equal('dueAt' in h.requests[2].body, false)
+    await h.reply(2)
+    assert.equal(h.workspace.questions[0].tasks.length, 1)
+    assert.equal(h.workspace.questions[0].tasks[0].id, task.id)
+    assert.equal(h.workspace.questions[0].tasks[0].status, 'in_progress')
+    assert.equal(h.workspace.questions[0].tasks[0].awaitingDispatch, false)
+  } finally { h.dispose() }
+})
+
+test('a definite assignment conflict reloads versions, preserves the selected person and requires fresh confirmation', async () => {
+  const h=harness()
+  try {
+    const next={id:id(10),kind:'profile',name:'Ny ansvarig',email:'next@example.invalid'}; h.workspace.assignees.push(next)
+    const q={id:id(60),number:1,revision:1,body:{...emptyQuestion(),title:'Fråga',description:'Underlag',assignee:h.customer},createdAt:'2026-11-12',updatedAt:'2026-11-12',events:[],participants:[],tasks:[{id:id(61),version:4,active:true,status:'in_progress',dueAt:'2030-01-20T16:00:00Z',events:[],files:[]}]}; h.workspace.questions.push(q)
+    await h.click('Hämta sparade frågor och svar'); h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}}); h.render()
+    await h.click('Byt ansvarig'); h.input('Ny ansvarig',`profile:${next.id}`)
+    const confirm=()=>h.nodes().find(n=>n.type==='label'&&content(n).includes('Jag bekräftar bytet av ansvarig.')).props.children[0]
+    confirm().props.onChange({target:{checked:true}});h.render();await h.click('Bekräfta byte')
+    q.revision=2;q.tasks[0].version=5
+    await h.reply(0,'Frågan har ändrats.',undefined,409)
+    assert.match(h.text(),/Aktuella uppgifter har hämtats/)
+    assert.equal(h.field('Ny ansvarig').props.value,`profile:${next.id}`)
+    assert.equal(h.button('Bekräfta byte').props.disabled,true)
+    confirm().props.onChange({target:{checked:true}});h.render();await h.click('Bekräfta byte')
+    assert.equal(h.requests[1].body.revision,2);assert.equal(h.requests[1].body.taskVersion,5)
+    assert.notEqual(h.requests[1].body.requestId,h.requests[0].body.requestId)
+    await h.reply(1)
+  } finally {h.dispose()}
+})
+
+test('a direct document upload saves a new question first and selects its acknowledged private attachment', async () => {
+  const h = harness({ directFiles: true })
+  try {
+    await h.start(); h.input('Rubrik', 'Ny fråga med PDF'); h.input('Fråga', 'Fiktivt underlag')
+    assert.equal(h.button('Lägg till bild eller dokument').props.disabled, false)
+    const input = h.nodes().find(n => n.props?.['aria-label'] === 'Ladda upp bilaga till frågan')
+    input.props.onChange({ target: { files: [new File(['test'], 'Ritning.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()
+    input.props.onChange({ target: { files: [new File(['second'], 'Andra.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()
+    assert.equal(h.requests.length,1,'a second file selection cannot race the initial question save')
+    assert.equal(h.requests[0].body.operation, 'create'); assert.equal(h.fileRequests.length, 0)
+    await h.reply(0); await tick(); h.render()
+    assert.deepEqual(h.fileRequests.map(r => r.action), ['create_signed_upload', 'complete_upload'])
+    assert.ok(h.fileRequests.every(r => r.payload.questionId === h.workspace.questions[0].id))
+    assert.equal(h.workspace.privateFiles[0].fileName, 'Ritning.pdf')
+    await h.click('Stäng')
+    assert.deepEqual(h.requests[1].body.fileIds, [id(80)])
+    await h.reply(1)
+    assert.ok(h.requests.every(r => ['create', 'update'].includes(r.body.operation)))
+  } finally { h.dispose() }
+})
 
 test('successful question reads notify the overview after save, but failed reads do not invalidate it', async () => {
   let updates = 0

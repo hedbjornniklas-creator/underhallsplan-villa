@@ -15,14 +15,14 @@ await new Promise((ok, fail) => webpack({
   plugins: [new webpack.DefinePlugin({ 'process.env': JSON.stringify({ NODE_ENV: 'development' }) })],
   entry: resolve('test/fixtures/project-question-stability.tsx'), output: { path: output, filename: 'view.js' },
   resolve: { extensions: ['.tsx', '.ts', '.js'], alias: {
-    './project-questions.css': false, './uppdrag-theme.css': false,
+    './project-questions.css': false, './uppdrag-theme.css': false, './gizmo-recipient-layout.css': false,
     '@/lib/supabaseClient$': resolve('test/helpers/project-supabase-stub.ts'), '@': resolve('src'),
   } },
   module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: resolve('test/helpers/transpile-loader.mjs') }] },
 }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString('errors-only'))) : ok()))
 const cssSource = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks";')
 const globalCss = (await postcss([tailwind()]).process(cssSource, { from: resolve('src/app/globals.css') })).css
-const css = globalCss + '\n' + await readFile('src/components/tasks/uppdrag-theme.css', 'utf8') + '\n' + await readFile('src/components/tasks/project-questions.css', 'utf8') +
+const css = globalCss + '\n' + await readFile('src/components/tasks/uppdrag-theme.css', 'utf8') + '\n' + await readFile('src/components/tasks/project-questions.css', 'utf8') + '\n' + await readFile('src/components/tasks/gizmo-recipient-layout.css', 'utf8') +
   '\nbody{margin:0}.fixture-workspace{max-width:1280px;margin:auto;padding:24px}.fixture-controls{position:fixed;z-index:100;left:8px;top:8px;max-width:260px;background:white;border:1px solid #d5dcdd;padding:8px;font:12px Arial}.fixture-controls button{border:1px solid #d5dcdd;padding:6px;margin:3px}.fixture-controls summary{cursor:pointer}.fixture-controls:has(details:not([open])){max-width:160px}'
 const assets = new Map([
   ['/view.js', { body: await readFile(resolve(output, 'view.js')), type: 'text/javascript' }],

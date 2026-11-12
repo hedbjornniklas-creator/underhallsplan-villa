@@ -6,6 +6,16 @@ import { emptyQuestion, questionMutation, questionUuid, questionParticipantSelec
 import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ctx={orgId:id(1),userId:id(2)},caseId=id(3)
+test('assignment input binds both versions and exact identities, strips spoofed names and requires a separate confirmed dispatch', () => {
+  const change = { questionId:id(4), requestId:id(5), taskId:id(6), revision:2, taskVersion:7, operation:'reassign', confirmed:true, assignee:{kind:'contact',id:id(8),name:'spoof',email:'wrong@example.invalid'}, actorId:id(99), fileIds:[] }
+  const clean=questionModel.questionAssignmentMutation(change)
+  assert.deepEqual(clean.assignee,{kind:'contact',id:id(8)}); assert.equal(clean.actorId,undefined)
+  for (const patch of [{revision:0},{taskVersion:0},{confirmed:false},{taskId:'bad'},{operation:'send'},{fileIds:[id(8)]}]) assert.throws(()=>questionModel.questionAssignmentMutation({...change,...patch}))
+  const send={...change,operation:'dispatch_reassignment',fileIds:[id(8)]}
+  assert.equal(questionModel.questionAssignmentMutation(send).assignee,undefined)
+  assert.deepEqual(questionModel.questionAssignmentMutation(send).fileIds,[id(8)])
+  for (const fileIds of [[id(8),id(8)],Array.from({length:21},(_,n)=>id(n+100)),['bad']]) assert.throws(()=>questionModel.questionAssignmentMutation({...send,fileIds}),/FILES/)
+})
 function load(path,deps) {
   const code=ts.transpileModule(readFileSync(new URL(path,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
   const m={exports:{}};new Function('require','module','exports',code)(key=>{assert.ok(key in deps,key);return key === './projectQuestions' ? { ...questionModel, ...deps[key] } : deps[key]},m,m.exports);return m.exports
@@ -45,7 +55,9 @@ test('questions route requires session/module and same-origin body before mutati
     else {
       assert.equal(r.headers['Cache-Control'],'no-store');assert.deepEqual(calls[0].slice(0,2),[ctx,caseId]);assert.equal(followups.length,0)
       await route.POST(req('send'),{params:Promise.resolve({caseId})});assert.equal(followups.length,1)
-      const bad=await route.POST(req('create','https://foreign.invalid'),{params:Promise.resolve({caseId})});assert.equal(bad.status,410);assert.equal(calls.length,2)
+      await route.POST(req('reassign'),{params:Promise.resolve({caseId})});assert.equal(followups.length,1)
+      await route.POST(req('dispatch_reassignment'),{params:Promise.resolve({caseId})});assert.equal(followups.length,2)
+      const bad=await route.POST(req('create','https://foreign.invalid'),{params:Promise.resolve({caseId})});assert.equal(bad.status,410);assert.equal(calls.length,4)
     }
   }
 })
