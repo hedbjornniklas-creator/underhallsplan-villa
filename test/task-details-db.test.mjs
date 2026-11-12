@@ -179,6 +179,7 @@ test('project question reassignment uses the task engine with question authoriza
   assert.ok((await db.query("select strpos(pg_get_functiondef('public.finalize_operational_task_initial_dispatch(uuid,uuid,uuid)'::regprocedure),chr(13)) value")).rows[0].value>0,'exercise the production CRLF definition without weakening the exact authorization guard')
   const beforeInstall = (await db.query('select to_jsonb(t) value from operational_tasks t order by id')).rows
   await db.exec(migration); await db.exec(migration)
+  await db.exec(sql('2026-11-12_02_project_question_due_date')); await db.exec(sql('2026-11-12_02_project_question_due_date'))
   assert.deepEqual((await db.query('select to_jsonb(t) value from operational_tasks t order by id')).rows, beforeInstall)
   const setup = async (manager = issuer) => {
     const task = await create(true), caseId = randomUUID(), questionId = randomUUID()
@@ -194,6 +195,69 @@ test('project question reassignment uses the task engine with question authoriza
   const command = async (h, r, actor = h.manager, organization = org) => (await db.query('select write_project_question_assignment($1,$2,$3,$4) id', [organization,h.caseId,actor,JSON.stringify(r)])).rows[0].id
   const dispatch = async h => ({ ...await request(h), operation: 'dispatch_reassignment', assignee: undefined })
   const count = async (table, taskId) => Number((await db.query(`select count(*) n from ${table} where task_id=$1`, [taskId])).rows[0].n)
+
+  const dueRequest = async (h, offset = 2 * 86400_000) => ({ requestId: randomUUID(), questionId: h.questionId, taskId: h.task.id, taskVersion: (await read(h.task.id)).version, revision: (await question(h)).revision, operation: 'reschedule', dueAt: new Date(new Date((await read(h.task.id)).due_at).getTime() + offset).toISOString() })
+  const changeDue = async (h, r, actor = h.manager, organization = org) => (await db.query('select write_project_question_due_date($1,$2,$3,$4) id',[organization,h.caseId,actor,JSON.stringify(r)])).rows[0].id
+  await suite.test('manager date edits retain recipient, links, status and question body; exact retries do not duplicate history',async()=>{
+    const h=await setup(),r=await dueRequest(h),before=await read(h.task.id),savedBody=(await question(h)).body
+    const links=(await db.query('select * from task_access_links where task_id=$1',[h.task.id])).rows
+    await changeDue(h,r);const updated=await read(h.task.id)
+    assert.equal(updated.due_at.toISOString(),r.dueAt);assert.equal(updated.status,before.status)
+    assert.equal(updated.assignee_contact_id,before.assignee_contact_id);assert.equal(updated.version,before.version+1)
+    assert.deepEqual((await question(h)).body,savedBody);assert.equal((await question(h)).revision,2)
+    assert.deepEqual((await db.query('select * from task_access_links where task_id=$1',[h.task.id])).rows,links)
+    assert.equal(await count('task_message_deliveries',h.task.id),0)
+    const audit=(await db.query('select * from action_case_question_events where id=$1',[r.requestId])).rows[0]
+    assert.match(audit.message,/Färdigdatum ändrades från .* till .*Stockholm/)
+    assert.equal(audit.task_id,null)
+    await changeDue(h,r);assert.deepEqual(await read(h.task.id),updated)
+    await assert.rejects(changeDue(h,{...r,dueAt:new Date(Date.parse(r.dueAt)+86400_000).toISOString()}),/STALE/)
+  })
+  await suite.test('deadline-based checkpoints follow extensions, explicit earlier checkpoints stay and late checkpoints are bounded',async()=>{
+    for(const variant of ['deadline','earlier','shorter']) {
+      const h=await setup(),before=await read(h.task.id),oldDue=new Date(before.due_at).getTime()
+      const checkpoint=new Date(oldDue-(variant==='deadline'?0:3600_000)).toISOString()
+      await db.query('update operational_tasks set next_followup_at=$2 where id=$1',[h.task.id,checkpoint])
+      const r=await dueRequest(h,variant==='shorter'?-2*3600_000:86400_000);await changeDue(h,r)
+      const task=await read(h.task.id)
+      assert.equal(task.next_followup_at.toISOString(),variant==='earlier'?checkpoint:r.dueAt)
+      const jobs=(await db.query("select * from task_automation_jobs where task_id=$1 and status='queued'",[h.task.id])).rows
+      assert.ok(jobs.length>0,'the real reminder trigger keeps an evaluation queued')
+    }
+  })
+  await suite.test('date edits reject non-managers, foreign tasks, stale versions, pending requests and invalid dates without writes',async()=>{
+    const h=await setup(),otherQuestion=await setup(),r=await dueRequest(h),before=await read(h.task.id)
+    for(const [input,actor,organization,pattern] of [[r,recipient,org,/FORBIDDEN/],[r,issuer,randomUUID(),/NOT_FOUND|FORBIDDEN/],[{...r,taskId:otherQuestion.task.id},issuer,org,/NOT_FOUND/],[{...r,revision:99},issuer,org,/STALE/],[{...r,taskVersion:99},issuer,org,/STALE/],[{...r,dueAt:null},issuer,org,/DATES/],[{...r,dueAt:'infinity'},issuer,org,/DATES/],[{...r,assigneeContactId:contact2},issuer,org,/INVALID/]]) await assert.rejects(changeDue(h,input,actor,organization),pattern)
+    assert.deepEqual(await read(h.task.id),before)
+    const req=randomUUID();await db.query("insert into task_deadline_change_requests(id,org_id,task_id,requested_by_profile_id,current_due_at,requested_due_at,reason,status) values($1,$2,$3,$4,$5,$6,'Test','pending')",[req,org,h.task.id,recipient,before.due_at,r.dueAt])
+    await assert.rejects(changeDue(h,await dueRequest(h)),/PENDING_REQUEST/)
+    await db.query('delete from task_deadline_change_requests where id=$1',[req])
+    await db.query("update action_case_questions set body=jsonb_set(body,'{status}','\"closed\"') where id=$1",[h.questionId])
+    await assert.rejects(changeDue(h,await dueRequest(h)),/CLOSED/)
+  })
+  await suite.test('failed final date audit rolls back task version, dates and reminder queue',async()=>{
+    const h=await setup(),r=await dueRequest(h),before=await read(h.task.id)
+    const jobs=(await db.query('select * from task_automation_jobs where task_id=$1 order by id',[h.task.id])).rows
+    await db.query("insert into action_case_question_events(org_id,question_id,revision,operation) values($1,$2,2,'update')",[org,h.questionId])
+    await assert.rejects(changeDue(h,r),/unique|duplicate/)
+    assert.deepEqual(await read(h.task.id),before);assert.equal((await question(h)).revision,1)
+    assert.deepEqual((await db.query('select * from task_automation_jobs where task_id=$1 order by id',[h.task.id])).rows,jobs)
+  })
+
+  await suite.test('rescheduling after reassignment keeps dispatch separate and revoked old links revoked',async()=>{
+    const h=await setup();await command(h,await request(h));const t=await read(h.task.id)
+    await changeDue(h,await dueRequest(h));const updated=await read(h.task.id)
+    assert.equal(updated.assignee_contact_id,contact2);assert.equal(updated.status,t.status)
+    assert.equal((await db.query('select initial_dispatch_pending from task_followup_rules where task_id=$1',[t.id])).rows[0].initial_dispatch_pending,true)
+    assert.equal((await db.query('select count(*) n from task_access_links where task_id=$1 and revoked_at is null',[t.id])).rows[0].n,0)
+    assert.equal(await count('task_message_deliveries',t.id),0)
+    const revision=(await question(h)).revision
+    for(const role of ['anon','authenticated']) {
+      await db.exec(`set role ${role}`)
+      await assert.rejects(changeDue(h,{requestId:randomUUID(),questionId:h.questionId,taskId:t.id,taskVersion:updated.version,revision,operation:'reschedule',dueAt:'2030-02-01T15:00:00Z'}),/permission denied/)
+      await db.exec('reset role')
+    }
+  })
 
   await suite.test('ordinary tasks retain editing permissions and separate dispatch after the shared engine migration',async()=>{
     const t=await create(), updated=await edit(t,{title:'Oförändrat vanligt flöde'})

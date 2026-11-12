@@ -2,7 +2,7 @@ import 'server-only'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getTaskPeople } from '@/lib/tasks/server'
 import { createTaskAttachmentSignedUrl } from '@/lib/tasks/attachments'
-import { questionMutation, questionAssignmentMutation, questionUuid, questionParticipantSelection, questionParticipantDifference, type ProjectQuestion, type QuestionAssignee, type QuestionBody, type QuestionWorkspace, type QuestionTask, type QuestionDialogueAudit, type QuestionHistoryPerson } from './projectQuestions'
+import { questionMutation, questionAssignmentMutation, questionDueDateMutation, questionUuid, questionParticipantSelection, questionParticipantDifference, type ProjectQuestion, type QuestionAssignee, type QuestionBody, type QuestionWorkspace, type QuestionTask, type QuestionDialogueAudit, type QuestionHistoryPerson } from './projectQuestions'
 
 type Context = { orgId: string; userId: string }
 function checked(error: { code?: string; message?: string } | null) {
@@ -11,6 +11,7 @@ function checked(error: { code?: string; message?: string } | null) {
   const taskError = error.message?.match(/(?:^|\s)(TASK_[A-Z_]+)/)?.[1]
   if (taskError) throw new Error(({ TASK_VERSION_CONFLICT: 'PROJECT_QUESTION_STALE', TASK_DETAILS_DELIVERY_PENDING: 'PROJECT_QUESTION_ASSIGNMENT_DELIVERY_PENDING',
     TASK_DETAILS_PENDING_REQUEST: 'PROJECT_QUESTION_ASSIGNMENT_PENDING_REQUEST', TASK_DETAILS_FORBIDDEN: 'PROJECT_QUESTION_FORBIDDEN',
+    TASK_CHILD_AFTER_PARENT_DUE: 'PROJECT_QUESTION_DUE_PARENT', TASK_PARENT_DUE_BEFORE_CHILD: 'PROJECT_QUESTION_DUE_CHILDREN', TASK_DUE_EDIT_RECURRENCE: 'PROJECT_QUESTION_DUE_RECURRENCE',
     TASK_ASSIGNEE_TASK_ACCESS_REQUIRED: 'PROJECT_QUESTION_ASSIGNEE', TASK_CONTACT_METHOD_REQUIRED: 'PROJECT_QUESTION_ASSIGNEE' } as Record<string, string>)[taskError] || 'PROJECT_QUESTION_FAILED')
   const code = error.message?.match(/PROJECT_QUESTION_[A-Z_]+/)?.[0]
   throw new Error(code || 'PROJECT_QUESTION_FAILED')
@@ -99,6 +100,13 @@ export async function getProjectQuestions(ctx: Context, caseId: string): Promise
   return { questions, privateFiles, userId: ctx.userId, managerId, canManageParticipants: managerId === ctx.userId, ...directory }
 }
 export async function mutateProjectQuestion(ctx: Context, caseId: string, payload: Record<string, unknown>) {
+  if (payload.operation === 'reschedule') {
+    const request = questionDueDateMutation(payload)
+    await requireProject(ctx, caseId)
+    const result = await createSupabaseAdminClient().rpc('write_project_question_due_date', { p_org_id: ctx.orgId, p_case_id: caseId, p_actor_id: ctx.userId, p_request: request })
+    checked(result.error)
+    return { questionId: String(result.data) }
+  }
   if (['reassign', 'dispatch_reassignment'].includes(String(payload.operation))) {
     const request = questionAssignmentMutation(payload)
     await requireProject(ctx, caseId)

@@ -206,6 +206,27 @@ normaliseras före den fortsatt exakta kontrollen av befintlig behörighetskod.
 En jämförelse av 13 tabeller i Lokevägen och Gåshaga visar oförändrade uppgifter.
 Avtal och kalkyler ingår inte i ändringen.
 
+### Internt färdigdatum, 2026-11-12
+
+Projektansvarig kan välja **Ändra färdigdatum** bredvid den aktiva uppgiftens
+datum i Fråga. Datum och klockslag visas i Stockholmstid. **Spara färdigdatum**
+ändrar samma uppgift; mottagare, status, bilagor och personlig länk behålls.
+Gammalt och nytt datum, vem som ändrade och tidpunkten sparas i historiken.
+Ingen ny tilldelning skickas och mottagarens Begär mer tid är oförändrad.
+
+Den gemensamma uppgiftsmotorn flyttar påminnelserna. Ett tidigare separat
+uppföljningstillfälle behålls om det ryms före det nya färdigdatumet; ett
+datumstyrt eller för sent tillfälle följer det nya datumet. Öppna beslut om
+ändrad svarstid, osäker leverans, återkommande schema och konflikter med
+underuppgifters datum måste hanteras först. Versionskontroll gäller både fråga
+och uppgift. Nätfel behåller exakt samma återförsök; en konflikt kräver ny granskning.
+
+Kräver `docs/db/2026-11-12_02_project_question_due_date.sql` efter migreringen
+för ansvarigbyte. Installationen ändrar inga befintliga rader. Vanliga manuella
+Att göra använder fortsatt Slutdatum i Redigera uppgift. SQL-uppdateringen kördes
+i produktion 2026-11-12 efter användarens uttryckliga godkännande. Publicering
+och driftkontroll dokumenteras i releaseprotokollet.
+
 Kör `docs/db/2026-10-19_03_project_question_customers.sql` efter den befintliga
 frågemigreringen `2026-10-19_01_project_questions.sql` före publicering av den nya
 mottagarfunktionen. Ingen historisk dataöverföring eller massändring ingår.
@@ -236,3 +257,8 @@ redigeraren anger då att beställarlistan behöver aktiveras.
   Att göra, inklusive bekräftelseknappen i Nästa steg, och publicering efter
   verifierade tester. Befintliga länkar, åtkomsträttigheter och statusflöden
   ska behållas. Befintliga uppgifter, avtal och kalkyler ändras inte.
+- 2026-11-12: Användaren vill kunna ändra färdigdatum internt på samma sätt som
+  ansvarig. Mottagaren får inte någon ny rätt att själv ändra datumet. Funktionen
+  byggs i den ägande projektfrågan, med bevarad historik och ordinarie påminnelser.
+- 2026-11-12: Användaren godkänner SQL-körning och publicering av datumändringen
+  tillsammans med hovrings- och fokusmarkeringen i mottagarens Mer-meny.

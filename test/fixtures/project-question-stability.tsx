@@ -69,10 +69,11 @@ window.fetch = async (input, options) => {
   if (body.revision !== q.revision) return json({ error: 'Fiktiv versionskonflikt' }, 409)
   writes++
   if (body.operation === 'send') sends++
-  if (['reassign','dispatch_reassignment'].includes(body.operation)) {
+  if (['reassign','dispatch_reassignment','reschedule'].includes(body.operation)) {
     const task=q.tasks.find(t=>t.id===body.taskId)
     if (!task || task.version!==body.taskVersion) return json({error:'Fiktiv versionskonflikt'},409)
-    if (body.operation==='reassign') {
+    if (body.operation==='reschedule') task.dueAt=body.dueAt
+    else if (body.operation==='reassign') {
       const person=workspace.assignees.find(a=>a.id===body.assignee.id&&a.kind===body.assignee.kind)!
       q.body={...q.body,assignee:person}; task.assigneeName=person.name; task.awaitingDispatch=true; task.replyTarget=null
     } else { task.awaitingDispatch=false; sends++ }

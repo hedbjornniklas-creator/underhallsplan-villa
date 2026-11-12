@@ -6,6 +6,13 @@ import { emptyQuestion, questionMutation, questionUuid, questionParticipantSelec
 import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
 const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ctx={orgId:id(1),userId:id(2)},caseId=id(3)
+
+test('date edits require both revisions and a valid zoned timestamp, and strip unrelated changes',()=>{
+  const input={questionId:id(4),requestId:id(5),taskId:id(6),revision:2,taskVersion:7,operation:'reschedule',dueAt:'2030-01-23T16:00:00+01:00',assignee:{id:id(8)},actorId:id(99),fileIds:[id(7)]}
+  const clean=questionModel.questionDueDateMutation(input)
+  assert.equal(clean.dueAt,'2030-01-23T15:00:00.000Z');assert.equal(clean.assignee,undefined);assert.equal(clean.actorId,undefined);assert.equal(clean.fileIds,undefined)
+  for(const patch of [{revision:0},{taskVersion:0},{taskId:'bad'},{operation:'send'},{dueAt:null},{dueAt:'2030-02-30T15:00:00Z'},{dueAt:'2030-01-23T15:00:00'},{dueAt:'infinity'}]) assert.throws(()=>questionModel.questionDueDateMutation({...input,...patch}))
+})
 test('assignment input binds both versions and exact identities, strips spoofed names and requires a separate confirmed dispatch', () => {
   const change = { questionId:id(4), requestId:id(5), taskId:id(6), revision:2, taskVersion:7, operation:'reassign', confirmed:true, assignee:{kind:'contact',id:id(8),name:'spoof',email:'wrong@example.invalid'}, actorId:id(99), fileIds:[] }
   const clean=questionModel.questionAssignmentMutation(change)
@@ -61,6 +68,19 @@ test('questions route requires session/module and same-origin body before mutati
     }
   }
 })
+test('internal date writer uses the scoped atomic RPC and server actor, without dispatching or trusting extra fields',async()=>{
+  const calls=[]
+  const db={from(table){assert.equal(table,'action_cases');const filters=[];calls.push({table,filters});const q={select(){return q},eq(...v){filters.push(v);return q},async maybeSingle(){return {data:{id:caseId}}}};return q},async rpc(name,args){calls.push({name,args});return {data:id(4)}}}
+  const server=load('../src/lib/action-cases/projectQuestionsServer.ts',{'server-only':{},'@/lib/supabase/admin':{createSupabaseAdminClient:()=>db},'@/lib/tasks/server':{},'@/lib/tasks/attachments':{},'./projectQuestions':{}})
+  const input={questionId:id(4),requestId:id(5),taskId:id(6),revision:2,taskVersion:7,operation:'reschedule',dueAt:'2030-01-23T16:00:00+01:00',actorId:id(99),assignee:{id:id(8)}}
+  assert.deepEqual(await server.mutateProjectQuestion(ctx,caseId,input),{questionId:id(4)})
+  assert.deepEqual(calls[0].filters,[['org_id',ctx.orgId],['id',caseId]])
+  assert.equal(calls[1].name,'write_project_question_due_date');assert.equal(calls[1].args.p_actor_id,ctx.userId)
+  assert.deepEqual(calls[1].args.p_request,questionModel.questionDueDateMutation(input))
+  await assert.rejects(server.mutateProjectQuestion(ctx,caseId,{...input,dueAt:null}),/DATES/)
+  assert.equal(calls.length,2)
+})
+
 test('writer uses only scoped project reads and the atomic question RPC; assignees must be in the authorized task directory',async()=>{
   const calls=[]
   const db={from(table){assert.equal(table,'action_cases');const c={table,filters:[]};calls.push(c);const q={select(){return q},eq(...v){c.filters.push(v);return q},async maybeSingle(){return {data:{id:caseId}}}};return q},async rpc(name,args){if(name==='project_question_customers'){assert.deepEqual(args,{p_org_id:ctx.orgId,p_case_id:caseId});return {data:[]}}calls.push({name,args});return {data:id(4)}}}

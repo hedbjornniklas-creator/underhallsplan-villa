@@ -8,6 +8,13 @@
 .gizmo-recipient-greeting { margin-left:auto; min-width:0; overflow-wrap:anywhere; color:#596368; font-size:13px; }
 .gizmo-recipient-next-step { margin-block:16px; }
 .gizmo-recipient-next-step h2 { margin-top:4px; }
+.gizmo-recipient-actions>button:enabled { cursor:pointer; }
+.gizmo-recipient-actions>button:disabled { cursor:not-allowed; }
+.gizmo-recipient-actions>button:enabled:hover,
+.gizmo-recipient-actions>button:enabled:focus-visible,
+.gizmo-recipient-more:hover { background:#E5EEEB; color:#206961; }
+.gizmo-recipient-actions>button:enabled:focus-visible,
+.gizmo-recipient-more:focus-visible { outline:2px solid #206961; outline-offset:-2px; }
 .gizmo-recipient-disclosure { padding-block:12px; border-block:1px solid #D5DCDD; }
 .gizmo-recipient-disclosure summary { cursor:pointer; font-size:14px; font-weight:600; }
 .gizmo-recipient-disclosure[open]>summary { margin-bottom:12px; }

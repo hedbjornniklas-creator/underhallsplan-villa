@@ -799,10 +799,10 @@ export default function TaskRecipientClient({
   ) : null
 
   const moreActions = <details ref={moreActionsRef} className="relative shrink-0">
-    <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden" aria-label="Fler åtgärder">
+    <summary className="gizmo-recipient-more flex min-h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden" aria-label="Fler åtgärder">
       <MoreHorizontal size={19} aria-hidden="true" /> Mer
     </summary>
-    <div className={`absolute right-0 z-40 grid w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border border-[#D5DCDD] bg-white p-2 shadow-lg ${canStart ? 'top-full mt-2' : 'bottom-full mb-2'}`} aria-label="Övriga uppdragsåtgärder">
+    <div className={`gizmo-recipient-actions absolute right-0 z-40 grid w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border border-[#D5DCDD] bg-white p-2 shadow-lg ${canStart ? 'top-full mt-2' : 'bottom-full mb-2'}`} aria-label="Övriga uppdragsåtgärder">
       {canStart && <button type="button" disabled={isBusy || readyForReviewBlocked}
         onClick={() => { if (moreActionsRef.current) moreActionsRef.current.open = false; void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.') }}
         title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}

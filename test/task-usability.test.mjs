@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
+import postcss from 'postcss'
 import * as drafts from '../src/lib/tasks/recipientDraft.ts'
 import * as dates from '../src/lib/tasks/dateTime.ts'
 import * as estimates from '../src/lib/tasks/timeEstimate.ts'
@@ -130,12 +131,29 @@ test('receipt is confirmed once in Next step without a message, while later comp
     assert.equal((html.match(/Bekräfta mottaget<\/button>/g)||[]).length,status==='waiting'?0:1)
     assert.doesNotMatch(html,/<footer|Skriv ett meddelande/)
     assert.match(next,/Fler åtgärder/);assert.match(html,/aria-label="Meddelande"/)
+    assert.match(next,/gizmo-recipient-actions/);assert.match(next,/gizmo-recipient-more/)
   }
   const blocked=render('assigned',[{id:'r',key:'written_quote',label:'Offert',status:'pending'}])
   assert.match(blocked,/disabled=""[^>]*title="Förberedande kontrollpunkter återstår\."/)
   const progress=render('in_progress');assert.match(progress,/<footer/);assert.match(progress,/Klar för kontroll/)
+  assert.match(progress,/<footer[\s\S]*gizmo-recipient-actions/)
   assert.doesNotMatch(progress,/Bekräfta mottaget<\/button>/)
   for(const status of ['approved','cancelled','ready_for_review']) assert.doesNotMatch(render(status),/Bekräfta mottaget<\/button>|<footer/)
+})
+
+test('More menu highlights enabled choices on hover and keyboard focus without changing disabled choices', () => {
+  const rules=new Map()
+  postcss.parse(read('src/components/tasks/gizmo-recipient-layout.css')).walkRules(rule=>{
+    const declarations=Object.fromEntries(rule.nodes.filter(node=>node.type==='decl').map(node=>[node.prop,node.value]))
+    for(const selector of rule.selectors) rules.set(selector,{...rules.get(selector),...declarations})
+  })
+  for(const selector of ['.gizmo-recipient-actions>button:enabled:hover','.gizmo-recipient-actions>button:enabled:focus-visible','.gizmo-recipient-more:hover']) {
+    assert.equal(rules.get(selector)?.background,'#E5EEEB')
+    assert.equal(rules.get(selector)?.color,'#206961')
+  }
+  for(const selector of ['.gizmo-recipient-actions>button:enabled:focus-visible','.gizmo-recipient-more:focus-visible']) assert.equal(rules.get(selector)?.outline,'2px solid #206961')
+  assert.equal(rules.get('.gizmo-recipient-actions>button:disabled')?.cursor,'not-allowed')
+  assert.equal(rules.has('.gizmo-recipient-actions>button:hover'),false)
 })
 
 test('received files precede messages and own uploads are separate, irrespective of completion evidence', () => {

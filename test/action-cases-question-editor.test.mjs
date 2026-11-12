@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { emptyQuestion, questionAssigneeOptions, questionStatuses } from '../src/lib/action-cases/projectQuestions.ts'
 import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
-import { taskDateTimeInputToIso } from '../src/lib/tasks/dateTime.ts'
+import { taskDateTimeInputToIso, taskIsoToDateTimeInput } from '../src/lib/tasks/dateTime.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const content = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(content).join('') : node?.props ? content(node.props.children) : ''
@@ -48,7 +48,7 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
   }
   const dependencies = {
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': { supabase: { storage: { from(bucket) { assert.equal(bucket, 'project-question-files'); return { async uploadToSignedUrl() { return { error: null } } } } } } }, './project-questions.css': {},
-    '@/lib/tasks/dateTime': { taskDateTimeInputToIso, formatTaskDateTime: value => value },
+    '@/lib/tasks/dateTime': { taskDateTimeInputToIso, taskIsoToDateTimeInput, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': questionModel,
     './QuestionDialogue': { default: () => null },
     './QuestionDiaryImagePicker': { default: () => null },
@@ -79,7 +79,8 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
         if (request.operation === 'reassign') {
           question.body = { ...question.body, assignee: workspace.assignees.find(person => person.kind === request.assignee.kind && person.id === request.assignee.id) }
           question.tasks[0] = { ...question.tasks[0], version: question.tasks[0].version + 1, awaitingDispatch: true, assigneeName: question.body.assignee.name }
-        } else if (request.operation === 'dispatch_reassignment') question.tasks[0].awaitingDispatch = false
+        } else if (request.operation === 'reschedule') question.tasks[0] = { ...question.tasks[0], dueAt: request.dueAt, version: question.tasks[0].version + 1 }
+        else if (request.operation === 'dispatch_reassignment') question.tasks[0].awaitingDispatch = false
         else question.body = request.body
         Object.assign(question, { revision: request.revision + 1, updatedAt: new Date().toISOString() })
       }
@@ -91,6 +92,58 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
     dispose() { globalThis.fetch = original.fetch; globalThis.document = original.document; globalThis.requestAnimationFrame = original.raf; globalThis.localStorage = original.storage }
   }
 }
+
+test('manager edits a sent question deadline with Stockholm time, exact retry and unchanged recipient/status', async () => {
+  const h=harness()
+  try {
+    const task={id:id(61),version:4,active:true,awaitingDispatch:false,status:'in_progress',dueAt:'2030-01-20T15:00:00Z',events:[],files:[]}
+    const body={...emptyQuestion(),title:'Datumtest',description:'Underlag',assignee:h.customer}
+    h.workspace.questions.push({id:id(60),number:1,revision:1,body,createdAt:'2026-11-12',updatedAt:'2026-11-12',events:[],tasks:[task],participants:[]})
+    await h.click('Hämta sparade frågor och svar');h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}});h.render()
+    await h.click('Ändra färdigdatum')
+    assert.equal(h.field('Nytt färdigdatum').props.value,'2030-01-20')
+    assert.equal(h.field('Klockslag (Stockholm)').props.value,'16:00')
+    assert.equal(h.button('Spara färdigdatum').props.disabled,true)
+    h.input('Nytt färdigdatum','2030-01-23');assert.equal(h.button('Spara färdigdatum').props.disabled,false)
+    await h.click('Spara färdigdatum');const attempt=structuredClone(h.requests[0].body)
+    assert.equal(attempt.operation,'reschedule');assert.equal(attempt.taskVersion,4);assert.equal(attempt.dueAt,'2030-01-23T15:00:00.000Z')
+    assert.equal('assignee' in attempt,false);assert.equal('body' in attempt,false)
+    await h.reply(0,'Fiktivt sparfel');await h.click('Försök igen');assert.deepEqual(h.requests[1].body,attempt)
+    await h.reply(1)
+    assert.equal(h.workspace.questions[0].tasks.length,1);assert.equal(h.workspace.questions[0].tasks[0].status,'in_progress')
+    assert.deepEqual(h.workspace.questions[0].body,body);assert.match(h.text(),/2030-01-23T15:00:00.000Z/)
+    assert.match(h.text(),/Ingen ny tilldelning har skickats/)
+    await h.click('Ändra färdigdatum');h.input('Nytt färdigdatum','2030-01-24')
+    await h.click('Avbryt datumändring');assert.equal(h.requests.length,2)
+  } finally {h.dispose()}
+})
+
+test('a stale date change retains the desired date but requires a new version-bound attempt',async()=>{
+  const h=harness()
+  try {
+    const task={id:id(61),version:4,active:true,status:'assigned',dueAt:'2030-01-20T15:00:00Z',events:[],files:[]}
+    const q={id:id(60),number:1,revision:1,body:{...emptyQuestion(),title:'Datumtest',description:'Underlag',assignee:h.customer},events:[],tasks:[task],participants:[]}
+    h.workspace.questions.push(q)
+    await h.click('Hämta sparade frågor och svar');h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}});h.render()
+    await h.click('Ändra färdigdatum');h.input('Nytt färdigdatum','2030-01-23');await h.click('Spara färdigdatum')
+    const original=h.requests[0].body;q.revision=2;task.version=5;task.dueAt='2030-01-21T15:00:00Z'
+    await h.reply(0,'Fiktiv versionskonflikt',undefined,409)
+    assert.equal(h.field('Nytt färdigdatum').props.value,'2030-01-23');assert.match(h.text(),/Granska och bekräfta på nytt/)
+    await h.click('Spara färdigdatum');const next=h.requests[1].body
+    assert.equal(next.revision,2);assert.equal(next.taskVersion,5);assert.notEqual(next.requestId,original.requestId)
+    await h.reply(1);assert.equal(task.status,'assigned')
+  } finally {h.dispose()}
+})
+
+test('a question participant who is not manager has no internal date-edit action',async()=>{
+  const h=harness()
+  try {
+    h.workspace.canManageParticipants=false
+    h.workspace.questions.push({id:id(60),number:1,revision:1,body:{...emptyQuestion(),title:'Datumtest',description:'Underlag'},events:[],tasks:[{id:id(61),version:4,active:true,status:'assigned',dueAt:'2030-01-20T15:00:00Z',events:[],files:[]}],participants:[]})
+    await h.click('Hämta sparade frågor och svar');h.nodes().find(n=>n.props?.className==='gizmo-question-table-row').props.onClick({target:{closest:()=>null}});h.render()
+    assert.doesNotMatch(h.text(),/Ändra färdigdatum/)
+  } finally {h.dispose()}
+})
 
 test('manager changes a sent question with exact retry and dispatches separately without replacing its task/status', async () => {
   const h = harness()

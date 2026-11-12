@@ -50,6 +50,14 @@ export function questionAssigneeOptions(people: QuestionAssignee[], selected: Qu
   return [...options.values()]
 }
 export const questionUuid = (v: unknown): v is string => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
+export function questionDueDateMutation(value: Record<string, unknown>) {
+  if (!questionUuid(value.questionId) || !questionUuid(value.requestId) || !questionUuid(value.taskId)
+    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 || !Number.isSafeInteger(value.taskVersion) || Number(value.taskVersion) < 1
+    || value.operation !== 'reschedule') throw new Error('PROJECT_QUESTION_INVALID')
+  if (typeof value.dueAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value.dueAt)
+    || !questionDate(value.dueAt.slice(0, 10)) || !Number.isFinite(Date.parse(value.dueAt))) throw new Error('PROJECT_QUESTION_DATES')
+  return { questionId: value.questionId, requestId: value.requestId, taskId: value.taskId, revision: Number(value.revision), taskVersion: Number(value.taskVersion), operation: 'reschedule', dueAt: new Date(value.dueAt).toISOString() }
+}
 export function questionAssignmentMutation(value: Record<string, unknown>) {
   if (!questionUuid(value.questionId) || !questionUuid(value.requestId) || !questionUuid(value.taskId)
     || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1 || !Number.isSafeInteger(value.taskVersion) || Number(value.taskVersion) < 1
