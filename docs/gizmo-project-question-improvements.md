@@ -247,6 +247,10 @@ avisering i den befintliga utskickskön. Fråga, uppgiftslänk, status, datum,
 påminnelseschema och tidigare historik behålls. Bara projektansvarig kan skicka.
 Båda versionerna kontrolleras, och samma återförsök kan inte dubblera bilagor
 eller aviseringar. Ett köfel rullar tillbaka även filkopior och historikhändelsen.
+Äldre lokala utkast uppgraderas också: deras tidigare tillfälliga kryssval
+ersätts med det sparade bilageurvalet, medan text och eventuella osäkra
+sparningsförsök bevaras. Ett osäkert äldre försök återspelas med exakt samma
+innehåll innan en ny version sparas. Nya uttryckliga borttagningar återställs inte.
 
 Aktuellt urval lagras separat från historiska bilagor. Borttagning raderar inte
 projektfilen och återkallar inte redan delade kopior; de visas under **Tidigare
@@ -260,10 +264,15 @@ lägger till ett tomt nullable fält och funktioner, utan att skriva om befintli
 frågor, avtal eller kalkyler. Gruppdialogens uttryckliga delning är oförändrad.
 Migreringen kördes i produktion 2026-11-12. Kontrollvärden för 13 tabeller i
 vardera Lokevägen, Gåshaga och Studio 4 var oförändrade efter körningen
-(det nya nullfältet jämförs som en schemaändring). Releasekopians 1 132 tester,
+(det nya nullfältet jämförs som en schemaändring). Releasekopians 1 134 tester,
 produktionsbygge, typkontroll och riktad lint passerade. Klicktest av komplettering,
 omladdning och återförsök gjordes med fiktiva uppgifter; mobilbredd 390 px ryms
 utan sidrullning. Driftverifiering redovisas i separat releaseprotokoll.
+En fiktiv komplettering till testprojektets befintliga F-005 verifierades också
+i drift: en ny PDF, en ny aviseringshändelse och ett accepterat testmejl till
+jn@hedbjorn.se. Uppgifts-ID, status, version och svarstid var oförändrade.
+Bildminiatyrer kontrollerades med inlästa rasterbilder på dator och mobil;
+bildens absoluta positionering avgränsas till miniatyrknappen.
 
 ## Beslutslogg
 

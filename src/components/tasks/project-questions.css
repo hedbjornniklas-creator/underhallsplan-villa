@@ -121,7 +121,7 @@
 .gizmo-question-attachment-name { min-width:0; overflow-wrap:anywhere; }
 .gizmo-question-attachment-name strong { display:block; font-size:15px; font-weight:600; }
 .gizmo-question-attachment-name > span { display:block; font-size:13px; margin-top:3px; }
-.gizmo-question-thumbnail { width:44px; height:44px; overflow:hidden; background:#EDF1F1; border-radius:4px; }
+.gizmo-question-thumbnail { position:relative; width:44px; height:44px; overflow:hidden; background:#EDF1F1; border-radius:4px; }
 .gizmo-question-thumbnail img { width:100%; height:100%; object-fit:cover; }
 .gizmo-question-file-sharing { font-size:13px; color:#596368; overflow-wrap:anywhere; }
 .gizmo-question-file-sharing.is-shared { color:#206961; }

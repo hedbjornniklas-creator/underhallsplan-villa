@@ -31,6 +31,7 @@ test('attached list has no checkboxes, clear sharing status, existing image view
   const props={caseId:id(8),questionId:id(9),attachedIds:[doc.id,image.id],files:[doc,image,project],historicalFiles:[],projectFiles:[project],task:{id:id(10),assigneeName:'Testperson',files:[{id:id(11),sourceAttachmentId:doc.id,name:doc.fileName}]},disabled:false,readOnly:false,onChange:ids=>changes.push(ids),onUpload(){},onAttached(){},onWorking(){}}
   const render=()=>{stateIndex=0;return module.exports.default(props)};let tree=render()
   assert.equal(nodes(tree).filter(n=>n.type==='input'&&n.props.type==='checkbox').length,0)
+  assert.match(readFileSync(new URL('../src/components/tasks/project-questions.css',import.meta.url),'utf8'),/\.gizmo-question-thumbnail\s*\{[^}]*position:relative/,'the shared absolute-positioned image must be contained by its thumbnail')
   assert.match(text(tree),/Bifogade filer/);assert.match(text(tree),/Inte delad med Testperson/);assert.match(text(tree),/Delad med Testperson/)
   assert.ok(nodes(tree).find(n=>n.type==='bank'&&n.props.buttonLabel==='Från bildbanken'))
   const button=label=>{const found=nodes(tree).find(n=>n.type==='button'&&(text(n)===label||n.props['aria-label']===label));assert.ok(found,`${label}: ${text(tree)}`);return found}

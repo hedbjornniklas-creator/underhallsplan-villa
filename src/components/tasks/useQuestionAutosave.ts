@@ -8,11 +8,12 @@ const fingerprint = (value: unknown) => JSON.stringify(value)
 
 // The owner flushes before changing questions. Retries replay the exact request
 // before saving any newer typing, including after an uncertain network response.
-export function useQuestionAutosave<T>({ save, valid, onSaved, staleMessage }: {
+export function useQuestionAutosave<T>({ save, valid, onSaved, staleMessage, upgradeStoredValue }: {
   save: (attempt: Attempt<T>) => Promise<void>;
   valid: (value: T) => boolean;
   onSaved: (value: T, revision: number) => void;
   staleMessage?: string;
+  upgradeStoredValue?: (stored: T, current: T) => T;
 }) {
   const entry = useRef<Draft<T> | null>(null), key = useRef(''), failed = useRef(false), running = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null), mounted = useRef(true)
@@ -71,7 +72,9 @@ export function useQuestionAutosave<T>({ save, valid, onSaved, staleMessage }: {
       const stored = JSON.parse(localStorage.getItem(storageKey) || 'null') as Draft<T> | null
       if (stored && Number.isSafeInteger(stored.revision) && stored.value && stored.saved &&
         (stored.pending === null || (stored.pending && typeof stored.pending.requestId === 'string' && stored.pending.revision === stored.revision && stored.pending.value))) {
-        entry.current = stored
+        // Keep an uncertain in-flight request byte-for-byte; only upgrade the
+        // editable/saved values so its acknowledgement can precede a newer save.
+        entry.current = upgradeStoredValue ? { ...stored, value: upgradeStoredValue(stored.value, value), saved: upgradeStoredValue(stored.saved, value) } : stored
         if (stored.revision !== revision && !stored.pending) {
           failed.current = true; error = staleMessage || 'Det lokala utkastet avser en äldre version. Hämta den sparade frågan innan du fortsätter.'
         }

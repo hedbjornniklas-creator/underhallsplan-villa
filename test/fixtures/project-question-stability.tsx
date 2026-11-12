@@ -24,6 +24,9 @@ group.dialogueHistory = [
 ]
 const workspace: QuestionWorkspace = { questions: [single, group], assignees: [manager, jn, nh], userId: manager.id, managerId: manager.id, canManageParticipants: true, privateFiles: [] }
 const projectFiles = [71,72,73].map(n=>({id:id(n),fileName:`Fiktivt underlag ${n-70}.pdf`,type:'document' as const,actionCaseItemId:null,title:null,contentType:'application/pdf',fileSizeBytes:120,createdAt,grantedParticipantIds:[]}))
+const previewImage = {id:id(74),fileName:'Fiktiv exempelbild.png',type:'image' as const,actionCaseItemId:null,title:null,contentType:'image/png',fileSizeBytes:1924437,createdAt,grantedParticipantIds:[]}
+const libraryFiles = [...projectFiles, previewImage]
+single.attachmentIds = [previewImage.id]
 const storageKey = 'question-stability-fixture-v3'
 try {
   const saved = JSON.parse(localStorage.getItem(storageKey) || 'null')
@@ -100,6 +103,6 @@ function View() {
     persist(); setCount(count + 1)
   }
   const changeRecipient = () => { workspace.questions.find(q => q.id === id(1))!.tasks[0].replyTarget = { taskId: id(50), name: nh.name, recipient: { kind: 'contact', id: nh.id, email: nh.email } }; persist(); setCount(count + 1) }
-  return <UppdragScope><aside className="fixture-controls"><details><summary>Fiktiva testverktyg</summary><button onClick={simulate}>Simulera mottagarsvar</button><button onClick={changeRecipient}>Byt fiktiv mottagare</button><button onClick={() => { failNext = true; setCount(count + 1) }}>Fel vid nasta sparning</button><p>Simuleringar: {count} · Skrivningar: {writes} · Utskick: {sends}</p></details></aside><main className="fixture-workspace"><h1>TEST - Fragor och beslut</h1><ProjectQuestions caseId={id(99)} active files={projectFiles} onFiles={() => {}} onDirty={() => {}} /></main></UppdragScope>
+  return <UppdragScope><aside className="fixture-controls"><details><summary>Fiktiva testverktyg</summary><button onClick={simulate}>Simulera mottagarsvar</button><button onClick={changeRecipient}>Byt fiktiv mottagare</button><button onClick={() => { failNext = true; setCount(count + 1) }}>Fel vid nasta sparning</button><p>Simuleringar: {count} · Skrivningar: {writes} · Utskick: {sends}</p></details></aside><main className="fixture-workspace"><h1>TEST - Fragor och beslut</h1><ProjectQuestions caseId={id(99)} active files={libraryFiles} onFiles={() => {}} onDirty={() => {}} /></main></UppdragScope>
 }
 createRoot(document.getElementById('root')!).render(<View />)

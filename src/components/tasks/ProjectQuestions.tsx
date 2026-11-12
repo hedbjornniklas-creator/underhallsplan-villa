@@ -50,10 +50,11 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const question = data?.questions.find(q => q.id === selected)
   const openSaved = useRef<string | null>(null)
   openSaved.current = question?.id || null
-  const autosave = useQuestionAutosave<{ questionId: string; body: QuestionBody; fileIds: string[] }>({
+  const autosave = useQuestionAutosave<{ questionId: string; body: QuestionBody; fileIds: string[]; attachmentSelection?: 1 }>({
     valid: value => Boolean(value.body.title.trim() && value.body.description.trim()),
+    upgradeStoredValue: (stored, current) => stored.attachmentSelection === 1 ? stored : { ...stored, fileIds: current.fileIds, attachmentSelection: 1 },
     save: async attempt => {
-      const response = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attempt.value, attachmentSelection: 1, requestId: attempt.requestId, revision: attempt.revision, operation: attempt.revision ? 'update' : 'create', text: '', reportedBy: '' }) })
+      const response = await fetch(`/api/action-cases/${caseId}/questions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...attempt.value, requestId: attempt.requestId, revision: attempt.revision, operation: attempt.revision ? 'update' : 'create', text: '', reportedBy: '' }) })
       const result = await response.json()
       if (!response.ok || result.questionId !== attempt.value.questionId) throw new Error(result.error || 'Sparningen kunde inte bekräftas. Utkastet finns kvar.')
     },
@@ -62,7 +63,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       setData(current => {
         if (!current) return current
         const existing = current.questions.find(q => q.id === value.questionId)
-        const saved = { ...(existing || { id: value.questionId, number: Math.max(0, ...current.questions.map(q => q.number)) + 1, createdAt: new Date().toISOString(), events: [], tasks: [], participants: [] }), body: value.body, attachmentIds: value.fileIds, revision, updatedAt: new Date().toISOString() }
+        const saved = { ...(existing || { id: value.questionId, number: Math.max(0, ...current.questions.map(q => q.number)) + 1, createdAt: new Date().toISOString(), events: [], tasks: [], participants: [] }), body: value.body, attachmentIds: value.attachmentSelection === 1 ? value.fileIds : questionAttachmentIds(existing), revision, updatedAt: new Date().toISOString() }
         return { ...current, questions: existing ? current.questions.map(q => q.id === saved.id ? saved : q) : [...current.questions, saved] }
       })
       void refresh()
@@ -156,7 +157,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     const body = q ? structuredClone(q.body) : emptyQuestion()
     reset(body); setSelected(id); setNotice(''); setError('')
     const attached = questionAttachmentIds(q); setFileIds(attached)
-    const restored = autosave.seed(draftKey(id, 'details'), { questionId: id, body, fileIds: attached }, q?.revision || 0)
+    const restored = autosave.seed(draftKey(id, 'details'), { questionId: id, body, fileIds: attached, attachmentSelection: 1 }, q?.revision || 0)
     if (restored) { setDraft(restored.body); setFileIds(restored.fileIds) }
   }
   const openContext = useRef({ open, dirty, busy })
@@ -181,8 +182,8 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     return () => controller.abort()
   }, [active, openRequest, refresh])
   async function close() { if (running.current || busy || !rememberMode()) return; if (dialogueFlush.current && !await dialogueFlush.current()) return; await autosave.flush(); if (!autosave.isLocal()) return; setSelected(null); setError(''); void refresh() }
-  function patch(value: Partial<QuestionBody>) { const next = { ...draft, ...value }; setDraft(next); if (selected) autosave.change({ questionId: selected, body: next, fileIds }) }
-  function changeFiles(next: string[]) { setFileIds(next); if (selected) autosave.change({ questionId: selected, body: draft, fileIds: next }) }
+  function patch(value: Partial<QuestionBody>) { const next = { ...draft, ...value }; setDraft(next); if (selected) autosave.change({ questionId: selected, body: next, fileIds, attachmentSelection: 1 }) }
+  function changeFiles(next: string[]) { setFileIds(next); if (selected) autosave.change({ questionId: selected, body: draft, fileIds: next, attachmentSelection: 1 }) }
   function compose(set: (value: string) => void, value: string) { compositionEdited.current = true; set(value) }
   async function switchMode(next: string) {
     if (running.current || busy) return
@@ -229,7 +230,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
           localStorage.removeItem(draftKey(selected, mode))
           reset(saved.body); setSelected(saved.id)
           const attached = questionAttachmentIds(saved); setFileIds(attached)
-          autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached }, saved.revision, true)
+          autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached, attachmentSelection: 1 }, saved.revision, true)
           if (saved.body.status !== 'closed') { setMode(sharing ? 'details' : reschedule ? 'reschedule' : operation === 'reassign' ? 'reassign' : 'send'); setReplacement(replacement); if (reschedule) { compositionEdited.current = true; setDue(due); setDueTime(dueTime) } }
         }
         throw new Error(`${result.error || 'Uppgifterna har ändrats.'}${saved ? ' Aktuella uppgifter har hämtats. Granska och bekräfta på nytt.' : ''}`)
@@ -244,7 +245,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       const next = await refresh()
       if (linkedChange) {
         const saved = next?.questions.find(q => q.id === selected)
-        if (saved) { reset(saved.body); setSelected(saved.id); const attached = questionAttachmentIds(saved); setFileIds(attached); autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached }, saved.revision, true) }
+        if (saved) { reset(saved.body); setSelected(saved.id); const attached = questionAttachmentIds(saved); setFileIds(attached); autosave.seed(draftKey(saved.id, 'details'), { questionId: saved.id, body: saved.body, fileIds: attached, attachmentSelection: 1 }, saved.revision, true) }
       }
       if (!createNext) requestAnimationFrame(() => focusBefore.current?.focus())
     } catch (e) { setError(e instanceof Error ? e.message : 'Åtgärden kunde inte bekräftas. Din text är kvar.') }
@@ -310,7 +311,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
       <div className="gizmo-question-panel-body" role={question ? 'tabpanel' : undefined} id={`${headingId}-panel`} aria-labelledby={question ? `${headingId}-${selectedTab}` : undefined}>
         {error && <p role="alert" className="gizmo-question-error">{error}</p>}
         {refreshError && <p role="alert" className="gizmo-question-error">{refreshError}</p>}
-        {autosave.error && <div role="alert" className="gizmo-question-error"><p>{autosave.error}</p><button type="button" className={button} disabled={autosave.busy} onClick={() => void autosave.retry()}><RefreshCw size={16} />Försök spara igen</button><button type="button" className={button} disabled={autosave.busy} onClick={() => { if (!selected || !window.confirm('Ersätt det lokala frågeutkastet med den sparade frågan?')) return; const body = question?.body || emptyQuestion(), attached = questionAttachmentIds(question); autosave.seed(draftKey(selected, 'details'), { questionId: selected, body, fileIds: attached }, question?.revision || 0, true); setDraft(body); setFileIds(attached) }}>Hämta sparad fråga</button></div>}
+        {autosave.error && <div role="alert" className="gizmo-question-error"><p>{autosave.error}</p><button type="button" className={button} disabled={autosave.busy} onClick={() => void autosave.retry()}><RefreshCw size={16} />Försök spara igen</button><button type="button" className={button} disabled={autosave.busy} onClick={() => { if (!selected || !window.confirm('Ersätt det lokala frågeutkastet med den sparade frågan?')) return; const body = question?.body || emptyQuestion(), attached = questionAttachmentIds(question); autosave.seed(draftKey(selected, 'details'), { questionId: selected, body, fileIds: attached, attachmentSelection: 1 }, question?.revision || 0, true); setDraft(body); setFileIds(attached) }}>Hämta sparad fråga</button></div>}
         {localError && <p role="alert" className="gizmo-question-error">{localError}</p>}
         {notice && <p role="status">{notice}</p>}
         <fieldset className="gizmo-question-form" disabled={busy || Boolean(pending.current)}>
@@ -392,7 +393,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
           {mode === 'participants' && <div ref={setDialogueFooter} className="gizmo-question-footer-actions" />}
           {mode === 'details' && !question && <button className={`${button} gizmo-question-primary`} disabled={detailsDisabled} onClick={() => void write('create')}><Save size={16} />{autosave.busy ? 'Skapar…' : autosave.error ? 'Försök skapa igen' : 'Skapa fråga'}</button>}
           {mode === 'details' && !closed && <button className={`${button}${activeTask ? ' gizmo-icon-button' : ''}`} title="Spara och skapa nästa" aria-label="Spara och skapa nästa" disabled={detailsDisabled || Boolean(pending.current)} onClick={() => void write(question ? 'update' : 'create', true)}><Plus size={16} />{!activeTask && 'Spara och skapa nästa'}</button>}
-          {mode === 'details' && activeTask && !awaitingDispatch && !closed && data?.canManageParticipants && <button className={`${button} gizmo-question-primary`} disabled={busy || autosave.busy || autosave.dirty || !activeTask.version || (!pending.current && !newFileIds.length)} onClick={() => void write('share_files')}><Send size={16} />{busy ? 'Skickar uppdateringen…' : pending.current ? 'Försök skicka uppdateringen igen' : `Skicka uppdatering till ${activeTask.assigneeName}`}</button>}
+          {mode === 'details' && activeTask && !awaitingDispatch && !closed && data?.canManageParticipants && <button className={`${button} gizmo-question-primary`} disabled={busy || autosave.busy || autosave.dirty || !activeTask.version || (!pending.current && !newFileIds.length)} onClick={() => void write('share_files')}><Send size={16} />{busy ? pending.current ? 'Skickar uppdateringen…' : 'Arbetar…' : pending.current ? 'Försök skicka uppdateringen igen' : `Skicka uppdatering till ${activeTask.assigneeName}`}</button>}
           {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <span className="gizmo-secondary">{sendRequirements.length} {sendRequirements.length === 1 ? 'uppgift' : 'uppgifter'} kvar inför utskick</span>}
           {mode === 'reassign' && !pending.current && <button className={button} disabled={busy} onClick={() => void switchMode('details')}>Avbryt byte</button>}
           {mode === 'reschedule' && !pending.current && <button className={button} disabled={busy} onClick={() => void switchMode('details')}>Avbryt datumändring</button>}

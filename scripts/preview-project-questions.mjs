@@ -25,6 +25,7 @@ const globalCss = (await postcss([tailwind()]).process(cssSource, { from: resolv
 const css = globalCss + '\n' + await readFile('src/components/tasks/uppdrag-theme.css', 'utf8') + '\n' + await readFile('src/components/tasks/project-questions.css', 'utf8') + '\n' + await readFile('src/components/tasks/gizmo-recipient-layout.css', 'utf8') +
   '\nbody{margin:0}.fixture-workspace{max-width:1280px;margin:auto;padding:24px}.fixture-controls{position:fixed;z-index:100;left:8px;top:8px;max-width:260px;background:white;border:1px solid #d5dcdd;padding:8px;font:12px Arial}.fixture-controls button{border:1px solid #d5dcdd;padding:6px;margin:3px}.fixture-controls summary{cursor:pointer}.fixture-controls:has(details:not([open])){max-width:160px}'
 const assets = new Map([
+  ['/api/action-cases/00000000-0000-4000-8000-000000000099/attachments/00000000-0000-4000-8000-000000000074', {body:await readFile('public/landing/renovering-editorial-v2.png'),type:'image/png'}],
   ['/view.js', { body: await readFile(resolve(output, 'view.js')), type: 'text/javascript' }],
   ['/uppdrag/brand/manrope.ttf', { body: await readFile('public/uppdrag/brand/manrope.ttf'), type: 'font/ttf' }],
 ])

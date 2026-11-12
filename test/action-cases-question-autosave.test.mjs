@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
 const tick = () => new Promise(resolve => setImmediate(resolve))
-function harness(storage = new Map()) {
+function harness(storage = new Map(), upgradeStoredValue) {
   const states = [], refs = [], requests = [], saved = []
   let stateIndex = 0, refIndex = 0, hook, tail = Promise.resolve(), brokenStorage = false
   const original = globalThis.localStorage
@@ -16,7 +16,7 @@ function harness(storage = new Map()) {
   const module = { exports: {} }
   const source = ts.transpileModule(readFileSync(new URL('../src/components/tasks/useQuestionAutosave.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   new Function('require', 'module', 'exports', source)(name => name === 'react' ? react : { useAutosaveQueue: ({ save }) => ({ enqueue: () => { const job = tail.then(() => save(true)); tail = job.catch(() => undefined); return job } }) }, module, module.exports)
-  const render = () => { stateIndex = 0; refIndex = 0; hook = module.exports.useQuestionAutosave({ valid: value => Boolean(value.text.trim()), save: attempt => new Promise((resolve, reject) => requests.push({ ...attempt, resolve, reject })), onSaved: (value, revision) => saved.push({ value, revision }) }); return hook }
+  const render = () => { stateIndex = 0; refIndex = 0; hook = module.exports.useQuestionAutosave({ upgradeStoredValue, valid: value => Boolean(value.text.trim()), save: attempt => new Promise((resolve, reject) => requests.push({ ...attempt, resolve, reject })), onSaved: (value, revision) => saved.push({ value, revision }) }); return hook }
   render()
   return { storage, requests, saved, render, get hook() { return hook },
     async settle(index, error) { if (error) requests[index].reject(Error(error)); else requests[index].resolve(); await tick(); render() },
@@ -24,6 +24,33 @@ function harness(storage = new Map()) {
     dispose() { globalThis.localStorage = original },
   }
 }
+
+test('legacy attachment drafts adopt the saved attachment set without losing text or replaying an empty transient selection',async()=>{
+  const storage=new Map([['question',JSON.stringify({value:{text:'Egen lokal text',fileIds:[]},saved:{text:'Servertext',fileIds:[]},revision:4,pending:null})]])
+  const upgrade=(stored,current)=>stored.attachmentSelection===1?stored:{...stored,fileIds:current.fileIds,attachmentSelection:1}
+  const h=harness(storage,upgrade)
+  try {
+    const current={text:'Servertext',fileIds:['existing-file'],attachmentSelection:1}
+    const value=h.hook.seed('question',current,4);assert.equal(value.text,'Egen lokal text');assert.deepEqual(value.fileIds,current.fileIds)
+    const flushed=h.hook.flush();await tick();assert.deepEqual(h.requests[0].value,{text:'Egen lokal text',fileIds:['existing-file'],attachmentSelection:1})
+    await h.settle(0);assert.equal(await flushed,true)
+    h.storage.set('question',JSON.stringify({value:{text:'Egen lokal text',fileIds:[],attachmentSelection:1},saved:{text:'Egen lokal text',fileIds:['existing-file'],attachmentSelection:1},revision:5,pending:null}))
+    assert.deepEqual(h.hook.seed('question',{...current,text:'Egen lokal text'},5).fileIds,[],'a new explicit removal remains authoritative')
+    const removed=h.hook.flush();await tick();await h.settle(1);assert.equal(await removed,true)
+  } finally {h.dispose()}
+})
+
+test('upgrading local attachments preserves an uncertain legacy request exactly before saving the upgraded draft',async()=>{
+  const pending={value:{text:'Gammal text',fileIds:[]},revision:4,requestId:'00000000-0000-4000-8000-000000000901'}
+  const storage=new Map([['question',JSON.stringify({value:{text:'Nyare lokal text',fileIds:[]},saved:{text:'Original',fileIds:[]},revision:4,pending})]])
+  const h=harness(storage,(stored,current)=>({...stored,fileIds:current.fileIds,attachmentSelection:1}))
+  try {
+    h.hook.seed('question',{text:'Gammal text',fileIds:['saved-file'],attachmentSelection:1},5)
+    const flushed=h.hook.flush();await tick();assert.equal(h.requests[0].requestId,pending.requestId);assert.deepEqual(h.requests[0].value,pending.value)
+    await h.settle(0);assert.deepEqual(h.requests[1].value,{text:'Nyare lokal text',fileIds:['saved-file'],attachmentSelection:1})
+    await h.settle(1);assert.equal(await flushed,true)
+  } finally {h.dispose()}
+})
 
 test('autosave serializes edits, keeps newer typing and advances the revision without touching explicit commands', async () => {
   const h = harness()
