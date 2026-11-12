@@ -181,8 +181,19 @@ Filen kopplas privat direkt till frågan (högst 25 MB per fil), väljs via sitt
 bekräftade fil-ID och delas inte automatiskt. Det krävs inget projektfilsteg.
 Högst 20 bilagor kan väljas per meddelande eller utskick.
 
-Mottagarsidorna använder gemensam Gizmo-profil. Uppgiftens primäråtgärd finns
-en gång i fast sidfot. Tid och uppföljning samt tomma underuppgifter är infällda.
+Mottagarsidorna använder gemensam Gizmo-profil. Bekräfta mottaget finns direkt
+vid Ditt nästa steg, utan krav på meddelande. Övriga åtgärder finns under Mer.
+När uppgiften pågår finns Klar för kontroll i fast sidfot. Tid och uppföljning
+samt tomma underuppgifter är infällda.
+Medskickade filer visas före kommunikationen i **Bilagor till uppdraget**,
+en utfällbar sektion med antal som är öppen från början när bilagor finns.
+Mottagarens uppladdningar visas separat under **Ditt underlag**, efter
+kommunikationen. Uppdelningen bygger på uppladdarens identitet, inte på om
+filen är ett färdigbevis. Samma vy används för enskilt tilldelade frågor och
+Att göra, via personlig länk och Mina uppdrag. Bilder använder den befintliga
+bildvisaren och samma skyddade filadress som tidigare. Tid och uppföljning
+ligger efter Ditt underlag. Pågående tidsbegäran och obligatoriska kontrollpunkter
+behåller sina varningar och spärrar. Ingen SQL-ändring behövs för layouten.
 Gruppfrågan visar svarsfältet före meddelanden, de tre senaste meddelandena
 och äldre meddelanden i en infälld kronologisk del. Interna anteckningar
 delas aldrig. Befintliga länkar, statusflöden och mejlkanaler ändras inte.
@@ -217,3 +228,11 @@ redigeraren anger då att beställarlistan behöver aktiveras.
   bevarad historik och separat utskick, direktbilagor och förenklade
   mottagarsidor enligt Gizmo-profilen. Ingen publicering ingår i godkännandet.
 - 2026-11-12: Användaren godkänner därefter SQL-körning och publicering av paketet.
+- 2026-11-12: Efter test av F-013 vill användaren ha bekräftelseknappen direkt
+  i Nästa steg i stället för genvägen Skriv ett meddelande. Statusflödet behålls.
+  Ett nytt separat testutskick med fiktiva dokument och bilder till jn@hedbjorn.se
+  är godkänt; denna nya knappändring är ännu inte publicerad.
+- 2026-11-12: Användaren godkänner det nya mottagarupplägget för frågor och
+  Att göra, inklusive bekräftelseknappen i Nästa steg, och publicering efter
+  verifierade tester. Befintliga länkar, åtkomsträttigheter och statusflöden
+  ska behållas. Befintliga uppgifter, avtal och kalkyler ändras inte.

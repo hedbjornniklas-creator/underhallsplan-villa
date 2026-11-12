@@ -723,6 +723,7 @@ export async function getRecipientPortalTaskWorkspace(
           fileName: typeof attachment.file_name === 'string' ? attachment.file_name : null,
           textContent: typeof attachment.text_content === 'string' ? attachment.text_content : null,
           transcriptText: typeof attachment.transcript_text === 'string' ? attachment.transcript_text : null,
+          source: attachment.uploaded_by_contact_id === scope.contact_id ? 'recipient' as const : 'sender' as const,
           canEditTranscript:
             attachment.attachment_type === 'audio'
             && attachment.uploaded_by_contact_id === scope.contact_id,

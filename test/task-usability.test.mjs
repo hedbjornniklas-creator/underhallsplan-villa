@@ -97,3 +97,90 @@ test('assignment gains context and reply guidance without changing reply-to, rec
   assert.match(recipient, /Fler åtgärder/); assert.match(recipient, /runAction\('start', \{ taskId: task.id, version: task.version \}/)
   assert.match(recipient, /disabled=\{isBusy \|\| readyForReviewBlocked\}/)
 })
+
+function loadRecipient() {
+  const empty=()=>null
+  const attachments=load('src/components/tasks/TaskRecipientAttachments.tsx', {
+    '@/lib/tasks/dateTime': dates,
+    './ActionCaseImageViewer': { default: empty, ActionCaseAttachmentImage: ({ file, src }) => createElement('img', { alt: file.title, src }) },
+  }).default
+  return load('src/components/tasks/TaskRecipientClient.tsx',{
+    '@/lib/tasks/dateTime':dates,
+    '@/components/ui/AppToastProvider':{useToast:()=>({success(){},error(){},warning(){}})},
+    './UppdragScope':{default:({children})=>createElement('div',null,children)},
+    './UppdragBrand':{default:empty}, './TaskStatusBadge':{TaskStatusBadge:empty},
+    './RecipientAccountAction':{default:empty}, './TaskAttachmentDropZone':{default:empty},
+    './TaskConversationCard':{default:()=>createElement('textarea',{'aria-label':'Meddelande'})},
+    './TaskHistoryDisclosure':{default:empty}, './TaskTimeProgress':{default:empty},
+    './TaskRecipientAttachments':{default:attachments},
+    './useTaskRecipientDraft':{default:()=>({comment:'',evidenceText:'',hasDraft:false,storageAvailable:true,setComment(){},setEvidenceText(){}})},
+  }).default
+}
+
+test('receipt is confirmed once in Next step without a message, while later completion stays in the footer', () => {
+  const component=loadRecipient()
+  const workspace={accessState:'open',timeZone:'Europe/Stockholm',recipientName:'Fiktiv mottagare',canDelegate:false,children:[],task:{
+    id:'test',title:'Fiktiv uppgift',description:'Test',issuerName:'Fiktiv avsändare',status:'assigned',version:1,
+    dueAt:'2030-01-20T15:00:00Z',createdAt:'2030-01-01T08:00:00Z',dueTimeZone:'Europe/Stockholm',requirements:[],events:[],attachments:[],deadlineRequests:[],evidenceRequirements:[],
+  }}
+  const render=(status,requirements=[])=>renderToStaticMarkup(createElement(component,{initialWorkspace:{...workspace,task:{...workspace.task,status,requirements}},endpoint:'/fake'}))
+  for(const status of ['assigned','returned','waiting']) {
+    const html=render(status),next=html.match(/<section[^>]*aria-labelledby="recipient-next-step-heading"[^>]*>([\s\S]*?)<\/section>/)?.[1]
+    assert.ok(next);assert.match(next,status==='waiting'?/Återuppta uppdraget<\/button>/:/Bekräfta mottaget<\/button>/)
+    assert.equal((html.match(/Bekräfta mottaget<\/button>/g)||[]).length,status==='waiting'?0:1)
+    assert.doesNotMatch(html,/<footer|Skriv ett meddelande/)
+    assert.match(next,/Fler åtgärder/);assert.match(html,/aria-label="Meddelande"/)
+  }
+  const blocked=render('assigned',[{id:'r',key:'written_quote',label:'Offert',status:'pending'}])
+  assert.match(blocked,/disabled=""[^>]*title="Förberedande kontrollpunkter återstår\."/)
+  const progress=render('in_progress');assert.match(progress,/<footer/);assert.match(progress,/Klar för kontroll/)
+  assert.doesNotMatch(progress,/Bekräfta mottaget<\/button>/)
+  for(const status of ['approved','cancelled','ready_for_review']) assert.doesNotMatch(render(status),/Bekräfta mottaget<\/button>|<footer/)
+})
+
+test('received files precede messages and own uploads are separate, irrespective of completion evidence', () => {
+  const component=loadRecipient()
+  const base={title:null,fileName:null,textContent:null,transcriptText:null,canEditTranscript:false,isCompletionEvidence:false,createdAt:'2030-01-01T08:00:00Z'}
+  const attachments=[
+    {...base,id:'sent-doc',type:'document',source:'sender',title:'Mottagen PDF'},
+    {...base,id:'sent-photo',type:'photo',source:'sender',title:'Mottagen bild'},
+    {...base,id:'own-doc',type:'document',source:'recipient',title:'Eget dokument utan färdigbevis'},
+    {...base,id:'own-audio',type:'audio',source:'recipient',title:'Egen inspelning',transcriptText:'Min redovisning',canEditTranscript:true},
+    {...base,id:'sent-audio',type:'audio',source:'sender',title:'Avsändarens inspelning',transcriptText:'Instruktion'},
+  ]
+  const workspace={accessState:'open',timeZone:'Europe/Stockholm',recipientName:'Test',canDelegate:false,children:[],task:{
+    id:'test',title:'Uppgift',status:'assigned',version:1,issuerName:'Anna',dueAt:'2030-02-01T15:00:00Z',createdAt:base.createdAt,
+    requirements:[],events:[],deadlineRequests:[],evidenceRequirements:[],attachments,
+  }}
+  const render=(overrides={})=>renderToStaticMarkup(createElement(component,{initialWorkspace:{...workspace,task:{...workspace.task,...overrides}},endpoint:'/private-test'}))
+  const html=render(), received=html.match(/<details class="[^"]*gizmo-recipient-received"[^>]*>([\s\S]*?)<\/details>/)?.[0]
+  const own=html.match(/<section[^>]*aria-labelledby="recipient-evidence-heading"[^>]*>([\s\S]*?)<\/section>/)?.[0]
+  assert.match(received,/open=""/);assert.match(received,/Bilagor till uppdraget/)
+  assert.match(received,/Mottagen PDF/);assert.match(received,/Mottagen bild/);assert.match(received,/Avsändarens inspelning/)
+  assert.doesNotMatch(received,/Eget dokument|Egen inspelning|>Redigera/)
+  assert.match(own,/Ditt underlag/);assert.match(own,/Eget dokument utan färdigbevis/)
+  assert.match(own,/Egen inspelning/);assert.match(own,/> Redigera/)
+  assert.doesNotMatch(own,/Mottagen PDF|Mottagen bild|Avsändarens inspelning/)
+  assert.match(received,/src="\/private-test\/attachments\/sent-photo"/)
+  assert.match(received,/href="\/private-test\/attachments\/sent-doc"/)
+  assert.ok(html.indexOf('Bilagor till uppdraget')<html.indexOf('aria-label="Meddelande"'))
+  assert.ok(html.indexOf('aria-label="Meddelande"')<html.indexOf('Ditt underlag'))
+  assert.ok(html.indexOf('Ditt underlag')<html.indexOf('Tid och uppföljning'))
+  for(const status of ['approved','cancelled','ready_for_review']) {
+    const closed=render({status})
+    assert.match(closed,/Mottagen PDF/);assert.match(closed,/Eget dokument utan färdigbevis/)
+    assert.doesNotMatch(closed,/> Redigera|Spara textunderlag|> Välj fil/)
+  }
+  assert.doesNotMatch(render({attachments:[]}),/gizmo-recipient-received" open=/)
+})
+
+test('both personal-link and logged-in recipient sources use uploader identity without changing attachment access rules', () => {
+  for(const [path,scope] of [['src/lib/tasks/external.ts','access'],['src/lib/tasks/recipientPortal.ts','scope']]) {
+    const source=read(path)
+    assert.ok(source.includes(`source: attachment.uploaded_by_contact_id === ${scope}.contact_id ? 'recipient'`))
+    assert.ok(source.includes(`uploaded_by_contact_id.eq.\${${scope}.contact_id},and(is_completion_evidence.eq.false,uploaded_by_profile_id.eq.\${task.issuer_profile_id})`))
+  }
+  const photoList=read('src/components/tasks/TaskRecipientAttachments.tsx')
+  assert.match(photoList,/ActionCaseImageViewer/);assert.match(photoList,/encodeURIComponent\(id\)/)
+  assert.doesNotMatch(photoList,/api\/action-cases|createSignedUrl|storage\.from/)
+})

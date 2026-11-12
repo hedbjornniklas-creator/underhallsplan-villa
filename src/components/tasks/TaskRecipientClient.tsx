@@ -4,21 +4,19 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
   AlertTriangle,
-  ArrowRight,
   CalendarClock,
   Camera,
   Check,
   CheckCircle2,
   ChevronLeft,
+  ChevronDown,
   ChevronRight,
   CircleDashed,
   Clock3,
   Copy,
   FileText,
-  Image as ImageIcon,
   Link2Off,
   Loader2,
-  MessageSquareText,
   Mic,
   MoreHorizontal,
   Paperclip,
@@ -42,6 +40,7 @@ import {
 import type { ExternalTaskWorkspace } from '@/lib/tasks/external'
 import RecipientAccountAction from './RecipientAccountAction'
 import TaskAttachmentDropZone from './TaskAttachmentDropZone'
+import TaskRecipientAttachments from './TaskRecipientAttachments'
 import TaskConversationCard from './TaskConversationCard'
 import TaskHistoryDisclosure from './TaskHistoryDisclosure'
 import TaskTimeProgress from './TaskTimeProgress'
@@ -79,13 +78,6 @@ const taskAttachmentAccept =
 
 function isImageAttachmentFile(file: File) {
   return file.type.toLowerCase().startsWith('image/') || /\.(jpe?g|png|webp|hei[cf])$/i.test(file.name)
-}
-
-function attachmentTypeLabel(type: ExternalTaskWorkspace['task']['attachments'][number]['type']) {
-  if (type === 'photo') return 'Foto'
-  if (type === 'document') return 'Dokument'
-  if (type === 'audio') return 'Röstmeddelande'
-  return 'Textunderlag'
 }
 
 function completionEvidenceSatisfied(
@@ -734,7 +726,7 @@ export default function TaskRecipientClient({
   const activeForAssignee = ['assigned', 'in_progress', 'waiting', 'returned'].includes(task.status)
   const canStart = ['assigned', 'waiting', 'returned'].includes(task.status)
   const canMarkWaiting = ['assigned', 'in_progress', 'returned'].includes(task.status)
-  const showActionBar = activeForAssignee
+  const showActionBar = activeForAssignee && !canStart
   const delegateHasContact = Boolean(delegateEmail.trim())
   const delegateChannelsCovered =
     (delegatePrimaryChannel !== 'email' || Boolean(delegateEmail.trim())) &&
@@ -770,10 +762,58 @@ export default function TaskRecipientClient({
     evidenceSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const scrollToComment = () => {
-    commentInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    window.setTimeout(() => commentInputRef.current?.focus(), 350)
-  }
+  const receivedAttachments = task.attachments.filter(file => file.source === 'sender')
+  const ownAttachments = task.attachments.filter(file => file.source === 'recipient')
+  const renderTranscript = (attachment: ExternalTaskWorkspace['task']['attachments'][number]) => attachment.transcriptText ? (
+    <div className="mb-4 rounded-md bg-[#F1F6F5] px-3 py-2.5 text-sm leading-6">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold text-[#596368]">Transkribering</p>
+        {attachment.canEditTranscript && workspace.accessState === 'open'
+        && !['ready_for_review', 'approved', 'cancelled'].includes(task.status) ? (
+          <button type="button" onClick={() => {
+            setEditingTranscriptId(attachment.id)
+            setTranscriptDraft(attachment.transcriptText ?? '')
+            setTranscriptError(null)
+          }} disabled={isBusy} className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-[#596368] hover:bg-white disabled:opacity-50">
+            <Pencil size={14} aria-hidden="true" /> Redigera
+          </button>
+        ) : null}
+      </div>
+      {editingTranscriptId === attachment.id ? (
+        <div className="mt-2">
+          <label htmlFor={`transcript-${attachment.id}`} className="sr-only">Redigera transkribering</label>
+          <textarea id={`transcript-${attachment.id}`} value={transcriptDraft} onChange={(event) => {
+            setTranscriptDraft(event.target.value)
+            setTranscriptError(null)
+          }} maxLength={20_000} rows={5} autoFocus className="min-h-32 w-full resize-y rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-base leading-6 outline-none focus:border-[#206961] focus:ring-2 focus:ring-[#206961]/20" />
+          {transcriptError ? <p className="mt-2 text-xs font-medium text-rose-700">{transcriptError}</p> : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void saveTranscript(attachment.id)} disabled={isBusy || !transcriptDraft.trim()} className="inline-flex min-h-10 items-center gap-2 rounded-md bg-[#252A2D] px-4 text-xs font-semibold text-white disabled:opacity-50">
+              {busyAction === 'transcript' ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />} Spara ändring
+            </button>
+            <button type="button" onClick={() => { setEditingTranscriptId(null); setTranscriptDraft(''); setTranscriptError(null) }} disabled={isBusy} className="min-h-10 rounded-md px-3 text-xs font-semibold text-[#596368] hover:bg-white disabled:opacity-50">Avbryt</button>
+          </div>
+        </div>
+      ) : <p className="mt-1 whitespace-pre-wrap">{attachment.transcriptText}</p>}
+    </div>
+  ) : null
+
+  const moreActions = <details ref={moreActionsRef} className="relative shrink-0">
+    <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden" aria-label="Fler åtgärder">
+      <MoreHorizontal size={19} aria-hidden="true" /> Mer
+    </summary>
+    <div className={`absolute right-0 z-40 grid w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border border-[#D5DCDD] bg-white p-2 shadow-lg ${canStart ? 'top-full mt-2' : 'bottom-full mb-2'}`} aria-label="Övriga uppdragsåtgärder">
+      {canStart && <button type="button" disabled={isBusy || readyForReviewBlocked}
+        onClick={() => { if (moreActionsRef.current) moreActionsRef.current.open = false; void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.') }}
+        title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}
+        className="inline-flex min-h-12 items-center gap-2 px-3 text-left text-sm font-semibold disabled:opacity-50"><Check size={18} /> Klar för kontroll</button>}
+      {canMarkWaiting && <button type="button" disabled={isBusy || !waitingWindowOpen} onClick={() => openPanel('waiting')}
+        title={!waitingWindowOpen ? 'Slutdatumet har passerat. Begär mer tid först.' : undefined}
+        className="inline-flex min-h-12 items-center gap-2 px-3 text-left text-sm font-semibold disabled:opacity-40"><Clock3 size={18} /> Väntar</button>}
+      <button type="button" disabled={isBusy || Boolean(pendingDeadlineRequest)} onClick={() => openPanel('deadline')}
+        className="inline-flex min-h-12 items-center gap-2 px-3 text-left text-sm font-semibold disabled:opacity-40"><CalendarClock size={18} /> Begär mer tid</button>
+    </div>
+  </details>
 
   return (
     <UppdragScope><main className={`gizmo-recipient min-h-dvh bg-white text-[#252A2D] ${showActionBar ? 'pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : 'pb-8'}`}>
@@ -865,14 +905,17 @@ export default function TaskRecipientClient({
                     <Camera size={18} aria-hidden="true" /> Lägg till underlag
                   </button>
                 ) : null}
-                <button
+                {canStart && <button
                   type="button"
-                  disabled={isBusy}
-                  onClick={scrollToComment}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-white px-4 text-sm font-semibold text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                  disabled={isBusy || prestartBlocked}
+                  onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Mottagandet är bekräftat. Uppgiften är omhändertagen.')}
+                  title={prestartBlocked ? 'Förberedande kontrollpunkter återstår.' : undefined}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-[#252A2D] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <MessageSquareText size={18} aria-hidden="true" /> Skriv ett meddelande
-                </button>
+                  {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
+                  {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
+                </button>}
+                {canStart && moreActions}
               </div>
             </>
           ) : (
@@ -895,9 +938,9 @@ export default function TaskRecipientClient({
           )}
         </section>
 
-        <details className="gizmo-recipient-disclosure">
-          <summary>Tid och uppföljning</summary>
-          <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} status={task.status} completedAt={completedAt} />
+        <details className="gizmo-recipient-disclosure gizmo-recipient-received" open={receivedAttachments.length > 0}>
+          <summary><ChevronDown size={18} aria-hidden="true" /><span>Bilagor till uppdraget</span><span className="gizmo-recipient-count">{receivedAttachments.length}</span></summary>
+          {receivedAttachments.length > 0 ? <TaskRecipientAttachments attachments={receivedAttachments} endpoint={endpoint} timeZone={effectiveTimeZone} renderTranscript={renderTranscript} /> : <p className="text-sm text-[#596368]">Inga bilagor har skickats med.</p>}
         </details>
 
         {pendingDeadlineRequest ? (
@@ -998,7 +1041,7 @@ export default function TaskRecipientClient({
 
         <section ref={evidenceSectionRef} className="mt-6 scroll-mt-4" aria-labelledby="recipient-evidence-heading">
           <div>
-            <h2 id="recipient-evidence-heading" className="text-lg font-semibold">Bilagor och underlag</h2>
+            <h2 id="recipient-evidence-heading" className="text-lg font-semibold">Ditt underlag</h2>
           </div>
 
           {evidenceChecklist.length > 0 ? (
@@ -1120,129 +1163,17 @@ export default function TaskRecipientClient({
             </div>
           ) : null}
 
-          {task.attachments.length > 0 ? (
-            <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              {task.attachments.map((attachment) => {
-                const content = (
-                  <>
-                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
-                      {attachment.type === 'photo' ? (
-                        <ImageIcon size={19} aria-hidden="true" />
-                      ) : attachment.type === 'audio' ? (
-                        <Mic size={19} aria-hidden="true" />
-                      ) : (
-                        <FileText size={19} aria-hidden="true" />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block break-words text-sm font-semibold text-slate-900">
-                        {attachment.title || attachment.fileName || attachmentTypeLabel(attachment.type)}
-                      </span>
-                      <span className="mt-1 block text-xs text-slate-500">
-                        {attachmentTypeLabel(attachment.type)} · {formatTaskDateTime(attachment.createdAt, effectiveTimeZone, 'compact')}
-                      </span>
-                      {attachment.isCompletionEvidence ? (
-                        <span className="mt-1.5 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Färdigbevis</span>
-                      ) : (
-                        <span className="mt-1.5 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Underlag</span>
-                      )}
-                    </span>
-                    {attachment.type !== 'text' ? <ChevronRight className="shrink-0 text-slate-400" size={18} aria-hidden="true" /> : null}
-                  </>
-                )
-
-                return (
-                  <article key={attachment.id} className="border-b border-slate-100 last:border-0">
-                    {attachment.type === 'text' ? (
-                      <div className="flex items-start gap-3 px-4 py-3">{content}</div>
-                    ) : (
-                      <a
-                        href={`${endpoint}/attachments/${attachment.id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex min-h-16 items-center gap-3 px-4 py-3 hover:bg-slate-50"
-                      >
-                        {content}
-                      </a>
-                    )}
-                    {attachment.textContent ? (
-                      <p className="whitespace-pre-wrap px-4 pb-4 text-sm leading-6 text-slate-700">{attachment.textContent}</p>
-                    ) : null}
-                    {attachment.transcriptText ? (
-                      <div className="mx-4 mb-4 rounded-xl bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-700">
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Transkribering</p>
-                          {attachment.canEditTranscript
-                          && workspace.accessState === 'open'
-                          && !['ready_for_review', 'approved', 'cancelled'].includes(task.status) ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingTranscriptId(attachment.id)
-                                setTranscriptDraft(attachment.transcriptText ?? '')
-                                setTranscriptError(null)
-                              }}
-                              disabled={isBusy}
-                              className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-slate-600 hover:bg-white hover:text-slate-900 disabled:opacity-50"
-                            >
-                              <Pencil size={14} aria-hidden="true" />
-                              Redigera
-                            </button>
-                          ) : null}
-                        </div>
-                        {editingTranscriptId === attachment.id ? (
-                          <div className="mt-2">
-                            <label htmlFor={`transcript-${attachment.id}`} className="sr-only">Redigera transkribering</label>
-                            <textarea
-                              id={`transcript-${attachment.id}`}
-                              value={transcriptDraft}
-                              onChange={(event) => {
-                                setTranscriptDraft(event.target.value)
-                                setTranscriptError(null)
-                              }}
-                              maxLength={20_000}
-                              rows={5}
-                              autoFocus
-                              className="min-h-32 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-base leading-6 text-slate-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100"
-                            />
-                            {transcriptError ? <p className="mt-2 text-xs font-medium text-rose-700">{transcriptError}</p> : null}
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => void saveTranscript(attachment.id)}
-                                disabled={isBusy || !transcriptDraft.trim()}
-                                className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-semibold text-white disabled:opacity-50"
-                              >
-                                {busyAction === 'transcript' ? <Loader2 className="animate-spin" size={15} /> : <Check size={15} />}
-                                Spara ändring
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingTranscriptId(null)
-                                  setTranscriptDraft('')
-                                  setTranscriptError(null)
-                                }}
-                                disabled={isBusy}
-                                className="min-h-10 rounded-xl px-3 text-xs font-semibold text-slate-600 hover:bg-white disabled:opacity-50"
-                              >
-                                Avbryt
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="mt-1 whitespace-pre-wrap">{attachment.transcriptText}</p>
-                        )}
-                      </div>
-                    ) : null}
-                  </article>
-                )
-              })}
-            </div>
+          {ownAttachments.length > 0 ? (
+            <div className="mt-4"><TaskRecipientAttachments attachments={ownAttachments} endpoint={endpoint} timeZone={effectiveTimeZone} renderTranscript={renderTranscript} /></div>
           ) : (
-            <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-5 text-center text-sm text-slate-500">Inget underlag har lagts till ännu.</p>
+            <p className="mt-3 text-sm text-[#596368]">Du har inte lagt till något underlag ännu.</p>
           )}
         </section>
+
+        <details className="gizmo-recipient-disclosure mt-6">
+          <summary><ChevronDown size={18} aria-hidden="true" /><span>Tid och uppföljning</span></summary>
+          <TaskTimeProgress startedAt={task.createdAt} dueAt={task.dueAt} timeZone={effectiveTimeZone} status={task.status} completedAt={completedAt} />
+        </details>
 
         {workspace.children.length > 0 || workspace.canDelegate ? (
           <details className="gizmo-recipient-disclosure mt-6" open={workspace.children.length > 0}>
@@ -1329,19 +1260,7 @@ export default function TaskRecipientClient({
       {showActionBar ? (
         <footer className="fixed inset-x-0 bottom-0 z-30 border-t border-[#D5DCDD] bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
           <div className="mx-auto flex w-full max-w-2xl gap-2 px-4 sm:px-6">
-            {canStart ? (
-              <button
-                type="button"
-                disabled={isBusy || prestartBlocked}
-                onClick={() => void runAction('start', { taskId: task.id, version: task.version }, task.status === 'waiting' ? 'Uppgiften är återupptagen.' : 'Mottagandet är bekräftat. Uppgiften är omhändertagen.')}
-                title={prestartBlocked ? 'Förberedande kontrollpunkter återstår.' : undefined}
-                className="inline-flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2 rounded-md bg-[#252A2D] px-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {busyAction === 'start' ? <Loader2 className="animate-spin" size={18} /> : <ArrowRight size={18} />}
-                {task.status === 'waiting' ? 'Återuppta uppdraget' : 'Bekräfta mottaget'}
-              </button>
-            ) : null}
-            {!canStart ? <button
+            <button
               type="button"
               disabled={isBusy || readyForReviewBlocked}
               onClick={() => void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.')}
@@ -1350,37 +1269,8 @@ export default function TaskRecipientClient({
             >
               {busyAction === 'ready_for_review' ? <Loader2 className="animate-spin" size={18} /> : <Check size={18} />}
               Klar för kontroll
-            </button> : null}
-            <details ref={moreActionsRef} className="relative shrink-0">
-              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden" aria-label="Fler åtgärder">
-                <MoreHorizontal size={19} aria-hidden="true" /> Mer
-              </summary>
-              <div className="absolute bottom-full right-0 mb-2 grid w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border border-[#D5DCDD] bg-white p-2 shadow-lg" aria-label="Övriga uppdragsåtgärder">
-                {canStart ? <button type="button" disabled={isBusy || readyForReviewBlocked}
-                  onClick={() => { if (moreActionsRef.current) moreActionsRef.current.open = false; void runAction('ready_for_review', { taskId: task.id, version: task.version }, 'Uppgiften har skickats för kontroll.') }}
-                  title={readyForReviewBlocked ? 'Kontrollpunkter eller underuppgifter återstår.' : undefined}
-                  className="inline-flex min-h-12 items-center gap-2 px-3 text-left text-sm font-semibold disabled:opacity-50"><Check size={18} /> Klar för kontroll</button> : null}
-            {canMarkWaiting ? (
-              <button
-                type="button"
-                disabled={isBusy || !waitingWindowOpen}
-                onClick={() => openPanel('waiting')}
-                title={!waitingWindowOpen ? 'Slutdatumet har passerat. Begär mer tid först.' : undefined}
-                className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <Clock3 size={18} /> Väntar
-              </button>
-            ) : null}
-            <button
-              type="button"
-              disabled={isBusy || Boolean(pendingDeadlineRequest)}
-              onClick={() => openPanel('deadline')}
-              className="inline-flex min-h-12 shrink-0 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <CalendarClock size={18} /> Begär mer tid
             </button>
-              </div>
-            </details>
+            {moreActions}
           </div>
         </footer>
       ) : null}

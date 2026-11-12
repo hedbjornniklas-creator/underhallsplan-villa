@@ -89,6 +89,7 @@ export type ExternalTaskWorkspace = {
       fileName: string | null
       textContent: string | null
       transcriptText: string | null
+      source: 'sender' | 'recipient'
       canEditTranscript: boolean
       isCompletionEvidence: boolean
       createdAt: string
@@ -534,6 +535,7 @@ export async function getExternalTaskWorkspace(token: string): Promise<ExternalT
         fileName: attachment.file_name ?? null,
         textContent: attachment.text_content ?? null,
         transcriptText: attachment.transcript_text ?? null,
+        source: attachment.uploaded_by_contact_id === access.contact_id ? 'recipient' : 'sender',
         canEditTranscript:
           attachment.attachment_type === 'audio'
           && attachment.uploaded_by_contact_id === access.contact_id,

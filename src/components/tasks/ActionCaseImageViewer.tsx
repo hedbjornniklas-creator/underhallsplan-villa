@@ -8,7 +8,9 @@ import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 
 export const actionCaseImageUrl = (caseId: string, imageId: string) => `/api/action-cases/${caseId}/attachments/${imageId}`
 
-export function ActionCaseAttachmentImage({ caseId, file, eager = false, src }: { caseId: string; file: ActionCaseAttachmentView; eager?: boolean; src?: string }) {
+export type ImageViewerFile = Pick<ActionCaseAttachmentView, 'id' | 'title' | 'fileName'>
+
+export function ActionCaseAttachmentImage({ caseId, file, eager = false, src }: { caseId: string; file: ImageViewerFile; eager?: boolean; src?: string }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   return <>
     {status !== 'error' ? <Image src={src ?? actionCaseImageUrl(caseId, file.id)} alt={file.title || file.fileName} fill unoptimized loading={eager ? 'eager' : 'lazy'} className="object-contain" onLoad={() => setStatus('ready')} onError={() => setStatus('error')} /> : null}
@@ -19,7 +21,7 @@ export function ActionCaseAttachmentImage({ caseId, file, eager = false, src }: 
 
 type Props = {
   caseId: string
-  images: ActionCaseAttachmentView[]
+  images: ImageViewerFile[]
   openedId: string
   onOpen: (id: string) => void
   onClose: () => void

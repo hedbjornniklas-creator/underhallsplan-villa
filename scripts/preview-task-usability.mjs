@@ -28,6 +28,15 @@ const email = loaded.exports.buildTaskEmailHtml({ previewText: 'Anna Exempel har
 const server = createServer(async (request, response) => {
   response.setHeader('Cache-Control', 'no-store')
   const path = new URL(request.url, 'http://localhost').pathname
+  if (path.startsWith('/fixture-api/attachments/')) {
+    const name = path.split('/').at(-1)
+    if (name === 'sent-pdf' && process.env.GIZMO_PREVIEW_PDF) {
+      response.setHeader('Content-Type', 'application/pdf')
+      response.end(await readFile(process.env.GIZMO_PREVIEW_PDF)); return
+    }
+    response.setHeader('Content-Type', 'image/png')
+    response.end(await readFile(name === 'own-photo' ? 'public/landing/Background1.png' : 'test/fixtures/ob-brand-assets/bathroom-demo.png')); return
+  }
   const assets = new Map([['/recipient.js', resolve(output, 'recipient.js')], ['/question.js', resolve(output, 'question.js')], ['/dashboard.js', resolve(output, 'dashboard.js')], ['/details.js', resolve(output, 'details.js')], ['/style.css', resolve(output, 'style.css')], ['/uppdrag/brand/manrope.ttf', resolve('public/uppdrag/brand/manrope.ttf')], ['/uppdrag/brand/symbol.svg', resolve('public/uppdrag/brand/symbol.svg')]])
   if (assets.has(path)) { response.setHeader('Content-Type', path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('.svg') ? 'image/svg+xml' : 'font/ttf'); response.end(await readFile(assets.get(path))); return }
   response.setHeader('Content-Type', 'text/html; charset=utf-8')
