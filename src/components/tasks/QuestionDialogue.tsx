@@ -9,12 +9,14 @@ import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import './project-questions.css'
 import { useQuestionAutosave } from './useQuestionAutosave'
 import TaskContactFields, { type TaskContactDraft } from './TaskContactFields'
+import QuestionDiaryImagePicker from './QuestionDiaryImagePicker'
 
 const refKey = (p: { kind: string; id: string }) => `${p.kind}:${p.id}`
-export default function QuestionDialogue({ endpoint, fileBase, initial, mode = 'dialogue', publicView = false, people = [], files = [], responsible, taskReply, hasSharedDialogue = false, preview, footerTarget, storageKey, internalEvents = [], noteRevision = 0, onNote, onFlush, onBusy, onDirty, onChanged, onRefresh, onStatus }: {
+export default function QuestionDialogue({ endpoint, fileBase, initial, mode = 'dialogue', publicView = false, people = [], files = [], responsible, taskReply, hasSharedDialogue = false, preview, footerTarget, storageKey, internalEvents = [], noteRevision = 0, onNote, onFlush, onBusy, onDirty, onChanged, onRefresh, onStatus, project }: {
   endpoint: string; fileBase: string; initial?: Dialogue; mode?: 'dialogue' | 'participants'; publicView?: boolean;
   people?: QuestionAssignee[]; files?: ActionCaseAttachmentView[]; responsible?: QuestionAssignee | null; preview?: { title: string; description: string };
   taskReply?: QuestionTaskReplyTarget; hasSharedDialogue?: boolean;
+  project?: { caseId: string; questionId: string };
   footerTarget?: HTMLElement | null;
   storageKey?: string; onFlush?: (flush: (() => Promise<boolean>) | null) => void;
   internalEvents?: Array<{ id: string; actorName: string; text: string; createdAt: string; label: string; files: Array<{ id: string; name: string; href: string }> }>;
@@ -23,7 +25,9 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
 }) {
   const [data, setData] = useState<Dialogue | null>(initial || null), [error, setError] = useState(''), [notice, setNotice] = useState('')
   const [text, setText] = useState(''), [selected, setSelected] = useState<string[]>([]), [fileIds, setFileIds] = useState<string[]>([])
+  const [extraFiles, setExtraFiles] = useState<ActionCaseAttachmentView[]>([])
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false)
+  const [importing, setImporting] = useState(false)
   const running = useRef(false), pending = useRef<{ key: string; id: string } | null>(null), selectionDirty = useRef(false)
   const seeded = useRef(false), bodyInput = useRef<HTMLTextAreaElement>(null)
   const [composerReady, setComposerReady] = useState(false), [localError, setLocalError] = useState('')
@@ -179,11 +183,16 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
     ['internal', 'Intern anteckning'],
   ]
   const composerLabel = audience === 'internal' ? 'Intern anteckning · delas inte och mejlaviseras inte' : audience === 'responsible' ? `Meddelande till ${taskDraftTarget?.name || 'ansvarig'} via Gizmo` : 'Meddelande till frågans deltagare'
-  const sharedFiles = files.filter(f => !f.isQuoteDocument)
+  const sharedFiles = [...new Map([...files, ...extraFiles].map(file => [file.id, file])).values()].filter(f => !f.isQuoteDocument)
+  const diaryPicker = !publicView && project ? <QuestionDiaryImagePicker caseId={project.caseId} questionId={project.questionId} remaining={20 - fileIds.length} disabled={busy || Boolean(closed) || Boolean(pending.current)} onWorking={value => { running.current = value; setImporting(value); setBusy(value); onBusy?.(value) }} onAttached={added => {
+    setExtraFiles(current => [...new Map([...current, ...added].map(file => [file.id, file])).values()])
+    setFileIds(current => [...new Set([...current, ...added.map(file => file.id)])]); setConfirmed(false)
+    onChanged?.()
+  }} /> : null
   const timeline = data ? [...data.messages.map(m => ({ ...m, label: 'Delat med deltagarna', files: m.files.map(f => ({ ...f, href: `${fileBase}/${f.id}` })) })), ...(!publicView ? internalEvents.map(e => ({ ...e, operation: 'note', snapshot: null })) : [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)) : []
   const participantActions = mode === 'participants' && data?.canManage ? <>
     {rosterSave.error && <button type="button" className={btn} disabled={busy || rosterSave.busy} onClick={() => void rosterSave.retry()}><RefreshCw size={16} />Försök spara igen</button>}
-    <button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || closed || selectionDirty.current || (!confirmed && !pending.current)} onClick={() => void write('share')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{busy ? 'Delar…' : pending.current ? 'Försök dela igen' : data.sharedAt ? 'Uppdatera och meddela deltagare' : 'Dela med deltagarna'}</button>
+    <button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || closed || selectionDirty.current || (!confirmed && !pending.current)} onClick={() => void write('share')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{importing ? 'Bifogar bilder…' : busy ? 'Delar…' : pending.current ? 'Försök dela igen' : data.sharedAt ? 'Uppdatera och meddela deltagare' : 'Dela med deltagarna'}</button>
   </> : null
   return <section className="gizmo-question-dialogue" aria-label={mode === 'participants' ? 'Deltagare i frågan' : 'Frågans dialog'}>
     <div className="flex flex-wrap items-center justify-between gap-2"><h3>{mode === 'participants' ? 'Deltagare' : 'Kommunikation'}</h3><button type="button" className={`${btn} gizmo-icon-button`} aria-label="Hämta dialog och deltagare" title="Hämta dialog och deltagare" disabled={busy || rosterSave.busy} onClick={() => void refresh()}><RefreshCw size={16} /></button></div>
@@ -200,6 +209,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
           <p className="gizmo-secondary">Deltagare: {data.participants.map(p => p.name).join(', ')}</p>
           <fieldset disabled={busy || closed || selectionDirty.current || Boolean(pending.current)}>
             <legend>Bilagor att dela</legend>{sharedFiles.map(f => <label key={f.id} className="gizmo-question-confirm"><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => { setFileIds(current => e.target.checked ? [...current, f.id] : current.filter(id => id !== f.id)); setConfirmed(false) }} />{f.fileName}</label>)}
+            {!selectionDirty.current && diaryPicker}
             <label className="gizmo-question-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Jag har granskat frågan, bilagorna och deltagarna. Alla deltagare får läsa den delade dialogens historik.</label>
           </fieldset>
         </section>}
@@ -218,7 +228,8 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
           {audience === 'responsible' && taskRecipientChanged && <div className="gizmo-question-error" role="alert"><p>Uppgiftens mottagare har ändrats. Ditt utkast har inte skickats.</p>{taskReply && !pending.current && <button type="button" className={btn} onClick={() => setTaskDraftTarget(taskReply)}>Använd aktuell mottagare: {taskReply.name}</button>}</div>}
           <label className="gizmo-question-answer-label">{composerLabel}<textarea ref={bodyInput} className="gizmo-question-field" rows={4} maxLength={12000} value={text} disabled={Boolean(pending.current) || (audience === 'shared' && !data.sharedAt)} onChange={e => setText(e.target.value)} /></label>
           {!publicView && audience !== 'responsible' && sharedFiles.length > 0 && <details className="gizmo-question-reply-files"><summary>Bifoga projektfil</summary>{sharedFiles.map(f => <label key={f.id} className="gizmo-question-confirm"><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => setFileIds(current => e.target.checked ? [...current, f.id] : current.filter(id => id !== f.id))} />{f.fileName}</label>)}</details>}
-          <div className="gizmo-question-commands"><button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || !text.trim() || (audience === 'shared' && !data.sharedAt) || (audience === 'responsible' && !pending.current && (!taskDraftTarget || taskRecipientChanged))} onClick={() => void write(audience === 'internal' ? 'note' : audience === 'responsible' ? 'task_reply' : 'reply')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{busy ? audience === 'internal' ? 'Sparar anteckning…' : 'Skickar…' : pending.current ? 'Försök igen' : audience === 'internal' ? 'Publicera intern anteckning' : 'Skicka meddelande'}</button></div>
+          {audience !== 'responsible' && diaryPicker}
+          <div className="gizmo-question-commands"><button type="button" className={`${btn} gizmo-question-primary`} disabled={busy || !text.trim() || (audience === 'shared' && !data.sharedAt) || (audience === 'responsible' && !pending.current && (!taskDraftTarget || taskRecipientChanged))} onClick={() => void write(audience === 'internal' ? 'note' : audience === 'responsible' ? 'task_reply' : 'reply')}>{busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}{importing ? 'Bifogar bilder…' : busy ? audience === 'internal' ? 'Sparar anteckning…' : 'Skickar…' : pending.current ? 'Försök igen' : audience === 'internal' ? 'Publicera intern anteckning' : 'Skicka meddelande'}</button></div>
         </fieldset>}
         {closed && <p className="gizmo-question-notice">Frågan är avslutad.</p>}
       </>}

@@ -93,7 +93,7 @@ Att samla själva kommunikationen är nästa etapp, inte en bieffekt av denna.
 - Ny fråga har även kommandot Skapa fråga. Spara och skapa nästa finns kvar.
   Befintlig autosparning behålls; skapa och återförsök använder samma kö och id.
 - Utskick visar vilka uppgifter som saknas: ansvarig, mottagarens e-post när den
-  behövs, svarsdatum, uppföljning och granskningsbekräftelse. Uppföljning efter
+  behövs, svarsdatum och granskningsbekräftelse. En vald uppföljning efter
   svarsdatumet spärrar också utskick. Under pågående anrop visas inte Försök igen.
 - Historik visar oföränderliga sparade deltagarurval och delningar i tidsordning
   tillsammans med frågans tidigare historik. Skillnader visas mellan två sparade
@@ -144,6 +144,22 @@ den generiska etiketten Projektfråga när meddelandet byggs. Uppgiftens lagrade
 version, status och uppföljningsdatum ändras inte för detta. Gruppaviseringar visar projektnamn och
 frågenummer. Den nya SQL-filen ändrar inga befintliga meddelanden eller avtal.
 
+## Valfri extra uppföljning, 2026-11-12
+
+Första uppföljning är frivillig när en fråga skickas till ansvarig. Svar senast
+och granskningsbekräftelsen krävs fortsatt. Ett angivet uppföljningsdatum måste
+vara giltigt och inte senare än svarstiden. Ett tomt datum ignorerar klockslaget.
+
+Frågans servernormalisering använder svarstiden som intern kontrollpunkt när
+ingen extra avstämning valts. Den befintliga uppgiftsmotorn och dess
+datumkrav lämnas oförändrade. Påminnelser för nära/försenad deadline prioriteras
+före statuskontrollen, så ingen extra tidig statuspåminnelse införs. Befintliga
+uppgifter, påminnelseinställningar och avtal skrivs inte om. Ingen SQL behövs.
+
+Vid datumen visas ett diskret standardschema från den befintliga
+påminnelsepolicyn: 3 och 1 arbetsdag före, samt på svarsdagen. Utfällbar
+komplettering förklarar fortsatta påminnelser, pauser och utskickstider.
+
 ## Aktivering
 
 Kör `docs/db/2026-10-19_03_project_question_customers.sql` efter den befintliga
@@ -161,3 +177,6 @@ redigeraren anger då att beställarlistan behöver aktiveras.
   individuell uppgift och gruppdialog: aktuell status, tydligare sparning och
   utskick, synlig deltagarhistorik samt svar direkt i Kommunikation. Äldre
   interna och individuella meddelanden får inte bli gruppmeddelanden i efterhand.
+- 2026-11-12: Användaren gör första uppföljning frivillig, behåller ordinarie
+  påminnelser och vill se ett diskret schema vid utskicket. Publicering av detta
+  och dagbokens bildval är uttryckligen godkänd.

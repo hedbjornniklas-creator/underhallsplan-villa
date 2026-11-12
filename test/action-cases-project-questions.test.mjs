@@ -412,3 +412,15 @@ test('individual replies from the question are scoped, retry-safe and atomically
   await db.exec(readFileSync(new URL('../docs/db/2026-11-05_03_project_question_task_replies.sql',import.meta.url),'utf8'))
   assert.equal((await db.query('select count(*)::int n from task_events')).rows[0].n,before)
 })
+
+test('deadline-only dispatch works against the unchanged SQL/task pipeline and preserves existing tasks', async () => {
+  const previous = (await db.query('select * from operational_tasks order by id')).rows
+  const q = id(700)
+  await write(mutation(q, 0, 'create', { body: { ...body(), assignee: { id: contact, kind: 'contact', name: '' } } }))
+  const request = mutation(q, 1, 'send', { confirmed: true, dueAt: '2026-11-19T15:00:00Z' })
+  await write(request); await write(request)
+  const task = (await db.query('select t.* from operational_tasks t join action_case_question_events e on e.task_id=t.id where e.question_id=$1', [q])).rows[0]
+  assert.equal(new Date(task.next_followup_at).toISOString(), new Date(task.due_at).toISOString())
+  assert.equal((await db.query('select count(*)::int n from test_outbox where task_id=$1', [task.id])).rows[0].n, 1)
+  assert.deepEqual((await db.query('select * from operational_tasks where id<>$1 order by id', [task.id])).rows, previous)
+})

@@ -581,7 +581,8 @@ export async function completeActionCaseUpload(context: Context, payload: Record
     || (storedSize > 0 && storedSize !== fileSize)
     || (storedContentType && storedContentType !== allowed.contentType)
   ) {
-    await admin.storage.from(bucket).remove([filePath])
+    // A private question copy may already be registered by a concurrent retry.
+    if (!questionId) await admin.storage.from(bucket).remove([filePath])
     throw new Error('ACTION_CASE_FILE_UPLOAD_INCOMPLETE')
   }
   const { data: validParticipants } = requestedGrants.length

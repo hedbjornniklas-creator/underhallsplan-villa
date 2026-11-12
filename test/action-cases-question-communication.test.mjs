@@ -25,6 +25,7 @@ function harness(shared = false) {
   }
   const roster={seed:(_key,value)=>value,value:()=>[],revision:()=>1,isBusy:()=>false,isLocal:()=>true,flush:async()=>true,local:true,busy:false,error:'',dirty:false}
   const deps={react,'react-dom':{createPortal:node=>node},'lucide-react':{},'./project-questions.css':{},'@/lib/tasks/dateTime':{formatTaskDateTime:value=>value},'./useQuestionAutosave':{useQuestionAutosave:()=>roster},'./TaskContactFields':{},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}}
+  deps['./QuestionDiaryImagePicker'] = { default: () => null }
   const module={exports:{}},source=ts.transpileModule(readFileSync(new URL('../src/components/tasks/QuestionDialogue.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText
   new Function('require','module','exports',source)(key=>{assert.ok(key in deps,key);return deps[key]},module,module.exports)
   const props={endpoint:'/dialogue',fileBase:'/files',initial:data,storageKey:'fixture',taskReply:{taskId:id(50),name:'Recipient',recipient:{kind:'contact',id:id(10),email:'recipient@example.invalid'}},hasSharedDialogue:shared,onRefresh:async()=>{refreshes++},onNote:async()=>{throw Error('No notes expected')},internalEvents:[{id:id(70),actorName:'Manager',text:'OLD PRIVATE MESSAGE',createdAt:'2026-11-05T10:00:00Z',label:'Private',files:[]}]}

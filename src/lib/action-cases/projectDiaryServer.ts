@@ -5,6 +5,7 @@ import { validateDiaryImage } from './projectDiaryImage'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { diaryDate, diaryPersonEntryRequest, diaryRevisionRequest, diaryPersonInput, diaryPhotoRequest, diaryText, diaryUuid, DIARY_EDIT_HOURS, DIARY_MAX_PHOTO_BYTES, DIARY_PHOTO_PART_BYTES, DIARY_MAX_PHOTO_PARTS, type DiaryEntry, type DiaryPerson, type DiaryPublicState, type DiaryWorkspace, type DiaryRevision } from './projectDiary'
 import { diaryDeviceHash, diaryLinkToken, diarySecret, parseDiaryLink } from './projectDiaryLinks'
+import type { DiaryImagePage, DiaryLibraryImage } from './projectDiary'
 
 export const DIARY_BUCKET = 'project-diary-files'
 export type DiaryContext = { orgId: string; userId: string }
@@ -203,6 +204,68 @@ export async function cleanupDiaryUploads(ctx: DiaryContext, caseId: string) {
     else await command(a, 'cleanup_done', { ids: data.ids })
   }
 }
+
+function imageCursor(value: string) {
+  try {
+    if (value.length > 512 || !/^[\w-]+$/.test(value)) throw new Error()
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'))
+    diaryDate(parsed.date)
+    if (!diaryUuid(parsed.id) || typeof parsed.stamp !== 'string' || !/^[0-9T:.+Z-]{15,40}$/.test(parsed.stamp) || !Number.isFinite(Date.parse(parsed.stamp))) throw new Error()
+    return parsed as { date: string; stamp: string; id: string }
+  } catch { throw new Error('PROJECT_DIARY_INVALID') }
+}
+type LibraryEntry = { id: string; current_body: DiaryEntry['body']; current_item_title: string; current_photo_ids: string[]; current_work_date: string; received_at: string }
+type LibraryPhoto = { id: string; entry_id: string; name: string; content_type: string; size_bytes: number; sha256: string }
+function libraryImage(entry: LibraryEntry, photo: LibraryPhoto): DiaryLibraryImage {
+  return { id: photo.id, name: photo.name, contentType: photo.content_type, size: photo.size_bytes, sha256: photo.sha256,
+    entryId: entry.id, workDate: entry.current_work_date, personName: entry.current_body.name, company: entry.current_body.company,
+    itemId: entry.current_body.itemId, itemTitle: entry.current_item_title, receivedAt: entry.received_at }
+}
+export async function getDiaryImages(ctx: DiaryContext, caseId: string, cursor: string | null = null): Promise<DiaryImagePage> {
+  await internal(ctx, caseId)
+  const db = createSupabaseAdminClient()
+  let query = db.from('action_case_diary_current').select('id,current_body,current_item_title,current_photo_ids,current_work_date,received_at')
+    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).neq('current_photo_ids', '{}')
+  if (cursor !== null) {
+    const c = imageCursor(cursor)
+    query = query.or(`current_work_date.lt.${c.date},and(current_work_date.eq.${c.date},received_at.lt.${c.stamp}),and(current_work_date.eq.${c.date},received_at.eq.${c.stamp},id.lt.${c.id})`)
+  }
+  // Page whole entries, preserving each entry's current photo order. Bound URL
+  // length independently when loading the private photo metadata.
+  const result = await query.order('current_work_date', { ascending: false }).order('received_at', { ascending: false }).order('id', { ascending: false }).limit(11)
+  checked(result.error)
+  const entries = (result.data || []).slice(0, 10) as LibraryEntry[]
+  const ids = [...new Set(entries.flatMap(entry => entry.current_photo_ids))], photos = new Map<string, LibraryPhoto>()
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const found = await db.from('action_case_diary_photos').select('id,entry_id,name,content_type,size_bytes,sha256')
+      .in('entry_id', entries.map(entry => entry.id)).in('id', ids.slice(offset, offset + 100))
+    checked(found.error)
+    for (const photo of found.data || []) photos.set(photo.id, photo as LibraryPhoto)
+  }
+  const images = entries.flatMap(entry => entry.current_photo_ids.map(id => {
+    const photo = photos.get(id)
+    if (!photo || photo.entry_id !== entry.id) throw new Error('PROJECT_DIARY_PHOTO')
+    return libraryImage(entry, photo)
+  }))
+  const last = entries.at(-1)
+  return { images, nextCursor: (result.data?.length || 0) > 10 && last ? Buffer.from(JSON.stringify({ date: last.current_work_date, stamp: last.received_at, id: last.id })).toString('base64url') : null }
+}
+
+export async function getCurrentDiaryImage(ctx: DiaryContext, caseId: string, photoId: string): Promise<DiaryLibraryImage> {
+  await internal(ctx, caseId)
+  if (!diaryUuid(photoId)) throw new Error('PROJECT_DIARY_NOT_FOUND')
+  photoId = photoId.toLowerCase()
+  const db = createSupabaseAdminClient()
+  const ref = await db.from('action_case_diary_photos').select('id,entry_id,name,content_type,size_bytes,sha256').eq('id', photoId).maybeSingle()
+  checked(ref.error)
+  if (!ref.data) throw new Error('PROJECT_DIARY_NOT_FOUND')
+  const result = await db.from('action_case_diary_current').select('id,current_body,current_item_title,current_photo_ids,current_work_date,received_at')
+    .eq('org_id', ctx.orgId).eq('action_case_id', caseId).eq('id', ref.data.entry_id).maybeSingle()
+  checked(result.error)
+  if (!result.data || !result.data.current_photo_ids.includes(photoId)) throw new Error('PROJECT_DIARY_NOT_FOUND')
+  return libraryImage(result.data as LibraryEntry, ref.data as LibraryPhoto)
+}
+
 export async function getProjectDiary(ctx: DiaryContext, caseId: string, filters = new URLSearchParams()): Promise<DiaryWorkspace & { nextCursor: string | null }> {
   const project = await internal(ctx, caseId), db = createSupabaseAdminClient()
   const canManage = project.manager_profile_id === ctx.userId

@@ -154,11 +154,13 @@ function CaseDocuments({
   busy,
   runAction,
   onUploading,
+  active,
 }: {
   actionCase: ActionCaseView
   busy: boolean
   runAction: (name: string, payload: Record<string, unknown>, successMessage?: string | null) => Promise<ActionResult | null>
   onUploading?: (uploading: boolean) => void
+  active: boolean
 }) {
   const toast = useToast()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -247,7 +249,7 @@ function CaseDocuments({
   return (
     <section className="border-t border-slate-200">
       <button type="button" onClick={() => setExpanded((current) => !current)} className="flex w-full items-center justify-between px-5 py-4 text-left hover:bg-slate-50 sm:px-6" aria-expanded={expanded}>
-        <span className="flex items-center gap-3"><span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><ImageIcon size={18} /></span><span><strong className="block text-sm text-slate-950">Bilder och dokument</strong><span className="mt-0.5 block text-xs text-slate-500">{actionCase.attachments.length} filer · privat som standard</span></span></span>
+        <span className="flex items-center gap-3"><span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-violet-50 text-violet-700"><ImageIcon size={18} /></span><span><strong className="block text-sm text-slate-950">Bilder och dokument</strong><span className="mt-0.5 block text-xs text-slate-500">{actionCase.attachments.length} projektfiler · privat som standard</span></span></span>
         <ChevronRight size={19} className={`text-slate-400 transition ${expanded ? 'rotate-90' : ''}`} />
       </button>
       {expanded ? (
@@ -301,7 +303,7 @@ function CaseDocuments({
                 <span className="text-xs">Max 25 MB per fil</span>
               </button>
               {uploading.length ? <div className="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-3 text-sm font-medium text-violet-800" role="status"><Loader2 className="animate-spin" size={17} /> Laddar upp {uploading.join(', ')}</div> : null}
-              <ActionCaseImageBank actionCase={actionCase} busy={busy}
+              <ActionCaseImageBank actionCase={actionCase} busy={busy} active={active}
                 onAccess={(attachmentId, participantIds) => { void runAction('update_attachment_grants', { caseId: actionCase.id, attachmentId, participantIds }, 'Åtkomsten uppdaterades.') }}
                 onDelete={(attachmentId) => { void runAction('delete_attachment', { caseId: actionCase.id, attachmentId }, 'Bilden togs bort.') }} />
               <h3 className="mt-5 text-sm font-semibold">Dokument</h3>
@@ -504,7 +506,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     </section>
     <section hidden={section !== 'files'} aria-label="Bilder och filer">
       <div className="gizmo-section-heading"><h2>Bilder och filer</h2></div>
-      <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} onUploading={setUploading} />
+      <CaseDocuments key={selectedCase.id} actionCase={selectedCase} busy={busy} runAction={action} onUploading={setUploading} active={section === 'files'} />
     </section>
     {selectedItem && <ActionCaseItemSheet
       key={`${selectedItem.id}:${initialCostLineId ?? ''}:${requestedWork?.token ?? ''}`}

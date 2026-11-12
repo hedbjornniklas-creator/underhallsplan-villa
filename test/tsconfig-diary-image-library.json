@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false, "allowJs": false },
+  "include": [
+    "../next-env.d.ts",
+    "../src/components/tasks/ActionCaseWorkspace.tsx",
+    "../src/components/tasks/ProjectQuestions.tsx",
+    "../src/app/api/action-cases/[caseId]/diary/photos/route.ts",
+    "../src/app/api/action-cases/[caseId]/questions/[questionId]/diary-photos/route.ts"
+  ],
+  "exclude": ["../node_modules", "../tmp", "../output"]
+}

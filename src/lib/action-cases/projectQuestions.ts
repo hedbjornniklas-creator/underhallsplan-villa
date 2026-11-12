@@ -29,12 +29,12 @@ export function questionParticipantDifference(previous: QuestionHistoryPerson[] 
   if (!previous || !selected) return { added: null, removed: null }
   return { added: selected.filter(p => !previous.some(old => old.key === p.key)), removed: previous.filter(p => !selected.some(next => next.key === p.key)) }
 }
-export function questionSendRequirements(value: { assignee: QuestionAssignee | null; dueAt: string | null; followupAt: string | null; confirmed: boolean }) {
+export function questionSendRequirements(value: { assignee: QuestionAssignee | null; dueAt: string | null; followupAt: string | null; hasFollowup?: boolean; confirmed: boolean }) {
   const missing: Array<{ field: string; message: string }> = []
   if (!value.assignee) missing.push({ field: 'assignee', message: 'Välj ansvarig' })
   else if (value.assignee.kind !== 'profile' && !value.assignee.email?.trim()) missing.push({ field: 'assignee', message: 'Ansvarig saknar e-postadress' })
   if (!value.dueAt) missing.push({ field: 'due', message: 'Ange svarsdatum och klockslag' })
-  if (!value.followupAt) missing.push({ field: 'followup', message: 'Ange första uppföljning och klockslag' })
+  if (value.hasFollowup && !value.followupAt) missing.push({ field: 'followup', message: 'Ange giltigt datum och klockslag för uppföljningen, eller lämna datumet tomt' })
   if (value.dueAt && value.followupAt && value.followupAt > value.dueAt) missing.push({ field: 'followup', message: 'Uppföljningen får inte ligga efter svarsdatumet' })
   if (!value.confirmed) missing.push({ field: 'confirmation', message: 'Bekräfta granskningen inför utskick' })
   return missing
@@ -84,9 +84,13 @@ export function questionMutation(v: Record<string, unknown>) {
   if (operation === 'send') {
     for (const key of ['dueAt', 'followupAt']) {
       const value = v[key]
+      if (key === 'followupAt' && (value === undefined || value === null || value === '')) continue
       if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || !questionDate(value.slice(0, 10)) || !Number.isFinite(Date.parse(value))) throw new Error('PROJECT_QUESTION_DATES')
     }
-    dueAt = new Date(String(v.dueAt)).toISOString(); followupAt = new Date(String(v.followupAt)).toISOString()
+    dueAt = new Date(String(v.dueAt)).toISOString()
+    // The shared task engine requires a checkpoint. Using the deadline when no
+    // extra follow-up is chosen adds no earlier status check; due reminders win.
+    followupAt = v.followupAt ? new Date(String(v.followupAt)).toISOString() : dueAt
     if (followupAt > dueAt || v.confirmed !== true) throw new Error('PROJECT_QUESTION_DATES')
   }
   return { questionId: v.questionId, requestId: v.requestId, revision: Number(v.revision), operation, body, text: message, reportedBy, fileIds: v.fileIds as string[], dueAt, followupAt }

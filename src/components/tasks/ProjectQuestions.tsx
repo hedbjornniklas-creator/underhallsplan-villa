@@ -9,6 +9,8 @@ import { emptyQuestion, questionAssigneeOptions, questionStatuses, questionSendR
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 import './project-questions.css'
 import QuestionDialogue from './QuestionDialogue'
+import QuestionDiaryImagePicker from './QuestionDiaryImagePicker'
+import QuestionReminderSchedule from './QuestionReminderSchedule'
 import { useQuestionAutosave } from './useQuestionAutosave'
 
 const labels: Record<string, string> = { create: 'Fråga registrerad', update: 'Fråga / tilldelning ändrad', answer: 'Svar registrerat', note: 'Intern anteckning', close: 'Fråga avslutad', reopen: 'Fråga återöppnad', send: 'Skickad som uppgift' }
@@ -193,7 +195,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     if (!await autosave.flush()) { setError('Frågans uppgifter behöver sparas innan du fortsätter.'); return }
     const dueAt = mode === 'send' ? taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm') : null
     const followupAt = mode === 'send' ? taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm') : null
-    if (operation === 'send' && !pending.current && (!confirmed || !dueAt || !followupAt || followupAt > dueAt)) { setError('Ange svarsdatum och uppföljning, och bekräfta utskicket.'); return }
+    if (operation === 'send' && !pending.current && (!confirmed || !dueAt || (followup && !followupAt) || (followupAt && followupAt > dueAt))) { setError('Ange svarsdatum och bekräfta utskicket. Om uppföljning väljs behöver den vara giltig och senast vid svarstiden.'); return }
     const body = pending.current ? JSON.parse(pending.current.key) : { questionId: selected, revision: autosave.revision(), operation, body: draft, text: message, reportedBy: mode === 'answer' ? reportedBy : '', fileIds, dueAt, followupAt, confirmed }
     const key = JSON.stringify(body)
     if (!pending.current || pending.current.key !== key) pending.current = { key, id: crypto.randomUUID() }
@@ -244,7 +246,7 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
   const taskOpen = Boolean(question?.tasks.some(t => t.active ?? !['approved', 'cancelled'].includes(t.status)))
   const taskReply = (question?.tasks.find(t => t.active && t.replyTarget) || question?.tasks.filter(t => t.replyTarget).at(-1))?.replyTarget || undefined
   const detailsDisabled = busy || autosave.busy || !draft.title.trim() || !draft.description.trim()
-  const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), confirmed })
+  const sendRequirements = questionSendRequirements({ assignee: draft.assignee, dueAt: taskDateTimeInputToIso(due, dueTime, 'Europe/Stockholm'), followupAt: taskDateTimeInputToIso(followup, followupTime, 'Europe/Stockholm'), hasFollowup: Boolean(followup), confirmed })
   const history = [...question?.events || [], ...question?.dialogueHistory || []].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
   const availablePeople = (data?.assignees || []).filter(p => data?.canManageParticipants || (p.kind === 'profile' && [data?.userId, data?.managerId].includes(p.id)) || question?.participants?.some(m => m.kind === p.kind && m.personId === p.id))
   const assignees = questionAssigneeOptions(availablePeople, draft.assignee)
@@ -288,13 +290,19 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
           </>}
           {question && ['details', 'send'].includes(mode) && data?.canManageParticipants && !closed && <details className="gizmo-question-dispatch" open={mode === 'send'}><summary onClick={event => { event.preventDefault(); void switchMode(mode === 'send' ? 'details' : 'send') }}>Skicka till ansvarig{taskOpen ? ' · Redan skickad' : ''}</summary>{taskOpen ? <p>Frågan har redan en aktiv uppgift. Status och länk till uppgiften visas nedan. Ett nytt utskick skapas inte.</p> : <>
             <section className="gizmo-question-callout"><h3>{draft.assignee ? `Skickas till ${draft.assignee.name}` : 'Ingen ansvarig vald'}</h3>{!draft.assignee && <p>Välj ansvarig ovan under Fråga → Ansvarig. Valet sparas automatiskt.</p>}{draft.assignee?.email && <p>{draft.assignee.email}</p>}</section>
-            <div className="gizmo-question-pair"><label>Svar senast<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={due} onChange={e => compose(setDue, e.target.value)} required /></label><label>Klockslag för svar (Stockholm)<input className={field} type="time" value={dueTime} onChange={e => compose(setDueTime, e.target.value)} required /></label><label>Första uppföljning<input className={field} type="date" min="0001-01-01" max={due || '9999-12-31'} value={followup} onChange={e => compose(setFollowup, e.target.value)} required /></label><label>Klockslag för uppföljning (Stockholm)<input className={field} type="time" value={followupTime} onChange={e => compose(setFollowupTime, e.target.value)} required /></label></div>
+            <div className="gizmo-question-pair"><label>Svar senast<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={due} onChange={e => compose(setDue, e.target.value)} required /></label><label>Klockslag för svar (Stockholm)<input className={field} type="time" value={dueTime} onChange={e => compose(setDueTime, e.target.value)} required /></label><label>Första uppföljning (valfritt)<input className={field} type="date" min="0001-01-01" max={due || '9999-12-31'} value={followup} onChange={e => compose(setFollowup, e.target.value)} /></label><label>Klockslag för uppföljning (Stockholm)<input className={field} type="time" value={followupTime} disabled={!followup} onChange={e => compose(setFollowupTime, e.target.value)} required={Boolean(followup)} /></label></div>
+            <QuestionReminderSchedule />
           </>}</details>}
           {!['history', 'dialogue', 'participants'].includes(mode) && !closed && <section className="gizmo-question-files"><h3>{mode === 'send' ? 'Bilagor till mottagaren' : 'Bilagor till denna historikpost'}</h3><ul>{choices.map(f => <li key={f.id}><label><input type="checkbox" checked={fileIds.includes(f.id)} disabled={!fileIds.includes(f.id) && fileIds.length >= 20} onChange={e => changeFiles(e.target.checked ? [...fileIds, f.id] : fileIds.filter(id => id !== f.id))} />{f.fileName}</label><a href={`/api/action-cases/${caseId}/attachments/${f.id}`} target="_blank" rel="noreferrer" aria-label={`Öppna ${f.fileName}`} title="Öppna i ny flik"><ExternalLink size={16} /></a></li>)}</ul>{mode !== 'send' && <><button className={button} type="button" onClick={() => uploadInput.current?.click()} disabled={!question || fileIds.length >= 20} title={question ? 'Ladda upp bilaga' : 'Spara frågan före uppladdning'}><Upload size={16} /> Ladda upp bilaga</button><input className="hidden" ref={uploadInput} type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt" aria-label="Ladda upp bilaga till frågan" onChange={e => void upload(e.target.files?.[0])} /></>}</section>}
+          {question && !closed && !['history', 'dialogue', 'participants'].includes(mode) && <QuestionDiaryImagePicker key={question.id} caseId={caseId} questionId={question.id} remaining={20 - fileIds.length} disabled={busy || Boolean(pending.current)} onWorking={value => { running.current = value; setBusy(value) }} onAttached={added => {
+            setData(current => current ? { ...current, privateFiles: [...new Map([...(current.privateFiles || []), ...added.map(file => ({ ...file, questionId: question.id }))].map(file => [file.id, file])).values()] } : current)
+            changeFiles([...new Set([...fileIds, ...added.map(file => file.id)])])
+          }} />}
           {mode === 'send' && <label className="gizmo-question-confirm"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />Jag har granskat mottagaren, frågetexten och de valda bilagorna inför utskick.</label>}
           {mode === 'send' && !taskOpen && !pending.current && sendRequirements.length > 0 && <section className="gizmo-question-callout" aria-label="Kvar inför utskick" id={`${headingId}-send-requirements`}><h3>Kvar inför utskick</h3><ul className="gizmo-question-requirements">{sendRequirements.map(item => <li key={item.field}>{item.message}</li>)}</ul></section>}
         </fieldset>
         {question && ['dialogue', 'participants'].includes(mode) && <QuestionDialogue key={`${question.id}:${mode}`}
+          project={{ caseId, questionId: question.id }}
           endpoint={`/api/action-cases/${caseId}/questions/${question.id}/dialogue`} fileBase={`/api/action-cases/${caseId}/questions/${question.id}/files`}
           mode={mode as 'dialogue' | 'participants'} footerTarget={mode === 'participants' ? dialogueFooter : undefined}
           storageKey={draftKey(question.id, 'dialogue')} onFlush={registerDialogueFlush} onRefresh={refreshLinkedTasks}

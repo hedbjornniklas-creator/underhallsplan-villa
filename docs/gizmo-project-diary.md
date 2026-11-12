@@ -149,6 +149,29 @@ att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
   bilduppladdning och tydligare aterforsok. Befintliga QR-lankar, original,
   avtal och kalkyler ska behallas. Ingen ny databasandring behovs. Reservvagen
   ar en robusthetsrattning, inte en bekraftelse av telefonincidentens grundorsak.
+- 2026-11-12: Dagboksbilder ska inga i Bilder och filer och kunna valjas i en
+  fraga. Befintlig bildbank och bildvisare ateranvands. Endast valda bilder
+  kopieras till fragans privata bilagor; ingen automatisk delning eller andring
+  av dagboksoriginal, QR-lankar, avtal eller kalkyl.
+
+## Bildbank och fragor (2026-11-12)
+
+Dagbokens aktuella bilder visas aven i projektets Bilder och filer, med datum,
+person, foretag och moment. Bildrutnat, storleksval och fullskarmsvisare
+ateranvands fran Gizmo. Visningen ar intern och lasande: originalen kopieras
+inte, och borttagna bilder i senare dagboksrevisioner aterpubliceras inte.
+Reservuppladdningar och historiska bildmanifest ingar inte i bildbanken.
+
+I en sparad fraga kan anvandaren valja flera dagboksbilder vid bilagorna eller
+i Kommunikation. Endast uttryckligen valda bilder kopieras till fragans
+befintliga privata bilagelagring. Kopian bevarar underlaget oberoende av senare
+dagboksredigering och kan aterforsokas utan dubbla bilagor. Att bifoga delar
+inte dagboken och skickar inget mejl. Delning sker med befintliga uttryckliga
+kommandon. Fragans deltagarbehorighet kontrolleras pa servern. Publika
+fragesidor och QR-dagboken far ingen bildbanksatkomst.
+
+Ingen ny SQL, QR-lank eller publik bucket behovs. Avtal, priser, kalkyler och
+befintliga dagboksoriginal andras inte av dessa funktioner.
 
 ## Senare, Inte Bestallt
 

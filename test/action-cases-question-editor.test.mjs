@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { emptyQuestion, questionAssigneeOptions, questionStatuses } from '../src/lib/action-cases/projectQuestions.ts'
 import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
+import { taskDateTimeInputToIso } from '../src/lib/tasks/dateTime.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const content = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(content).join('') : node?.props ? content(node.props.children) : ''
@@ -39,9 +40,11 @@ function harness() {
   }
   const dependencies = {
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': {}, './project-questions.css': {},
-    '@/lib/tasks/dateTime': { taskDateTimeInputToIso: () => null, formatTaskDateTime: value => value },
+    '@/lib/tasks/dateTime': { taskDateTimeInputToIso, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': questionModel,
     './QuestionDialogue': { default: () => null },
+    './QuestionDiaryImagePicker': { default: () => null },
+    './QuestionReminderSchedule': { default: () => null },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }
   }
   let queue = Promise.resolve()
@@ -243,5 +246,29 @@ test('an unexpected mutation response preserves the current question instead of 
     await h.start(); h.input('Rubrik', 'Behåll denna'); h.input('Fråga', 'Underlag'); await h.click('Spara och skapa nästa'); await h.reply(0, null, id(99))
     assert.equal(h.field('Rubrik').props.value, 'Behåll denna')
     assert.match(h.text(), /Sparningen kunde inte bekräftas/)
+  } finally { h.dispose() }
+})
+
+test('question dispatch needs only the deadline; clearing an incomplete optional follow-up enables sending again', async () => {
+  const h = harness()
+  try {
+    h.workspace.questions.push({ id: id(61), number: 14, revision: 1, body: { ...emptyQuestion(), title: 'Deadline only', description: 'Fiktiv fråga', assignee: h.customer }, createdAt: '2026-11-05T10:00:00Z', updatedAt: '2026-11-05T10:00:00Z', events: [], tasks: [], participants: [] })
+    await h.click('Hämta sparade frågor och svar')
+    h.nodes().find(n => n.props?.className === 'gizmo-question-open').props.onClick(); h.render()
+    h.nodes().find(n => n.type === 'summary' && content(n).startsWith('Skicka till ansvarig')).props.onClick({ preventDefault() {} }); await tick(); h.render()
+    h.input('Svar senast', '2026-11-19')
+    const confirmation = h.nodes().find(n => n.type === 'label' && content(n).startsWith('Jag har granskat mottagaren'))
+    nodes(confirmation).find(n => n.type === 'input').props.onChange({ target: { checked: true } }); h.render()
+    assert.equal(h.field('Första uppföljning').props.required, undefined)
+    assert.equal(h.field('Klockslag för uppföljning').props.disabled, true)
+    assert.equal(h.button('Skicka uppgift').props.disabled, false)
+    h.input('Första uppföljning', '2026-11-17'); h.input('Klockslag för uppföljning', '')
+    assert.equal(h.button('Skicka uppgift').props.disabled, true)
+    h.input('Första uppföljning', '')
+    assert.equal(h.button('Skicka uppgift').props.disabled, false)
+    await h.click('Skicka uppgift')
+    assert.equal(h.requests.length, 1); assert.equal(h.requests[0].body.followupAt, null)
+    assert.ok(h.requests[0].body.dueAt); assert.equal(h.requests[0].body.confirmed, true)
+    await h.reply(0)
   } finally { h.dispose() }
 })

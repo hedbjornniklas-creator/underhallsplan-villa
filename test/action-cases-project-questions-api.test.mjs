@@ -13,9 +13,11 @@ function load(path,deps) {
 test('dispatch requirements distinguish missing fields, recipient email and invalid follow-up order', () => {
   const { questionSendRequirements } = questionModel
   const empty = { assignee: null, dueAt: null, followupAt: null, confirmed: false }
-  assert.deepEqual(questionSendRequirements(empty).map(item => item.field), ['assignee', 'due', 'followup', 'confirmation'])
+  assert.deepEqual(questionSendRequirements(empty).map(item => item.field), ['assignee', 'due', 'confirmation'])
   const complete = { assignee: { id: id(8), kind: 'contact', name: 'Test', email: 'test@example.invalid' }, dueAt: '2026-11-09T15:00:00Z', followupAt: '2026-11-06T08:00:00Z', confirmed: true }
   assert.deepEqual(questionSendRequirements(complete), [])
+  assert.deepEqual(questionSendRequirements({ ...complete, followupAt: null }), [])
+  assert.equal(questionSendRequirements({ ...complete, hasFollowup: true, followupAt: null })[0].field, 'followup')
   assert.match(questionSendRequirements({ ...complete, assignee: { ...complete.assignee, email: '' } })[0].message, /e-post/)
   assert.deepEqual(questionSendRequirements({ ...complete, assignee: { ...complete.assignee, kind: 'profile', email: null } }), [])
   assert.equal(questionSendRequirements({ ...complete, followupAt: '2026-11-10T08:00:00Z' })[0].field, 'followup')
