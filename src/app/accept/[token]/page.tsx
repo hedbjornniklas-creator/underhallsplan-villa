@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { TuCustomerFields, TuInvoiceFields, tuCustomerFormFromAssignment, tuCustomerFromForm, type TuCustomerForm } from '@/components/tu/TuCustomerFields'
 import { TuPriceSummary } from '@/components/tu/TuPriceFields'
 import { TU_CUSTOMER_LABELS, readTuCustomer, readTuPricing, parseTuCustomerAcceptance, tuCustomerKind, tuUsesApartment } from '@/lib/tu/customer'
+import { tuAssignmentEditRevision } from '@/lib/tu/assignmentEditing'
 import { useParams } from 'next/navigation'
 import { CheckCircle2, Loader2, RotateCcw } from 'lucide-react'
 import { obInspectionProfileLabel, parseObInspectionProfile, resolveObInspectionProfile, type ObInspectionProfileKey } from '@/lib/ob/inspectionProfile'
@@ -233,6 +234,8 @@ export default function AssignmentAcceptPage() {
   const [loadAttempt, setLoadAttempt] = useState(0)
   const loadedToken = useRef<string | null>(null)
   const loadedTerms = useRef<string | null>(null)
+  const loadedRevision = useRef<number | null>(null)
+  const [contentChanged, setContentChanged] = useState(false)
   const [success, setSuccess] = useState<string | null>(null)
   const [data, setData] = useState<AcceptReadResponse | null>(null)
   const [form, setForm] = useState<FormState | null>(null)
@@ -244,7 +247,7 @@ export default function AssignmentAcceptPage() {
   const [withdrawalSaving, setWithdrawalSaving] = useState(false)
   const [withdrawalError, setWithdrawalError] = useState<string | null>(null)
 
-  const canSubmit = data?.state === 'open'
+  const canSubmit = data?.state === 'open' && !contentChanged
 
   useEffect(() => {
     let cancelled = false
@@ -277,10 +280,13 @@ export default function AssignmentAcceptPage() {
         setData(resolved)
         setWithdrawalName(resolved.assignment.customer_name ?? '')
         setWithdrawalEmail(resolved.assignment.customer_email ?? '')
-        const preserveDraft = loadedToken.current === token
+        const revision = resolved.assignment.assignment_type === 'TU' ? tuAssignmentEditRevision(resolved.assignment.assignment_details) : null
+        const preserveDraft = loadedToken.current === token && loadedRevision.current === revision
         const termsSignature = JSON.stringify(resolved.terms)
         const preserveConsent = loadedTerms.current === termsSignature
         loadedToken.current = token
+        loadedRevision.current = revision
+        setContentChanged(false)
         loadedTerms.current = termsSignature
         setForm((current) => preserveDraft && current ? {
           ...current,
@@ -520,6 +526,7 @@ export default function AssignmentAcceptPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           assignmentId: data.assignment.id,
+          ...(isTechnicalAssignment ? { tuEditRevision: tuAssignmentEditRevision(data.assignment.assignment_details) } : {}),
           cadastralId: form.cadastralId,
           propertyAddress: form.propertyAddress,
           propertyPostalCode: form.propertyPostalCode,
@@ -552,9 +559,10 @@ export default function AssignmentAcceptPage() {
         }),
       })
 
-      const payload = (await response.json().catch(() => ({}))) as { error?: string; reference?: string; retryable?: boolean; confirmationEmailSent?: boolean }
+      const payload = (await response.json().catch(() => ({}))) as { error?: string; code?: string; reference?: string; retryable?: boolean; confirmationEmailSent?: boolean }
 
       if (!response.ok) {
+        if (payload.code === 'TU_ASSIGNMENT_CONTENT_CHANGED') setContentChanged(true)
         setErrorReference(payload.reference ?? null)
         setRetryable(payload.retryable === true || response.status >= 500 || response.status === 409)
         throw new Error(payload.error ?? 'Kunde inte acceptera uppdraget.')
@@ -720,7 +728,7 @@ export default function AssignmentAcceptPage() {
             {retryable ? <button type="button" disabled={loading || saving}
               onClick={() => setLoadAttempt(attempt => attempt + 1)}
               className="inline-flex min-h-11 items-center gap-2 rounded-md border border-rose-300 bg-white px-3 font-semibold disabled:opacity-50">
-              <RotateCcw size={16} aria-hidden />{data ? 'Kontrollera status' : 'Försök igen'}
+              <RotateCcw size={16} aria-hidden />{contentChanged ? 'Hämta aktuella uppgifter' : data ? 'Kontrollera status' : 'Försök igen'}
             </button> : null}
             {data?.inspector?.email ? <p><a className="underline" href={`mailto:${data.inspector.email}`}>Kontakta besiktningsmannen</a></p> : null}
           </div>

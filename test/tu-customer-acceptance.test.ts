@@ -7,11 +7,11 @@ import type { TuCustomerKind } from '../src/lib/tu/customer'
 const customerDomain = loadTuModule<typeof import('../src/lib/tu/customer')>('src/lib/tu/customer.ts')
 const hash = 'a'.repeat(64)
 
-function setup(kind: TuCustomerKind, objectType: string, legacy = false) {
+function setup(kind: TuCustomerKind, objectType: string, legacy = false, consumeError?: string) {
   const customer = { version: 1, kind, identityNumber: kind === 'consumer' ? '' : '769000-0000',
     contactName: 'Kontaktperson', contactRole: 'Styrelse', invoiceName: '', invoiceAddress: '', invoiceReference: 'P1' }
   const pricing = customerDomain.calculateTuPricing(5000, 'exclusive')
-  const details = { objectType, customerType: kind === 'consumer' ? 'consumer' : 'business',
+  const details: Record<string, unknown> = { objectType, customerType: kind === 'consumer' ? 'consumer' : 'business',
     ...(legacy ? {} : { tuCustomer: customer, tuPricing: pricing }) }
   const payloads: Record<string, unknown>[] = []
   const chain = { update: () => chain, eq: () => chain, then: (resolve: (value: unknown) => unknown) => Promise.resolve({ error: null }).then(resolve) }
@@ -21,7 +21,7 @@ function setup(kind: TuCustomerKind, objectType: string, legacy = false) {
       resolvePublicAssignmentByToken: async () => ({ org_id: 'org', expires_at: '2099-12-31', assignments: {
         id: 'assignment', assignment_type: 'TU', status: 'sent', price_amount: 6250, assignment_details: details,
       } }),
-      consumeAssignmentToken: async (input: { payload: Record<string, unknown> }) => { payloads.push(input.payload) },
+      consumeAssignmentToken: async (input: { payload: Record<string, unknown> }) => { if (consumeError) throw new Error(consumeError); payloads.push(input.payload) },
       getAssignmentById: async () => null,
     },
     '@/lib/assignments/terms': { resolveAssignmentTermsRole: () => 'technical', getAssignmentTermsDocument: () => ({ version: 'test', documentHash: hash }) },
@@ -72,4 +72,27 @@ test('old TU confirmations can still be accepted without invented customer/VAT m
   const fixture = setup('consumer', 'villa', true)
   assert.equal((await fixture.send()).status, 200)
   assert.deepEqual(fixture.payloads[0].assignment_details, fixture.details)
+})
+
+test('TU acceptance rejects stale content and records the version the customer actually saw', async () => {
+  const fixture = setup('association', 'villa')
+  fixture.details.tuEditRevision = 2
+  for (const tuEditRevision of [undefined, 0, 1, '2', null]) {
+    const response = await fixture.send({ tuEditRevision })
+    assert.equal(response.status, 409)
+    assert.equal((await response.json()).code, 'TU_ASSIGNMENT_CONTENT_CHANGED')
+  }
+  assert.equal(fixture.payloads.length, 0)
+  assert.equal((await fixture.send({ tuEditRevision: 2 })).status, 200)
+  assert.equal(fixture.payloads[0].tu_edit_revision, 2)
+})
+
+test('a concurrent TU edit detected by the database returns an actionable conflict', async () => {
+  const fixture = setup('consumer', 'villa', false, 'TU_ASSIGNMENT_CONTENT_CHANGED | code=P0001')
+  const response = await fixture.send()
+  assert.equal(response.status, 409)
+  const body = await response.json()
+  assert.match(body.error, /Hämta aktuella uppgifter/)
+  assert.equal(body.retryable, true)
+  assert.equal(fixture.payloads.length, 0)
 })

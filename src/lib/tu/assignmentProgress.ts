@@ -56,7 +56,8 @@ export function canStartTuBeforeApproval(assignment: TuProgressAssignment) {
 }
 
 export function canEditTuAssignmentDetails(assignment: TuProgressAssignment) {
-  return !assignment.archived_at && !assignment.accepted_at && !assignment.progress?.approvalRecorded && !assignment.last_sent_at && assignment.status === 'draft'
+  return !assignment.archived_at && !assignment.accepted_at && !assignment.booked_at && !assignment.progress?.approvalRecorded
+    && ['draft', 'sent', 'expired'].includes(assignment.status)
 }
 
 export const TU_ACTION_LABELS: Record<TuAssignmentAction, string> = {

@@ -248,6 +248,7 @@ test('public STATUS GET and acceptance use the issued exact source, never today\
     'node:crypto':{randomUUID},'node:net':{isIP},
     '@/lib/assignments/statusIssueSource':sourceParser,
     '@/lib/tu/customer':load('src/lib/tu/customer.ts', {}),
+    '@/lib/tu/assignmentEditing':load('src/lib/tu/assignmentEditing.ts', { './customer': load('src/lib/tu/customer.ts', {}) }),
     '@/lib/assignments/server':{
       resolvePublicAssignmentByToken:async()=>issued,listAddonOffersForProfile:async()=>[],
       consumeAssignmentToken:async(input:{payload:Record<string,unknown>})=>{consumed=input.payload},

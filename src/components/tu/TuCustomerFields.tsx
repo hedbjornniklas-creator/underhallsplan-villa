@@ -40,11 +40,12 @@ export function tuCustomerFormFromAssignment(assignment: {
   }
 }
 
-export function TuCustomerFields({ value, onChange, disabled = false, kindReadOnly = false }: {
+export function TuCustomerFields({ value, onChange, disabled = false, kindReadOnly = false, identityReadOnly = false }: {
   value: TuCustomerForm
   onChange: <K extends keyof TuCustomerForm>(key: K, value: TuCustomerForm[K]) => void
   disabled?: boolean
   kindReadOnly?: boolean
+  identityReadOnly?: boolean
 }) {
   const organization = value.customerType !== 'consumer'
   return <fieldset disabled={disabled} className="min-w-0 space-y-3">
@@ -56,7 +57,7 @@ export function TuCustomerFields({ value, onChange, disabled = false, kindReadOn
       </select>
     </label>
     <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-      <CustomerField label={organization ? 'Organisationsnummer' : 'Personnummer (valfritt)'} value={value.customerIdentityNumber} onChange={text => onChange('customerIdentityNumber', text)} />
+      <CustomerField disabled={identityReadOnly} label={organization ? 'Organisationsnummer' : 'Personnummer (valfritt)'} value={value.customerIdentityNumber} onChange={text => onChange('customerIdentityNumber', text)} />
       <CustomerField label={organization ? 'Kontaktperson' : 'Kontaktperson (om annan)'} value={value.contactName} onChange={text => onChange('contactName', text)} />
       <CustomerField label="Kontaktpersonens roll" value={value.contactRole} onChange={text => onChange('contactRole', text)} />
     </div>
@@ -77,8 +78,8 @@ export function TuInvoiceFields({ value, onChange, disabled = false }: {
   </fieldset>
 }
 
-function CustomerField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+function CustomerField({ label, value, onChange, placeholder, disabled }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; disabled?: boolean }) {
   return <label className="min-w-0 text-sm text-slate-700">{label}
-    <input value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-base" />
+    <input disabled={disabled} value={value} placeholder={placeholder} onChange={event => onChange(event.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-base disabled:bg-slate-50" />
   </label>
 }

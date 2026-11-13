@@ -15,7 +15,7 @@ eller att besiktningsmannen har accepterat uppdraget.
 | Tillstand | Visning och atgard |
 | --- | --- |
 | Oskickat utkast | Redigera uppgifter, andra datum/tid, skicka, arkivera |
-| Skickat, giltig oanvand lank | Invantar kund; starta fore godkannande, skicka om eller skapa ny version |
+| Skickat, giltig oanvand lank | Invantar kund; redigera uppgifter, starta fore godkannande, skicka om eller skapa ny version |
 | Tidigt startat | Arbeta vidare; slutleverans sparrad tills godkannande, accept och avstamning ar klara |
 | Utgangen/saknad/stangd lank | Fornya och skicka; ar inte automatiskt ett avslutat uppdrag |
 | Registrerat kundgodkannande | Godkand av kund; acceptera uppdrag eller starta utredning |
@@ -54,9 +54,34 @@ inte som att inget mejl skickats. Tekniska kundlankfel anvander befintlig kompon
   tillgangligt efter accept. Ett misslyckat mejl aterstaller inte sparad accept.
 
 Datum och tid behaller den tidigare separata autosparningen fore kundgodkannande.
-Den andrar inte lank och skickar inget mejl automatiskt. Andringar i exempelvis
-omfattning eller pris efter utskick kraver ny version, precis som i OB.
+Den andrar inte lank och skickar inget mejl automatiskt. TU tillater nu aven
+redigering av exempelvis adress, omfattning och pris fram till kundgodkannande.
+Det skiljer sig fran OB:s lasning av utskickat innehall.
 Krav pa objektuppgifter vid kundens godkannande ar oforandrade.
+
+## Redigering fore kundgodkannande (2026-11-13)
+
+- **Redigera uppgifter** finns for aktiva utkast, skickade och utgangna bekraftelser
+  utan kundgodkannande eller besiktningsmannens accept. Godkanda, avbokade och
+  arkiverade uppdrag kan inte andras har.
+- Samma uppdrag och befintliga kundlank behalls. Sparandet skickar inget mejl,
+  fornyar ingen utgangen lank och skriver inte over en redan startad utredning.
+- Efter utskick kan namn, kontaktperson, adresser, objektsuppgifter, omfattning,
+  pris/moms och faktureringsuppgifter korrigeras. Byte av mottagarens e-post,
+  bestallartyp eller person-/organisationsnummer kraver en ny version.
+- `tu_edit_pending_assignment` laser raden och kontrollerar aktor, organisation,
+  status, faktisk godkannandepost och `updated_at` atomiskt. Fore/efter, aktor och
+  tid sparas i `tu_assignment_edits`, som endast serversidan kan lasa.
+- Publika innehallsandringar okar `assignment_details.tuEditRevision`.
+  Enbart interna anteckningar gor inte en oppen kundsida inaktuell.
+- Kunden postar revisionen som visades. API och databastrigger avvisar en gammal
+  revision, aven vid samtidig redigering och godkannande. Kunden valjer **Hamta
+  aktuella uppgifter**, granskar uppgifterna och markerar samtyckena pa nytt.
+  Gamla osparade formulardata kopieras inte over det nya innehallsunderlaget.
+- Aldre ororda bekraftelser har revision 0 och kan fortfarande godkannas.
+- Kor `docs/db/2026-11-13_01_tu_pending_assignment_edits.sql` fore publicering.
+  Filen kraver TU early-start och kund-/moms-migrationerna. Den kan koras om,
+  gor ingen backfill och andrar inga befintliga lankar, godkannanden eller rapporter.
 
 ## Fel och begransningar
 
@@ -99,6 +124,8 @@ Krav pa objektuppgifter vid kundens godkannande ar oforandrade.
 - 2026-10-15: Anvandaren valde initialt att behalla kundgodkannande fore start.
 - 2026-10-15, senare: Anvandaren bad uttryckligen om start fore godkannande likt OB.
   Det ersatter tidigare begransning, med bibehallen sparr mot slutleverans.
+- 2026-11-13: Anvandaren vill kunna korrigera och komplettera bekraftelsen fram
+  till kundens godkannande, utan att skapa om uppdraget.
 
 ## Verifiering
 

@@ -122,9 +122,9 @@ test('status distinguishes real approval, active links, expired links and missin
   }
 })
 
-test('sent and approved records require a new version for content edits; draft remains editable', () => {
-  assert.equal(domain.canEditTuAssignmentDetails(base({ status: 'draft', last_sent_at: null })), true)
-  for (const record of [base(), approved(), base({ status: 'draft' }), base({ status: 'draft', archived_at: VERSION })]) assert.equal(domain.canEditTuAssignmentDetails(record), false)
+test('pending drafts, sent and expired confirmations are editable, but approvals remain locked', () => {
+  for (const record of [base(), base({ status: 'draft', last_sent_at: null }), base({ status: 'expired' })]) assert.equal(domain.canEditTuAssignmentDetails(record), true)
+  for (const record of [approved(), base({ accepted_at: VERSION }), base({ booked_at: VERSION }), base({ status: 'cancelled' }), base({ status: 'draft', archived_at: VERSION }), base({ progress: { ...base().progress!, approvalRecorded: true } })]) assert.equal(domain.canEditTuAssignmentDetails(record), false)
 })
 
 test('actions never fabricate approval and archive/restore never reopen a cancelled contract', () => {
@@ -338,21 +338,23 @@ test('action API returns useful errors, no private diagnostics, and disables cac
   }
 })
 
-test('detail PATCH only writes a version-checked unissued draft and cannot assign a status', async () => {
+test('detail PATCH uses atomic version-checked pending edits and cannot assign a status', async () => {
   let record = base({ status: 'draft', last_sent_at: null })
   const writes: Record<string, unknown>[] = []
   const route = load<typeof DetailRoute>('src/app/api/tu/assignments/[id]/route.ts', {
     'next/server': { NextResponse: { json: Response.json } }, '@/lib/assignment-customers/http': http,
     '@/lib/tu/assignmentProgress': domain, '@/lib/tu/assignmentEditing': editing,
     '@/lib/tu/server': { requireTuContext: async () => ({ orgId: ORG, userId: 'user' }), getTuAssignmentById: async () => record },
-    '@/lib/assignments/server': { updateAssignmentById: async (input: Record<string, unknown>) => { writes.push(input); return record } },
+    '@/lib/tu/assignmentEditingServer': { editTuPendingAssignment: async (input: Record<string, unknown>) => { writes.push(input); return record } },
     '@/lib/assignments/consumer': {}, '@/lib/assignments/terms': {}, '@/lib/supabase/admin': {}, '@/lib/tu/assignmentProgressServer': {}, '@/lib/assignments/linkIncidents': {},
   })
   const patch = (body: unknown) => route.PATCH(new Request(`https://hushub.se/api/tu/assignments/assignment?orgId=${ORG}`, { method: 'PATCH', headers: { origin: 'https://hushub.se' }, body: JSON.stringify(body) }), { params: Promise.resolve({ id: 'assignment' }) })
   assert.equal((await patch({ expectedUpdatedAt: VERSION, status: 'ordered' })).status, 400)
   assert.equal((await patch({ expectedUpdatedAt: VERSION, scope_description: 'Ny omfattning' })).status, 200)
-  assert.equal(writes[0].expectedUpdatedAt, VERSION); assert.equal(writes[0].requireUnissuedDraft, true)
+  assert.equal(writes[0].expectedUpdatedAt, VERSION); assert.equal(writes[0].actor, 'user'); assert.equal(writes[0].orgId, ORG)
+  record = base()
+  assert.equal((await patch({ expectedUpdatedAt: VERSION, property_address: 'Corrected street' })).status, 200)
   record = approved()
   assert.equal((await patch({ expectedUpdatedAt: VERSION, scope_description: 'Ny omfattning' })).status, 409)
-  assert.equal(writes.length, 1)
+  assert.equal(writes.length, 2)
 })

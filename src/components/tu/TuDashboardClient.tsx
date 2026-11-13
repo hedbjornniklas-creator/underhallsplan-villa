@@ -1081,7 +1081,7 @@ function QuickAssignmentDialog({
         </div>
         <TuCustomerFields value={form} onChange={(key, value) => onChange(key, value as TuFormState[typeof key])} />
         <div className="grid gap-3 md:grid-cols-2">
-          <Field label={form.customerType === 'consumer' ? 'Beställarens namn' : 'Företagets eller föreningens namn'} value={form.customerName} onChange={(value) => onChange('customerName', value)} />
+          <Field label={form.customerType === 'consumer' ? 'Beställarens namn' : 'Företagets eller föreningens namn'} required value={form.customerName} onChange={(value) => onChange('customerName', value)} />
           <Field label="Beställarmejl" required value={form.customerEmail} onChange={(value) => onChange('customerEmail', value)} type="email" />
           <Field label="Telefon" value={form.customerPhone} onChange={(value) => onChange('customerPhone', value)} />
 

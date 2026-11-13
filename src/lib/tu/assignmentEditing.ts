@@ -1,6 +1,13 @@
 import { parseTuCustomer, parseTuPricing, readTuPricing } from './customer'
 import type { AssignmentDetails } from '@/lib/assignments/server'
 
+export function tuAssignmentEditRevision(details: Record<string, unknown> | null | undefined): number {
+  const revision = details?.tuEditRevision
+  return typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : 0
+}
+
+export const TU_ASSIGNMENT_CHANGED_MESSAGE = 'Uppdragsbekräftelsen har uppdaterats av besiktningsmannen. Hämta aktuella uppgifter och kontrollera dem innan du godkänner.'
+
 export const TU_ASSIGNMENT_FIELDS = [
   { key: 'customer_name', label: 'Namn', group: 'Beställare' },
   { key: 'customer_email', label: 'E-post', group: 'Beställare', type: 'email', required: true },

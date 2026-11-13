@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getTuAssignmentById, listTuReportTemplateOptions, requireTuContext } from '@/lib/tu/server'
-import { updateAssignmentById } from '@/lib/assignments/server'
+import { editTuPendingAssignment } from '@/lib/tu/assignmentEditingServer'
 import { resolveAssignmentCustomerType } from '@/lib/assignments/consumer'
 import { getAssignmentTermsDocument } from '@/lib/assignments/terms'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -108,20 +108,26 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const org = await requireTuContext(search.get('orgId'))
     const existing = await getTuAssignmentById(org.orgId, (await context.params).id)
     if (!existing) return jsonError('TU-uppdraget hittades inte.', 404)
-    if (!canEditTuAssignmentDetails(existing)) return jsonError('Skapa en ny version för att ändra ett skickat eller godkänt uppdrag. Datum och tid ändras separat före godkännande.', 409)
+    if (!canEditTuAssignmentDetails(existing)) return jsonError('Uppdragsbekräftelsen kan bara redigeras innan kunden har godkänt den och medan uppdraget är aktivt.', 409)
     let edit: ReturnType<typeof parseTuAssignmentEdit>
     try { edit = parseTuAssignmentEdit(await request.json().catch(() => null), existing.assignment_details) }
     catch (error) { return jsonError(error instanceof Error ? error.message : 'Kontrollera uppgifterna.', 400) }
-    const assignment = await updateAssignmentById({
-      orgId: org.orgId, assignmentId: existing.id, updatedBy: org.userId,
-      expectedUpdatedAt: edit.expectedUpdatedAt, requireUnissuedDraft: true,
-      patch: edit.patch as Parameters<typeof updateAssignmentById>[0]['patch'],
+    const assignment = await editTuPendingAssignment({
+      orgId: org.orgId, assignmentId: existing.id, actor: org.userId,
+      expectedUpdatedAt: edit.expectedUpdatedAt, patch: edit.patch,
     })
     return NextResponse.json({ assignment }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const access = mapAccessError(error)
     if (access) return access
     const code = error instanceof Error ? error.message : ''
+    if (code === 'TU_ASSIGNMENT_NOT_FOUND') return jsonError('TU-uppdraget hittades inte.', 404)
+    if (code === 'TU_ASSIGNMENT_EDIT_INVALID') return jsonError('Kontrollera uppgifterna. Ändringen innehåller fält som inte kan redigeras här.', 400)
+    if (code === 'TU_ASSIGNMENT_FORBIDDEN') return jsonError('Du saknar behörighet att redigera detta uppdrag.', 403)
+    if (code === 'TU_ASSIGNMENT_EDIT_LOCKED') return jsonError('Uppdraget har godkänts, avbokats eller arkiverats och kan inte redigeras här. Hämta aktuell status.', 409)
+    if (code === 'TU_ASSIGNMENT_RECIPIENT_LOCKED') return jsonError('Skapa en ny version för att byta mottagare, beställartyp eller person-/organisationsnummer i en skickad bekräftelse.', 409)
+    if (code === 'TU_ASSIGNMENT_EDIT_INCOMPLETE') return jsonError('En skickad bekräftelse behöver beställarens namn, e-post, omfattning och pris.', 400)
+    if (code === 'TU_ASSIGNMENT_EDIT_MIGRATION_REQUIRED') return jsonError('Redigeringen behöver aktiveras i systemet. Kontakta administratören. Dina ändringar finns kvar här.', 503)
     if (code === 'ASSIGNMENT_CUSTOMER_ORIGIN_FORBIDDEN') return jsonError('Otillåten begäran.', 403)
     if (code === 'ASSIGNMENT_VERSION_CONFLICT' || code === 'OB_ASSIGNMENT_CONTENT_LOCKED') return jsonError('Uppdraget har ändrats. Hämta aktuell version innan du sparar igen.', 409)
     console.error('[tu.assignments.edit] failed', error)

@@ -87,6 +87,8 @@ before(async () => {
   await db.exec(migration)
   await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
   await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
+  await db.exec(sql('2026-11-13_01_tu_pending_assignment_edits.sql'))
+  await db.exec(sql('2026-11-13_01_tu_pending_assignment_edits.sql'))
 })
 after(async () => { await db.close() })
 
@@ -108,11 +110,17 @@ async function start(id:string, reason: string|null = 'Customer has not replied'
 async function state(id:string) {
   return (await db.query<{value:TuAssignmentWorkflow}>('select tu_assignment_workflow_state($1,$2) as value',[id,org])).rows[0].value
 }
-async function accept(token:string) {
+async function accept(token:string, revision = 0) {
   await db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)',
-    [token,'v1',JSON.stringify({terms_document_hash:'a'.repeat(64),customer_name:'Approved name',addon_service_ids:[]})])
+    [token,'v1',JSON.stringify({terms_document_hash:'a'.repeat(64),customer_name:'Approved name',addon_service_ids:[],tu_edit_revision:revision})])
 }
 async function book(id:string) { await db.query("update assignments set status='booked',booked_at=now() where id=$1",[id]) }
+async function editPending(id: string, patch: Record<string, unknown>, user = actor, version?: string, organization = org) {
+  const result = await db.query<{ value: { updated_at: string; assignment_details: { tuEditRevision: number }; property_address: string } }>(
+    'select tu_edit_pending_assignment($1,$2,$3,coalesce($4::timestamptz,(select updated_at from assignments where id=$1)),$5::jsonb) as value',
+    [id, organization, user, version ?? null, JSON.stringify(patch)])
+  return result.rows[0].value
+}
 async function review(id:string, token?:string) {
   return (await db.query<{value:TuAssignmentWorkflow}>('select tu_review_assignment_workflow($1,$2,$3,$4) as value',[id,org,actor,token ?? (await state(id)).reviewToken])).rows[0].value
 }
@@ -123,6 +131,89 @@ test('early start requires explicit acknowledgement and a bounded reason', () =>
     assert.throws(() => validateTuEarlyStart(reason,confirmed),/TU_EARLY_REASON_REQUIRED/)
   }
   assert.equal(validateTuEarlyStart('  Client pending  ',true),'Client pending')
+})
+
+test('pending edits keep the customer link and audit old/new contents; stale acceptance rolls back', async () => {
+  const a = await assignment()
+  const linksBefore = (await db.query('select * from assignment_links where assignment_id=$1', [a.id])).rows
+  const edited = await editPending(a.id, { property_address: 'Corrected street 3', scope_description: 'Expanded scope', price_amount: 1500 })
+  assert.equal(edited.assignment_details.tuEditRevision, 1)
+  assert.deepEqual((await db.query('select * from assignment_links where assignment_id=$1', [a.id])).rows, linksBefore)
+  const audit = (await db.query<{ before_data: { property_address: string }; after_data: { property_address: string }; changed_by: string }>('select * from tu_assignment_edits where assignment_id=$1', [a.id])).rows[0]
+  assert.equal(audit.before_data.property_address, 'Test street')
+  assert.equal(audit.after_data.property_address, 'Corrected street 3')
+  assert.equal(audit.changed_by, actor)
+  await assert.rejects(accept(a.token), /TU_ASSIGNMENT_CONTENT_CHANGED/)
+  const unchanged = (await db.query<{ customer_name: string; status: string; accepted_at: null }>('select * from assignments where id=$1', [a.id])).rows[0]
+  assert.equal(unchanged.customer_name, 'Original')
+  assert.equal(unchanged.status, 'sent')
+  assert.equal(unchanged.accepted_at, null)
+  assert.deepEqual((await db.query('select * from assignment_links where assignment_id=$1', [a.id])).rows, linksBefore)
+  assert.equal((await db.query('select * from assignment_acceptances where assignment_id=$1', [a.id])).rows.length, 0)
+  await accept(a.token, 1)
+  await assert.rejects(editPending(a.id, { property_address: 'Too late' }), /TU_ASSIGNMENT_EDIT_LOCKED/)
+})
+
+test('pending edit enforces optimistic concurrency, actor, immutable identity and audit permissions', async () => {
+  const a = await assignment()
+  const first = await editPending(a.id, { scope_description: 'Scope' })
+  const same = await editPending(a.id, { scope_description: 'Scope' })
+  assert.equal(same.updated_at, first.updated_at)
+  assert.equal((await db.query('select * from tu_assignment_edits where assignment_id=$1', [a.id])).rows.length, 1)
+  const internal = await editPending(a.id, { notes_internal: 'Private' })
+  assert.equal(internal.assignment_details.tuEditRevision, 1)
+  await assert.rejects(editPending(a.id, { scope_description: 'Old tab' }, actor, first.updated_at), /ASSIGNMENT_VERSION_CONFLICT/)
+  await assert.rejects(editPending(a.id, { scope_description: 'Unauthorized' }, stranger), /TU_ASSIGNMENT_FORBIDDEN/)
+  await assert.rejects(editPending(a.id, { scope_description: 'Wrong org' }, actor, undefined, stranger), /TU_ASSIGNMENT_NOT_FOUND/)
+  for (const patch of [{ customer_email: 'someone@example.test' }, { personal_identity_number: '123456' }, { assignment_details: { customerType: 'business' } }]) {
+    await assert.rejects(editPending(a.id, patch), /TU_ASSIGNMENT_RECIPIENT_LOCKED/)
+  }
+  for (const patch of [{ status: 'ordered' }, { accepted_at: new Date().toISOString() }, { preferred_date: '2027-01-01' }, { assignment_details: { unknown_metadata: true } }]) {
+    await assert.rejects(editPending(a.id, patch), /TU_ASSIGNMENT_EDIT_INVALID/)
+  }
+  await assert.rejects(editPending(a.id, { scope_description: '' }), /TU_ASSIGNMENT_EDIT_INCOMPLETE/)
+  for (const role of ['anon', 'authenticated']) {
+    await db.exec('set role ' + role)
+    try {
+      await assert.rejects(editPending(a.id, { scope_description: 'Forbidden' }), /permission denied/)
+      await assert.rejects(db.query('select * from tu_assignment_edits'), /permission denied/)
+    } finally { await db.exec('reset role') }
+  }
+})
+
+test('concurrent structured price edits return the content conflict before price validation', async () => {
+  const a = await assignment()
+  const customer = { version: 1, kind: 'consumer', identityNumber: '', contactName: '', contactRole: '', invoiceName: '', invoiceAddress: '', invoiceReference: '' }
+  const details = { customerType: 'consumer', tuCustomer: customer, tuPricing: { version: 1, amount: 1000, basis: 'inclusive', vatRate: 25, net: 800, vat: 200, gross: 1000 } }
+  await db.query('update assignments set assignment_details=$2::jsonb where id=$1', [a.id, JSON.stringify(details)])
+  const changed = { ...details, tuPricing: { ...details.tuPricing, amount: 1500, gross: 1500, net: 1200, vat: 300 } }
+  await editPending(a.id, { scope_description: 'Current scope', price_amount: 1500, assignment_details: changed })
+  const payload = { terms_document_hash: 'a'.repeat(64), customer_name: 'Old page', addon_service_ids: [], price_amount: 1000, assignment_details: details }
+  await assert.rejects(db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)', [a.token, 'v1', JSON.stringify(payload)]), /TU_ASSIGNMENT_CONTENT_CHANGED/)
+  assert.equal((await db.query<{ price_amount: string }>('select price_amount from assignments where id=$1', [a.id])).rows[0].price_amount, '1500.00')
+  await db.query('select * from consume_assignment_token($1,$2,$3::jsonb,null,null)', [a.token, 'v1', JSON.stringify({ ...payload, price_amount: 1500, assignment_details: changed, tu_edit_revision: 1 })])
+})
+
+test('pending edits do not overwrite work in an already started investigation', async () => {
+  const a = await assignment(); const investigation = await start(a.id)
+  await db.query("insert into tu_observations(inspection_id,note) values($1,'Keep note')", [investigation.inspectionId])
+  await editPending(a.id, { property_address: 'Revised address', scope_description: 'Revised scope' })
+  assert.equal((await db.query<{ note: string }>('select note from tu_observations where inspection_id=$1', [investigation.inspectionId])).rows[0].note, 'Keep note')
+  assert.deepEqual((await db.query<{ report_draft: unknown }>('select report_draft from technical_investigation_details where inspection_id=$1', [investigation.inspectionId])).rows[0].report_draft, draft)
+  await accept(a.token, 1)
+  await book(a.id)
+  assert.equal((await state(investigation.inspectionId)).needsReview, true)
+})
+
+test('draft and expired records can be corrected; cancelled, archived and accepted records cannot', async () => {
+  const draftRecord = await assignment('draft')
+  await db.query('update assignments set last_sent_at=null where id=$1', [draftRecord.id])
+  await editPending(draftRecord.id, { customer_email: 'new@example.test' })
+  await editPending((await assignment('expired')).id, { scope_description: 'Corrected scope' })
+  await assert.rejects(editPending((await assignment('cancelled')).id, { scope_description: 'No' }), /TU_ASSIGNMENT_EDIT_LOCKED/)
+  const archived = await assignment()
+  await db.query('update assignments set archived_at=now() where id=$1', [archived.id])
+  await assert.rejects(editPending(archived.id, { scope_description: 'No' }), /TU_ASSIGNMENT_EDIT_LOCKED/)
 })
 test('atomic early start preserves unapproved status and retries open the same investigation', async () => {
   const a=await assignment(); const first=await start(a.id)
@@ -244,6 +335,7 @@ test('reapplying the migration leaves locked reports and existing approvals unto
   const reports=(await db.query('select inspection_id,report_draft from technical_investigation_details order by inspection_id')).rows
   await db.exec(migration)
   await db.exec(sql('2026-11-11_01_tu_customer_and_pricing.sql'))
+  await db.exec(sql('2026-11-13_01_tu_pending_assignment_edits.sql'))
   assert.deepEqual((await db.query('select id,status,accepted_at,inspection_id from assignments order by id')).rows,before)
   assert.deepEqual((await db.query('select inspection_id,report_draft from technical_investigation_details order by inspection_id')).rows,reports)
 })

@@ -1,5 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { parseTuCustomerAcceptance, tuUsesApartment, TuCustomerError } from '@/lib/tu/customer'
+import { tuAssignmentEditRevision, TU_ASSIGNMENT_CHANGED_MESSAGE } from '@/lib/tu/assignmentEditing'
 import { randomUUID } from 'node:crypto'
 import { publicLinkErrorCode, recordPublicLinkFailure, resolvePublicLinkFailures, type LinkOperation } from '@/lib/assignments/linkIncidents'
 import { isIP } from 'node:net'
@@ -525,6 +526,10 @@ export async function POST(
     }
 
     const isTechnicalAssignment = assignment.assignment_type === 'TU'
+    const editRevision = body.tuEditRevision ?? 0
+    if (isTechnicalAssignment && editRevision !== tuAssignmentEditRevision(assignment.assignment_details)) {
+      return NextResponse.json({ error: TU_ASSIGNMENT_CHANGED_MESSAGE, code: 'TU_ASSIGNMENT_CONTENT_CHANGED', retryable: true }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
+    }
     const tuAcceptance = isTechnicalAssignment ? parseTuCustomerAcceptance(assignment.assignment_details, body) : null
     const isEbAssignment = assignment.assignment_type === 'EB'
     const termsRole = resolveAssignmentTermsRole({
@@ -701,6 +706,7 @@ export async function POST(
       acceptanceDetails.representativeConfirmed = tuAcceptance.representativeConfirmed
     }
     const payload = {
+      ...(isTechnicalAssignment ? { tu_edit_revision: editRevision } : {}),
       ...(tuAcceptance ? {
         invoice_name: tuAcceptance.customer.invoiceName || null,
         invoice_address: tuAcceptance.customer.invoiceAddress || null,
@@ -831,6 +837,10 @@ export async function POST(
     if (error instanceof TuCustomerError) return jsonError(error.message, 400)
     const message = error instanceof Error ? error.message : 'Okänt fel.'
     const lowered = message.toLowerCase()
+
+    if (message.includes('TU_ASSIGNMENT_CONTENT_CHANGED')) {
+      return NextResponse.json({ error: TU_ASSIGNMENT_CHANGED_MESSAGE, code: 'TU_ASSIGNMENT_CONTENT_CHANGED', retryable: true }, { status: 409, headers: { 'Cache-Control': 'no-store' } })
+    }
 
     if (message.includes('token_not_valid_or_expired')) {
       return jsonError('Länken är ogiltig eller har gått ut.', 410)

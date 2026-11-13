@@ -143,6 +143,8 @@ function routeHarness(row: ReturnType<typeof link> | null = link(), mailFails = 
     return query
   } }
   const api = load<typeof PublicApi>('src/app/api/assignments/accept/[token]/route.ts', {
+    '@/lib/tu/customer': load('src/lib/tu/customer.ts', {}),
+    '@/lib/tu/assignmentEditing': load('src/lib/tu/assignmentEditing.ts', { './customer': load('src/lib/tu/customer.ts', {}) }),
     'next/server': { after: (job: () => Promise<void>) => jobs.push(job), NextResponse: { json: (data: unknown, init?: ResponseInit) => Response.json(data, init) } },
     'node:net': { isIP },
     'node:crypto': { randomUUID },

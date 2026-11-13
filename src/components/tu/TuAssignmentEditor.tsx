@@ -32,6 +32,7 @@ export default function TuAssignmentEditor({ assignment, onSaved }: { assignment
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const inFlight = useRef(false)
+  const issued = Boolean(assignment.last_sent_at) || assignment.status !== 'draft'
   const dirty = open && (extraDirty || JSON.stringify(form) !== JSON.stringify(tuAssignmentForm(assignment)))
   useEffect(() => {
     if (!dirty && !busy) return
@@ -75,7 +76,8 @@ export default function TuAssignmentEditor({ assignment, onSaved }: { assignment
       <form onSubmit={event => { event.preventDefault(); void save() }}>
         <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white p-4"><h2 id={title} className="text-lg font-semibold">Redigera uppdragsbekräftelse</h2><button type="button" className={tuActionButton} disabled={busy} onClick={close} aria-label="Stäng redigering"><X size={18} aria-hidden /></button></header>
         <fieldset disabled={busy} className="space-y-5 p-4">
-          {!structured ? <label className="flex gap-2 text-sm"><input type="checkbox" checked={structured} onChange={event => { setStructured(event.target.checked); setExtraDirty(true) }} />Ange beställartyp och kontaktperson</label> : <TuCustomerFields value={customer} onChange={updateCustomer} />}
+          {issued ? <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">Ändringarna sparas på samma kundlänk. Inget mejl skickas automatiskt. Byte av mottagare eller beställaridentitet kräver en ny version.</p> : null}
+          {!structured ? <label className="flex gap-2 text-sm"><input type="checkbox" checked={structured} onChange={event => { setStructured(event.target.checked); setExtraDirty(true) }} />Ange beställartyp och kontaktperson</label> : <TuCustomerFields value={customer} onChange={updateCustomer} kindReadOnly={issued} identityReadOnly={issued} />}
           <label className="block text-sm">Objekttyp<select className="mt-1 block min-h-11 w-full rounded-md border border-slate-300 px-3" value={objectType} onChange={event => { setObjectType(event.target.value as 'villa' | 'apartment'); setExtraDirty(true) }}><option value="villa">Fastighet/byggnad</option><option value="apartment">Lägenhet</option></select></label>
           {[...new Set(TU_ASSIGNMENT_FIELDS.map(field => field.group))].map(group => <section key={group} className="border-b border-slate-200 pb-5 last:border-0"><h3 className="mb-3 font-semibold">{group}</h3><div className="grid gap-3 sm:grid-cols-2">
             {TU_ASSIGNMENT_FIELDS.filter(field => field.group === group &&
@@ -86,7 +88,7 @@ export default function TuAssignmentEditor({ assignment, onSaved }: { assignment
               const fieldId = `${title}-${field.key}`
               return <label key={field.key} htmlFor={fieldId} className={`min-w-0 text-sm text-slate-700 ${type === 'textarea' ? 'sm:col-span-2' : ''}`}>{field.label}
                 {type === 'textarea' ? <textarea id={fieldId} value={form[field.key]} rows={5} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-1 block w-full rounded-md border border-slate-300 bg-white p-3 text-base" />
-                  : <input id={fieldId} type={type === 'price' ? 'text' : type} inputMode={type === 'price' ? 'decimal' : undefined} required={'required' in field && field.required} value={form[field.key]} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-1 block min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-base" />}
+                  : <input id={fieldId} disabled={issued && ['customer_email', 'personal_identity_number'].includes(field.key)} type={type === 'price' ? 'text' : type} inputMode={type === 'price' ? 'decimal' : undefined} required={'required' in field && field.required} value={form[field.key]} onChange={event => setForm(current => ({ ...current, [field.key]: event.target.value }))} className="mt-1 block min-h-11 w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 text-base disabled:bg-slate-50" />}
               </label>
             })}
           </div></section>)}
