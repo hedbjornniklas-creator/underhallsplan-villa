@@ -396,6 +396,35 @@ and `node scripts/test-ob-mobile-round-ui.mjs --room-name-images-only`.
   and `node scripts/test-ob-mobile-round-ui.mjs --note-suggestion-only`.
   The local preview uses synthetic callbacks and never sends real email.
 
+### Note removal after unlocking (2026-11-13)
+
+- Unlocking clears `locked_at`/`locked_by` but intentionally retains the completed
+  inspection status. A completed status alone must not block round mutations.
+- Run `docs/db/2026-11-13_01_ob_unlocked_round_mutations.sql` to make both
+  `ob_round_mutate` and `ob_building_round_mutate` check the actual lock. This
+  covers legacy rounds and both the main and extra buildings. No UI build is
+  needed. Owner, membership, workflow, building scope, stale preview and receipt
+  checks remain unchanged; relocking still blocks removal, including after preview.
+- The migration changes only the known lock guards in the installed functions,
+  preserving their other behavior and permissions. It is repeatable and rolls
+  back both changes if a function is missing or has an unexpected guard.
+- Removing a note retains its images as unlinked photos. Inspection status,
+  issued PDFs, report content and existing public links are not changed.
+  Historical PDFs remain the required archive; this fix adds no requirement for
+  keeping extra digital copies and does not delete existing digital reports.
+- Verification: `node --experimental-strip-types --test test/ob-buildings.test.ts`.
+  Regression cases cover `completed`, `klar` and `done`, actual lock/unlock/relock,
+  both buildings, legacy rounds, protected access, unchanged issued snapshots
+  and idempotent removal/migration.
+- Production: executed in Supabase project `rfresrbuekidumbwzpcm` on 2026-11-13;
+  verified at 16:33 Europe/Stockholm. Both installed function definitions match
+  the precomputed hashes for replacing only this guard: building RPC
+  `36a08519789a3f5e5b6abf663141c8b0`, legacy RPC
+  `b6d8a7bc658b1d52f6555636ad549551`. Both remain security-definer and executable
+  only by `postgres`/`service_role`, with no new grants. No customer note was
+  deleted during deployment verification. The combined building, round, API,
+  published-report and multi-building snapshot regression run passed 80/80 tests.
+
 Before retiring the legacy round, verify the production adapter against an
 isolated database, test the real phone camera/upload queue, and compare the
 saved report with the legacy round. Confirm backup/restore and the remaining

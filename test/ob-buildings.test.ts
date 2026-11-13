@@ -10,6 +10,17 @@ async function one(sql: string, values: unknown[] = []): Promise<Record<string, 
   return (await db.query<Record<string, any>>(sql, values)).rows[0]
 }
 const read = (name: string) => readFileSync(new URL('../docs/db/'+name,import.meta.url),'utf8')
+const unlockedRoundMigration = read('2026-11-13_01_ob_unlocked_round_mutations.sql')
+const oldRoundGuard = "if i.locked_at is not null or lower(coalesce(i.status, '')) in ('completed','klar','done') then raise exception 'OB_ROUND_LOCKED'; end if;"
+const newRoundGuard = "if i.locked_at is not null then raise exception 'OB_ROUND_LOCKED'; end if;"
+let roundFunctionsBefore: Record<string, any>[]
+async function roundFunctions() {
+  return (await db.query<Record<string, any>>(`select p.oid::regprocedure::text signature,
+    pg_get_functiondef(p.oid) definition, p.proacl::text permissions, p.proowner::text owner,
+    p.prosecdef security_definer, p.proconfig configuration from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace where n.nspname='public'
+    and p.proname in ('ob_round_mutate','ob_building_round_mutate') order by p.proname`)).rows
+}
 before(async () => {
   await db.exec(`
     create role anon; create role authenticated; create role service_role;
@@ -82,6 +93,9 @@ before(async () => {
   for (const name of ['2026-10-02_02_ob_status_note_fields.sql', '2026-10-02_03_ob_status_building_notes.sql']) {
     await db.exec(read(name)); await db.exec(read(name))
   }
+  roundFunctionsBefore = await roundFunctions()
+  await db.exec(unlockedRoundMigration)
+  await db.exec(unlockedRoundMigration)
 })
 after(()=>db.close())
 async function overview(id: string) {
@@ -109,6 +123,121 @@ async function activate(id:string) {
 async function round(id:string, partId:string, operation:string, payload:Record<string,unknown>) {
   return (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data',[id,org,actor,operation,payload,partId])).data
 }
+
+test('unlock migration only replaces the two lock guards and retains all RPC permissions and security settings', async () => {
+  assert.equal(roundFunctionsBefore.length, 2)
+  const expected = roundFunctionsBefore.map(fn => {
+    assert.ok(fn.definition.includes(oldRoundGuard))
+    return { ...fn, definition: fn.definition.replace(oldRoundGuard, newRoundGuard) }
+  })
+  assert.deepEqual(await roundFunctions(), expected)
+  await db.exec(unlockedRoundMigration)
+  assert.deepEqual(await roundFunctions(), expected)
+})
+
+test('completed inspections allow note removal after unlocking in legacy, main and extra-building rounds', async () => {
+  for (const status of ['completed', 'klar', 'done']) {
+    const legacy = await fixture()
+    const multi = await fixture()
+    const main = (await activate(multi.i.id)).parts[0]
+    const added = await command(multi.i.id, 'add', { name: 'Garage', categoryKey: 'garage', buildingId: null })
+    const garage = added.parts.find((part: {id:string}) => part.id !== main.id)
+    const garageRoom = await row(multi.i.id, garage.id, 'inspection_interior_rooms', { floor_label: 'plan0', room_label: 'Garage' })
+    const garageNote = await row(multi.i.id, garage.id, 'inspection_control_items', {
+      interior_room_id: garageRoom.id, title: 'Garage note', note: 'Saved note', risk_text: 'Saved risk', ftu_text: 'Saved FTU' })
+    const garageImage = await row(multi.i.id, garage.id, 'inspection_images', {
+      interior_room_id: garageRoom.id, control_item_id: garageNote.id, file_path: 'garage-original.jpg' })
+    const cases = [
+      { id: legacy.i.id, part: null, note: legacy.n, image: legacy.img },
+      { id: multi.i.id, part: main.id, note: multi.n, image: multi.img },
+      { id: multi.i.id, part: garage.id, note: garageNote, image: garageImage },
+    ]
+    const snapshot = { reportData: { obBuildingRevision: (await overview(multi.i.id)).structure.revision,
+      notes: cases.map(item => item.note), imagePaths: cases.map(item => item.image.file_path),
+      pdfPath: 'immutable-issued-report.pdf' } }
+    const issued = await one('insert into inspection_report_links(inspection_id,snapshot_payload) values($1,$2) returning *', [multi.i.id, snapshot])
+    const beforeMigration = await one('select * from inspection_report_links where id=$1', [issued.id])
+    await db.exec(unlockedRoundMigration)
+    assert.deepEqual(await one('select * from inspection_report_links where id=$1', [issued.id]), beforeMigration)
+
+    for (const id of [legacy.i.id, multi.i.id]) {
+      await db.query('update inspections set status=$2,locked_at=now(),locked_by=$3 where id=$1', [id,status,actor])
+    }
+    for (const item of cases) {
+      const invoke = async (operation:string, payload:Record<string,unknown>, user=actor, organization=org) => item.part
+        ? (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data', [item.id,organization,user,operation,payload,item.part])).data
+        : (await one('select ob_round_mutate($1,$2,$3,$4,$5) as data', [item.id,organization,user,operation,payload])).data
+      const request = { kind: 'note', id: item.note.id }
+      await assert.rejects(invoke('remove-preview', request), /OB_ROUND_LOCKED/)
+      await assert.rejects(invoke('remove', { ...request, token: '0'.repeat(32), requestId: randomUUID() }), /OB_ROUND_LOCKED/)
+    }
+    // Match unlock/route.ts: clear lock metadata, deliberately retain completed status.
+    for (const id of [legacy.i.id, multi.i.id]) {
+      await db.query('update inspections set locked_at=null,locked_by=null where id=$1', [id])
+    }
+    for (const item of cases) {
+      const invoke = async (operation:string, payload:Record<string,unknown>, user=actor, organization=org) => item.part
+        ? (await one('select ob_building_round_mutate($1,$2,$3,$4,$5,$6) as data', [item.id,organization,user,operation,payload,item.part])).data
+        : (await one('select ob_round_mutate($1,$2,$3,$4,$5) as data', [item.id,organization,user,operation,payload])).data
+      const request = { kind: 'note', id: item.note.id }
+      for (const [user, organization] of [[stranger, org], [actor, randomUUID()]]) {
+        await assert.rejects(invoke('remove-preview', request, user, organization), /OB_ROUND_FORBIDDEN/)
+      }
+      const preview = await invoke('remove-preview', request)
+      const removal = { ...request, token: preview.token, requestId: randomUUID() }
+      for (const [user, organization] of [[stranger, org], [actor, randomUUID()]]) {
+        await assert.rejects(invoke('remove', removal, user, organization), /OB_ROUND_FORBIDDEN/)
+      }
+      await db.query('update inspections set locked_at=now(),locked_by=$2 where id=$1', [item.id,actor])
+      await assert.rejects(invoke('remove', removal), /OB_ROUND_LOCKED/)
+      await db.query('update inspections set locked_at=null,locked_by=null where id=$1', [item.id])
+      await assert.rejects(invoke('remove', { ...removal, token: '0'.repeat(32) }), /OB_ROUND_STALE/)
+      await db.query('insert into test_paused values($1)', [item.id])
+      await assert.rejects(invoke('remove', removal), /OB_ROUND_PAUSED/)
+      await db.query('delete from test_paused where inspection_id=$1', [item.id])
+      const result = await invoke('remove', removal)
+      assert.deepEqual(result.noteIds, [item.note.id])
+      assert.deepEqual(await invoke('remove', removal), result)
+      assert.equal(await one('select id from inspection_control_items where id=$1', [item.note.id]), undefined)
+      const image = await one('select * from inspection_images where id=$1', [item.image.id])
+      assert.equal(image.control_item_id, null)
+      assert.equal(image.processing_status, 'unprocessed')
+      assert.equal(image.file_path, item.image.file_path)
+      assert.equal((await one('select status from inspections where id=$1', [item.id])).status, status)
+      assert.deepEqual(await one('select * from inspection_report_links where id=$1', [issued.id]), issued)
+    }
+  }
+})
+
+test('unlock migration rolls back both functions on missing or unrecognized database versions', async () => {
+  const installed = await roundFunctions()
+  const legacy = installed.find(fn => fn.signature.startsWith('ob_round_mutate('))!
+  const building = installed.find(fn => fn.signature.startsWith('ob_building_round_mutate('))!
+  for (const failure of ['missing', 'unrecognized']) {
+    let renamed = false
+    try {
+      await db.exec(legacy.definition.replace(newRoundGuard, oldRoundGuard))
+      if (failure === 'missing') {
+        await db.exec('alter function public.ob_building_round_mutate(uuid,uuid,uuid,text,jsonb,uuid,text[]) rename to test_saved_building_round_mutate')
+        renamed = true
+      } else {
+        await db.exec(building.definition.replace(newRoundGuard,
+          "if coalesce(i.locked_at is not null, false) then raise exception 'OB_ROUND_LOCKED'; end if;"))
+      }
+      await assert.rejects(db.exec(unlockedRoundMigration), failure === 'missing'
+        ? /OB_UNLOCK_ROUND_FUNCTION_MISSING/ : /OB_UNLOCK_ROUND_GUARD_UNRECOGNIZED/)
+      await db.exec('rollback')
+      const legacyAfter = (await roundFunctions()).find(fn => fn.signature.startsWith('ob_round_mutate('))!
+      assert.equal(legacyAfter.definition, legacy.definition.replace(newRoundGuard, oldRoundGuard),
+        'The first function must not be partially upgraded when the second fails')
+    } finally {
+      await db.exec('rollback')
+      if (renamed) await db.exec('alter function public.test_saved_building_round_mutate(uuid,uuid,uuid,text,jsonb,uuid,text[]) rename to ob_building_round_mutate')
+      for (const fn of installed) await db.exec(fn.definition)
+    }
+  }
+  assert.deepEqual(await roundFunctions(), installed)
+})
 
 test('STB building image notes save manual recommendations/comments and never copy hidden OB risk/FTU', async () => {
   const f = await fixture()
