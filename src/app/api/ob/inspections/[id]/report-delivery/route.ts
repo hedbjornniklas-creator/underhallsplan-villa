@@ -14,9 +14,12 @@ import {
 import { buildReportDataV2 } from '@/lib/report/pdfV2/buildReportDataV2'
 import { buildReportSpec } from '@/lib/report/reportSpec'
 import { buildInspectionReportDeliveryEmail } from '@/lib/inspections/reportEmailTemplates'
-import { getLatestObPublishedReportId, obPublishedReportHref } from '@/lib/ob/publishedReport'
+import { getLatestObPublishedReportId, getObPublishedReportRecord, obPublishedReportHref } from '@/lib/ob/publishedReport'
 import { obWordExportHref } from '@/lib/ob/wordExportLink'
 import { resolveObInspectionProfile } from '@/lib/ob/inspectionProfile'
+import { createObReportShareToken } from '@/lib/ob/reportShareToken'
+import { readObDeliveryTimeline } from '@/lib/ob/reportDeliveryHistoryServer'
+import { ORGANIZATION_RESPONSE_HEADERS } from '@/lib/organizations/administrationHttp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -110,7 +113,7 @@ type TimingLogger = {
 
 type PdfStatus = 'pending' | 'processing' | 'ready' | 'failed'
 
-type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
+type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only' | 'resend'
 type ReportDeliveryPostAction = DeliveryAction | 'regenerate_pdf'
 
 function normalizedText(value: unknown): string | null {
@@ -131,7 +134,11 @@ function pickStreetAddress(value: string | null | undefined): string | null {
 }
 
 function jsonError(message: string, status: number, extra?: Record<string, unknown>) {
-  return NextResponse.json({ error: message, ...(extra ?? {}) }, { status })
+  return NextResponse.json({ error: message, ...(extra ?? {}) }, { status, headers: ORGANIZATION_RESPONSE_HEADERS })
+}
+
+function deliveryJson(body: unknown) {
+  return NextResponse.json(body, { headers: ORGANIZATION_RESPONSE_HEADERS })
 }
 
 function createTimingLogger(scope: string, traceId: string): TimingLogger {
@@ -164,16 +171,6 @@ function normalizePdfStatus(value: unknown): PdfStatus {
   if (normalized === 'ready') return 'ready'
   if (normalized === 'failed') return 'failed'
   return 'pending'
-}
-
-function isMissingInspectionLockColumnsError(message: string) {
-  const normalized = message.toLowerCase()
-  return (
-    normalized.includes('locked_at') ||
-    normalized.includes('locked_by') ||
-    normalized.includes('42703') ||
-    normalized.includes('column')
-  )
 }
 
 function buildOrigin(request: Request) {
@@ -277,6 +274,7 @@ function parseDeliveryAction(actionInput: unknown, markAsCompletedInput: unknown
   if (typeof actionInput === 'string') {
     const normalized = actionInput.trim().toLowerCase()
     if (normalized === 'complete_only') return 'complete_only'
+    if (normalized === 'resend') return 'resend'
     if (normalized === 'send_open') return 'send_open'
     if (normalized === 'send_and_complete') return 'send_and_complete'
   }
@@ -299,45 +297,16 @@ async function markInspectionCompletedAndLocked(input: {
   inspectionId: string
   inspectionStatus: string
   userId: string
+  orgId: string
+  source: 'send_and_complete' | 'complete_only'
+  reportId?: string | null
 }): Promise<string | null> {
-  const lockedAt = new Date().toISOString()
-  const inspectionPatch =
-    input.inspectionStatus !== 'completed'
-      ? {
-          status: 'completed',
-          locked_at: lockedAt,
-          locked_by: input.userId,
-        }
-      : {
-          locked_at: lockedAt,
-          locked_by: input.userId,
-        }
-
-  const { error: updateInspectionError } = await input.admin
-    .from('inspections')
-    .update(inspectionPatch)
-    .eq('id', input.inspectionId)
-
-  if (!updateInspectionError) return lockedAt
-
-  const message = updateInspectionError.message ?? ''
-  if (!isMissingInspectionLockColumnsError(message)) {
-    throw new Error(message || 'Kunde inte uppdatera låsstatus för besiktningen.')
-  }
-
-  if (input.inspectionStatus === 'completed') return null
-
-  const { error: fallbackStatusError } = await input.admin
-    .from('inspections')
-    .update({ status: 'completed' })
-    .eq('id', input.inspectionId)
-
-  if (fallbackStatusError) {
-    throw new Error(
-      fallbackStatusError.message ?? 'Kunde inte uppdatera besiktningsstatus till klar.'
-    )
-  }
-  return null
+  const { data, error } = await input.admin.rpc('ob_complete_inspection_with_history', {
+    p_org_id: input.orgId, p_inspection_id: input.inspectionId, p_actor: input.userId,
+    p_source: input.source, p_report_id: input.reportId ?? null,
+  })
+  if (error || typeof data !== 'string' || !Number.isFinite(Date.parse(data))) throw Error('Kunde inte låsa besiktningen och registrera händelsen.')
+  return data as string
 }
 
 function getMailFromAddress() {
@@ -444,14 +413,17 @@ async function isInspectionOwnedByUser(
   return Boolean(data)
 }
 
-async function getDeliveryHistory(admin: AdminClient, assignmentId: string) {
-  const { data, error } = await admin
+async function getDeliveryHistory(admin: AdminClient, orgId: string, inspectionId: string, assignmentId?: string) {
+  let query = admin
     .from('outbound_messages')
     .select('id,recipient_email,status,sent_at,created_at,error_message,subject')
-    .eq('assignment_id', assignmentId)
+    .eq('org_id', orgId)
     .eq('template_key', 'inspection_report_delivery')
     .order('created_at', { ascending: false })
     .limit(10)
+  query = assignmentId ? query.or(`inspection_id.eq.${inspectionId},assignment_id.eq.${assignmentId}`)
+    : query.eq('inspection_id', inspectionId)
+  const { data, error } = await query
 
   if (error) {
     throw new Error(error.message ?? 'Kunde inte hÃ¤mta leveranshistorik.')
@@ -552,7 +524,6 @@ async function getReportCreatedLog(admin: AdminClient, inspectionId: string) {
       'id,created_at,pdf_status,pdf_error,pdf_storage_bucket,pdf_storage_path,pdf_base64'
     )
     .eq('inspection_id', inspectionId)
-    .is('revoked_at', null)
     .order('created_at', { ascending: false })
     .limit(25)
 
@@ -627,7 +598,7 @@ async function buildDeliveryActivityLog(input: {
       title: 'Skapade utlåtande',
       subtitle,
       occurred_at: row.created_at,
-      download_url: hasReadyPdf ? `/api/report-v2/${input.inspectionId}/pdf` : null,
+      download_url: hasReadyPdf ? `/api/ob/inspections/${input.inspectionId}/published-report?report=${row.id}&archive=1` : null,
     }
   })
 
@@ -669,6 +640,9 @@ async function createOutboundMessage(
   input: {
     orgId: string
     assignmentId: string | null
+    inspectionId: string
+    reportId: string
+    dispatchId: string
     createdBy: string
     recipientEmail: string
     subject: string
@@ -680,6 +654,9 @@ async function createOutboundMessage(
     .insert({
       org_id: input.orgId,
       assignment_id: input.assignmentId,
+      inspection_id: input.inspectionId,
+      report_link_id: input.reportId,
+      report_dispatch_id: input.dispatchId,
       channel: 'email',
       recipient_email: input.recipientEmail,
       subject: input.subject,
@@ -719,6 +696,25 @@ async function updateOutboundMessage(
   }
 }
 
+async function getDeliveryDetails(admin: AdminClient, orgId: string, inspectionId: string,
+  reportId: string | null, request: Request, canShare = true) {
+  let timeline = null
+  let historyError: string | null = null
+  try { timeline = await readObDeliveryTimeline(admin, orgId, inspectionId) }
+  catch { historyError = 'Historiken kunde inte hämtas fullständigt. Det går inte att avgöra utskicksstatus från en tom logg.' }
+  let publicReportUrl: string | null = null
+  if (reportId && canShare) {
+    const { data, error } = await admin.from('inspection_report_links').select('id,token_hash')
+      .eq('id', reportId).eq('inspection_id', inspectionId).eq('org_id', orgId)
+      .eq('snapshot_schema_version', 'v1').not('snapshot_payload', 'is', null).is('revoked_at', null).maybeSingle()
+    if (!error && data && /^[a-f0-9]{64}$/.test(data.token_hash)) {
+      const token = createObReportShareToken({ id: data.id, orgId, inspectionId, tokenHash: data.token_hash })
+      publicReportUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
+    }
+  }
+  return { timeline, historyError, publicReportUrl }
+}
+
 export async function GET(
   request: Request,
   context: { params: Promise<{ id: string }> }
@@ -741,10 +737,12 @@ export async function GET(
 
     const ordererEmail = resolveReportRecipientEmail(inspection, assignment)
     const workflow = await getObAssignmentWorkflow(id, org.orgId)
-    const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+    const history = await getDeliveryHistory(admin, org.orgId, id, assignment?.id)
     const inspectionStatus = normalizeInspectionStatus(inspection.status)
     const pdfState = await getReportPdfState(admin, id)
     const publishedReportId = await getLatestObPublishedReportId(admin, id, org.orgId)
+    const deliveryDetails = await getDeliveryDetails(admin, org.orgId, id, publishedReportId, request,
+      workflow?.canDeliver !== false)
     const activityLog = await buildDeliveryActivityLog({
       admin,
       orgId: org.orgId,
@@ -752,9 +750,10 @@ export async function GET(
       history,
     })
 
-    return NextResponse.json({
+    return deliveryJson({
       inspectionId: id,
       inspectionStatus,
+      inspectionLockedAt: inspection.locked_at ?? null,
       canSend: inspectionStatus !== 'archived' && workflow?.canDeliver !== false,
       digitalReportUrl: obPublishedReportHref(id, publishedReportId),
       wordExportUrl: publishedReportId || (!inspection.locked_at && inspectionStatus !== 'archived')
@@ -771,6 +770,7 @@ export async function GET(
       canDownloadPdf: workflow?.canDeliver !== false && pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
       history,
       activityLog,
+      ...deliveryDetails,
     })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)
@@ -826,6 +826,9 @@ export async function POST(
     const workflow = await getObAssignmentWorkflow(id, org.orgId)
     if (workflow && !workflow.canDeliver) return jsonError(workflow.reason ?? 'Slutleveransen är spärrad.', 409)
     const action = parseReportDeliveryPostAction(body?.action, body?.mark_as_completed)
+    // Do not send a message and then discover that the audit migration is missing.
+    try { await readObDeliveryTimeline(admin, org.orgId, id) }
+    catch { return jsonError('Databasstöd för utskickshistoriken saknas eller kunde inte verifieras. Inget nytt utskick har gjorts.', 409) }
 
     if (action === 'regenerate_pdf') {
       const propertyId = assignment?.property_id ?? inspection.property_id
@@ -870,7 +873,7 @@ export async function POST(
         { linkId: latestLink.id }
       )
 
-      const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+      const history = await getDeliveryHistory(admin, org.orgId, id, assignment?.id)
       const pdfState = await getReportPdfState(admin, id)
       const publishedReportId = await getLatestObPublishedReportId(admin, id, org.orgId)
       const activityLog = await buildDeliveryActivityLog({
@@ -880,7 +883,7 @@ export async function POST(
         history,
       })
 
-      return NextResponse.json({
+      return deliveryJson({
         inspectionId: id,
         inspectionStatus,
         canSend: inspectionStatus !== 'archived',
@@ -895,6 +898,7 @@ export async function POST(
         canDownloadPdf: pdfState.hasStoredPdf && pdfState.pdfStatus === 'ready',
         history,
         activityLog,
+        ...await getDeliveryDetails(admin, org.orgId, id, publishedReportId, request),
       })
     }
 
@@ -904,10 +908,11 @@ export async function POST(
         inspectionId: id,
         inspectionStatus,
         userId: org.userId,
+        orgId: org.orgId, source: 'complete_only',
       })
       timing.mark('inspection_completed_without_send')
 
-      const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+      const history = await getDeliveryHistory(admin, org.orgId, id, assignment?.id)
       const pdfState = await getReportPdfState(admin, id)
       const activityLog = await buildDeliveryActivityLog({
         admin,
@@ -917,7 +922,7 @@ export async function POST(
       })
 
       timing.mark('success', { finalInspectionStatus: 'completed', totalMs: timing.totalMs() })
-      return NextResponse.json({
+      return deliveryJson({
         inspectionId: id,
         inspectionStatus: 'completed',
         inspectionLockedAt,
@@ -935,6 +940,7 @@ export async function POST(
         history,
         activityLog,
         linkId: '',
+        ...await getDeliveryDetails(admin, org.orgId, id, await getLatestObPublishedReportId(admin, id, org.orgId), request),
       })
     }
 
@@ -952,8 +958,11 @@ export async function POST(
     const recipients = [primaryRecipient, ...extraRecipients]
     timing.mark('recipients_ready', { recipientCount: recipients.length })
 
-    const inspectionSide = resolveObInspectionProfile(inspection) ?? 'buyer'
-    const reportData = await buildReportDataV2({
+    const reusedId = action === 'resend' ? await getLatestObPublishedReportId(admin, id, org.orgId) : null
+    const frozen = reusedId ? await getObPublishedReportRecord(admin, id, reusedId, { ...org, canEdit: true }) : null
+    if (action === 'resend' && !frozen) return jsonError('Den publicerade versionen saknas. Inget nytt utlåtande har skapats.', 409)
+    const inspectionSide = frozen?.snapshot.inspectionSide ?? resolveObInspectionProfile(inspection) ?? 'buyer'
+    const reportData = frozen?.snapshot.reportData ?? await buildReportDataV2({
       inspectionId: id,
       propertyId,
     })
@@ -967,7 +976,7 @@ export async function POST(
       appendices.moisture_control && typeof appendices.moisture_control === 'object'
         ? (appendices.moisture_control as Record<string, unknown>)
         : {}
-    const reportSpec = buildReportSpec({
+    const reportSpec = frozen?.snapshot.reportSpec ?? buildReportSpec({
       layoutVersion: 2,
       inspectionSide,
       objectType: reportData.mock.properties?.object_type,
@@ -979,7 +988,7 @@ export async function POST(
       },
     })
     timing.mark('report_spec_built')
-    const snapshotPayload: ReportSnapshotPayloadV1 = createReportSnapshotPayloadV1({
+    const snapshotPayload: ReportSnapshotPayloadV1 = frozen?.snapshot ?? createReportSnapshotPayloadV1({
       inspectionId: id,
       propertyId,
       inspectionSide,
@@ -988,35 +997,41 @@ export async function POST(
     })
     timing.mark('snapshot_payload_built')
 
-    const token = generateAssignmentToken()
+    const token = frozen && reusedId ? createObReportShareToken({ id: reusedId, orgId: org.orgId, inspectionId: id,
+      tokenHash: frozen.tokenHash }) : generateAssignmentToken()
     const tokenHash = hashAssignmentToken(token)
 
-    const { data: linkData, error: linkError } = await admin
-      .from('inspection_report_links')
-      .insert({
-        org_id: org.orgId,
-        inspection_id: id,
-        assignment_id: assignment?.id ?? null,
-        token_hash: tokenHash,
-        delivery_mode: 'link_only',
-        snapshot_schema_version: 'v1',
-        snapshot_payload: snapshotPayload,
-        pdf_status: 'pending',
-        pdf_error: null,
-        pdf_attempts: 0,
-        pdf_started_at: null,
-        pdf_generated_at: null,
-        created_by: org.userId,
-      })
-      .select('id')
-      .single()
+    let linkData: { id: string } | null = reusedId ? { id: reusedId } : null
+    if (!linkData) {
+      const { data: createdLink, error: linkError } = await admin
+        .from('inspection_report_links')
+        .insert({
+          org_id: org.orgId,
+          inspection_id: id,
+          assignment_id: assignment?.id ?? null,
+          token_hash: tokenHash,
+          delivery_mode: 'link_only',
+          snapshot_schema_version: 'v1',
+          snapshot_payload: snapshotPayload,
+          ob_delivery_tracked: true,
+          pdf_status: 'pending',
+          pdf_error: null,
+          pdf_attempts: 0,
+          pdf_started_at: null,
+          pdf_generated_at: null,
+          created_by: org.userId,
+        })
+        .select('id')
+        .single()
 
-    if (linkError || !linkData) {
-      throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlÃ¤nk.')
+      if (linkError || !createdLink) {
+        throw new Error(linkError?.message ?? 'Kunde inte skapa rapportlänk.')
+      }
+      linkData = createdLink
+      timing.mark('report_link_created', { linkId: linkData.id })
+      await revokeOlderReportLinks(admin, id, linkData.id)
+      timing.mark('older_report_links_revoked')
     }
-    timing.mark('report_link_created', { linkId: linkData.id })
-    await revokeOlderReportLinks(admin, id, linkData.id)
-    timing.mark('older_report_links_revoked')
 
     const linkUrl = `${resolvePublicBaseUrl(request)}/rapport/${token}`
     const fromAddress = getMailFromAddress()
@@ -1053,6 +1068,7 @@ export async function POST(
       const messageId = await createOutboundMessage(admin, {
         orgId: org.orgId,
         assignmentId: assignment?.id ?? null,
+        inspectionId: id, reportId: linkData.id, dispatchId: traceId,
         createdBy: org.userId,
         recipientEmail: recipient,
         subject: emailContent.subject,
@@ -1099,18 +1115,19 @@ export async function POST(
       }
     }
 
-    let inspectionLockedAt: string | null = null
+    let inspectionLockedAt: string | null = inspection.locked_at ?? null
     if (primarySent && action === 'send_and_complete') {
       inspectionLockedAt = await markInspectionCompletedAndLocked({
         admin,
         inspectionId: id,
         inspectionStatus,
         userId: org.userId,
+        orgId: org.orgId, source: 'send_and_complete', reportId: linkData.id,
       })
       timing.mark('inspection_locked_after_send')
     }
 
-    after(async () => {
+    if (!frozen) after(async () => {
       await runInspectionReportPdfBatch({
         origin: resolvePublicBaseUrl(request),
         linkId: linkData.id,
@@ -1119,7 +1136,7 @@ export async function POST(
     })
     timing.mark('pdf_job_scheduled', { linkId: linkData.id })
 
-    const history = assignment ? await getDeliveryHistory(admin, assignment.id) : []
+    const history = await getDeliveryHistory(admin, org.orgId, id, assignment?.id)
     const activityLog = await buildDeliveryActivityLog({
       admin,
       orgId: org.orgId,
@@ -1131,7 +1148,7 @@ export async function POST(
     timing.mark('history_loaded', { historyCount: history.length })
     timing.mark('success', { finalInspectionStatus, totalMs: timing.totalMs() })
 
-    return NextResponse.json({
+    return deliveryJson({
       inspectionId: id,
       inspectionStatus: finalInspectionStatus,
       inspectionLockedAt,
@@ -1140,15 +1157,16 @@ export async function POST(
       primaryRecipientEmail: primaryRecipient,
       defaultRecipientEmail: fallbackOrdererEmail,
       ordererEmail: fallbackOrdererEmail,
-      hasStoredPdf: false,
-      pdfStatus: 'pending' as PdfStatus,
+      hasStoredPdf: frozen ? Boolean(frozen.pdfBase64 || frozen.pdfStoragePath) : false,
+      pdfStatus: frozen ? frozen.pdfStatus : 'pending' as PdfStatus,
       pdfError: null,
-      canDownloadPdf: false,
+      canDownloadPdf: frozen ? Boolean(frozen.pdfBase64 || frozen.pdfStoragePath) : false,
       sentRecipients,
       failedRecipients,
       history,
       activityLog,
       linkId: linkData.id,
+      ...await getDeliveryDetails(admin, org.orgId, id, linkData.id, request),
     })
   } catch (error) {
     const organizationFailure = obOrganizationFailure(error)

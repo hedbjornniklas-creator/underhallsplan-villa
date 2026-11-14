@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import { resolveReportTokenHash } from '@/lib/ob/reportShareToken'
 import { sendAssignmentEmail } from '@/lib/assignments/mailer'
 import { buildInspectionReportShareEmail } from '@/lib/inspections/reportEmailTemplates'
 import {
@@ -327,8 +327,9 @@ export async function POST(
       return jsonError('Ange en giltig e-postadress.', 400)
     }
 
-    const tokenHash = hashAssignmentToken(normalizedToken)
     const admin = createSupabaseAdminClient()
+    const tokenHash = await resolveReportTokenHash(admin, normalizedToken)
+    if (!tokenHash) return notFoundResponse()
 
     const { data: linkData, error: linkError } = await admin
       .from('inspection_report_links')
@@ -469,8 +470,9 @@ export async function GET(
       return notFoundResponse()
     }
 
-    const tokenHash = hashAssignmentToken(normalizedToken)
     const admin = createSupabaseAdminClient()
+    const tokenHash = await resolveReportTokenHash(admin, normalizedToken)
+    if (!tokenHash) return notFoundResponse()
     const requestUrl = new URL(request.url)
 
     if (requestUrl.searchParams.get('status') === '1') {

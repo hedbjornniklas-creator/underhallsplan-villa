@@ -194,7 +194,7 @@ window.fetch = async (input, init) => {
       inspection.locked_at = '2026-10-14T10:00:00Z'
     }
     return Response.json({ inspectionId, inspectionStatus: inspection.status,
-      inspectionLockedAt: body.action === 'send_and_complete' ? inspection.locked_at : null,
+      inspectionLockedAt: inspection.locked_at ?? null,
       sentRecipients: [body.primary_recipient], failedRecipients: [], primaryRecipientEmail: body.primary_recipient,
       defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
       hasStoredPdf: false, pdfStatus: 'pending', pdfError: null, canDownloadPdf: false,
@@ -202,14 +202,35 @@ window.fetch = async (input, init) => {
     })
   }
   if (url === `/api/ob/inspections/${inspectionId}/report-delivery` && !init?.method) return Response.json({
+    inspectionLockedAt: inspection.locked_at ?? null,
     inspectionStatus: inspection.status, canSend: new URLSearchParams(location.search).has('simulate-delivery'), reason: 'Syntetisk förhandsvisning. Inga mejl skickas.',
     pdfStatus: 'ready', hasStoredPdf: true, canDownloadPdf: true, history: [], activityLog: [],
+    ...(new URLSearchParams(location.search).has('delivery-history') ? {
+      publicReportUrl: `${location.origin}/rapport/synthetic-public-report-link`,
+      digitalReportUrl: `/ob/inspections/${inspectionId}/digital?report=synthetic-report`,
+      timeline: { nextCursor: 'synthetic-older', overview: { publishedAt: '2026-11-06T07:24:53Z', reportId: 'synthetic-report',
+        version: 3, lockedAt: inspection.locked_at ?? null, lastSentAt: '2026-11-06T07:24:54Z',
+        lastRecipients: ['bestallare@example.invalid'], historyIncomplete: new URLSearchParams(location.search).has('incomplete-history') },
+      entries: [
+        { id: 'sent:latest', type: 'sent', occurred_at: '2026-11-06T07:24:54Z', actor_name: 'Testbesiktningsman',
+          recipient_email: 'bestallare@example.invalid', status: 'sent', detail: null, report_id: 'synthetic-report', version: 3, report_active: true },
+        { id: 'published:latest', type: 'published', occurred_at: '2026-11-06T07:24:53Z', actor_name: 'Testbesiktningsman',
+          recipient_email: null, status: 'ready', detail: null, report_id: 'synthetic-report', version: 3, report_active: true },
+        { id: 'unlocked:latest', type: 'unlocked', occurred_at: '2026-11-06T07:07:33Z', actor_name: 'Testbesiktningsman',
+          recipient_email: null, status: null, detail: 'Små justeringar', report_id: null, version: null, report_active: null },
+      ] },
+    } : {}),
     ...(new URLSearchParams(location.search).has('word') ? {
       digitalReportUrl: new URLSearchParams(location.search).has('published') ? `/ob/inspections/${inspectionId}/digital?report=selected` : null,
       wordExportUrl: `/api/ob/inspections/${inspectionId}/word?${new URLSearchParams(location.search).has('published') ? 'report=selected' : 'draft=1'}`,
     } : {}),
     defaultRecipientEmail: 'test@example.invalid', ordererEmail: 'test@example.invalid',
   })
+  if (url === `/api/ob/inspections/${inspectionId}/report-delivery/history`) return Response.json({ nextCursor: null,
+    entries: [{ id: 'sent:older', type: 'sent', occurred_at: '2026-10-30T05:28:23Z', actor_name: 'Testbesiktningsman',
+      recipient_email: 'bestallare@example.invalid', status: 'failed', detail: 'Syntetiskt leveransfel', report_id: 'synthetic-older', version: 2, report_active: false },
+      { id: 'pdf_ready:older', type: 'pdf_ready', occurred_at: '2026-10-30T05:28:23Z', actor_name: null,
+        recipient_email: null, status: 'ready', detail: null, report_id: 'synthetic-older', version: 2, report_active: false }] })
   if (url !== `/api/ob/inspections/${inspectionId}/buildings` || init?.method !== 'POST') throw Error(`Blocked fixture request: ${url}`)
   const { operation, payload } = JSON.parse(String(init.body))
   await new Promise(resolve => setTimeout(resolve, qa.saveDelay))

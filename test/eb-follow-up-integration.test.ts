@@ -98,7 +98,7 @@ function publicPageFixture() {
       } }) }
       return query
     } }) },
-    '@/lib/assignments/tokens': { hashAssignmentToken: (value: string) => `hashed:${value}` },
+    '@/lib/ob/reportShareToken': { resolveReportTokenHash: async (_admin: unknown, value: string) => `hashed:${value}` },
     '@/lib/report/reportSnapshotPayload': { isReportSnapshotPayloadV1: () => false },
     '@/lib/eb/reportSnapshot': snapshots,
     '@/lib/tu/reportSnapshot': { isTuReportSnapshotPayloadV1: () => false },

@@ -112,11 +112,14 @@ test('all final delivery actions stop before writes, PDF generation or mail', as
       '@/lib/ob/assignmentWorkflowServer': workflowDependency,
       '@/lib/ob/publishedReport': {},
       '@/lib/ob/wordExportLink': {},
+      '@/lib/ob/reportShareToken': {},
+      '@/lib/ob/reportDeliveryHistoryServer': {},
+      '@/lib/organizations/administrationHttp': { ORGANIZATION_RESPONSE_HEADERS: {} },
       '@/lib/ob/inspectionProfile': { resolveObInspectionProfile },
     }
     for (const path of ['assignments/tokens', 'assignments/mailer', 'report/pdfJobs', 'report/reportSnapshotPayload', 'report/pdfV2/buildReportDataV2', 'report/reportSpec', 'inspections/reportEmailTemplates']) dependencies[`@/lib/${path}`] = {}
     const route = load('src/app/api/ob/inspections/[id]/report-delivery/route.ts', dependencies)
-    for (const action of ['complete_only', 'send_open', 'send_and_complete', 'regenerate_pdf']) {
+    for (const action of ['complete_only', 'send_open', 'send_and_complete', 'regenerate_pdf', 'resend']) {
       const response = await route.POST(request({ action }), context)
       assert.equal(response.status, 409, action)
       assert.equal((await response.json()).error, deniedWorkflow.reason)

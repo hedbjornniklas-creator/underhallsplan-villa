@@ -18,7 +18,8 @@ export async function getLatestObPublishedReportId(admin: Admin, inspectionId: s
 }
 
 /** Called only after entity-scoped read or write authorization. */
-export async function getObPublishedReportRecord(admin: Admin, inspectionId: string, linkId: string, access: Access) {
+export async function getObPublishedReportRecord(admin: Admin, inspectionId: string, linkId: string, access: Access,
+  options: { includeRevoked?: boolean } = {}) {
   if (!UUID.test(inspectionId) || !UUID.test(linkId) || typeof access.canEdit !== 'boolean') return null
   const { data: inspection, error: inspectionError } = await admin.from('inspections')
     .select('id,property_id,inspection_family,type').eq('id', inspectionId).maybeSingle()
@@ -31,9 +32,11 @@ export async function getObPublishedReportRecord(admin: Admin, inspectionId: str
     .select('inspection_id,org_id').eq('inspection_id', inspectionId).eq('org_id', access.orgId).maybeSingle()
   if (bindingError) throw Error('Kunde inte verifiera behörigheten.')
   if (!binding || binding.inspection_id !== inspectionId || binding.org_id !== access.orgId) return null
-  const { data, error } = await admin.from('inspection_report_links')
+  let reportQuery = admin.from('inspection_report_links')
     .select('snapshot_payload,token_hash,pdf_status,pdf_base64,pdf_storage_bucket,pdf_storage_path').eq('id', linkId).eq('inspection_id', inspectionId)
-    .eq('org_id', access.orgId).is('revoked_at', null).maybeSingle()
+    .eq('org_id', access.orgId)
+  if (!options.includeRevoked) reportQuery = reportQuery.is('revoked_at', null)
+  const { data, error } = await reportQuery.maybeSingle()
   if (error) throw Error('Kunde inte hämta det publicerade utlåtandet.')
   if (!data) return null
   const snapshot = data?.snapshot_payload

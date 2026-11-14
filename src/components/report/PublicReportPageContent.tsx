@@ -1,7 +1,7 @@
 ﻿import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
-import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import { resolveReportTokenHash } from '@/lib/ob/reportShareToken'
 import {
   isReportSnapshotPayloadV1,
   type ReportSnapshotPayloadV1,
@@ -71,7 +71,8 @@ export default async function PublicReportPageContent({
   if (normalizedToken.length < 20) notFound()
 
   const admin = createSupabaseAdminClient()
-  const tokenHash = hashAssignmentToken(normalizedToken)
+  const tokenHash = await resolveReportTokenHash(admin, normalizedToken)
+  if (!tokenHash) notFound()
 
   const { data, error } = await admin
     .from('inspection_report_links')

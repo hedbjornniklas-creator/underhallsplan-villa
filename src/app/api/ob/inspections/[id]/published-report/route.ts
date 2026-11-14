@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import { resolveReportTokenHash } from '@/lib/ob/reportShareToken'
 import { requireObInspectionContext, requireObInspectionReadContext } from '@/lib/ob/organizationBindings'
 import { getObPublishedReportRecord, obPublishedPdfStatus } from '@/lib/ob/publishedReport'
 import { obOrganizationFailure, obRequestOrgId } from '@/lib/ob/organizationHttp'
@@ -21,7 +21,9 @@ async function readReport(request: Request, context: Context, forSharing = false
   const reports = new URL(request.url).searchParams.getAll('report')
   if (reports.length !== 1) throw Error('ORG_REQUEST_INVALID')
   const admin = createSupabaseAdminClient()
-  const report = await getObPublishedReportRecord(admin, id, reports[0], access)
+  const report = await getObPublishedReportRecord(admin, id, reports[0], access, {
+    includeRevoked: !forSharing && new URL(request.url).searchParams.get('archive') === '1',
+  })
   return report ? { admin, report } : null
 }
 
@@ -57,9 +59,9 @@ export async function POST(request: Request, context: Context) {
     let link: URL
     try { link = new URL(typeof body.publicUrl === 'string' ? body.publicUrl.trim() : '') }
     catch { return json({ error: 'Ange kundens fullständiga utlåtandelänk.' }, 400) }
-    const match = link.pathname.match(/^\/rapport\/([A-Za-z0-9_-]{20,})\/?$/)
+    const match = link.pathname.match(/^\/rapport\/([A-Za-z0-9_.-]{20,200})\/?$/)
     if (link.origin !== base.origin || link.username || link.password || link.search || link.hash || !match ||
-      hashAssignmentToken(match[1]) !== result.report.tokenHash) {
+      await resolveReportTokenHash(result.admin, match[1]) !== result.report.tokenHash) {
       return json({ error: 'Länken hör inte till den öppnade rapportversionen.' }, 400)
     }
     const shareUrl = `${base.origin}/rapport/${match[1]}`

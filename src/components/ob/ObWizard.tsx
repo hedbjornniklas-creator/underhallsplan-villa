@@ -18,6 +18,8 @@ import { ObFloorContext, ObFloorProvider } from './ObFloorProvider'
 import { useObBuilding } from './ObBuildingContext'
 import { obPublishedReportHref } from '@/lib/ob/publishedReportLink'
 import { obWordExportHref } from '@/lib/ob/wordExportLink'
+import { ObCopyReportLink, ObReportDeliveryHistory, ObReportDeliveryOverview } from './ObReportDeliveryStatus'
+import type { ObDeliveryTimeline } from '@/lib/ob/reportDeliveryHistory'
 import type { ObObjectType } from '@/lib/ob/objectType'
 
 type DbInspection = Tables<'inspections'>
@@ -115,6 +117,10 @@ type ReportDeliveryLogEntry = {
 }
 
 type ReportDeliveryMeta = {
+  publicReportUrl?: string | null
+  timeline?: ObDeliveryTimeline | null
+  historyError?: string | null
+  inspectionLockedAt?: string | null
   digitalReportUrl?: string | null
   wordExportUrl?: string | null
   inspectionId: string
@@ -132,6 +138,9 @@ type ReportDeliveryMeta = {
 }
 
 type ReportDeliverySendResponse = {
+  publicReportUrl?: string | null
+  timeline?: ObDeliveryTimeline | null
+  historyError?: string | null
   inspectionId: string
   inspectionStatus: string
   inspectionLockedAt: string | null
@@ -151,8 +160,8 @@ type ReportDeliverySendResponse = {
   linkId: string
 }
 
-type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only'
-type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only'
+type SendCompletionChoice = 'lock' | 'send_open' | 'complete_only' | 'resend'
+type DeliveryAction = 'send_and_complete' | 'send_open' | 'complete_only' | 'resend'
 type RegeneratePdfResponse = ReportDeliveryMeta & { error?: string }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -298,19 +307,15 @@ function ObWizardContent({
   const [deliveryResult, setDeliveryResult] = useState<string | null>(null)
   const currentInspectionStatus = deliveryMeta?.inspectionStatus ?? normalizedInspection.status ?? null
   const isCurrentlyCompleted = isCompletedStatus(currentInspectionStatus)
-  const isCurrentlyLocked = Boolean(
-    (normalizedInspection as ObWizardInspection & { locked_at?: string | null }).locked_at
-  )
+  const currentLockedAt = deliveryMeta && 'inspectionLockedAt' in deliveryMeta
+    ? deliveryMeta.inspectionLockedAt ?? null : normalizedInspection.locked_at ?? null
+  const isCurrentlyLocked = Boolean(currentLockedAt)
   const reportPdfDownloadHref = inspectionId ? `/api/report-v2/${inspectionId}/pdf` : null
   const canDownloadGeneratedPdf = Boolean(
     reportPdfDownloadHref &&
       deliveryMeta?.hasStoredPdf &&
       deliveryMeta.pdfStatus === 'ready'
   )
-  const visibleDeliveryLog = deliveryMeta?.activityLog.slice(0, 20) ?? []
-  const pdfDownloadLogId = visibleDeliveryLog.find(
-    (entry) => entry.type === 'report_sent' && entry.download_url
-  )?.id
   const deliveryActionDisabled =
     !hasValidIds ||
     !inspectionId ||
@@ -397,13 +402,13 @@ function ObWizardContent({
   }, [activeSection, hasValidIds, inspectionId, deliveryMeta])
 
   const handleSendActionChoice = async (choice: SendCompletionChoice) => {
-    if ((choice === 'lock' || choice === 'send_open') && !isValidEmail(primaryRecipientInput)) {
+    if (choice !== 'complete_only' && !isValidEmail(primaryRecipientInput)) {
       setDeliveryError('Ange en giltig huvudmottagare för utskick.')
       return
     }
 
     const action: DeliveryAction =
-      choice === 'complete_only'
+      choice === 'resend' ? 'resend' : choice === 'complete_only'
         ? 'complete_only'
         : choice === 'lock'
           ? 'send_and_complete'
@@ -497,6 +502,10 @@ function ObWizardContent({
           ordererEmail: okPayload.ordererEmail,
           history: okPayload.history ?? [],
           activityLog: okPayload.activityLog ?? prev?.activityLog ?? [],
+          publicReportUrl: okPayload.publicReportUrl ?? null,
+          timeline: okPayload.timeline ?? null,
+          historyError: okPayload.historyError ?? null,
+          inspectionLockedAt: okPayload.inspectionLockedAt,
           digitalReportUrl: okPayload.linkId ? obPublishedReportHref(inspectionId, okPayload.linkId) : prev?.digitalReportUrl ?? null,
           wordExportUrl: okPayload.linkId ? obWordExportHref(inspectionId, okPayload.linkId) : prev?.wordExportUrl ?? null,
       }))
@@ -520,7 +529,7 @@ function ObWizardContent({
               ? ' Besiktningen är fortsatt låst.'
               : ' Besiktningen är fortsatt öppen för ändringar.'
         setDeliveryResult(
-          `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText} PDF genereras i bakgrunden. Länk: ${okPayload.publicLink}`
+          `Utlåtandet skickades till ${okPayload.sentRecipients.length} mottagare.${failedText}${completionText}`
         )
       }
     } catch (error) {
@@ -528,6 +537,7 @@ function ObWizardContent({
       setDeliveryError(message)
     } finally {
       setSendingReport(false)
+      setWorkflowRevision(value => value + 1)
     }
   }
 
@@ -643,9 +653,13 @@ function ObWizardContent({
       {
         return (
           <div className="ob-form-root ob-delivery-workspace space-y-5">
+            <ObReportDeliveryOverview timeline={deliveryMeta?.timeline ?? null} lockedAt={currentLockedAt}
+              completed={isCurrentlyCompleted} published={Boolean(deliveryMeta?.digitalReportUrl)}
+              pdfStatus={deliveryMeta?.pdfStatus ?? 'pending'} loading={deliveryMetaLoading} />
             {hasValidIds ? (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-center gap-3">
+                  <ObCopyReportLink url={deliveryMeta?.publicReportUrl ?? null} disabled={sendingReport || deliveryMetaLoading} />
                   {deliveryMeta?.wordExportUrl ? <ObWordExport key={deliveryMeta.wordExportUrl}
                     href={deliveryMeta.wordExportUrl} published={Boolean(deliveryMeta.digitalReportUrl)}
                     disabled={sendingReport || deliveryMetaLoading} /> : null}
@@ -659,6 +673,8 @@ function ObWizardContent({
                     Öppna kundens digitala utlåtande
                     <span className="sr-only"> (öppnas i ny flik)</span>
                   </Link> : deliveryMeta && !deliveryMetaLoading && !deliveryMetaError ? <p className="text-sm text-gray-600">Inget publicerat digitalt utlåtande ännu.</p> : null}
+                  {canDownloadGeneratedPdf && reportPdfDownloadHref && <a href={reportPdfDownloadHref}
+                    target="_blank" rel="noreferrer" className="ob-delivery-link">Ladda ner PDF</a>}
                 </div>
                 <aside className="ob-delivery-section space-y-4">
                   <div>
@@ -733,61 +749,41 @@ function ObWizardContent({
 
                   <div className="ob-delivery-section">
                     <div className="ob-delivery-state">
-                      <span>
-                        {isCurrentlyLocked ? 'Nuvarande läge: Låst' : 'Nuvarande läge: Upplåst'}
-                      </span>
-                      <span>
-                        {isCurrentlyCompleted ? 'Status: Klarmarkerad' : 'Status: Pågående/utkast'}
-                      </span>
                       {isCurrentlyLocked && <ObUnlockInspection inspectionId={inspectionId!}
                         disabled={sendingReport || regeneratingPdf}
                         onUnlocked={() => {
                           onInspectionUpdated?.({ ...normalizedInspection, locked_at: null, locked_by: null })
+                          setDeliveryMeta(prev => prev ? { ...prev, inspectionLockedAt: null } : prev)
                           setWorkflowRevision(value => value + 1)
                         }} />}
-                    </div>
-
-                    <div className="mt-3 space-y-2 text-xs text-gray-600">
-                      <div>
-                        <strong>Klarmarkera och lås:</strong> Utlåtandet skickas och besiktningen låses.
-                      </div>
-                      <div>
-                        <strong>{isCurrentlyLocked ? 'Skicka utan ändrad låsning:' : 'Skicka utan låsning:'}</strong>{' '}
-                        {isCurrentlyLocked ? 'Utlåtandet skickas och besiktningen förblir låst.' : 'Utlåtandet skickas men besiktningen förblir öppen.'}
-                      </div>
-                      <div>
-                        <strong>Enbart klarmarkera:</strong> Besiktningen klarmarkeras och låses utan utskick.
-                      </div>
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => void handleSendActionChoice('lock')}
+                        onClick={() => void handleSendActionChoice(isCurrentlyLocked && deliveryMeta?.digitalReportUrl ? 'resend' : 'lock')}
                         disabled={deliverySendDisabled}
                         className="obm-primary"
                       >
-                        {isCurrentlyCompleted
-                          ? isCurrentlyLocked ? 'Skicka och behåll låst' : 'Skicka och lås'
-                          : 'Skicka, klarmarkera och lås'}
+                        {isCurrentlyLocked && deliveryMeta?.digitalReportUrl ? 'Skicka publicerad version igen'
+                          : deliveryMeta?.digitalReportUrl ? 'Publicera, skicka och lås' : 'Skicka och lås'}
                       </button>
-                      <button
+                      {!isCurrentlyLocked && <button
                         type="button"
                         onClick={() => void handleSendActionChoice('send_open')}
                         disabled={deliverySendDisabled}
                         className="ob-delivery-secondary"
                       >
-                        {isCurrentlyLocked ? 'Skicka utan ändrad låsning' : isCurrentlyCompleted
-                          ? 'Skicka och behåll upplåst' : 'Skicka utan låsning'}
-                      </button>
-                      <button
+                        {deliveryMeta?.digitalReportUrl ? 'Publicera och skicka utan låsning' : 'Skicka utan låsning'}
+                      </button>}
+                      {!isCurrentlyLocked && <button
                         type="button"
                         onClick={() => void handleSendActionChoice('complete_only')}
                         disabled={deliveryActionDisabled}
                         className="ob-delivery-secondary"
                       >
-                        Enbart klarmarkera
-                      </button>
+                        Klarmarkera utan utskick
+                      </button>}
                     </div>
 
                     {sendingReport ? (
@@ -797,29 +793,17 @@ function ObWizardContent({
 
                   <div ref={billingHostRef} />
 
-                  {deliveryMeta ? (
+                  {deliveryMeta?.digitalReportUrl && deliveryMeta.pdfStatus !== 'ready' ? (
                     <div className="ob-delivery-section text-sm">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div>
                           <span className="font-semibold">PDF-status:</span>{' '}
-                          {deliveryMeta.pdfStatus === 'ready'
-                            ? 'Klar'
-                            : deliveryMeta.pdfStatus === 'processing'
+                          {deliveryMeta.pdfStatus === 'processing'
                               ? 'Genereras'
                               : deliveryMeta.pdfStatus === 'failed'
                                 ? 'Misslyckades'
                                 : 'Väntar på generering'}
                         </div>
-                        {!pdfDownloadLogId && canDownloadGeneratedPdf && reportPdfDownloadHref ? (
-                          <a
-                            href={reportPdfDownloadHref}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="ob-delivery-link"
-                          >
-                            Ladda ner PDF
-                          </a>
-                        ) : null}
                       </div>
                       {deliveryMeta.pdfError ? (
                         <div className="mt-2 space-y-2">
@@ -839,39 +823,13 @@ function ObWizardContent({
                     </div>
                   ) : null}
 
-                  {visibleDeliveryLog.length ? (
-                    <div className="ob-delivery-section">
-                      <h3 className="mb-3">Logg</h3>
-                      <ul className="ob-delivery-log">
-                        {visibleDeliveryLog.map((entry) => (
-                          <li key={entry.id} className="flex flex-wrap items-center gap-2">
-                            <span className="font-medium">{entry.title}</span>
-                            {entry.subtitle ? (
-                              <span className="text-gray-600">{entry.subtitle}</span>
-                            ) : null}
-                            <span className="text-gray-500">
-                              {new Date(entry.occurred_at).toLocaleString('sv-SE')}
-                            </span>
-                            {entry.id === pdfDownloadLogId && entry.download_url ? (
-                              <a
-                                href={entry.download_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="ob-delivery-link"
-                              >
-                                Ladda ner PDF
-                              </a>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
+                  <ObReportDeliveryHistory key={inspectionId} inspectionId={inspectionId!}
+                    timeline={deliveryMeta?.timeline ?? null} error={deliveryMeta?.historyError} />
                 </aside>
 
                 <section className="ob-delivery-preview space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-gray-900">Förhandsgranska utlåtande</h3>
+                    <h3 className="text-sm font-semibold text-gray-900">{isCurrentlyLocked ? 'Förhandsgranska utlåtande' : 'Aktuellt utkast'}</h3>
                     <Link
                       href={reportDeliveryPreviewHref}
                       target="_blank"

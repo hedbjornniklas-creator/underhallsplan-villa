@@ -33,7 +33,7 @@ function harness({ denied = false, colleague = false, missing = false, side = 'b
   pdfStorageBucket: storage ? 'inspection-reports' : '', pdfStoragePath: storage ? 'frozen/selected.pdf' : '' }
   const route = load<Route>('src/app/api/ob/inspections/[id]/published-report/route.ts', {
     'next/server': { NextResponse: { redirect: (location: string, init: ResponseInit) => new Response(null, { ...init, headers: { ...init.headers, Location: location } }) } },
-    '@/lib/assignments/tokens': { hashAssignmentToken: hash },
+    '@/lib/ob/reportShareToken': { resolveReportTokenHash: async (_db: unknown, token: string) => hash(token) },
     '@/lib/ob/organizationBindings': {
       requireObInspectionReadContext: async () => { if (denied) throw Error('UNAUTHORIZED'); return { orgId: 'org', userId: 'user', canEdit: !colleague } },
       requireObInspectionContext: async () => {

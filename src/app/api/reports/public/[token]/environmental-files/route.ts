@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { hashAssignmentToken } from '@/lib/assignments/tokens'
+import { resolveReportTokenHash } from '@/lib/ob/reportShareToken'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { isReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload'
 import { environmentalFileResponse } from '@/lib/ob/environmentalServer'
@@ -10,8 +10,11 @@ export const runtime = 'nodejs'
 export async function GET(request: Request, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params
   if (token.length < 20 || token.length > 200) return new NextResponse(null, { status: 404 })
-  const { data, error } = await createSupabaseAdminClient().from('inspection_report_links')
-    .select('inspection_id,org_id,revoked_at,snapshot_payload').eq('token_hash', hashAssignmentToken(token)).maybeSingle()
+  const admin = createSupabaseAdminClient()
+  const tokenHash = await resolveReportTokenHash(admin, token)
+  if (!tokenHash) return new NextResponse(null, { status: 404 })
+  const { data, error } = await admin.from('inspection_report_links')
+    .select('inspection_id,org_id,revoked_at,snapshot_payload').eq('token_hash', tokenHash).maybeSingle()
   if (error) return new NextResponse(null, { status: 503 })
   if (!data || data.revoked_at || !isReportSnapshotPayloadV1(data.snapshot_payload)) return new NextResponse(null, { status: 404 })
   const appendices = data.snapshot_payload.reportData.mock?.appendices?.environmental as EnvironmentalAppendix[] | undefined

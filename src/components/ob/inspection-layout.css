@@ -57,6 +57,30 @@ body.ob-inspection-active [data-app-topbar='true'] { display: none; }
 .ob-delivery-workspace .ob-delivery-log { display: grid; gap: 12px; font-size: .875rem; }
 .ob-delivery-workspace .ob-delivery-log a { color: var(--obm-blue); text-decoration: underline; }
 .ob-delivery-workspace .ob-delivery-preview { border-top: 1px solid var(--obm-line); padding-top: 20px; }
+.ob-delivery-overview { border-block: 1px solid var(--obm-line); padding: 16px 0; }
+.ob-delivery-overview dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 0; }
+.ob-delivery-overview dt { color: var(--obm-muted, #596273); font-size: .8125rem; margin-bottom: 5px; }
+.ob-delivery-overview dd { margin: 0; overflow-wrap: anywhere; }
+.ob-delivery-overview dd:first-of-type { font-weight: 600; }
+.ob-copy-report { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ob-copy-report button { display: inline-flex; align-items: center; gap: 8px; min-width: 150px; }
+.ob-copy-feedback { color: #286b47; font-size: .8125rem; }
+.ob-copy-manual { display: grid; gap: 6px; width: 100%; font-size: .8125rem; }
+.ob-copy-manual input { width: 100%; min-width: 0; }
+.ob-delivery-history h3 { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; }
+.ob-delivery-warning { color: #79531a; font-size: .8125rem; margin: 0 0 12px; }
+.ob-delivery-timeline { list-style: none; padding: 0; margin: 0; }
+.ob-delivery-timeline li { display: grid; grid-template-columns: 172px minmax(0, 1fr) auto; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--obm-line); font-size: .875rem; }
+.ob-delivery-timeline time { color: var(--obm-muted, #596273); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.ob-event-detail { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 4px; color: var(--obm-muted, #596273); overflow-wrap: anywhere; }
+.ob-event-failed strong { color: #a52f36; }
+.ob-delivery-timeline .ob-delivery-link { min-height: 36px; align-self: start; }
+@media (min-width: 1100px) { .ob-delivery-overview dl { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 639px) {
+  .ob-delivery-overview dl { gap: 14px 16px; }
+  .ob-delivery-timeline li { grid-template-columns: minmax(0, 1fr) auto; }
+  .ob-delivery-timeline time { grid-column: 1 / -1; }
+}
 @media (min-width: 768px) {
   .ob-inspection-page { padding: 0 24px 32px; }
   .ob-delivery-fields { grid-template-columns: 1fr 1fr; }

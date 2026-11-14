@@ -39,7 +39,7 @@ function database(options: { binding?: boolean; bindingOrg?: string; revoked?: b
           assert.ok(['inspections', 'ob_organization_bindings', 'inspection_report_links'].includes(table), `Unexpected authority fallback: ${table}`)
           const data = table === 'inspections' ? { property_id: 'property', inspection_family: options.family === undefined ? 'OB' : options.family, type: options.type ?? 'OB' }
             : table === 'ob_organization_bindings' ? (options.binding === false ? null : { inspection_id: inspectionId, org_id: options.bindingOrg ?? access.orgId })
-            : options.revoked || options.foreign || options.missing ? null : { id: linkId, snapshot_payload: options.snapshot ?? snapshot }
+            : (options.revoked && 'revoked_at' in filters) || options.foreign || options.missing ? null : { id: linkId, snapshot_payload: options.snapshot ?? snapshot }
           return { data, error: null }
         },
       }
@@ -90,6 +90,14 @@ test('delivery metadata only exposes active links in the current organization an
   assert.equal(await helpers.getLatestObPublishedReportId(database({ missing: true }).admin, inspectionId, access.orgId), null)
 })
 
+test('authenticated archive PDF lookup can read a retired snapshot without enabling its customer link', async () => {
+  const db = database({ revoked: true })
+  const result = await helpers.getObPublishedReportRecord(db.admin, inspectionId, linkId, access, { includeRevoked: true })
+  assert.equal(result?.snapshot, snapshot)
+  assert.equal('revoked_at' in db.calls.at(-1)!.filters, false)
+  assert.equal(await helpers.getObPublishedReport(db.admin, inspectionId, linkId, access), null)
+})
+
 test('digital page authenticates before database access and renders the stored payload through the customer renderer', async () => {
   const path = 'src/app/ob/inspections/[id]/digital/page.tsx'
   for (const mode of ['allowed', 'colleague', 'unauthenticated', 'forbidden', 'denied'] as const) {
@@ -97,6 +105,8 @@ test('digital page authenticates before database access and renders the stored p
     const context = { ...access, canEdit: mode !== 'colleague' }
     const view = () => null
     const page = load<{ default: (props: unknown) => Promise<{ type: unknown; props: { snapshot: unknown; shareUrl?: string; [key: string]: unknown } }> }>(path, {
+      '@/lib/auth/returnPath': { authLoginUrl: (path: string) => '/login?returnTo=' + encodeURIComponent(path) },
+      '@/lib/auth/serverRecovery': { currentAuthReturnPath: async (path: string) => path },
       'next/navigation': { redirect: (url: string) => { throw Error('REDIRECT:' + url) }, notFound: () => { throw Error('NOT_FOUND') } },
       'react/jsx-runtime': { jsx: (type: unknown, props: unknown) => ({ type, props }) },
       '@/lib/ob/organizationBindings': { requireObInspectionReadContext: async (id: string, orgId: unknown) => {
