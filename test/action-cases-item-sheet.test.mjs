@@ -37,7 +37,7 @@ function sheetHarness(overrides = {}) {
     './ActionCaseWorkParts': { ActionCaseWorkParts: 'WorkParts', ActionCaseWorkSelection: 'WorkSelection', UNASSIGNED_WORK: 'unassigned' },
     './action-case-costs.css': {},
   }
-  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice', 'ActionCaseCustomerPricing']) dependencies[`./${name}`] = { default: name }
+  for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice', 'ActionCaseCustomerPricing', 'WorkInstructions']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
     (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
@@ -72,6 +72,27 @@ function sheetHarness(overrides = {}) {
     get result() { return { closes, flushes, confirmations } },
   }
 }
+
+test('locked work has a separate instructions tab which does not use the business-mutation handler', async () => {
+  const h=sheetHarness({caseId:'case',initialTab:'instructions',item:{id:'item',title:'Golv',scope:'Locked scope',costLines:[],contractWork:{locked:true,version:1,differences:[],price:{editable:false}}}})
+  assert.equal(h.tab('Instruktioner').props['aria-selected'],true)
+  const editor=h.find(node=>node.type==='WorkInstructions')
+  assert.equal(editor.props.itemId,'item');assert.equal(editor.props.caseId,'case')
+  let flushes=0
+  editor.props.ref.current={flush:async()=>{flushes++;return true},isBusy:()=>false}
+  h.tab('Omfattning').props.onClick();await Promise.resolve();h.render()
+  assert.equal(flushes,1);assert.equal(h.tab('Omfattning').props['aria-selected'],true)
+  const fieldset=h.find(node=>node.type==='fieldset')
+  assert.equal(fieldset.props.disabled,true)
+})
+
+test('instruction save failure keeps the sheet open until close is explicitly confirmed', async () => {
+  const h=sheetHarness({caseId:'case',initialTab:'instructions'})
+  h.find(node=>node.type==='WorkInstructions').props.ref.current={flush:async()=>false,isBusy:()=>false}
+  const close=()=>h.find(node=>node.props['aria-label']==='Stäng åtgärd').props.onClick()
+  await close();h.render();assert.equal(h.result.closes,0);assert.equal(h.result.confirmations,1)
+  h.allowDiscard();await close();assert.equal(h.result.closes,1);assert.equal(h.result.confirmations,2)
+})
 
 test('register tabs replace the duplicate CTA and open calculation during background scope saving', () => {
   const h = sheetHarness({ scopeBlocked: true, scopeSave: { status: 'saving', draft: { title: 'Grund', scope: 'Ny text', scopeAttachmentIds: [] } } })

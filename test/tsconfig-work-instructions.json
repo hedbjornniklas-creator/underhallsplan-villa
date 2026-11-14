@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig-diary-image-library.json",
+  "include": [
+    "../next-env.d.ts",
+    "../src/components/tasks/ActionCaseItemSheet.tsx",
+    "../src/app/api/action-cases/[caseId]/items/[itemId]/instructions/route.ts"
+  ]
+}
