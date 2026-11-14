@@ -36,3 +36,10 @@ Registrerat som `sent` betyder accepterat utskick hos e-posttjänsten. Det utlov
 Verifierat 2026-11-06: 116 regressionstester godkända, produktionsbygge och applikationens typkontroll godkända. Webbläsartest på 320, 390 och 1280 px verifierar kopiering, reservfält, äldre historik, versionsbundna PDF-länkar och frånvaro av horisontellt överflöde. Testet använder en isolerad urklippsmock och syntetiska data, inte användarens urklipp eller riktiga utskick.
 
 Ingen riktig besiktning eller mottagare används för testutskick.
+
+## Driftsättning 2026-11-14
+
+- Båda SQL-filerna kördes i produktionsprojektet `rfresrbuekidumbwzpcm` och verifierades klockan 08:54 Europe/Stockholm. Historik och sammanfattning är tillgängliga; de tre verifierade utskicken för Mokärrsvägen visas med senaste registrerade utskick 2026-11-06 08:24:54.
+- Kontrollsumman för besiktningens snapshotinnehåll, PDF-referenser, PDF-checksummor och tokenhashar var `6ace55cb1fc72a42be4eef1163184345` både före och efter migreringarna. Anonyma har inte tillgång till historikvyn och webbläsarrollen får inte skriva audit-händelser. Inga mejl skickades under verifieringen.
+- Arbetsgrenen uppdaterades mot den aktuella produktionskoden, inklusive faktureringspanelen. Produktionsbygget lyckades och 136 regressionstester godkändes. SQL-testfixturens inläsning normaliserar Windows-radbrytningar till Gits LF så att befintliga definitionskontrollsummor jämförs på samma sätt på alla plattformar; produktions-SQL för fakturering ändrades inte.
+- Webbläsartest på 320, 390 och 1280 px verifierar kopiering, reservfält när urklipp nekas, äldre historik och versionsbundna PDF-länkar utan horisontellt överflöde eller riktiga utskick. Bildbevis sparas beständigt under `output/ob-delivery-history-release-2026-11-14/` i huvudprojektet.

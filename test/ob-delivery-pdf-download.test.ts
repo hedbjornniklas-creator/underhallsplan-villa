@@ -47,13 +47,14 @@ function renderDelivery(activityLog: ReturnType<typeof entry>[], ready = true, s
   new Function('require', 'module', 'exports', code)((name: string) => {
     if (name === 'react') return {
       ...React,
-      useState: (initial: unknown) => React.useState(stateIndex++ === 0 ? meta : initial),
+      useState: (initial: unknown) => React.useState(stateIndex++ === 2 ? meta : initial),
     }
     if (name === 'react/jsx-runtime' || name === 'lucide-react') return require(name)
     if (name === 'next/link') return { default: 'a' }
     if (name.startsWith('./ObStep')) return { default: () => null }
     if (name === './ObUnlockInspection') return { default: () => null }
     if (name === './ObWordExport') return { default: () => null }
+    if (name === './ObInspectionBillingPanel') return { default: () => null }
     if (name === './ObReportDeliveryStatus') return statusModule
     if (name === './ObBuildingContext') return { useObBuilding: () => null }
     if (name === './ObFloorProvider') return {

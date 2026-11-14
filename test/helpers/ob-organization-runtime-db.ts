@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { PGlite } from '@electric-sql/pglite'
 
-export const sql = (file:string) => readFileSync(new URL(`../../docs/db/${file}`,import.meta.url),'utf8').replace(/^\uFEFF/u,'')
+export const sql = (file:string) => readFileSync(new URL(`../../docs/db/${file}`,import.meta.url),'utf8').replace(/^\uFEFF/u,'').replace(/\r\n/g,'\n')
 export const runtimeSql = sql('2026-10-02_05_ob_organization_runtime.sql')
 export const ORG = '10000000-0000-4000-8000-000000000001'
 export const OTHER = '10000000-0000-4000-8000-000000000002'
