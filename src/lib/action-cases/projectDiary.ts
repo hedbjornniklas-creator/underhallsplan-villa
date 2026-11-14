@@ -10,8 +10,8 @@ export type DiaryLibraryImage = DiaryPhoto & { entryId: string; workDate: string
 export type DiaryImagePage = { images: DiaryLibraryImage[]; nextCursor: string | null }
 export type DiaryCorrection = { id: string; text: string; actorName: string; createdAt: string }
 export type DiaryPerson = { id: string; name: string; company: string }
-export type DiaryRevision = { revision: number; body: DiaryBody; itemTitle: string; minutes: number; photos: DiaryPhoto[]; actorName: string; createdAt: string }
-export type DiaryEntry = { id: string; personId: string | null; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code' | 'qr_selection'; receivedAt: string; emailVerifiedAt: string | null; minutes: number; photos: DiaryPhoto[]; corrections: DiaryCorrection[]; revision?: number; canEdit?: boolean; editUntil?: string; editedAt?: string | null; editedBy?: string | null }
+export type DiaryRevision = { revision: number; body: DiaryBody; itemTitle: string; minutes: number | null; photos: DiaryPhoto[]; actorName: string; createdAt: string }
+export type DiaryEntry = { id: string; personId: string | null; body: DiaryBody; itemTitle: string; authorEmail: string; actorMethod: 'internal_login' | 'email_code' | 'qr_selection'; receivedAt: string; emailVerifiedAt: string | null; minutes: number | null; photos: DiaryPhoto[]; corrections: DiaryCorrection[]; revision?: number; canEdit?: boolean; editUntil?: string; editedAt?: string | null; editedBy?: string | null }
 export type DiaryProject = { id: string; title: string }
 export type DiaryPublicState = { project: DiaryProject; people: DiaryPerson[]; items: { id: string; title: string }[] }
 export type DiaryWorkspace = DiaryPublicState & { canManage: boolean; managerAssigned: boolean; link: { active: boolean; revision: number; url: string | null; qrDataUrl: string | null }; entries: DiaryEntry[]; hasMore: boolean; authorId: string; authorName: string; authorEmail: string }
@@ -30,9 +30,11 @@ export function diaryDate(value: unknown) {
   return value
 }
 export function diaryMinutes(body: Pick<DiaryBody, 'startTime' | 'endTime' | 'breakMinutes'>) {
+  if (!Number.isInteger(body.breakMinutes) || body.breakMinutes < 0 || body.breakMinutes >= 1440) invalid()
+  if (body.startTime === '' && body.endTime === '') return null
   const minute = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) : invalid()
   const span = minute(body.endTime) - minute(body.startTime)
-  if (!Number.isInteger(body.breakMinutes) || body.breakMinutes < 0 || span <= 0 || body.breakMinutes >= span) invalid()
+  if (span <= 0 || body.breakMinutes >= span) invalid()
   return span - body.breakMinutes
 }
 export function diaryTimeInput(value: string): string | null {
@@ -51,7 +53,7 @@ export function normalizeDiaryBody(input: unknown, today = diaryToday()): DiaryB
   const b = input as Record<string, unknown>
   const allowed = ['name', 'company', 'workDate', 'startTime', 'endTime', 'breakMinutes', 'text', 'itemId']
   if (Object.keys(b).some(key => !allowed.includes(key))) invalid()
-  const body: DiaryBody = { name: diaryText(b.name, 160), company: diaryText(b.company, 160), workDate: diaryDate(b.workDate), startTime: diaryText(b.startTime, 5), endTime: diaryText(b.endTime, 5), breakMinutes: Number.isInteger(b.breakMinutes) ? b.breakMinutes as number : invalid(), text: diaryText(b.text, 6000), itemId: b.itemId === null ? null : diaryUuid(b.itemId) ? b.itemId.toLowerCase() : invalid() }
+  const body: DiaryBody = { name: diaryText(b.name, 160), company: diaryText(b.company, 160), workDate: diaryDate(b.workDate), startTime: diaryText(b.startTime, 5, false), endTime: diaryText(b.endTime, 5, false), breakMinutes: Number.isInteger(b.breakMinutes) ? b.breakMinutes as number : invalid(), text: diaryText(b.text, 6000), itemId: b.itemId === null ? null : diaryUuid(b.itemId) ? b.itemId.toLowerCase() : invalid() }
   if (body.workDate > today) invalid()
   diaryMinutes(body)
   return body
@@ -75,4 +77,5 @@ export function diaryPhotoRequest(input: Record<string, unknown>) {
 export function emptyDiaryBody(name = '', company = ''): DiaryBody {
   return { name, company, workDate: diaryToday(), startTime: '', endTime: '', breakMinutes: 0, text: '', itemId: null }
 }
-export const diaryDuration = (minutes: number) => `${Math.floor(minutes / 60)} tim ${minutes % 60} min`
+export const diaryDuration = (minutes: number | null) => minutes === null ? '' : `${Math.floor(minutes / 60)} tim ${minutes % 60} min`
+export const diaryTimeRange = (body: Pick<DiaryBody, 'startTime' | 'endTime'>) => body.startTime && body.endTime ? `${body.startTime}–${body.endTime}` : null

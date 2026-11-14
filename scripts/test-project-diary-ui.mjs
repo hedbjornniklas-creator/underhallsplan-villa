@@ -113,4 +113,9 @@ server.listen(Number(process.argv.find(arg => arg.startsWith('--port='))?.slice(
     catch (error) { console.error(error); process.exitCode = 1 }
     finally { server.closeAllConnections(); server.close() }
   }
+  if (process.argv.includes('--test-optional-time')) {
+    try { const { testDiaryOptionalTime } = await import('../test/helpers/diary-optional-time-browser.mjs'); await testDiaryOptionalTime(url, output) }
+    catch (error) { console.error(error); process.exitCode = 1 }
+    finally { server.closeAllConnections(); server.close() }
+  }
 })

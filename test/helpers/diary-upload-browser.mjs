@@ -38,7 +38,7 @@ export async function testDiaryUpload(base, output) {
     await page.waitForFunction(() => document.body.textContent.includes('Anna Exempel'))
     await page.select('.diary-person-picker select', fixture.public.people[0].id)
     await page.waitForSelector('.diary-entry-form')
-    await field('Från (ca)', '0700'); await field('Till (ca)', '1600'); await field('Utfört arbete', 'Fiktivt nätverkstest. Inga verkliga uppgifter.')
+    await field('Från (ca, valfritt)', '0700'); await field('Till (ca, valfritt)', '1600'); await field('Utfört arbete', 'Fiktivt nätverkstest. Inga verkliga uppgifter.')
     await control({ blockDirect: true, blockParts: true })
     await (await page.$('input[type=file][multiple]')).uploadFile(file, secondFile)
     await page.waitForFunction(() => document.querySelectorAll('.diary-upload-list li').length === 2 && document.body.textContent.includes('Försök igen med alla bilder'))

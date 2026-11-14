@@ -44,6 +44,12 @@ before(async () => {
   assert.equal(currentVerified.person_id, null); delete currentVerified.person_id; assert.deepEqual(currentVerified, verified)
   assert.deepEqual((await db.query('select name from action_case_diary_people where action_case_id=$1 order by name', [legacyCase])).rows.map(p => p.name), ['Anna Exempel', 'Erik Historik'])
   assert.deepEqual(await unchanged(), others)
+  const originals = (await db.query('select * from action_case_diary_entries order by id')).rows
+  await db.exec(sql('2026-11-05_01_project_diary_revisions.sql'))
+  await db.exec(sql('2026-11-14_01_project_diary_optional_time.sql'))
+  await db.exec(sql('2026-11-14_01_project_diary_optional_time.sql'))
+  assert.deepEqual((await db.query('select * from action_case_diary_entries order by id')).rows, originals)
+  assert.deepEqual(await unchanged(), others)
 })
 after(() => db.close())
 
@@ -98,6 +104,42 @@ test('new QR entries use a project person, remain explicitly unverified and retr
   await assert.rejects(command(f, 'entry', { ...req, requestId: id(), body: { ...body(p), name: 'Omtolkat namn' } }, { public: true }), /DIARY_INVALID/)
   await assert.rejects(command(f, 'entry', { ...req, requestId: id() }, { public: true, device: '' }), /DIARY_DEVICE/)
   assert.deepEqual(await unchanged(), before)
+})
+
+test('QR and internal entries accept no presence time, preserve images and return idempotent null-duration receipts', async () => {
+  for (const isPublic of [true, false]) {
+    const f = await fixture(), p = await command(f, 'person', { name: 'Utan tid', company: 'Test AB' }), options = { public: isPublic }
+    const before = await unchanged(), links = (await db.query('select * from action_case_diary_links where id=$1', [f.linkId])).rows
+    const file = id()
+    await command(f, 'reserve_photo', { id: file, name: 'bild.png', contentType: 'image/png', size: 100 }, options)
+    await command(f, 'seal_photo', { id: file, sha256: hash('a') }, options)
+    const req = { requestId: id(), requestHash: hash('e'), personId: p.id, body: { ...body(p), startTime: '', endTime: '', breakMinutes: 0 }, photoIds: [file] }
+    const receipt = await command(f, 'entry', req, options)
+    assert.equal(receipt.minutes, null)
+    assert.deepEqual(await command(f, 'entry', req, options), receipt)
+    const entry = (await db.query('select * from action_case_diary_current where id=$1', [req.requestId])).rows[0]
+    assert.equal(entry.minutes, null); assert.equal(entry.current_minutes, null)
+    assert.equal(entry.current_body.startTime, ''); assert.equal(entry.current_body.endTime, '')
+    assert.deepEqual(entry.current_photo_ids, [file])
+    await assert.rejects(command(f, 'entry', { ...req, requestHash: hash('f') }, options), /REQUEST_CONFLICT/)
+    await db.exec(sql('2026-11-14_01_project_diary_optional_time.sql'))
+    assert.deepEqual((await db.query('select * from action_case_diary_current where id=$1', [req.requestId])).rows[0], entry)
+    assert.deepEqual((await db.query('select * from action_case_diary_links where id=$1', [f.linkId])).rows, links)
+    const revision = { requestId: id(), entryId: req.requestId, expectedRevision: 0, body: { ...req.body, startTime: '09:00', endTime: '10:00' }, photoIds: [file] }
+    const updated = (await db.query('select revise_project_diary_entry($1,$2,$3,$4) result', [org, f.caseId, manager, revision])).rows[0].result
+    assert.equal(updated.minutes, 60)
+    assert.deepEqual((await db.query('select minutes from action_case_diary_revisions where entry_id=$1 order by revision', [req.requestId])).rows.map(v => v.minutes), [null, 60])
+    assert.deepEqual(await unchanged(), before)
+  }
+})
+
+test('optional presence time does not admit partial, malformed or nonpositive intervals', async () => {
+  const f = await fixture(), p = await command(f, 'person', { name: 'Validering', company: 'Test AB' })
+  for (const isPublic of [true, false]) for (const patch of [{ startTime: '' }, { endTime: '' }, { startTime: null }, { endTime: null }, { startTime: '24:00' }, { endTime: '06:00' }, { endTime: '07:00' }, { startTime: '', endTime: '', breakMinutes: -1 }, { startTime: '', endTime: '', breakMinutes: 1440 }]) {
+    const req = { requestId: id(), requestHash: hash('d'), personId: p.id, body: { ...body(p), ...patch }, photoIds: [] }
+    await assert.rejects(command(f, 'entry', req, { public: isPublic }), /DIARY_INVALID/)
+  }
+  assert.equal((await db.query('select count(*)::int n from action_case_diary_entries where action_case_id=$1', [f.caseId])).rows[0].n, 0)
 })
 test('choosing the same person on another phone does not allow reading or attaching their photos', async () => {
   const f = await fixture(), p = await command(f, 'person', { name: 'Anna', company: 'Test AB' }), file = id()
@@ -164,4 +206,19 @@ test('photo-limit migration refuses an unexpected server definition instead of e
   await db.exec(original.replace("jsonb_array_length(p_data->'photoIds')>20", "jsonb_array_length(p_data->'photoIds')>19"))
   try { await assert.rejects(db.exec(sql('2026-11-04_03_project_diary_twenty_photos.sql')), /MIGRATION_SOURCE_MISMATCH/) }
   finally { await db.exec('rollback'); await db.exec(original) }
+})
+
+test('optional-time migration refuses an unexpected command without changing entries or QR links', async () => {
+  const signature = 'public.project_diary_people_command(uuid,uuid,uuid,uuid,uuid,text,text,jsonb)'
+  const definition = (await db.query('select pg_get_functiondef($1::regprocedure) definition', [signature])).rows[0].definition
+  assert.ok(definition.includes('public.project_diary_optional_minutes(body)'))
+  const snapshot = async () => (await db.query("select jsonb_build_object('entries',(select jsonb_agg(e order by id) from action_case_diary_entries e),'links',(select jsonb_agg(l order by id) from action_case_diary_links l)) data")).rows[0].data
+  const before = await snapshot()
+  await db.exec(definition.replace('public.project_diary_optional_minutes(body)', '999'))
+  try { await assert.rejects(db.exec(sql('2026-11-14_01_project_diary_optional_time.sql')), /OPTIONAL_TIME_SOURCE_MISMATCH/) }
+  finally { await db.exec('rollback'); await db.exec(definition) }
+  assert.deepEqual(await snapshot(), before)
+  for (const role of ['anon', 'authenticated', 'service_role']) {
+    assert.equal((await db.query("select has_function_privilege($1,'public.project_diary_optional_minutes(jsonb)','execute') allowed", [role])).rows[0].allowed, false)
+  }
 })

@@ -35,6 +35,21 @@ test('simple numeric time entry accepts hours and compact times without silently
   for (const input of ['','24','2400','1260','-1','7:3','abc','07000','7:30:00']) assert.equal(domain.diaryTimeInput(input), null)
 })
 
+test('presence time is optional but a partially entered or invalid interval is rejected', () => {
+  const untimed = { ...body(), startTime: '', endTime: '', breakMinutes: 0 }
+  assert.deepEqual(domain.normalizeDiaryBody(untimed), untimed)
+  assert.equal(domain.diaryMinutes(untimed), null)
+  assert.equal(domain.diaryTimeRange(untimed), null)
+  assert.equal(domain.diaryDuration(null), '')
+  assert.equal(domain.diaryTimeRange(body()), '07:00–16:00')
+  assert.equal(domain.diaryPersonEntryRequest({ requestId: id(), personId: id(), body: untimed, photoIds: [] }).body.startTime, '')
+  assert.equal(domain.diaryRevisionRequest({ requestId: id(), entryId: id(), expectedRevision: 0, body: untimed, photoIds: [] }).body.endTime, '')
+  assert.equal(domain.diaryMinutes(domain.normalizeDiaryBody({ ...untimed, breakMinutes: 60 })), null)
+  for (const patch of [{ startTime: '07:00' }, { endTime: '16:00' }, { startTime: null }, { endTime: undefined }, { startTime: '24:00', endTime: '25:00' }, { startTime: '16:00', endTime: '07:00' }, { startTime: '07:00', endTime: '07:00' }, { breakMinutes: -1 }, { breakMinutes: 1440 }, { breakMinutes: 0.5 }, { workDate: '' }, { text: '' }]) {
+    assert.throws(() => domain.normalizeDiaryBody({ ...untimed, ...patch }), /DIARY_INVALID/)
+  }
+})
+
 test('printed diary sign contains Swedish instructions and limits, but no logo or visible private link', async () => {
   const { diaryQrPrintHtml } = load('../src/lib/action-cases/projectDiaryPrint.ts', { './projectDiary': domain })
   const url = `https://hushub.se/dagbok/${links.diaryLinkToken(id(), id(), key)}`
@@ -43,7 +58,7 @@ test('printed diary sign contains Swedish instructions and limits, but no logo o
   assert.match(html, /<h1>Dagbok på arbetsplatsen<\/h1>/)
   assert.match(html, /Fiktivt projekt &amp; &lt;script&gt;inte kod&lt;\/script&gt;/)
   assert.match(html, /<html lang="sv">/)
-  assert.match(html, /Välj ditt namn och företag/); assert.match(html, /ungefärlig tid på plats/); assert.match(html, /Skicka anteckning/)
+  assert.match(html, /Välj ditt namn och företag/); assert.match(html, /Ungefärlig tid på plats är valfri/); assert.match(html, /Skicka anteckning/)
   assert.match(html, /Högst 20 bilder per anteckning · 8 MB per bild/)
   assert.equal((html.match(/<img /g) || []).length, 1)
   assert.equal(html.includes(url), false); assert.doesNotMatch(html, /logo\.svg|HusHub Uppdrag|class="url"/)

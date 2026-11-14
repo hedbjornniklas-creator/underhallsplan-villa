@@ -8,6 +8,10 @@
   kort instruktion och bildgranser. Ingen logga eller utskriven lank visas.
 - Tider skrivs som siffror i stallet for telefonens klockvaljare; exempelvis
   0700 blir 07:00. Det ar tid pa plats, inte en arbetstids- eller lonerapport.
+  Tid ar frivillig: fran och till kan bada vara tomma. Om tid anges behovs
+  bada falten och sluttiden ska ligga efter starttiden samma dag. Saknad tid
+  lagras utan minuter (null), inte som noll arbetade timmar. Ingen tom tidsrad
+  visas i kvittot, anteckningen eller versionshistoriken.
   Rast finns inte i nya formular och nya anteckningar har inget rastavdrag.
   Aldre original och pagaende aterforsok behaller sitt ursprungliga innehall.
   Aldre rastuppgifter finns under Registreringsuppgifter, inte i huvudvyn.
@@ -115,6 +119,9 @@ offline-bildlagring eller garanti om aterstallning efter stangd flik tillkommer.
    `docs/db/2026-11-05_01_project_diary_revisions.sql` fore matchande publicering.
    Den lagger till versionshistorik och en intern aktuell-vy utan att skriva om
    original eller ge QR-besokare las-/redigeringsbehorighet.
+   For frivillig tid behovs `docs/db/2026-11-14_01_project_diary_optional_time.sql`.
+   Den tillater tom tid vid intern och publik registrering samt intern redigering.
+   Befintliga anteckningar och QR-lankar skrivs inte om.
 2. Mejltjanst behovs inte. Basadress tas fran `APP_BASE_URL` eller
    `NEXT_PUBLIC_APP_URL` och ska vara en HTTPS-adress i produktion.
 3. `PROJECT_DIARY_LINK_SECRET` kan anges som separat hemlighet med minst
@@ -130,6 +137,10 @@ anvands. Databastester anvander PGlite och kontrollerar
 att projekt-, avtals-, offert- och kalkylunderlag forblir oforandrade.
 
 ## Beslutslogg
+
+- 2026-11-14: Anvandaren gor arbetstid frivillig i Gizmos dagbok. Datum,
+  person och arbetsbeskrivning kvarstar. Tomma tidsfalt ger ingen beraknad tid och
+  inga andringar i avtal eller kalkyl.
 
 - 2026-11-04: Forsta versionen anvande mejlkod och 30-dagarssession.
 - 2026-11-04: Anvandaren ersatte uttryckligen mejlkoden med en enkel personlista

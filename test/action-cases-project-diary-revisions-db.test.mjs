@@ -7,6 +7,7 @@ import { PGlite } from '@electric-sql/pglite'
 const db = new PGlite(), org = id(), foreignOrg = id(), manager = id(), staff = id(), outsider = id()
 const sql = name => readFileSync(new URL(`../docs/db/${name}`, import.meta.url), 'utf8')
 const migration = '2026-11-05_01_project_diary_revisions.sql'
+const optionalTime = '2026-11-14_01_project_diary_optional_time.sql'
 const body = patch => ({ name: 'Anna Test', company: 'Testbygg AB', workDate: '2026-01-02', startTime: '07:00', endTime: '16:00', breakMinutes: 0, text: 'Originalets arbete.', itemId: null, ...patch })
 const hash = 'a'.repeat(64)
 const revise = async (f, data, actor = manager, organization = org) => (await db.query('select revise_project_diary_entry($1,$2,$3,$4) result', [organization, f.caseId, actor, data])).rows[0].result
@@ -43,6 +44,7 @@ before(async () => {
   for (const file of ['2026-11-04_01_project_diary.sql','2026-11-04_02_project_diary_people.sql','2026-11-04_03_project_diary_twenty_photos.sql']) await db.exec(sql(file))
   const old = await fixture(72), before = await protectedData()
   await db.exec(sql(migration)); await db.exec(sql(migration))
+  await db.exec(sql(optionalTime)); await db.exec(sql(optionalTime))
   assert.deepEqual((await db.query('select * from action_case_diary_entries where id=$1', [old.entryId])).rows[0], old.original)
   assert.equal((await db.query('select count(*)::int n from action_case_diary_revisions')).rows[0].n, 0)
   assert.deepEqual(await protectedData(), before)
@@ -67,7 +69,28 @@ test('manager revisions preserve the original and original receipt while current
   assert.deepEqual((await db.query('select * from action_case_diary_photos where id=$1', [originalPhoto])).rows[0], originalManifest)
   assert.deepEqual(await protectedData(), before)
   await db.exec(sql(migration))
+  await db.exec(sql(optionalTime))
   assert.deepEqual((await db.query('select * from action_case_diary_revisions where entry_id=$1 order by revision', [f.entryId])).rows, versions)
+})
+
+test('a manager can clear and restore presence time without resurrecting the original duration or changing original records', async () => {
+  const f = await fixture(), before = await protectedData()
+  const clear = edit(f, { body: body({ startTime: '', endTime: '' }) }), receipt = await revise(f, clear)
+  assert.equal(receipt.minutes, null); assert.deepEqual(await revise(f, clear), receipt)
+  const current = (await db.query('select * from action_case_diary_current where id=$1', [f.entryId])).rows[0]
+  assert.equal(current.current_minutes, null); assert.equal(current.minutes, 540)
+  assert.equal(current.current_body.startTime, ''); assert.equal(current.current_body.endTime, '')
+  const versions = (await db.query('select revision,minutes,body from action_case_diary_revisions where entry_id=$1 order by revision', [f.entryId])).rows
+  assert.deepEqual(versions.map(v => v.minutes), [540, null])
+  await db.exec(sql(optionalTime))
+  assert.equal((await db.query('select current_minutes from action_case_diary_current where id=$1', [f.entryId])).rows[0].current_minutes, null)
+  assert.equal((await revise(f, edit(f, { expectedRevision: 1, body: body({ startTime: '09:00', endTime: '10:00' }) }))).minutes, 60)
+  assert.deepEqual((await db.query('select * from action_case_diary_entries where id=$1', [f.entryId])).rows[0], f.original)
+  assert.deepEqual(await protectedData(), before)
+  const fresh = await fixture()
+  for (const patch of [{ startTime: '' }, { endTime: '' }, { startTime: null }, { startTime: '16:00', endTime: '07:00' }]) {
+    await assert.rejects(revise(fresh, edit(fresh, { body: body(patch) })), /DIARY_INVALID/)
+  }
 })
 
 test('QR submitters, internal authors, other members, cross-tenant actors and inactive managers cannot edit', async () => {

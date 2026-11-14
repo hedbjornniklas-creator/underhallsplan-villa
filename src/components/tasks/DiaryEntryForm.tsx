@@ -3,13 +3,13 @@
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Save, Send, Trash2, X } from 'lucide-react'
-import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryPersonEntryRequest, diaryRevisionRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson, type DiaryEntry } from '@/lib/action-cases/projectDiary'
+import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryTimeRange, diaryMinutes, diaryPersonEntryRequest, diaryRevisionRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson, type DiaryEntry } from '@/lib/action-cases/projectDiary'
 import { uploadDiaryPhoto } from '@/lib/action-cases/projectDiaryUpload'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
 type Photo = { id: string; name: string; size: number; contentType: string; status: 'queued' | 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string; progress?: string }
 type Attempt = ReturnType<typeof diaryPersonEntryRequest> | ReturnType<typeof diaryRevisionRequest>
-type Receipt = { id: string; receivedAt: string; minutes: number }
+type Receipt = { id: string; receivedAt: string; minutes: number | null }
 const subscribe = (listener: () => void) => { window.addEventListener('diary-draft', listener); window.addEventListener('storage', listener); return () => { window.removeEventListener('diary-draft', listener); window.removeEventListener('storage', listener) } }
 function cached(key: string) { try { return sessionStorage.getItem(key) } catch { return null } }
 function store(key: string, value: unknown) { try { if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, JSON.stringify(value)); window.dispatchEvent(new Event('diary-draft')) } catch { /* Network submission remains available if device storage is unavailable. */ } }
@@ -83,7 +83,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
       const input = { requestId: crypto.randomUUID(), personId: person.id, body: { ...draft, name: person.name, company: person.company, startTime: diaryTimeInput(draft.startTime) ?? draft.startTime, endTime: diaryTimeInput(draft.endTime) ?? draft.endTime, breakMinutes: editing?.body.breakMinutes ?? 0 }, photoIds: photos.map(p => p.id) }
       request = attempt ?? (editing ? diaryRevisionRequest({ ...input, entryId: editing.id, expectedRevision: editing.revision ?? 0 }) : diaryPersonEntryRequest(input))
     }
-    catch { setError('Kontrollera datum, tider och arbetsbeskrivning. Till-tiden ska vara efter från-tiden samma dag.'); return }
+    catch { setError('Kontrollera datum och arbetsbeskrivning. Tid är valfritt. Om tid anges behövs både från och till, med till-tiden efter från-tiden samma dag.'); return }
     running.current = true; latest.current.attempt = request; setBusy(true); setAttempt(request); setError(''); persist(draft, photos, request)
     try {
       const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: editing ? 'revision' : 'entry', ...request }) })
@@ -92,13 +92,13 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
         if (result.definite) { latest.current.attempt = null; setAttempt(null); persist(draft, photos, null) }
         throw new Error(result.error || 'Inskickningen kunde inte bekräftas.')
       }
-      if (result.id !== request.requestId || !Number.isFinite(Date.parse(result.receivedAt)) || !Number.isInteger(result.minutes)) throw new Error('Kvittot kunde inte bekräftas. Försök igen med samma uppgifter.')
+      if (result.id !== request.requestId || !Number.isFinite(Date.parse(result.receivedAt)) || result.minutes !== diaryMinutes(request.body)) throw new Error('Kvittot kunde inte bekräftas. Försök igen med samma uppgifter.')
       if (editing && (result.entryId !== editing.id || !('expectedRevision' in request) || result.revision !== request.expectedRevision + 1)) throw new Error('Ändringen kunde inte bekräftas. Försök igen med samma uppgifter.')
       setReceipt(result); store(storageKey, null); onSaved?.()
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Inskickningen kunde inte bekräftas. Försök igen.') }
     finally { running.current = false; setBusy(false) }
   }
-  if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p><p>Tid på plats {attempt?.body.startTime}–{attempt?.body.endTime}</p><p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
+  if (receipt) return <section className="diary-receipt" role="status"><CheckCircle2 size={28} /><h3>Anteckningen är mottagen</h3><p>{dateTime(receipt.receivedAt)}</p>{attempt && diaryTimeRange(attempt.body) && <p>Tid på plats {diaryTimeRange(attempt.body)}</p>}<p className="diary-muted">Kvitto {receipt.id}</p><button type="button" onClick={() => { baseline.current = initial(draft.name, draft.company); setReceipt(null); setAttempt(null); setDraft(baseline.current); setPhotos([]); setError(''); previews.current.forEach(url => URL.revokeObjectURL(url)); previews.current.clear() }}><Plus size={17} />Ny anteckning</button></section>
   return <form className="diary-entry-form" aria-label={editing ? 'Redigera dagboksanteckning' : 'Ny dagboksanteckning'} onSubmit={event => { event.preventDefault(); void submit() }}>
     <h3 ref={heading} tabIndex={-1}>{editing ? `${person.name} · ${person.company}` : 'Ny anteckning'}</h3>
     {editing?.editUntil && <p className="diary-muted">Redigerbar till {dateTime(editing.editUntil)}</p>}
@@ -121,8 +121,8 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
       catch { setError('Utkastet kunde inte återställas.'); }
     }}><RotateCcw size={16} />Återställ utkast</button></div>}
     <fieldset disabled={busy || Boolean(attempt)}>
-      <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från (ca)<input required type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="07:00" aria-describedby={timeHelp} value={draft.startTime} onChange={e => change({ startTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ startTime: time }) }} /></label><label>Till (ca)<input required type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="16:00" aria-describedby={timeHelp} value={draft.endTime} onChange={e => change({ endTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ endTime: time }) }} /></label></div>
-      <p id={timeHelp} className="diary-muted diary-field-help">Ungefärlig tid på plats. Skriv till exempel 0700 för 07:00.</p>
+      <div className="diary-time-grid"><label>Arbetsdatum<input required type="date" max={emptyDiaryBody().workDate} value={draft.workDate} onChange={e => change({ workDate: e.target.value })} /></label><label>Från (ca, valfritt)<input type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="07:00" aria-describedby={timeHelp} value={draft.startTime} onChange={e => change({ startTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ startTime: time }) }} /></label><label>Till (ca, valfritt)<input type="text" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="16:00" aria-describedby={timeHelp} value={draft.endTime} onChange={e => change({ endTime: e.target.value })} onBlur={e => { const time = diaryTimeInput(e.target.value); if (time) change({ endTime: time }) }} /></label></div>
+      <p id={timeHelp} className="diary-muted diary-field-help">Tid på plats är frivillig. Ange både från och till om du anger tid. Skriv till exempel 0700 för 07:00.</p>
       <label>Moment (valfritt)<select value={draft.itemId || ''} onChange={e => change({ itemId: e.target.value || null })}><option value="">Hela projektet</option>{items.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
       <label>Utfört arbete<textarea required rows={4} maxLength={6000} value={draft.text} onChange={e => change({ text: e.target.value })} /></label>
       <div className="diary-photo-tools"><div className="diary-photo-caption"><span>Bilder · {photos.length}/{DIARY_MAX_PHOTOS}</span><p id={photoHelp}>Högst {DIARY_MAX_PHOTOS} bilder per anteckning, 8 MB per bild. JPG, PNG eller WebP.</p></div><div><button type="button" aria-describedby={photoHelp} disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => camera.current?.click()}><Camera size={18} />Ta bild</button><button type="button" aria-describedby={photoHelp} disabled={photos.length >= DIARY_MAX_PHOTOS} onClick={() => input.current?.click()}><ImagePlus size={18} />Välj bilder</button></div></div>
