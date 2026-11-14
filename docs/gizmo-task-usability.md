@@ -46,10 +46,29 @@ Avtal, kalkyler och projektets ekonomidata ar utanfor andringen.
 - Sammanfattningarna ar klickbara kompakta filter, inte dubbla filterrader.
 - Aktiva utesluter godkanda och avbrutna uppgifter; Avslutade visar dessa.
   Alla finns kvar, och gamla sparade listpreferenser och direktlankar bevaras.
-- Gruppering, sortering och sidstorlek finns under Fler filter. Sokning och
-  Jag har-tidsfiltret finns kvar direkt i verktygsraden.
+- Sortering finns direkt i verktygsraden pa dator och mobil, tillsammans med
+  sokning och Jag har-tidsfiltret. Gruppering och sidstorlek finns under Fler filter.
 - Sammanfattningen avser alla uppgifter; grupperad lista raknar huvuduppdrag
   och behaller foraldrakontext. Valet skapar eller andrar inga uppgifter.
+
+### Filter och sortering 2026-11-14
+
+- Fler filter innehaller kombinerbara val for mottagare, uppdragsansvarig,
+  bollen hos, status och projekt/sammanhang. Personer och sammanhang hamtas
+  enbart fran redan behorighetskontrollerade uppgifter i arbetsytan.
+- Mottagare och bollen hos ar skilda val. Alla val maste matcha samma uppgift;
+  olika underuppgifter kan inte tillsammans uppfylla ett kombinerat filter.
+- Grupperad vy behaller huvuduppdraget som kontext och visar automatiskt
+  matchande underuppgifter vid sokning eller detaljfilter. Gruppen kan fallas
+  ihop manuellt. Utan dessa urval behalls den vanliga gruppvisningen.
+- Aktiva filter visas separat och kan tas bort ett i taget. Rensa filter gar
+  tillbaka till Aktiva utan att andra sortering, sidstorlek eller listvisning.
+  Ett uttryckligt avslutsstatus byter fran Aktiva till Alla vid behov.
+- Nya sorteringsval ar bollen hos, uppdragsansvarig, projekt/sammanhang och
+  skapandedatum. Tomma datum, tidsuppskattningar och sammanhang laggs sist.
+- Listval sparas med tidigare preferenser. Ogiltiga eller otillgangliga val
+  ignoreras; blockerad lokal lagring hindrar inte filtrering. Sidnumret aterstalls
+  nar ett urval andras. Ingen SQL, dataandring eller nytt utskick behovs.
 
 ## Redigera vanliga uppgifter
 
@@ -86,6 +105,11 @@ nagra befintliga uppgifter. Den kan koras om. Inga klientroller far RPC-atkomst.
 
 ## Verifiering
 
+- Listfilter: `node --experimental-strip-types --test test/task-list-filters.test.mjs`.
+  `node scripts/test-task-time-estimates-ui.mjs --test-filters` provar riktiga
+  komponenter med fiktiva data vid 320/390/1280 px: kombinationer, underuppgifter,
+  sidindelning, sparade val, blockerad lagring och inga skrivningar/utskick.
+  Samma skript med `--filters` startar en isolerad lokal forhandsvisning.
 - PGlite anvander riktiga versions-, gransknings-, jobb- och grant-triggers.
   Tester omfattar atomisk rollback, gammal atkomst, explicit utskick, no-op,
   organisationsgranser, modulbehorighet, samtidighet och datumgranser.

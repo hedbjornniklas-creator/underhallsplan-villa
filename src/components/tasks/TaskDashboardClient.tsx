@@ -1,8 +1,10 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   ChevronDown,
   ChevronLeft,
@@ -17,6 +19,7 @@ import {
   Plus,
   Repeat2,
   RefreshCw,
+  RotateCcw,
   Search,
   UserRoundCheck,
   Wrench,
@@ -42,18 +45,31 @@ import ActionCaseWorkspace from './ActionCaseWorkspace'
 import SupplierInvoiceWorkspace from './SupplierInvoiceWorkspace'
 import type { ActionCaseWorkspace as ActionCaseWorkspaceData } from '@/lib/action-cases/contracts'
 import UppdragScope from './UppdragScope'
-import { TaskRiskDot, TaskStatusBadge } from './TaskStatusBadge'
-import { compareTaskEstimates, parseTaskEstimate, taskEstimateLabel, taskHasMyBall, taskIsTimeCandidate, TASK_ESTIMATE_PRESETS } from '@/lib/tasks/timeEstimate'
+import { TaskRiskDot, TaskStatusBadge, taskStatusLabel } from './TaskStatusBadge'
+import { parseTaskEstimate, taskEstimateLabel, taskHasMyBall, taskIsTimeCandidate, TASK_ESTIMATE_PRESETS } from '@/lib/tasks/timeEstimate'
+import { compareTaskList as compareTasks, EMPTY_TASK_FACETS, readTaskFacets, taskFacetOptions, taskMatchesFacets, TASK_SORT_FIELDS,
+  type TaskFacetKey, type TaskListFacets, type TaskSortField as SortField, type TaskSortDirection as SortDirection } from '@/lib/tasks/listView'
 
 type FilterKey = 'all' | 'active' | 'closed' | 'my_ball' | 'review' | 'overdue' | 'unread'
 type WorkspaceView = 'current' | 'action_cases' | 'supplier_invoices' | 'statistics'
 type TaskListMode = 'grouped' | 'all' | 'attention'
-type SortField = 'title' | 'status' | 'assignee' | 'due' | 'updated' | 'estimate'
-type SortDirection = 'asc' | 'desc'
-
 const TASK_LIST_STORAGE_KEY = 'hushub:tasks:list-view:v1'
 const TASK_PAGE_SIZE_OPTIONS = [10, 25, 50] as const
-const TASK_COLLATOR = new Intl.Collator('sv', { sensitivity: 'base', numeric: true })
+const TASK_FACET_LABELS: Record<TaskFacetKey, string> = {
+  assignee: 'Mottagare', issuer: 'Uppdragsansvarig', ball: 'Bollen hos', status: 'Status', context: 'Projekt / sammanhang',
+}
+const TASK_SORT_OPTIONS = [
+  ['due:asc', 'Slutdatum, tidigast'], ['due:desc', 'Slutdatum, senast'],
+  ['assignee:asc', 'Mottagare A–Ö'], ['assignee:desc', 'Mottagare Ö–A'],
+  ['ball:asc', 'Bollen hos A–Ö'], ['ball:desc', 'Bollen hos Ö–A'],
+  ['issuer:asc', 'Uppdragsansvarig A–Ö'], ['issuer:desc', 'Uppdragsansvarig Ö–A'],
+  ['context:asc', 'Projekt A–Ö'], ['context:desc', 'Projekt Ö–A'],
+  ['title:asc', 'Uppgift A–Ö'], ['title:desc', 'Uppgift Ö–A'],
+  ['status:asc', 'Status, stigande'], ['status:desc', 'Status, fallande'],
+  ['updated:desc', 'Senaste aktivitet, nyast'], ['updated:asc', 'Senaste aktivitet, äldst'],
+  ['created:desc', 'Skapad, nyast'], ['created:asc', 'Skapad, äldst'],
+  ['estimate:asc', 'Tidsåtgång, kortast'], ['estimate:desc', 'Tidsåtgång, längst'],
+] as const
 
 type Props = {
   initialWorkspace: TaskWorkspace | null
@@ -110,47 +126,6 @@ function ballText(task: TaskView) {
       : 'Avslutad'
 }
 
-function statusSortRank(status: TaskView['status']) {
-  return {
-    ready_for_review: 0,
-    returned: 1,
-    waiting: 2,
-    in_progress: 3,
-    assigned: 4,
-    draft: 5,
-    approved: 6,
-    cancelled: 7,
-  }[status]
-}
-
-function compareTasks(
-  a: TaskView,
-  b: TaskView,
-  sortField: SortField,
-  sortDirection: SortDirection
-) {
-  let comparison = 0
-  if (sortField === 'estimate') {
-    const timeComparison = compareTaskEstimates(a, b, sortDirection)
-    if (timeComparison) return timeComparison
-  }
-  if (sortField === 'title') comparison = TASK_COLLATOR.compare(a.title, b.title)
-  if (sortField === 'status') comparison = statusSortRank(a.status) - statusSortRank(b.status)
-  if (sortField === 'assignee') comparison = TASK_COLLATOR.compare(a.assignee.name, b.assignee.name)
-  if (sortField === 'due') {
-    if (a.dueAt === null && b.dueAt !== null) return 1
-    if (b.dueAt === null && a.dueAt !== null) return -1
-    comparison = Date.parse(a.dueAt ?? '') - Date.parse(b.dueAt ?? '')
-    if (!Number.isFinite(comparison)) comparison = 0
-  }
-  if (sortField === 'updated') {
-    comparison = new Date(a.latestMessage?.createdAt ?? a.updatedAt).getTime()
-      - new Date(b.latestMessage?.createdAt ?? b.updatedAt).getTime()
-  }
-  if (comparison === 0) comparison = TASK_COLLATOR.compare(a.title, b.title)
-  return sortDirection === 'asc' ? comparison : -comparison
-}
-
 function taskMatchesSearch(task: TaskView, term: string) {
   if (!term) return true
   return [task.title, task.description, task.contextLabel, task.assignee.name, task.issuerName]
@@ -192,7 +167,8 @@ function SortButton({
       className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-950"
     >
       {label}
-      <ChevronsUpDown size={13} className={active ? 'text-slate-900' : 'text-slate-300'} />
+      {active ? direction === 'asc' ? <ArrowUp size={13} aria-hidden="true" /> : <ArrowDown size={13} aria-hidden="true" />
+        : <ChevronsUpDown size={13} className="text-slate-300" aria-hidden="true" />}
       <span className="sr-only">{active ? `Sorterat ${direction === 'asc' ? 'stigande' : 'fallande'}` : 'Sortera'}</span>
     </button>
   )
@@ -243,6 +219,7 @@ function TaskCard({
   return (
     <button
       type="button"
+      aria-label={`Öppna uppdraget ${task.title}`}
       onClick={onClick}
       className={`group w-full rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
         task.unreadMessageCount > 0
@@ -339,6 +316,7 @@ function TaskTableRow({
   parentTitle,
   groupStats,
   expanded,
+  matchingChildCount,
   onToggle,
   onClick,
 }: {
@@ -346,6 +324,7 @@ function TaskTableRow({
   parentTitle: string | null
   groupStats?: TaskGroupStats | null
   expanded?: boolean
+  matchingChildCount?: number
   onToggle?: () => void
   onClick: () => void
 }) {
@@ -408,7 +387,7 @@ function TaskTableRow({
                   aria-expanded={expanded}
                 >
                   {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  {expanded ? 'Dölj' : 'Visa'} underuppdrag
+                  {expanded ? 'Dölj' : 'Visa'} {matchingChildCount !== undefined ? `${matchingChildCount} matchande` : ''} underuppdrag
                 </button>
               ) : null}
             </div>
@@ -453,6 +432,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   const [taskDrilldown, setTaskDrilldown] = useState<TaskDrilldown | null>(null)
   const [filter, setFilter] = useState<FilterKey>('active')
   const [search, setSearch] = useState('')
+  const [facets, setFacets] = useState<TaskListFacets>({ ...EMPTY_TASK_FACETS })
   const [listMode, setListMode] = useState<TaskListMode>('grouped')
   const [timeBudgetMode, setTimeBudgetMode] = useState('all'), [customTimeBudget, setCustomTimeBudget] = useState('')
   const timeBudgetActive = workspace?.timeEstimatesAvailable === true && timeBudgetMode !== 'all'
@@ -463,6 +443,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     catch { invalidTimeBudget = true }
   }
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set())
+  const [collapsedFilteredGroupIds, setCollapsedFilteredGroupIds] = useState<Set<string>>(() => new Set())
   const workspaceTimeZone = normalizeTaskTimeZone(workspace?.timeZone)
   const [sortField, setSortField] = useState<SortField>('due')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
@@ -475,6 +456,17 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
 
   const selectedTask = workspace?.tasks.find((task) => task.id === selectedTaskId) ?? null
   const composerParent = workspace?.tasks.find((task) => task.id === composerParentId) ?? null
+  const facetOptions = useMemo(() => taskFacetOptions(workspace?.tasks ?? []), [workspace])
+  const activeFacetKeys = (Object.keys(facets) as TaskFacetKey[]).filter(key => facets[key])
+  const narrowGroupResults = Boolean(search.trim() || activeFacetKeys.length || taskDrilldown)
+
+  useEffect(() => {
+    if (!workspace) return
+    setFacets(current => {
+      const valid = readTaskFacets(current, facetOptions)
+      return (Object.keys(valid) as TaskFacetKey[]).every(key => valid[key] === current[key]) ? current : valid
+    })
+  }, [facetOptions, workspace])
 
   useEffect(() => {
     if (deepLinkHandled.current || !workspace) return
@@ -503,12 +495,13 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           sortDirection: SortDirection
           pageSize: number
           listMode: TaskListMode
+          facets: TaskListFacets
         }>
         if (['all', 'active', 'closed', 'my_ball', 'review', 'overdue', 'unread'].includes(parsed.filter ?? '')) {
           setFilter(parsed.filter as FilterKey)
         }
         if (typeof parsed.search === 'string') setSearch(parsed.search)
-        if (['title', 'status', 'assignee', 'due', 'updated', 'estimate'].includes(parsed.sortField ?? '')) {
+        if (TASK_SORT_FIELDS.includes(parsed.sortField as SortField)) {
           setSortField(parsed.sortField as SortField)
         }
         if (parsed.sortDirection === 'asc' || parsed.sortDirection === 'desc') {
@@ -520,6 +513,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
         if (parsed.listMode === 'grouped' || parsed.listMode === 'all' || parsed.listMode === 'attention') {
           setListMode(parsed.listMode)
         }
+        setFacets(readTaskFacets(parsed.facets, initialWorkspace ? taskFacetOptions(initialWorkspace.tasks) : undefined))
       }
     } catch {
       // A corrupt local preference must never block the task list.
@@ -530,15 +524,18 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
 
   useEffect(() => {
     if (!listPreferencesLoaded) return
-    window.localStorage.setItem(
-      TASK_LIST_STORAGE_KEY,
-      JSON.stringify({ filter, search, sortField, sortDirection, pageSize, listMode })
-    )
-  }, [filter, listMode, listPreferencesLoaded, pageSize, search, sortDirection, sortField])
+    try {
+      window.localStorage.setItem(TASK_LIST_STORAGE_KEY,
+        JSON.stringify({ filter, search, sortField, sortDirection, pageSize, listMode, facets }))
+    } catch {
+      // Filtering still works when the browser refuses local preferences.
+    }
+  }, [facets, filter, listMode, listPreferencesLoaded, pageSize, search, sortDirection, sortField])
 
   useEffect(() => {
     setPage(1)
-  }, [drilldownTaskIds, filter, listMode, pageSize, search, sortDirection, sortField, timeBudgetMode, customTimeBudget])
+    setCollapsedFilteredGroupIds(new Set())
+  }, [drilldownTaskIds, facets, filter, listMode, pageSize, search, sortDirection, sortField, timeBudgetMode, customTimeBudget])
 
   const taskHierarchy = useMemo(() => {
     const tasks = workspace?.tasks ?? []
@@ -577,22 +574,28 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     return { byId, roots, rootIdByTask, descendantsByRoot, groupStatsByRoot }
   }, [workspace])
 
+  const matchesTaskSelection = useCallback((task: TaskView, nextFilter: FilterKey = filter) => {
+    if (!workspace) return false
+    return (!drilldownTaskIds || drilldownTaskIds.has(task.id))
+      && taskMatchesFilter(task, nextFilter, workspace.currentUser.id)
+      && taskMatchesSearch(task, search.trim().toLocaleLowerCase('sv-SE'))
+      && taskMatchesFacets(task, facets)
+      && (effectiveListMode !== 'attention' || taskNeedsAttention(task, workspace.currentUser.id))
+      && (!timeBudgetActive || taskIsTimeCandidate(task, workspace.currentUser.id))
+  }, [drilldownTaskIds, facets, filter, search, effectiveListMode, timeBudgetActive, workspace])
+
+  const matchingTaskIds = useMemo(() => new Set((workspace?.tasks ?? [])
+    .filter(task => matchesTaskSelection(task)).map(task => task.id)), [matchesTaskSelection, workspace])
+
   const matchingTasks = useMemo(() => {
     if (!workspace) return []
-    const term = search.trim().toLocaleLowerCase('sv-SE')
     const candidates = effectiveListMode === 'all' ? workspace.tasks : taskHierarchy.roots
     return candidates
       .filter((task) => {
         const groupedTasks = effectiveListMode === 'all'
           ? [task]
           : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
-        return (
-          (!drilldownTaskIds || groupedTasks.some((item) => drilldownTaskIds.has(item.id)))
-          && groupedTasks.some((item) => taskMatchesFilter(item, filter, workspace.currentUser.id))
-          && groupedTasks.some((item) => taskMatchesSearch(item, term))
-          && (effectiveListMode !== 'attention' || groupedTasks.some((item) => taskNeedsAttention(item, workspace.currentUser.id)))
-          && (!timeBudgetActive || taskIsTimeCandidate(task, workspace.currentUser.id))
-        )
+        return groupedTasks.some(item => matchingTaskIds.has(item.id))
       })
       .sort((a, b) => compareTasks(a, b, sortField, sortDirection))
       .map((task) => ({
@@ -601,7 +604,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           ? taskHierarchy.byId.get(task.parentTaskId)?.title ?? null
           : null,
       }))
-  }, [drilldownTaskIds, filter, effectiveListMode, search, sortDirection, sortField, taskHierarchy, workspace, timeBudgetActive])
+  }, [effectiveListMode, matchingTaskIds, sortDirection, sortField, taskHierarchy, workspace])
   const visibleTasks = useMemo(() => timeBudgetActive ? matchingTasks.filter(({ task }) => task.estimatedMinutes != null && timeBudget !== null && task.estimatedMinutes <= timeBudget) : matchingTasks, [matchingTasks, timeBudget, timeBudgetActive])
   const unestimatedTasks = useMemo(() => timeBudgetActive ? matchingTasks.filter(({ task }) => task.estimatedMinutes == null) : [], [matchingTasks, timeBudgetActive])
 
@@ -612,14 +615,9 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     const groupFor = (task: TaskView) => effectiveListMode === 'all'
       ? [task]
       : [task, ...(taskHierarchy.descendantsByRoot.get(task.id) ?? [])]
-    const inSelectedMode = (tasks: TaskView[]) => (
-      effectiveListMode !== 'attention'
-      || tasks.some((task) => taskNeedsAttention(task, workspace.currentUser.id))
-    )
     const count = (nextFilter: FilterKey) => candidates.filter((task) => {
       const group = groupFor(task)
-      return inSelectedMode(group)
-        && group.some((item) => taskMatchesFilter(item, nextFilter, workspace.currentUser.id))
+      return group.some(item => matchesTaskSelection(item, nextFilter))
     }).length
     return {
       all: count('all'),
@@ -630,13 +628,22 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
       overdue: count('overdue'),
       unread: count('unread'),
     }
-  }, [effectiveListMode, taskHierarchy, workspace, timeBudgetActive, timeBudget])
+  }, [effectiveListMode, matchesTaskSelection, taskHierarchy, workspace, timeBudgetActive, timeBudget])
 
   const totalPages = Math.max(1, Math.ceil(visibleTasks.length / pageSize))
   const currentPage = Math.min(page, totalPages)
   const pagedTasks = visibleTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const groupedList = effectiveListMode !== 'all'
   const toggleTaskGroup = (taskId: string) => {
+    if (narrowGroupResults) {
+      setCollapsedFilteredGroupIds(current => {
+        const next = new Set(current)
+        if (next.has(taskId)) next.delete(taskId)
+        else next.add(taskId)
+        return next
+      })
+      return
+    }
     setExpandedGroupIds((current) => {
       const next = new Set(current)
       if (next.has(taskId)) next.delete(taskId)
@@ -646,8 +653,24 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
   }
   const sortedGroupChildren = (taskId: string) => (
     [...(taskHierarchy.descendantsByRoot.get(taskId) ?? [])]
+      .filter(task => !narrowGroupResults || matchingTaskIds.has(task.id))
       .sort((a, b) => compareTasks(a, b, sortField, sortDirection))
   )
+
+  const taskGroupExpanded = (taskId: string, childCount: number) => groupedList && childCount > 0 &&
+    (narrowGroupResults ? !collapsedFilteredGroupIds.has(taskId) : expandedGroupIds.has(taskId))
+
+  const changeFacet = (key: TaskFacetKey, value: string) => {
+    setFacets(current => ({ ...current, [key]: value }))
+    if (key === 'status' && value && ((filter === 'active' && ['approved', 'cancelled'].includes(value)) ||
+      (filter === 'closed' && !['approved', 'cancelled'].includes(value)))) setFilter('all')
+  }
+
+  const clearTaskFilters = () => {
+    setFacets({ ...EMPTY_TASK_FACETS }); setSearch(''); setFilter('active')
+    setTimeBudgetMode('all'); setCustomTimeBudget(''); setTaskDrilldown(null)
+  }
+  const hasTaskFilters = Boolean(activeFacetKeys.length || search || filter !== 'active' || timeBudgetActive || taskDrilldown)
 
   const changeSort = (field: SortField) => {
     if (sortField === field) {
@@ -655,7 +678,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
       return
     }
     setSortField(field)
-    setSortDirection(field === 'updated' ? 'desc' : 'asc')
+    setSortDirection(field === 'updated' || field === 'created' ? 'desc' : 'asc')
   }
 
   const selectTaskFilter = (nextFilter: FilterKey) => {
@@ -667,6 +690,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
     setTaskDrilldown({ label, taskIds })
     setFilter('all')
     setSearch('')
+    setFacets({ ...EMPTY_TASK_FACETS })
+    setTimeBudgetMode('all')
     setWorkspaceView('current')
   }
 
@@ -945,6 +970,13 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   <select id="task-list-selection" value={filter} onChange={event => selectTaskFilter(event.target.value as FilterKey)} className="min-h-11 rounded-md border border-[#D5DCDD] bg-white px-3 text-sm">
                     {([['active', 'Aktiva'], ['closed', 'Avslutade'], ['all', 'Alla'], ['my_ball', 'Din åtgärd'], ['review', 'Att kontrollera'], ['unread', 'Olästa'], ['overdue', 'Försenade']] as Array<[FilterKey, string]>).map(([key, label]) => <option key={key} value={key}>{label} ({filterCounts[key]})</option>)}
                   </select>
+                  <label className="sr-only" htmlFor="task-list-sort">Sortering</label>
+                  <select id="task-list-sort" value={`${sortField}:${sortDirection}`} onChange={event => {
+                    const [field, direction] = event.target.value.split(':')
+                    setSortField(field as SortField); setSortDirection(direction as SortDirection)
+                  }} className="gizmo-task-sort min-h-11 rounded-md border border-[#D5DCDD] bg-white px-3 text-sm">
+                    {TASK_SORT_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
                 {workspace.timeEstimatesAvailable && <div className="flex flex-wrap items-center gap-2">
                   <label className="text-sm font-medium text-slate-700">Jag har
                     <select aria-label="Jag har tid" value={timeBudgetMode} onChange={event => { setTimeBudgetMode(event.target.value); if (event.target.value !== 'all') { setSortField('estimate'); setSortDirection('asc') } }}
@@ -959,33 +991,38 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                   {timeBudgetActive && <span className="text-sm text-[#596368]">Bollen hos mig</span>}
                   {invalidTimeBudget && <p role="alert" className="w-full text-sm text-[#A52E42]">Ange 1–10080 hela minuter.</p>}
                 </div>}
-                <details className="gizmo-task-options">
-                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden"><ListFilter size={17} aria-hidden="true" /> Fler filter</summary>
+                <details className="gizmo-task-options" onKeyDown={event => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault(); event.currentTarget.open = false
+                    event.currentTarget.querySelector('summary')?.focus()
+                  }
+                }}>
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md border border-[#D5DCDD] px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden"><ListFilter size={17} aria-hidden="true" /> Fler filter{activeFacetKeys.length > 0 && <span className="gizmo-task-filter-count">{activeFacetKeys.length}</span>}</summary>
                   <div className="gizmo-task-options-panel">
-                <label className="mt-3 block text-sm md:hidden">Sortera
-                  <select aria-label="Sortering" value={`${sortField}:${sortDirection}`} onChange={event => { const [field, direction] = event.target.value.split(':'); setSortField(field as SortField); setSortDirection(direction as SortDirection) }} className="ml-2 min-h-10 max-w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm">
-                    {([['due:asc','Slutdatum, tidigast'],['due:desc','Slutdatum, senast'],['estimate:asc','Tidsåtgång, kortast'],['estimate:desc','Tidsåtgång, längst'],['title:asc','Uppgift A–Ö'],['title:desc','Uppgift Ö–A'],['updated:desc','Senast uppdaterad'],['updated:asc','Äldst uppdaterad'],['status:asc','Status, stigande'],['status:desc','Status, fallande'],['assignee:asc','Mottagare A–Ö'],['assignee:desc','Mottagare Ö–A']] as const).map(([value,label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </label>
+                    <div className="gizmo-task-facets">
+                      {(Object.keys(TASK_FACET_LABELS) as TaskFacetKey[]).map(key => <label key={key} className="gizmo-task-facet">
+                        <span>{TASK_FACET_LABELS[key]}</span>
+                        <select aria-label={`Filtrera ${TASK_FACET_LABELS[key].toLocaleLowerCase('sv-SE')}`} value={facets[key]} onChange={event => changeFacet(key, event.target.value)}>
+                          <option value="">Alla</option>
+                          {facetOptions[key].map(option => <option key={option.value} value={option.value}>
+                            {key === 'status' ? taskStatusLabel(option.value as TaskView['status']) : option.label}
+                          </option>)}
+                        </select>
+                      </label>)}
+                    </div>
                 <div className="flex flex-col gap-3">
                   <label className="flex flex-wrap items-center gap-2 text-sm">Visning
                     <select aria-label="Välj listvisning" value={effectiveListMode} disabled={timeBudgetActive} onChange={event => setListMode(event.target.value as TaskListMode)} className="min-h-11 rounded-md border border-[#D5DCDD] bg-white px-3">
                       <option value="grouped">Grupperad</option><option value="all">Alla uppgifter</option><option value="attention">Kräver uppmärksamhet</option>
                     </select>
                   </label>
-                  <p className="px-2 text-xs leading-5 text-slate-500">
-                    {effectiveListMode === 'grouped'
-                      ? 'Huvuduppdrag visas först. Öppna en grupp för att se underuppgifterna.'
-                      : effectiveListMode === 'attention'
-                        ? 'Visar grupper med förseningar, olästa meddelanden eller beslut som väntar.'
-                        : 'Visar varje huvud- och underuppgift som en egen rad.'}
-                  </p>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-slate-500">
                   <label className="inline-flex items-center gap-2">
                     Rader per sida
                     <select
+                      aria-label="Rader per sida"
                       value={pageSize}
                       onChange={(event) => setPageSize(Number(event.target.value))}
                       className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
@@ -994,10 +1031,28 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                     </select>
                   </label>
                 </div>
+                    <div className="gizmo-task-panel-actions">
+                      {hasTaskFilters && <button type="button" className="gizmo-task-reset" onClick={event => {
+                        clearTaskFilters(); event.currentTarget.closest('details')?.removeAttribute('open')
+                      }}><RotateCcw size={15} aria-hidden="true" />Rensa filter</button>}
+                      <button type="button" className="gizmo-button gizmo-primary" onClick={event => {
+                        const panel = event.currentTarget.closest('details')
+                        panel?.removeAttribute('open'); panel?.querySelector('summary')?.focus()
+                      }}><CheckCircle2 size={16} aria-hidden="true" />Visa resultat</button>
+                    </div>
                   </div>
                 </details>
                 </div>
-                <p className="mt-3 text-xs font-medium text-[#596368]" role="status">{visibleTasks.length} {groupedList ? 'huvuduppdrag' : 'uppgifter'} visas · {effectiveListMode === 'grouped' ? 'Grupperad vy' : effectiveListMode === 'attention' ? 'Kräver uppmärksamhet' : 'Alla uppgifter'}{groupedList ? ' · Underuppgifter ingår i sammanfattningen ovan' : ''}</p>
+                <div className="gizmo-task-filter-result">
+                  <p className="text-xs font-medium text-[#596368]" role="status">{visibleTasks.length} {groupedList ? 'huvuduppdrag' : 'uppgifter'} visas · {effectiveListMode === 'grouped' ? 'Grupperad vy' : effectiveListMode === 'attention' ? 'Kräver uppmärksamhet' : 'Alla uppgifter'}{groupedList && narrowGroupResults ? ` · ${matchingTaskIds.size} matchande uppgifter` : ''}</p>
+                  {hasTaskFilters && <button type="button" className="gizmo-task-reset" onClick={clearTaskFilters}><RotateCcw size={15} aria-hidden="true" />Rensa filter</button>}
+                </div>
+                {activeFacetKeys.length > 0 && <div className="gizmo-task-filter-chips" aria-label="Aktiva filter">
+                  {activeFacetKeys.map(key => <span className="gizmo-task-filter-chip" key={key}>
+                    <span>{TASK_FACET_LABELS[key]}: {key === 'status' ? taskStatusLabel(facets.status as TaskView['status']) : facetOptions[key].find(option => option.value === facets[key])?.label ?? 'Vald'}</span>
+                    <button type="button" onClick={() => changeFacet(key, '')} aria-label={`Ta bort filtret ${TASK_FACET_LABELS[key]}`} title={`Ta bort filtret ${TASK_FACET_LABELS[key]}`}><X size={14} aria-hidden="true" /></button>
+                  </span>)}
+                </div>}
 
                 {taskDrilldown ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2" role="status">
@@ -1024,7 +1079,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                           ? taskHierarchy.groupStatsByRoot.get(task.id) ?? null
                           : null
                         const children = groupedList ? sortedGroupChildren(task.id) : []
-                        const expanded = groupedList && expandedGroupIds.has(task.id)
+                        const expanded = taskGroupExpanded(task.id, children.length)
                         return (
                           <Fragment key={task.id}>
                             <TaskCard
@@ -1033,7 +1088,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                               groupStats={groupStats}
                               onClick={() => setSelectedTaskId(task.id)}
                             />
-                            {groupStats && groupStats.total > 0 ? (
+                            {children.length > 0 ? (
                               <button
                                 type="button"
                                 onClick={() => toggleTaskGroup(task.id)}
@@ -1041,7 +1096,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                                 className="-mt-1 ml-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm"
                               >
                                 {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                                {expanded ? 'Dölj' : 'Visa'} {groupStats.total} underuppgifter
+                                {expanded ? 'Dölj' : 'Visa'} {children.length} {narrowGroupResults ? 'matchande ' : ''}underuppgifter
                               </button>
                             ) : null}
                             {expanded ? (
@@ -1080,7 +1135,8 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                               const groupStats = groupedList
                                 ? taskHierarchy.groupStatsByRoot.get(task.id) ?? null
                                 : null
-                              const expanded = groupedList && expandedGroupIds.has(task.id)
+                              const children = groupedList ? sortedGroupChildren(task.id) : []
+                              const expanded = taskGroupExpanded(task.id, children.length)
                               return (
                                 <Fragment key={task.id}>
                                   <TaskTableRow
@@ -1088,11 +1144,12 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                                     parentTitle={parentTitle}
                                     groupStats={groupStats}
                                     expanded={expanded}
-                                    onToggle={groupStats && groupStats.total > 0 ? () => toggleTaskGroup(task.id) : undefined}
+                                    matchingChildCount={narrowGroupResults ? children.length : undefined}
+                                    onToggle={children.length > 0 ? () => toggleTaskGroup(task.id) : undefined}
                                     onClick={() => setSelectedTaskId(task.id)}
                                   />
                                   {expanded
-                                    ? sortedGroupChildren(task.id).map((child) => (
+                                    ? children.map((child) => (
                                         <TaskTableRow
                                           key={child.id}
                                           task={child}
@@ -1132,7 +1189,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
                 ) : (
                   <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white/70 px-6 py-12 text-center">
                     <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500"><CheckCircle2 size={22} /></span>
-                    <h2 className="mt-4 text-lg font-semibold text-slate-900">{timeBudgetActive ? 'Inga tidsuppskattade uppgifter matchar' : 'Inget här just nu'}</h2>
+                    <h2 className="mt-4 text-lg font-semibold text-slate-900">{timeBudgetActive ? 'Inga tidsuppskattade uppgifter matchar' : hasTaskFilters ? 'Inga uppgifter matchar filtren' : 'Inget här just nu'}</h2>
                     {!timeBudgetActive && <p className="mt-1 text-sm text-slate-500">Byt filter eller skapa ett nytt uppdrag.</p>}
                   </div>
                 )}
@@ -1154,7 +1211,7 @@ export default function TaskDashboardClient({ initialWorkspace, initialError, in
           type="button"
           onClick={() => openComposer()}
           disabled={!workspace || busy}
-          className={`fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-20 min-h-14 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-2xl shadow-slate-950/30 disabled:opacity-50 sm:hidden ${workspaceView === 'current' ? 'inline-flex' : 'hidden'}`}
+          className={`gizmo-task-create-mobile fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-20 min-h-14 items-center gap-2 rounded-full bg-slate-950 px-5 text-sm font-semibold text-white shadow-2xl shadow-slate-950/30 disabled:opacity-50 sm:hidden ${workspaceView === 'current' ? 'inline-flex' : 'hidden'}`}
         >
           <Plus size={20} /> Nytt uppdrag
         </button>
