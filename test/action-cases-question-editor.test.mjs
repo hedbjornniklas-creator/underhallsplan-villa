@@ -47,6 +47,7 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
     useEffect() {}, useCallback: fn => fn, useId: () => 'question-heading'
   }
   const dependencies = {
+    './ProjectSaveProtection': { useProjectSaveProtection() {} },
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': { supabase: { storage: { from(bucket) { assert.equal(bucket, 'project-question-files'); return { async uploadToSignedUrl() { return { error: null } } } } } } }, './project-questions.css': {},
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso, taskIsoToDateTimeInput, formatTaskDateTime: value => value },
     '@/lib/action-cases/projectQuestions': questionModel,

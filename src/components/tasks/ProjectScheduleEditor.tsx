@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react'
 import { ArrowDown, ArrowUp, Download, Eye, EyeOff, ListX, Loader2, Pencil, Plus, RefreshCw, Undo2 } from 'lucide-react'
@@ -86,12 +87,7 @@ export default function ProjectScheduleEditor({ caseId, items, onDirty, onShared
     const controller = new AbortController(); void refresh(controller.signal); return () => controller.abort()
   }, [refresh, customerRefresh, dirty, autosave.state])
   useEffect(() => { onDirty(dirty || saveRef.current.isPending() || Boolean(busy && busy !== 'load')) }, [dirty, busy, onDirty, autosave.state])
-  useEffect(() => {
-    if (!dirty && !saveRef.current.isPending()) return
-    const prevent = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', prevent)
-    return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, autosave.state])
+  useProjectSaveProtection({ label: 'Tidsplan', pending: dirty || autosave.isPending(), view: 'schedule', detail: saveError || 'Ändrade moment eller datum väntar på sparning.', flush: autosave.flush })
   async function write(operation: 'share' | 'unshare') {
     if (running.current || !saved) return
     try { normalizeScheduleRows(rows, operation === 'share') } catch { toast.error('Kontrollera rubriker och datum. Slutdatum får inte ligga före startdatum.'); return }

@@ -11,6 +11,7 @@ import './gizmo-recipient-layout.css'
 import { useQuestionAutosave } from './useQuestionAutosave'
 import TaskContactFields, { type TaskContactDraft } from './TaskContactFields'
 import QuestionDiaryImagePicker from './QuestionDiaryImagePicker'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const refKey = (p: { kind: string; id: string }) => `${p.kind}:${p.id}`
 export default function QuestionDialogue({ endpoint, fileBase, initial, mode = 'dialogue', publicView = false, people = [], files = [], responsible, taskReply, hasSharedDialogue = false, preview, footerTarget, storageKey, internalEvents = [], noteRevision = 0, onNote, onFlush, onBusy, onDirty, onChanged, onRefresh, onStatus, project }: {
@@ -105,11 +106,9 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
   const saveStatus = pending.current ? 'Åtgärden är inte bekräftad · utkastet finns kvar' : (text || fileIds.length || confirmed) ? mode === 'participants' ? 'Delning inte skickad' : 'Oskickat utkast på den här enheten' : ''
   useEffect(() => { onStatus?.(saveStatus) }, [onStatus, saveStatus])
   useEffect(() => () => onStatus?.(''), [onStatus])
-  useEffect(() => {
-    if ((!dirty || (!publicView && storageKey && !localError && rosterSave.local)) && !busy) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, busy, publicView, storageKey, localError, rosterSave.local])
+  useProjectSaveProtection({ label: mode === 'participants' ? 'Frågor och beslut · Deltagare' : 'Frågor och beslut · Kommunikation', pending: dirty || busy,
+    lossRisk: busy || Boolean(localError) || !rosterSave.local || publicView || !storageKey,
+    detail: localError || rosterSave.error || saveStatus || 'Deltagarval väntar på sparning.', view: 'questions', flush: async () => !running.current && await leave.current() })
   useEffect(() => { onDirty?.(Boolean(localError || (rosterSave.dirty && !rosterSave.local) || (publicView && dirty))) }, [onDirty, localError, rosterSave.dirty, rosterSave.local, publicView, dirty])
   useEffect(() => () => { onDirty?.(false); onBusy?.(false) }, [onDirty, onBusy])
   const candidates = [...new Map([...people, ...extraPeople].map(p => [refKey(p), p] as const).concat((data?.participants || []).map(p => [`${p.kind}:${p.personId}`, { id: p.personId, kind: p.kind, name: p.name, email: p.email }] as const))).values()]

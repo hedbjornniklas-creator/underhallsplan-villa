@@ -9,6 +9,7 @@ type AutosaveQueueOptions<TPayload, TResult> = {
   mergePayload?: (previous: TPayload, next: TPayload) => TPayload
   onSaved?: (result: TResult, payload: TPayload) => void
   onError?: (error: unknown, payload: TPayload) => void
+  protectUnload?: boolean
 }
 
 type PendingSave<TPayload, TResult> = {
@@ -22,6 +23,7 @@ export function useAutosaveQueue<TPayload, TResult>({
   mergePayload,
   onSaved,
   onError,
+  protectUnload = true,
 }: AutosaveQueueOptions<TPayload, TResult>) {
   const [status, setStatus] = useState<AutosaveQueueStatus>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +53,7 @@ export function useAutosaveQueue<TPayload, TResult>({
   }, [])
 
   useEffect(() => {
-    if (typeof window === 'undefined' || status !== 'saving') return
+    if (!protectUnload || typeof window === 'undefined' || status !== 'saving') return
 
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
@@ -60,7 +62,7 @@ export function useAutosaveQueue<TPayload, TResult>({
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [status])
+  }, [status, protectUnload])
 
   const drainQueue = useCallback(async () => {
     if (activeRef.current) return

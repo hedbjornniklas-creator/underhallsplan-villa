@@ -22,6 +22,7 @@ function harness(overrides = {}) {
     'lucide-react': new Proxy({}, { get: (_, key) => `icon:${String(key)}` }),
     '@/lib/supabaseClient': { supabase: {} },
     '@/lib/action-cases/choiceOffer': { choiceOfferForEditing },
+    './ProjectSaveProtection': { useProjectSaveProtection() {} },
   }
   for (const name of ['CustomerOfferPriceInput', 'CustomerChoiceCostTable', 'CustomerPlanningSaveStatus', 'CustomerChoicePriceTime']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }

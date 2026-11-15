@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Loader2, Plus, RotateCcw } from 'lucide-react'
 import type { ActionCaseQuoteRequest, ActionCaseView } from '@/lib/action-cases/contracts'
 import { groupRequestLines, isFullRequest, requestLineText, type QuoteRequestGroup } from '@/lib/action-cases/quoteRequests'
@@ -17,10 +17,11 @@ type Props = {
   request: ActionCaseQuoteRequest
   busy: boolean
   onEditing: (value: boolean) => void
+  onDirty?: (value: boolean) => void
   onAction: (action: string, payload: Record<string, unknown>) => Promise<boolean>
 }
 
-function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: Pick<Props, 'actionCase' | 'request' | 'busy'> & {
+function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel, onDirty }: Pick<Props, 'actionCase' | 'request' | 'busy' | 'onDirty'> & {
   group: QuoteRequestGroup
   onSave: (payload: Record<string, unknown>) => Promise<boolean>
   onCancel: () => void
@@ -35,6 +36,9 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
   const [covered, setCovered] = useState<string[]>([])
   const [checked, setChecked] = useState(false)
   const [independent, setIndependent] = useState(false)
+  const [baseline] = useState(() => JSON.stringify([amount, scope, validUntil, covered, checked, independent]))
+  const dirty = baseline !== JSON.stringify([amount, scope, validUntil, covered, checked, independent])
+  useEffect(() => { onDirty?.(dirty); return () => onDirty?.(false) }, [dirty, onDirty])
   const extras = isFullRequest(request.pricePresentation) ? [] : (item?.costLines ?? []).filter((line) => !['own_labor', 'subcontractor'].includes(line.category) &&
     (!line.workPartId || line.workPartId === group.workPartId) && !line.coveredByQuoteId && !line.selectedQuoteId)
   const priceIds = [...group.lines.map((line) => line.costLineId), ...covered]
@@ -66,7 +70,7 @@ function GroupPriceForm({ actionCase, request, group, busy, onSave, onCancel }: 
   </form>
 }
 
-export default function ActionCaseGroupPrices({ actionCase, request, busy, onEditing, onAction }: Props) {
+export default function ActionCaseGroupPrices({ actionCase, request, busy, onEditing, onDirty, onAction }: Props) {
   const [editing, setEditing] = useState<string | null>(null)
   const [removing, setRemoving] = useState<string | null>(null)
   const cancel = () => { setEditing(null); setRemoving(null); onEditing(false) }
@@ -91,7 +95,7 @@ export default function ActionCaseGroupPrices({ actionCase, request, busy, onEdi
           <p className="text-xs text-slate-500">{savedQuote.validUntil ? `Giltig till ${savedQuote.validUntil}` : 'Giltighet ej angiven'}</p>
         </div> : null}
         {!active && (missing || conflicting) ? <p className="mt-2 text-xs text-amber-800">{missing ? 'Ett arbetsmoment finns inte längre.' : 'Ta bort tidigare offertval för dessa arbeten innan ett gemensamt pris väljs.'}</p> : null}
-        {editing === group.key ? <GroupPriceForm actionCase={actionCase} request={request} group={group} busy={busy} onCancel={cancel} onSave={(data) => onAction('quote_package', data)} /> : null}
+        {editing === group.key ? <GroupPriceForm actionCase={actionCase} request={request} group={group} busy={busy} onCancel={cancel} onDirty={onDirty} onSave={(data) => onAction('quote_package', data)} /> : null}
         {removing === group.key ? <div className="mt-3 flex flex-wrap items-center gap-2"><p className="basis-full text-sm">Ta bort grupppriset ur kalkylen och återställ det tidigare prisunderlaget?</p><button type="button" className={secondary} disabled={busy} onClick={cancel}>Avbryt</button><button type="button" className={secondary} disabled={busy} onClick={() => void onAction('quote_package', { operation: 'remove', caseId: actionCase.id, requestId: request.id, groupKey: group.key, expectedUpdatedAt: request.updatedAt }).then((ok) => { if (ok) cancel() })}>{busy ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}Återställ prisunderlag</button></div> : null}
       </li>
     })}</ul>

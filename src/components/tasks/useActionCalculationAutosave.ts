@@ -19,6 +19,7 @@ export function useActionCalculationAutosave({ caseId, coordinate, onSaved }: {
     for (const entry of Object.values(entries.current)) if (entry.edit.itemId === itemId && sameCalculationVersion(entry.expectedUpdatedAt, before) && entry.status !== 'error') entry.expectedUpdatedAt = after
   }
   const queue = useAutosaveQueue<Record<string, true>, void>({
+    protectUnload: false,
     mergePayload: (previous, next) => ({ ...previous, ...next }),
     save: async keys => {
       for (const key of Object.keys(keys)) await coordinate(async () => {

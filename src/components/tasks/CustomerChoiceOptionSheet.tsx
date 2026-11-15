@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -42,12 +43,7 @@ export default function CustomerChoiceOptionSheet({ caseId, revision, offerAvail
   useEffect(() => {
     if (!dialog.current?.contains(document.activeElement)) dialog.current?.focus()
   }, [working])
-  useEffect(() => {
-    if (!uploading) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [uploading])
+  useProjectSaveProtection({ label: `Val och tillval · ${option.title}`, pending: uploading, view: 'choices', detail: 'En bilaga laddas upp.' })
   const toggle = (id: string, checked: boolean) => onReferences(checked ? [...references, { optionId: option.id, fileId: id }] : references.filter((r) => r.optionId !== option.id || r.fileId !== id))
   async function downloadPdf() {
     if (working || saving || saveError || revision === undefined) return

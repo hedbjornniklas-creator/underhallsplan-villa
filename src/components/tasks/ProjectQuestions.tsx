@@ -12,6 +12,7 @@ import QuestionDialogue from './QuestionDialogue'
 import QuestionAttachments from './QuestionAttachments'
 import QuestionReminderSchedule from './QuestionReminderSchedule'
 import { useQuestionAutosave } from './useQuestionAutosave'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const labels: Record<string, string> = { create: 'Fråga registrerad', update: 'Fråga / tilldelning ändrad', answer: 'Svar registrerat', note: 'Intern anteckning', close: 'Fråga avslutad', reopen: 'Fråga återöppnad', send: 'Skickad som uppgift' }
 const taskLabels: Record<string, string> = { draft: 'Utkast', assigned: 'Tilldelad', in_progress: 'Pågår', waiting: 'Väntar', ready_for_review: 'Svar inväntar granskning', returned: 'Återlämnad', approved: 'Hantering klar', cancelled: 'Avbruten' }
@@ -102,11 +103,10 @@ export default function ProjectQuestions({ caseId, active, refreshKey = 0, openR
     return () => { controller.abort(); window.clearInterval(timer); window.removeEventListener('focus', update) }
   }, [active, selected, refresh])
   useEffect(() => { onDirty(busy || Boolean(localError) || dialogueDirty || (autosave.dirty && !autosave.local)) }, [busy, localError, dialogueDirty, autosave.dirty, autosave.local, onDirty])
-  useEffect(() => {
-    if ((!dirty || (autosave.local && !localError && !dialogueDirty)) && !busy && !autosave.busy) return
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, busy, autosave.busy, autosave.local, localError, dialogueDirty])
+  useProjectSaveProtection({ label: `Frågor och beslut${draft.title ? ` · ${draft.title}` : ''}`, pending: dirty || busy || autosave.busy,
+    lossRisk: busy || Boolean(localError) || dialogueDirty || !autosave.local,
+    detail: localError || autosave.error || (busy ? 'Åtgärden är inte bekräftad.' : 'Frågeutkastet finns på den här enheten.'), view: 'questions',
+    flush: async () => !running.current && await autosave.flush() })
   useEffect(() => {
     if (!selected || !active) return
     const overflow = document.body.style.overflow

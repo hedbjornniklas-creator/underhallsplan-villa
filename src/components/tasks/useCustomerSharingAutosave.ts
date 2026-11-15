@@ -10,7 +10,7 @@ export function useCustomerSharingAutosave(caseId: string) {
   const [state, setState] = useState<{ workspace: CustomerSharingWorkspace | null; edits: Partial<Record<CustomerSection, boolean>>; busy: boolean; dirty: boolean; error: string }>({ workspace: null, edits: {}, busy: false, dirty: false, error: '' })
   const error = useRef('')
   function publish() { if (mounted.current) setState({ workspace: saved.current, edits: { ...edits.current }, busy: running.current, dirty: Boolean(pending.current || Object.keys(edits.current).length), error: error.current }) }
-  const queue = useAutosaveQueue<true, void>({ save: async () => {
+  const queue = useAutosaveQueue<true, void>({ protectUnload: false, save: async () => {
     if (failed.current || !saved.current) return
     running.current = true; publish()
     try {
@@ -44,5 +44,6 @@ export function useCustomerSharingAutosave(caseId: string) {
     saved.current = workspace; edits.current = {}; pending.current = null; failed.current = false; error.current = ''; publish(); return true
   }
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
-  return { ...state, change, retry, reset, isBusy: () => running.current }
+  async function flush() { await queue.enqueue(true).catch(() => undefined); return !pending.current && !Object.keys(edits.current).length && !failed.current }
+  return { ...state, change, retry, reset, flush, isBusy: () => running.current }
 }

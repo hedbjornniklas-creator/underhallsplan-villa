@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig-diary-image-library.json",
+  "include": ["../next-env.d.ts", "../src/components/tasks/ActionCaseProject.tsx"]
+}

@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useEffect, useRef, useState } from 'react'
 import { CheckCheck, RotateCcw, RefreshCw } from 'lucide-react'
 import { administrationLabels, projectCompletionBlockers, type ProjectCompletionWorkspace } from '@/lib/action-cases/projectCompletion'
@@ -14,11 +15,7 @@ export default function ProjectCompletion({ caseId, active, refreshKey, blocked,
   const pending = useRef<Record<string, unknown> | null>(null), running = useRef(false)
   const statusCallback = useRef(onStatus); statusCallback.current = onStatus
   useEffect(() => { onDirty(busy || pending.current !== null) }, [busy, error, onDirty])
-  useEffect(() => {
-    if (!busy && !pending.current) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [busy, error])
+  useProjectSaveProtection({ label: 'Översikt · Projektavslut', pending: busy || Boolean(pending.current), detail: error || 'Ändringen av projektstatus är inte bekräftad.', view: 'overview' })
   useEffect(() => {
     if (!active || pending.current) return
     const controller = new AbortController()

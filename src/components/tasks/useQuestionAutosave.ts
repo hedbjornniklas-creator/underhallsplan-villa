@@ -33,7 +33,7 @@ export function useQuestionAutosave<T>({ save, valid, onSaved, staleMessage, upg
     localRef.current = local
     if (mounted.current) setState({ busy: running.current, dirty, error, local })
   }
-  const queue = useAutosaveQueue<true, void>({ save: async () => {
+  const queue = useAutosaveQueue<true, void>({ protectUnload: false, save: async () => {
     if (failed.current || !entry.current) return
     running.current = true; publish('')
     try {

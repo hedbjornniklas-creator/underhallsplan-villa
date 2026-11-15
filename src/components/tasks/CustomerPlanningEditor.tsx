@@ -13,6 +13,7 @@ import CustomerChoiceOptionSheet from './CustomerChoiceOptionSheet'
 import ProjectEditorRow from './ProjectEditorRow'
 import { useCustomerPlanningAutosave, type CustomerPlanningSnapshot } from './useCustomerPlanningAutosave'
 import CustomerPlanningSaveStatus from './CustomerPlanningSaveStatus'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const field = 'mt-1 block w-full rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-sm'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
@@ -66,6 +67,7 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
     if (immediateSave.current) { immediateSave.current = false; void autosaveRef.current.flush() }
   }, [ready, dirty, snapshot])
   const saving = dirty || autosave.isPending(), saveError = autosave.state?.status === 'error'
+  useProjectSaveProtection({ label: 'Val och tillval', pending: saving || saveError, view: 'choices', detail: saveError ? 'Sparningen misslyckades. Återförsök i Val och tillval.' : 'Ändrade alternativ, priser eller bilagor väntar på sparning.', flush: autosave.flush })
   useEffect(() => { onDirty(dirty || autosaveRef.current.isPending() || Boolean(busy)) }, [dirty, autosave.state, busy, onDirty])
   function changeItems(next: CustomerPlannedItem[]) { setItems(next); setConfirmed(false) }
   function changeCategories(next: CustomerChoiceCategory[]) { setCategories(next); setConfirmed(false) }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pencil, Save, X } from 'lucide-react'
 import type { ContractWorkLink } from '@/lib/action-cases/contractWork'
 import PriceInput from './CustomerOfferPriceInput'
@@ -11,12 +11,14 @@ export default function ActionCaseContractPrice({ link, busy, onSave, onDirty }:
 }) {
   const [editing, setEditing] = useState(false)
   const [price, setPrice] = useState(link.price)
+  const dirty = editing && JSON.stringify(price) !== JSON.stringify(link.price)
+  useEffect(() => { onDirty(dirty); return () => onDirty(false) }, [dirty, onDirty])
   const close = () => { setEditing(false); onDirty(false) }
   const button = 'gizmo-button inline-flex items-center gap-2 disabled:opacity-40'
   return <section className="mb-4 border-b border-[#D5DCDD] pb-4" aria-label="Avtalat kundpris">
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Avtalat kundpris inkl. moms</h3>
       <strong>{link.price.amountOre === null ? link.price.editable ? 'Pris inte angivet' : 'Se avtalets prisvillkor' : new Intl.NumberFormat('sv-SE', { style: 'currency', currency: 'SEK' }).format(link.price.amountOre / 100)}</strong>
-      {!link.locked && link.price.editable && !editing && <button type="button" className={button} disabled={busy} title="Ändra avtalat kundpris" aria-label="Ändra avtalat kundpris" onClick={() => { setPrice(link.price); setEditing(true); onDirty(true) }}><Pencil size={16} /></button>}
+      {!link.locked && link.price.editable && !editing && <button type="button" className={button} disabled={busy} title="Ändra avtalat kundpris" aria-label="Ändra avtalat kundpris" onClick={() => { setPrice(link.price); setEditing(true) }}><Pencil size={16} /></button>}
     </div>
     {editing && <form className="mt-3 space-y-3" onSubmit={async event => { event.preventDefault(); if (!busy && !link.locked && await onSave(price)) close() }}>
       <fieldset disabled={busy || link.locked} className="grid gap-3 sm:grid-cols-2">

@@ -6,6 +6,7 @@ import { useToast } from '@/components/ui/AppToastProvider'
 import type { ContractParties } from '@/lib/action-cases/customerContractParties'
 import type { OrganizationCustomerInput } from '@/lib/customers/domain'
 import { billingCustomerFromBuyer, billingCustomerInput, emptyBillingCustomer, type ProjectBillingWorkspace } from '@/lib/action-cases/projectBilling'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const field = 'mt-1 block min-h-11 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 
@@ -27,7 +28,8 @@ export default function ProjectBillingEditor({ caseId, parties, active, onDirtyC
   const pending = useRef<{ key: string; id: string } | null>(null)
   const running = useRef(false)
   const customer = workspace?.registry.customers.find((row) => row.id === workspace.customerId)
-  const dirty = mode !== 'existing' || Boolean(workspace && selectedId !== (workspace.customerId ?? ''))
+  const dirty = (mode === 'create' ? JSON.stringify(draft) !== JSON.stringify(emptyBillingCustomer()) : mode === 'update' ? Boolean(customer && JSON.stringify(draft) !== JSON.stringify(billingCustomerInput(customer))) : Boolean(workspace && selectedId !== (workspace.customerId ?? '')))
+  useProjectSaveProtection({ label: 'Betalning och fakturering · Fakturakund', pending: dirty || busy === 'save', view: 'payments', detail: saveFailed ? 'Fakturakunden kunde inte sparas.' : 'Ändrad fakturakund är inte sparad.' })
   useEffect(() => { if (active) setEnabled(true) }, [active])
   useEffect(() => { onDirtyChange(dirty || Boolean(busy)) }, [dirty, busy, onDirtyChange])
   useEffect(() => {

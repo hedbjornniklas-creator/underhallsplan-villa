@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, FileDown, Link2, LockKeyhole, Pencil, Plus, RefreshCw, Undo2, X } from 'lucide-react'
@@ -86,11 +87,7 @@ export default function ProjectBillingFlow({ caseId, active, onDirty, onActivate
     return invalidateLoad
   }, [active, load, costDirty, invalidateLoad])
   useEffect(() => { onDirty(busy || !!pending || costDirty || legacyDirty) }, [busy, pending, costDirty, legacyDirty, onDirty])
-  useEffect(() => {
-    if (!pending && !costDirty) return
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [pending, costDirty])
+  useProjectSaveProtection({ label: 'Betalning och fakturering · Faktureringsåtgärd', pending: Boolean(pending) || busy, view: 'payments', detail: 'Åtgärden behöver bekräftas innan du lämnar sidan.' })
 
   async function perform(command: Command, attempt?: Payload) {
     if (running.current || !dataRef.current) throw new Error('En sparning pågår. Vänta tills den är bekräftad.')
@@ -222,6 +219,7 @@ function CostDrawer({ caseId, id, data, agreementId, perform, readRequired, reco
   }, [id])
   useEffect(() => { queue.current.acknowledge(data.revision) }, [data.revision])
   useEffect(() => { onDirty(autosave.busy || autosave.dirty) }, [autosave.busy, autosave.dirty, onDirty])
+  useProjectSaveProtection({ label: 'Betalning och fakturering · Kostnad', pending: autosave.dirty || autosave.busy, lossRisk: !autosave.local, view: 'payments', detail: autosave.error || 'Kostnadsutkastet finns på den här enheten.', flush: autosave.flush })
   function edit(next: CostForm) { setForm(next); autosave.change(next) }
   async function leave() {
     if (finishing || autosave.busy) return

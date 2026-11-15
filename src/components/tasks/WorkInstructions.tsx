@@ -7,8 +7,9 @@ import { INSTRUCTION_MAX_FILES, INSTRUCTION_MAX_TEXT, instructionFileKey, normal
 import WorkInstructionFiles, { WorkInstructionFileList } from './WorkInstructionFiles'
 import { useQuestionAutosave } from './useQuestionAutosave'
 import './work-instructions.css'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
-export type WorkInstructionsHandle = { flush: () => Promise<boolean>; isBusy: () => boolean }
+export type WorkInstructionsHandle = { flush: () => Promise<boolean>; isBusy: () => boolean; canRecover?: () => boolean }
 type Props = { caseId: string; itemId: string; projectFiles: ActionCaseAttachmentView[]; onDirty: (dirty: boolean) => void; onWorking: (working: boolean) => void }
 type Upload = { id: string; file: File; status: 'queued' | 'uploading' | 'error'; error?: string; signed?: { bucket: string; filePath: string; token: string; contentType: string }; uploaded?: boolean }
 const empty = (): InstructionBody => ({ text: '', files: [] })
@@ -79,8 +80,10 @@ const WorkInstructions = forwardRef<WorkInstructionsHandle, Props>(function Work
   const dirty = autosave.dirty || uploads.length > 0
   useEffect(() => { callbacks.current.onDirty(dirty); return () => callbacks.current.onDirty(false) }, [dirty])
   useEffect(() => { callbacks.current.onWorking(uploadBusy || loading); return () => callbacks.current.onWorking(false) }, [uploadBusy, loading])
-  useEffect(() => { if (!dirty) return; const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn) }, [dirty])
-  useImperativeHandle(ref, () => ({ flush: async () => !transferring.current && !uploadQueue.current.length && await auto.current.flush(), isBusy: () => transferring.current || auto.current.isBusy() }), [])
+  useProjectSaveProtection({ label: 'Projektarbete · Instruktioner', pending: dirty, lossRisk: uploads.length > 0 || !autosave.local,
+    detail: uploads.length ? `${uploads.length} filer är inte färdiguppladdade.` : autosave.error || (autosave.local ? 'Textutkastet finns på den här enheten.' : 'Texten kunde inte sparas på den här enheten.'), view: 'work',
+    flush: async () => !transferring.current && !uploadQueue.current.length && await auto.current.flush() })
+  useImperativeHandle(ref, () => ({ flush: async () => !transferring.current && !uploadQueue.current.length && await auto.current.flush(), isBusy: () => transferring.current || auto.current.isBusy(), canRecover: () => !uploadQueue.current.length && auto.current.isLocal() }), [])
   function change(next: InstructionBody) {
     if (!workspace || workspace.readOnly) return
     currentBody.current = next; setBody(next); auto.current.change(next)

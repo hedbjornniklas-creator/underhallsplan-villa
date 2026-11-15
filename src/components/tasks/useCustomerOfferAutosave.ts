@@ -27,6 +27,7 @@ export function useCustomerOfferAutosave({ initialRevision, save, onSaved, onErr
   const [state, setState] = useState<SaveState | null>(null)
   const publish = () => { if (mounted.current) setState(entry.current ? { ...entry.current } : null) }
   const queue = useAutosaveQueue<true, void>({
+    protectUnload: false,
     save: async () => {
       const submitted = entry.current
       if (submitted?.status !== 'pending') return

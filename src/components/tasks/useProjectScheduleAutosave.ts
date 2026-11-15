@@ -16,7 +16,7 @@ export function useProjectScheduleAutosave({ save, onSaved, onError }: {
   const pending = useRef<Promise<unknown> | null>(null)
   const [state, setState] = useState<Entry | null>(null)
   const publish = () => { if (mounted.current) setState(entry.current ? { ...entry.current } : null) }
-  const queue = useAutosaveQueue<true, void>({ save: async () => {
+  const queue = useAutosaveQueue<true, void>({ protectUnload: false, save: async () => {
     const submitted = entry.current
     if (!mounted.current || submitted?.status !== 'pending' || !submitted.valid) return
     clearTimeout(timer.current)

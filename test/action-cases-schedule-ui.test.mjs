@@ -31,6 +31,7 @@ function harness() {
     const compiled = { exports: {} }
     new Function('require','module','exports','fetch','window','setTimeout','clearTimeout', code)(name => {
       if (name === 'react') return react
+      if (name === './ProjectSaveProtection') return { useProjectSaveProtection() {} }
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => String(key) })
       if (name.endsWith('.css')) return {}

@@ -37,6 +37,7 @@ import { useProjectCustomerPricingAutosave } from './useProjectCustomerPricingAu
 import { useActionSaveCoordinator } from './useActionSaveCoordinator'
 import { mergeCalculationSave, overlayCalculation, sameCalculationVersion } from '@/lib/action-cases/calculationSave'
 import { workItemSum, workProjectSum } from '@/lib/action-cases/workSums'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 type Props = {
   initialWorkspace: Workspace | null
@@ -85,6 +86,7 @@ function CreateCaseSheet({ busy, onClose, onCreate }: { busy: boolean; onClose: 
   const [items, setItems] = useState([''])
   const dialog = useRef<HTMLDivElement>(null)
   const dirty = Object.values(form).some((value) => value.trim()) || items.some((item) => item.trim())
+  useProjectSaveProtection({ label: 'Nytt projekt', pending: dirty, detail: 'Projektformuläret är påbörjat men inte sparat.' })
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }))
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null
@@ -408,18 +410,20 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     })()
     return () => { controller.abort(); running.current = false }
   }, [customerRefresh, onWorkspaceChange, toast, scopeAutosave.hasUnsaved, calculation.hasUnsaved, customerPricing.hasUnsaved, itemDirty, uploading])
-  const guarded = busy || uploading || scopeAutosave.hasUnsaved || calculation.hasUnsaved || customerPricing.hasUnsaved || itemDirty || Boolean(requestEditor) || Boolean(newItemTitle.trim())
+  const [writePending, setWritePending] = useState(false)
+  const guarded = writePending || uploading || scopeAutosave.hasUnsaved || calculation.hasUnsaved || customerPricing.hasUnsaved || itemDirty || Boolean(newItemTitle.trim())
   useEffect(() => { onBusyChange?.(busy || uploading || scopeAutosave.isSaving || calculation.isSaving || customerPricing.isSaving) }, [busy, uploading, scopeAutosave.isSaving, calculation.isSaving, customerPricing.isSaving, onBusyChange])
   useEffect(() => { onDirtyChange?.(guarded) }, [guarded, onDirtyChange])
-  useEffect(() => {
-    if (!guarded) return
-    const prevent = (event: BeforeUnloadEvent) => {
-      if (openingCreatedProject.current) return
-      event.preventDefault(); event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', prevent)
-    return () => window.removeEventListener('beforeunload', prevent)
-  }, [guarded])
+  const titles = (ids: string[]) => [...new Set(ids)].map(id => selectedCase?.items.find(item => item.id === id)?.title || 'Nytt moment').join(', ')
+  useProjectSaveProtection({ label: 'Projektarbete · Omfattning', pending: scopeAutosave.hasUnsaved, view: 'work',
+    detail: titles(Object.entries(scopeAutosave.states).filter(([, entry]) => entry.status !== 'saved').map(([id]) => id)), flush: scopeAutosave.flushAll })
+  useProjectSaveProtection({ label: 'Projektarbete · Kalkyl', pending: calculation.hasUnsaved, view: 'work',
+    detail: Object.values(calculation.states).filter(entry => entry.status !== 'saved').map(entry => `${titles([entry.edit.itemId])}: ${entry.error || (entry.status === 'invalid' ? 'Komplettera kalkylraden.' : 'Sparning väntar eller pågår.')}`).join(' '), flush: calculation.flushAll })
+  useProjectSaveProtection({ label: 'Projektarbete · Kundpris', pending: customerPricing.hasUnsaved, view: 'work',
+    detail: titles(Object.entries(customerPricing.states).filter(([, entry]) => entry.status !== 'saved').map(([id]) => id)), flush: customerPricing.flushAll })
+  useProjectSaveProtection({ label: 'Projektarbete · Ny åtgärd', pending: Boolean(newItemTitle.trim()) && !openingCreatedProject.current, detail: newItemTitle, view: 'work' })
+  useProjectSaveProtection({ label: 'Bilder och filer · Uppladdning', pending: uploading, view: 'files', detail: 'Filer laddas upp. Vänta tills uppladdningen är klar.' })
+  useProjectSaveProtection({ label: 'Projektarbete · Sparning', pending: writePending && !openingCreatedProject.current, view: 'work', detail: 'Åtgärden behöver bekräftas innan du lämnar sidan.' })
   const action = async (name: string, payload: Record<string, unknown>, successMessage?: string | null): Promise<ActionResult | null> => {
     if (running.current) return null
     running.current = true
@@ -436,6 +440,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
           ...(before && current && typeof payload.expectedUpdatedAt === 'string' && sameCalculationVersion(payload.expectedUpdatedAt, before.updatedAt) ? { expectedUpdatedAt: current.updatedAt } : {}),
           ...(beforeLine?.updatedAt && currentLine?.updatedAt && typeof payload.expectedLineUpdatedAt === 'string' && sameCalculationVersion(payload.expectedLineUpdatedAt, beforeLine.updatedAt) ? { expectedLineUpdatedAt: currentLine.updatedAt } : {}),
         }
+        setWritePending(true)
         const response = await fetch('/api/action-cases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: name, payload: next }) })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error || 'Kunde inte spara.')
@@ -454,7 +459,7 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
       }
       return null
     }
-    finally { running.current = false; setBusy(false) }
+    finally { running.current = false; setBusy(false); setWritePending(false) }
   }
 
   if (!workspace) return <section className="gizmo-empty" role="alert"><ClipboardList /><h2>Projekten kunde inte hämtas</h2><p>{error}</p><button className="gizmo-button" onClick={() => window.location.reload()}>Försök igen</button></section>

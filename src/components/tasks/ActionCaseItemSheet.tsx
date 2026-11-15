@@ -26,6 +26,7 @@ import type { useActionCalculationAutosave, CalculationEntry } from './useAction
 import CalculationSaveStatus from './CalculationSaveStatus'
 import WorkInstructions, { type WorkInstructionsHandle } from './WorkInstructions'
 import './action-case-costs.css'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 type Props = {
   item: ActionCaseItemView
@@ -181,6 +182,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
   const selectLines = (lineIds: string[], checked: boolean) => setSelectedLineIds((ids) => checked ? [...new Set([...ids, ...lineIds])] : ids.filter((id) => !lineIds.includes(id)))
   const working = busy || pending || instructionWorking
   const costDirty = (!calculation && Boolean(editing)) || quoteEditing || partEditing || bulkEditing || lumpDirty || agreedPriceDirty
+  useProjectSaveProtection({ label: `Projektarbete · ${item.title}`, pending: costDirty, view: 'work', detail: agreedPriceDirty ? 'Kundprisvillkor är påbörjade men inte använda.' : 'Kalkylformuläret har osparade ändringar.' })
   const mutationBlocked = working || locked
   useEffect(() => { onDirtyChange?.(costDirty || instructionDirty); return () => onDirtyChange?.(false) }, [costDirty, instructionDirty, onDirtyChange])
   const dirty = scopeBlocked
@@ -225,7 +227,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
     if (costDirty && !window.confirm(agreedPriceDirty ? 'Stäng utan att använda de påbörjade kundprisvillkoren?' : 'Stäng utan att spara kalkyländringarna?')) return
     navigating.current = true; setPending(true)
     try {
-      if (instructions.current && !await instructions.current.flush() && !window.confirm('Instruktionerna är inte sparade. Stäng ändå? Textutkastet finns kvar på den här enheten. Filer som inte är uppladdade måste väljas på nytt.')) return
+      if (instructions.current && !await instructions.current.flush() && !instructions.current.canRecover?.() && !window.confirm('Instruktionerna är inte sparade. Stäng ändå? Text som inte finns i ett lokalt utkast och filer som inte är uppladdade kan gå förlorade.')) return
       onClose()
     } finally { navigating.current = false; setPending(false) }
   }
@@ -233,7 +235,7 @@ export default function ActionCaseItemSheet({ item, caseId, projectTitle, delive
     if (next === tab || costDirty || working || navigating.current) return
     navigating.current = true; setPending(true)
     try {
-      if (instructions.current && !await instructions.current.flush()) return
+      if (instructions.current && !await instructions.current.flush() && !instructions.current.canRecover?.()) return
       onScopeFlush(); setTab(next)
     } finally { navigating.current = false; setPending(false) }
   }

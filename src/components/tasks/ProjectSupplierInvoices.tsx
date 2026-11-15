@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ExternalLink, FilePlus2, FileText, Plus, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
@@ -116,10 +117,10 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
     }
     document.addEventListener('keydown', key); return () => { document.body.style.overflow = old; document.removeEventListener('keydown', key); focus?.focus() }
   }, [])
-  useEffect(() => {
-    if (!autosave.dirty && !pendingFile && !uploading && !basisBusy) return
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [autosave.dirty, pendingFile, uploading, basisBusy])
+  useProjectSaveProtection({ label: `Betalning och fakturering · Leverantörsfaktura${invoice?.invoiceNumber ? ` ${invoice.invoiceNumber}` : ''}`,
+    pending: autosave.dirty || Boolean(pendingFile) || uploading || basisBusy || more > 0, lossRisk: Boolean(pendingFile) || uploading || basisBusy || more > 0 || !autosave.local,
+    detail: pendingFile ? `${pendingFile.name} är inte uppladdad.` : more ? `${more} filer återstår i uppladdningskön.` : autosave.error || 'Fakturautkastet finns på den här enheten.', view: 'payments',
+    flush: async () => !uploadingRef.current && !basisBusy && !pendingFile && more === 0 && await aRef.current.flush() })
   useEffect(() => { if (!pendingFile) { setPreview(''); return }; const url = URL.createObjectURL(pendingFile); setPreview(url); return () => URL.revokeObjectURL(url) }, [pendingFile])
   const readOnly = workspace.status === 'completed' || workspace.status === 'cancelled' || invoice?.source === 'fortnox'
   const linked = workspace.links.filter(l => l.invoiceId === id), protectedIds = new Set(linked.map(l => l.allocationId)), financialLocked = linked.length > 0
@@ -135,7 +136,7 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
   async function leave(next = false) {
     if (uploadingRef.current || basisBusy) return
     const saved = await autosave.flush()
-    if ((!saved || pendingFile || more && !next) && !window.confirm(pendingFile ? 'Filen är inte uppladdad. Stäng ändå? Filen måste väljas på nytt.' : more && !next ? `${more} filer återstår att registrera. Stäng kön?` : 'Ändringarna är inte sparade. Stäng ändå? Utkastet finns kvar på den här enheten.')) return
+    if ((!saved && !autosave.isLocal() || pendingFile || more && !next) && !window.confirm(pendingFile ? 'Filen är inte uppladdad. Stäng ändå? Filen måste väljas på nytt.' : more && !next ? `${more} filer återstår att registrera. Stäng kön?` : 'Fakturans textändringar är inte sparade och kunde inte lagras lokalt. Stäng ändå?')) return
     if (next) onNext(); else onClose()
   }
   close.current = () => { void leave() }

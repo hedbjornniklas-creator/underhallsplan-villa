@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import { Camera, CheckCircle2, ImagePlus, Loader2, Plus, RotateCcw, Save, Send, Trash2, X } from 'lucide-react'
 import { DIARY_IMAGE_TYPES, DIARY_MAX_PHOTO_BYTES, DIARY_MAX_PHOTOS, diaryTimeInput, diaryTimeRange, diaryMinutes, diaryPersonEntryRequest, diaryRevisionRequest, diaryPhotoRequest, emptyDiaryBody, type DiaryBody, type DiaryPerson, type DiaryEntry } from '@/lib/action-cases/projectDiary'
 import { uploadDiaryPhoto } from '@/lib/action-cases/projectDiaryUpload'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 type Draft = Omit<DiaryBody, 'breakMinutes'> & { breakMinutes: string }
 type Photo = { id: string; name: string; size: number; contentType: string; status: 'queued' | 'uploading' | 'ready' | 'error'; file?: File; preview?: string; error?: string; progress?: string }
@@ -39,11 +40,7 @@ export default function DiaryEntryForm({ endpoint, storageKey, items, person, on
   const working = busy || photos.some(p => p.status === 'queued' || p.status === 'uploading')
   const failedPhotos = photos.filter(p => p.status === 'error')
   useEffect(() => { onWorking?.(working); return () => onWorking?.(false) }, [working, onWorking])
-  useEffect(() => {
-    if (!dirty) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty])
+  useProjectSaveProtection({ label: `Dagbok · ${person.name}`, pending: dirty, view: 'diary', detail: photos.some(photo => photo.status !== 'ready') ? 'Bilder är inte färdiguppladdade.' : 'Anteckningen är påbörjad men inte inskickad.' })
   useEffect(() => { const active = controllers.current, urls = previews.current, pending = pendingUploads.current; mounted.current = true; return () => { mounted.current = false; pending.length = 0; active.forEach(c => c.abort()); urls.forEach(url => URL.revokeObjectURL(url)) } }, [])
   const persist = (nextDraft: Draft, nextPhotos: Photo[], nextAttempt: Attempt | null) => store(storageKey, { draft: nextDraft, photos: nextPhotos.filter(p => p.status === 'ready').map(({ id, name, size, contentType }) => ({ id, name, size, contentType, status: 'ready' })), attempt: nextAttempt, ...(editing ? { entryId: editing.id, revision: editing.revision ?? 0 } : {}) })
   const change = (patch: Partial<Draft>) => { const next = { ...latest.current.draft, ...patch }; latest.current.draft = next; setDraft(next); setError(''); persist(next, latest.current.photos, latest.current.attempt) }

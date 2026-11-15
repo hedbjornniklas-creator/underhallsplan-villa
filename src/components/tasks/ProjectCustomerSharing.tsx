@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CalendarClock, Eye, EyeOff, FileText, FolderOpen, ListChecks, Loader2, RefreshCw, RotateCcw, WalletCards } from 'lucide-react'
 import { customerSections, type CustomerSharingWorkspace } from '@/lib/action-cases/customerSharing'
@@ -36,11 +37,7 @@ export default function ProjectCustomerSharing({ caseId, active, preview, refres
     return () => controller.abort()
   }, [active, refreshKey, load])
   useEffect(() => { onDirty(save.dirty || save.busy) }, [save.dirty, save.busy, onDirty])
-  useEffect(() => {
-    if (!save.dirty && !save.busy) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [save.dirty, save.busy])
+  useProjectSaveProtection({ label: 'Delning', pending: save.dirty || save.busy, view: 'sharing', detail: save.error || 'Ändrad synlighet väntar på sparning.', flush: save.flush })
   useEffect(() => {
     if (!active || !preview || !recipientId || save.dirty || save.busy) return
     const controller = new AbortController(); setPortal(null); setPreviewError('')

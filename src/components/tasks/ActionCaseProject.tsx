@@ -20,6 +20,7 @@ import ProjectCustomerSharing from './ProjectCustomerSharing'
 import ProjectDiary from './ProjectDiary'
 import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 import CustomerContractSenderProfile from './CustomerContractSenderProfile'
+import { ProjectSaveProtectionProvider, useProjectSaveNavigation, useProjectSaveProtection } from './ProjectSaveProtection'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -38,7 +39,7 @@ const offerViews: Partial<Record<ProjectView, CustomerEditorView>> = { offer: 'e
 const projectViews: Record<CustomerEditorView, ProjectView> = { edit: 'offer', contract: 'contract', planning: 'choices', payments: 'payments', customer: 'customer', document: 'review', offerDocument: 'offerReview' }
 const nameIconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[#D5DCDD] bg-white disabled:opacity-50'
 
-export default function ActionCaseProject({ caseId, initialWorkspace, initialOffer, initialOfferError, initialView = 'overview', people = [], issuerName, replyEmail, contractorSource }: {
+function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferError, initialView = 'overview', people = [], issuerName, replyEmail, contractorSource, locate }: {
   caseId: string
   initialWorkspace: ActionCaseWorkspace
   initialOffer: CustomerOfferWorkspace | null
@@ -48,11 +49,13 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   issuerName: string
   replyEmail: string
   contractorSource?: Partial<ContractContractor>
+  locate: { current: (view: ProjectView) => void }
 }) {
+  const protectNavigation = useProjectSaveNavigation()
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [renamedTitle, setRenamedTitle] = useState<string | null>(null)
   const [projectStatus, setProjectStatus] = useState<ActionCaseStatus | null>(null)
-  const [completionDirty, setCompletionDirty] = useState(false)
+  const [, setCompletionDirty] = useState(false)
   const receiveStatus = useCallback((status: ActionCaseStatus) => setProjectStatus(status), [])
   const [renameOpen, setRenameOpen] = useState(false), [nameDraft, setNameDraft] = useState('')
   const [renameBusy, setRenameBusy] = useState(false), [renameError, setRenameError] = useState('')
@@ -108,6 +111,8 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
     setCustomerRefresh((value) => value + 1)
   }, [])
   const [view, setView] = useState(initialView)
+  const displayedView = useRef(view)
+  useEffect(() => { displayedView.current = view }, [view])
   const heading = useRef<HTMLHeadingElement>(null)
   const previousView = useRef(view)
   const keyboardTabChange = useRef(false)
@@ -119,12 +124,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
     if (renameOpen) { wasRenaming.current = true; nameInput.current?.focus(); nameInput.current?.select() }
     else if (wasRenaming.current) { wasRenaming.current = false; renameButton.current?.focus() }
   }, [renameOpen])
-  useEffect(() => {
-    if (!renameDirty && !renameBusy) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [renameDirty, renameBusy])
+  useProjectSaveProtection({ label: 'Projektnamn', pending: renameDirty || renameBusy, detail: renameBusy ? 'Namnbytet sparas.' : 'Det nya namnet är inte sparat.', view: 'overview' })
   function closeRename() {
     if (renameRunning.current) return
     setRenameOpen(false); setRenameError(''); renameButton.current?.focus()
@@ -145,17 +145,25 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   }
   const navigate = useCallback((next: ProjectView) => {
     if (senderPending) return
-    setView(next)
-    if (new URLSearchParams(window.location.search).get('view') !== next) {
-      window.history.pushState(null, '', projectUrl(caseId, next))
+    const change = () => {
+      setView(next)
+      if (new URLSearchParams(window.location.search).get('view') !== next) window.history.pushState(null, '', projectUrl(caseId, next))
     }
-  }, [caseId, senderPending])
+    if (protectNavigation) void protectNavigation(change); else change()
+  }, [caseId, senderPending, protectNavigation])
+  locate.current = next => { setView(next); window.history.pushState(null, '', projectUrl(caseId, next)) }
   const navigateOffer = useCallback((next: CustomerEditorView) => navigate(projectViews[next]), [navigate])
   useEffect(() => {
-    const onBack = () => setView(parseProjectView(new URLSearchParams(window.location.search).get('view')))
+    const onBack = () => {
+      if (window.location.pathname !== `/uppdrag/${caseId}`) return
+      const next = parseProjectView(new URLSearchParams(window.location.search).get('view'))
+      window.history.replaceState(window.history.state, '', projectUrl(caseId, displayedView.current))
+      const change = () => { setView(next); window.history.replaceState(window.history.state, '', projectUrl(caseId, next)) }
+      if (protectNavigation) void protectNavigation(change); else change()
+    }
     window.addEventListener('popstate', onBack)
     return () => window.removeEventListener('popstate', onBack)
-  }, [])
+  }, [caseId, protectNavigation])
   useEffect(() => {
     if (previousView.current === view) return
     previousView.current = view
@@ -194,7 +202,7 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
-        if ((completionDirty || senderPending || offerDirty || estimateDirty || workDirty || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameDirty || renameBusy) && !window.confirm(workBusy || renameBusy || senderPending ? 'Arbete pågår. Vill du lämna projektet?' : 'Lämna projektet med osparade ändringar?')) event.preventDefault()
+        if (protectNavigation && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); void protectNavigation(() => { window.location.href = '/uppdrag?view=projects' }) }
       }}>Alla projekt</PendingLink>
       <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
         if (renameOpen) closeRename()
@@ -270,4 +278,9 @@ export default function ActionCaseProject({ caseId, initialWorkspace, initialOff
       </div>
     </div>
   </main>
+}
+
+export default function ActionCaseProject(props: Omit<Parameters<typeof ProjectContent>[0], 'locate'>) {
+  const locate = useRef<(view: ProjectView) => void>(() => {})
+  return <ProjectSaveProtectionProvider onLocate={view => locate.current(view)}><ProjectContent {...props} locate={locate} /></ProjectSaveProtectionProvider>
 }

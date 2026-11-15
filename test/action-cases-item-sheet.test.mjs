@@ -22,6 +22,7 @@ function sheetHarness(overrides = {}) {
     return [slots[index], (value) => { slots[index] = typeof value === 'function' ? value(slots[index]) : value }]
   }
   const dependencies = {
+    './ProjectSaveProtection': { useProjectSaveProtection() {} },
     react: { useState: slot, useRef: (value) => slot({ current: value })[0], useId: () => 'sheet', useEffect: () => {} },
     'react-dom': { createPortal: (children) => children },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' },

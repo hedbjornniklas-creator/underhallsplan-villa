@@ -26,6 +26,7 @@ function harness(shared = false) {
   const roster={seed:(_key,value)=>value,value:()=>[],revision:()=>1,isBusy:()=>false,isLocal:()=>true,flush:async()=>true,local:true,busy:false,error:'',dirty:false}
   const deps={react,'react-dom':{createPortal:node=>node},'lucide-react':{},'./project-questions.css':{},'@/lib/tasks/dateTime':{formatTaskDateTime:value=>value},'./useQuestionAutosave':{useQuestionAutosave:()=>roster},'./TaskContactFields':{},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}}
   deps['./QuestionDiaryImagePicker'] = { default: () => null }
+  deps['./ProjectSaveProtection'] = { useProjectSaveProtection() {} }
   deps['./gizmo-recipient-layout.css'] = {}
   const module={exports:{}},source=ts.transpileModule(readFileSync(new URL('../src/components/tasks/QuestionDialogue.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText
   new Function('require','module','exports',source)(key=>{assert.ok(key in deps,key);return deps[key]},module,module.exports)

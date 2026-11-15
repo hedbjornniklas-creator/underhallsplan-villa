@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Check, FileText, Loader2, Mail, Pencil, Plus, RotateCcw, Save, Send, Trash2 } from 'lucide-react'
 import type { ActionCaseCostLineView, ActionCaseItemView, ActionCaseQuote, ActionCaseView } from '@/lib/action-cases/contracts'
 import { normalizeQuote, quoteIsStale, quoteRequestText } from '@/lib/action-cases/quotes'
@@ -27,7 +27,7 @@ type Props = {
   calculation?: ReturnType<typeof useActionCalculationAutosave>
 }
 
-function QuoteForm({ line, item, caseId, attachments, participants, quote, mode, busy, onSave, onCancel }: Props & {
+function QuoteForm({ line, item, caseId, attachments, participants, quote, mode, busy, onSave, onCancel, onEditing }: Props & {
   quote?: ActionCaseQuote; mode: 'request' | 'offer'
   onSave: (data: Record<string, unknown>) => Promise<boolean>; onCancel: () => void
 }) {
@@ -42,6 +42,9 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
     expectedUpdatedAt: quote?.updatedAt,
   }))
   const requestLocked = Boolean(quote && quote.deliveryStatus !== 'draft')
+  const [baseline] = useState(() => JSON.stringify(form))
+  const dirty = baseline !== JSON.stringify(form)
+  useEffect(() => { onEditing(dirty); return () => onEditing(false) }, [dirty, onEditing])
   const set = (key: string, value: unknown) => setForm((f) => ({ ...f, [key]: value, ...(key === 'checked' ? {} : { checked: false }) }))
   const toggle = (key: 'coveredLineIds' | 'requestAttachmentIds', id: string, checked: boolean) => set(key, checked ? [...form[key], id] : form[key].filter((value) => value !== id))
   const quoteDocuments = item.costLines.flatMap((l) => (l.quotes ?? []).map((q) => q.documentId)).filter(Boolean)
@@ -96,7 +99,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
     if (busy || groupQuote || line.coveredByQuoteId || quotes.some((quote) => quote.id === data.quoteId && quote.packageGroupKey != null)) return Promise.resolve(false)
     return onAction('work_quote', { costLineId: line.id, operation, expectedLineUpdatedAt: line.updatedAt, ...data })
   }
-  const edit = (value: typeof editor) => { setEditor(value); onEditing(Boolean(value) || directEditing || Boolean(markupDraft)) }
+  const edit = (value: typeof editor) => { setEditor(value); onEditing(directEditing || Boolean(markupDraft)) }
   const controlsBusy = busy || directEditing || Boolean(markupDraft)
   const markupEntry = calculation?.states[`markup:${line.id}`]
   const markup = calculation ? String(markupEntry?.edit.data.markupPercent ?? line.markupPercent) : markupDraft?.value ?? String(line.markupPercent)

@@ -82,6 +82,7 @@ import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import { withOfferProjectDetails, type OfferProjectDetails } from '@/lib/action-cases/offerProjectDetails'
 import { propertyFields } from '@/lib/properties/identity'
 import CustomerContractSigning from './CustomerContractSigning'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const field =
   'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
@@ -436,15 +437,10 @@ export default function CustomerOfferEditor({
     heading.current?.focus({ preventScroll: true })
     heading.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
   }, [view, active, embedded])
-  useEffect(() => {
-    if (!dirty && !planningDirty && !paymentDirty && !senderPending) return
-    const prevent = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ''
-    }
-    window.addEventListener('beforeunload', prevent)
-    return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, planningDirty, paymentDirty, senderPending])
+  useProjectSaveProtection({ label: draftTarget === 'offer' ? 'Offert' : 'Avtalsutkast', pending: dirty || autosave.isSaving || autosave.state?.status === 'error' || Boolean(documentRecovery),
+    detail: documentRecovery ? 'Ett lokalt handlingsutkast behöver granskas.' : autosave.state?.errorMessage || pendingChanges.join(', ') || 'Ändringar väntar på sparning.',
+    view: draftTarget === 'offer' ? 'offer' : 'contract', flush: async () => !documentRecovery && await autosave.flush() })
+  useProjectSaveProtection({ label: 'Projektets avsändarprofil', pending: senderPending, view: 'overview', detail: 'Profilbytet är inte bekräftat.' })
   async function action(
     operation: string,
     extra: Record<string, unknown> = {}

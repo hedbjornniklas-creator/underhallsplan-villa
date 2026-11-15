@@ -1,0 +1,12 @@
+.gizmo-save-protection { margin: 0 0 12px; padding: 8px 14px; border: 1px solid #d5dcdd; border-left: 3px solid #3e6963; background: #f3f6f5; color: #263334; font-size: 14px; }
+.gizmo-save-protection.has-risk { border-left-color: #aa8e29; background: #fcf8e9; }
+.gizmo-save-protection summary { display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 28px; }
+.gizmo-save-protection ul, .gizmo-save-dialog ul { margin: 8px 0 0; padding: 0; list-style: none; }
+.gizmo-save-protection li, .gizmo-save-dialog li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid #d5dcdd; }
+.gizmo-save-protection li div, .gizmo-save-dialog li div { min-width: 0; overflow-wrap: anywhere; }
+.gizmo-save-protection li span, .gizmo-save-dialog li span { display: block; margin-top: 3px; font-size: 13px; }
+.gizmo-save-backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 16px; background: #0006; }
+.gizmo-save-dialog { width: min(100%, 580px); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px; border-radius: 8px; background: #fff; color: #263334; box-shadow: 0 12px 40px #0003; }
+.gizmo-save-dialog h2 { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
+.gizmo-save-dialog p { margin: 0; line-height: 1.5; font-size: 14px; }
+.gizmo-save-dialog footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 18px; }

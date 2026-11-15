@@ -10,6 +10,7 @@ import ActionCaseGroupPrices from './ActionCaseGroupPrices'
 import { defaultRequestAttachments, quoteDocumentIds, reconcileRequestAttachments } from '@/lib/action-cases/scopeAttachments'
 import type { TaskPerson } from '@/lib/tasks/contracts'
 import ActionCaseRfqDelivery from './ActionCaseRfqDelivery'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 const input = 'mt-1 min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-950 focus:outline-none focus:ring-2 focus:ring-violet-200'
 const secondary = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-40'
@@ -33,12 +34,15 @@ type Props = {
   onOpenWork: (itemId: string, costLineId: string) => void
 }
 
-function ResponseForm({ request, actionCase, busy, onSave, onCancel }: { request: ActionCaseQuoteRequest; actionCase: ActionCaseView; busy: boolean; onSave: (data: Record<string, unknown>) => Promise<boolean>; onCancel: () => void }) {
+function ResponseForm({ request, actionCase, busy, onSave, onCancel, onDirty }: { request: ActionCaseQuoteRequest; actionCase: ActionCaseView; busy: boolean; onSave: (data: Record<string, unknown>) => Promise<boolean>; onCancel: () => void; onDirty: (dirty: boolean) => void }) {
   const [expected] = useState(request.updatedAt)
   const [mode, setMode] = useState(request.responseMode)
   const [amount, setAmount] = useState(request.packageAmount?.toString() ?? '')
   const [notes, setNotes] = useState(request.responseNotes)
   const [documentId, setDocumentId] = useState(request.responseDocumentId ?? '')
+  const [baseline] = useState(() => JSON.stringify([mode, amount, notes, documentId]))
+  const dirty = baseline !== JSON.stringify([mode, amount, notes, documentId])
+  useEffect(() => { onDirty(dirty); return () => onDirty(false) }, [dirty, onDirty])
   return <form className="space-y-4 border-y border-slate-200 py-4" onSubmit={(e) => { e.preventDefault(); if (!busy) void onSave({ operation: 'response', expectedUpdatedAt: expected, responseMode: mode, packageAmount: amount, responseNotes: notes, responseDocumentId: documentId }).then((ok) => { if (ok) onCancel() }) }}>
     <h3 className="font-semibold">Offertens prissättning</h3>
     <fieldset disabled={busy} className="space-y-4">
@@ -84,6 +88,10 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   const [priceEditing, setPriceEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [responseDirty, setResponseDirty] = useState(false), [groupDirty, setGroupDirty] = useState(false)
+  const [formBaseline, setFormBaseline] = useState(() => JSON.stringify(form))
+  const formDirty = dirty && formBaseline !== JSON.stringify(form)
+  useProjectSaveProtection({ label: `Projektarbete · Offertförfrågan${form.supplierName ? ` · ${form.supplierName}` : ''}`, pending: formDirty || responseDirty || groupDirty, view: 'work', detail: responseDirty ? 'Ändrade prisvillkor är inte sparade.' : groupDirty ? 'Grupppriset är inte sparat.' : 'Ändrade mottagare, texter eller bilagor är inte sparade.' })
   const [recipientId, setRecipientId] = useState('')
   const [openedAt] = useState(Date.now)
   const contacts = people.filter((person) => person.isActive)
@@ -115,7 +123,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
   if (!isFullRequest(form.pricePresentation) && selectedLines.some((line) => !['own_labor', 'subcontractor'].includes(line.category ?? ''))) valid = false
   try { normalizeQuoteRequest({ ...form, lines: selectedLines }); } catch { valid = false }
   const current = request && request.lines.every((line) => sources.some((s) => s.costLineId === line.costLineId && s.itemId === line.itemId && s.scope === line.scope && s.itemTitle === line.itemTitle && s.description === line.description && (s.workPartId ?? null) === (line.workPartId ?? null) && (s.workPartTitle ?? '') === (line.workPartTitle ?? '') && (s.workPartScope ?? '') === (line.workPartScope ?? '') && (locked || !isFullRequest(request.pricePresentation) || (s.category === line.category && s.quantity === line.quantity && s.unit === line.unit && s.quantityBasis === line.quantityBasis))))
-  const close = () => { if (!working && (!(dirty || responseEditing || priceEditing) || window.confirm('Stäng utan att spara ändringarna?'))) onClose() }
+  const close = () => { if (!working && (!(formDirty || responseDirty || groupDirty) || window.confirm('Offertförfrågan har osparade ändringar. Stäng utan att spara dem?'))) onClose() }
   const run = async (name: string, data: Record<string, unknown>) => {
     if (contractLocked || inFlight.current) return false
     inFlight.current = true; setPending(true)
@@ -145,7 +153,7 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
     {contractLocked && <p role="status" className="border-b border-[#D5DCDD] bg-[#EDF1F0] px-4 py-3 text-sm">Förfrågan innehåller moment i ett låst avtal och kan endast läsas.</p>}
     <fieldset disabled={contractLocked} className="contents">
     <div data-request-content className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      {editing ? <form id="group-request-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!valid || working) return; void run('quote_request', { ...form, operation: 'save', lines: selectedLines, expectedUpdatedAt: expected }).then((ok) => { if (ok) { setDirty(false); setEditing(false) } }) }}>
+      {editing ? <form id="group-request-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!valid || working) return; void run('quote_request', { ...form, operation: 'save', lines: selectedLines, expectedUpdatedAt: expected }).then((ok) => { if (ok) { setFormBaseline(JSON.stringify(form)); setDirty(false); setEditing(false) } }) }}>
         <fieldset disabled={working} className="space-y-4">
           <legend className="mb-3 font-semibold">Mottagare</legend>
           <label className="block text-sm">Kontakt i Gizmo<select name="recipientContact" className={input} value={recipientId} disabled={Boolean(form.supplementsId)} onChange={(e) => {
@@ -196,11 +204,11 @@ export default function ActionCaseRequestSheet({ actionCase, requestId, preselec
         {locked && !current ? <p role="status" className="text-sm text-amber-800">Arbetsunderlaget har ändrats efter att utskicket påbörjades. Den sparade förfrågan är oförändrad.</p> : null}
         {request.sentAt ? <details className="border-b border-slate-200 pb-4"><summary className="cursor-pointer text-sm font-semibold">Visa skickad förfrågan</summary><div className="mt-4 space-y-5">{requestPreview}</div></details> : requestPreview}
         {request.sentAt ? <section className="border-t border-slate-200 pt-4" aria-label="Offertsvar"><header className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Offertsvar</h3><button className={secondary} disabled={working || responseEditing || priceEditing || actionCase.quotePackages?.some((price) => price.requestId === request.id && price.state === 'active')} onClick={() => setResponseEditing(true)}><Pencil size={16} />{request.pricePresentation !== 'itemized' ? 'Offertuppgifter' : 'Registrera prisvillkor'}</button></header>
-          {responseEditing ? <ResponseForm request={request} actionCase={actionCase} busy={working} onSave={(data) => run('quote_request', data)} onCancel={() => setResponseEditing(false)} /> : <>
+          {responseEditing ? <ResponseForm request={request} actionCase={actionCase} busy={working} onSave={(data) => run('quote_request', data)} onCancel={() => setResponseEditing(false)} onDirty={setResponseDirty} /> : <>
             {request.pricePresentation === 'itemized' || request.responseMode !== 'pending' ? <p className={`mt-3 text-sm ${request.responseMode === 'itemized' ? 'text-slate-700' : 'text-amber-800'}`}>{request.responseMode === 'itemized' ? 'Delpriser gäller vid separat beställning.' : request.responseMode === 'package' ? `Gemensamt paketpris: ${request.packageAmount === null ? 'belopp saknas' : money(request.packageAmount)}. Inte ett fristående delpris.` : 'Bekräfta om delpriserna gäller vid separat beställning innan de används i kalkylen.'}</p> : null}
             {request.responseNotes ? <p className="mt-3 whitespace-pre-wrap break-words text-sm">{request.responseNotes}</p> : null}
             {request.responseDocumentId ? <a className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm text-violet-700 underline" href={`/api/action-cases/${actionCase.id}/attachments/${request.responseDocumentId}`} target="_blank" rel="noreferrer"><FileText size={16} />Öppna offertdokument</a> : null}
-            <ActionCaseGroupPrices actionCase={actionCase} request={request} busy={working} onEditing={setPriceEditing} onAction={run} />
+            <ActionCaseGroupPrices actionCase={actionCase} request={request} busy={working} onEditing={setPriceEditing} onDirty={setGroupDirty} onAction={run} />
             {!isFullRequest(request.pricePresentation) ? <details className="mt-3 border-t border-slate-200 pt-3" open={request.pricePresentation !== 'grouped' || undefined}><summary className="min-h-11 cursor-pointer text-sm font-semibold">Enskilda radpriser</summary><ul className="divide-y divide-slate-200">{request.lines.map((s) => { const item = actionCase.items.find((i) => i.id === s.itemId), line = item?.costLines.find((l) => l.id === s.costLineId), quote = line?.quotes?.find((q) => q.requestId === request.id); return <li className="flex flex-wrap items-center justify-between gap-2 py-3" key={s.costLineId}><div className="min-w-0"><strong className="block break-words text-sm">{s.itemTitle}: {s.description}</strong><p className="mt-1 text-xs text-slate-500">{line?.coveredByQuoteId || quote?.packageGroupKey ? 'Ingår i grupppris' : quote?.amount == null ? 'Pris saknas' : `${money(quote.amount)} · ${quote.checked ? 'Kontrollerat' : 'Ej kontrollerat'}`}</p></div><button className={secondary} disabled={working || priceEditing || !line} onClick={() => onOpenWork(s.itemId, s.costLineId)}>Öppna kalkyl<ArrowRight size={16} /></button></li> })}</ul></details> : null}
           </>}
         </section> : null}

@@ -16,7 +16,7 @@ export function useProjectCustomerPricingAutosave<T>({ caseId, coordinate, onSav
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>()), mounted = useRef(true)
   const [states, setStates] = useState<Record<string, CustomerPricingEntry>>({})
   const publish = () => { if (mounted.current) setStates({ ...entries.current }) }
-  const queue = useAutosaveQueue<Record<string, true>, void>({ mergePayload: (a, b) => ({ ...a, ...b }), save: async keys => {
+  const queue = useAutosaveQueue<Record<string, true>, void>({ protectUnload: false, mergePayload: (a, b) => ({ ...a, ...b }), save: async keys => {
     for (const itemId of Object.keys(keys)) await coordinate(async () => {
       const entry = entries.current[itemId]
       if (!mounted.current || !entry || entry.status !== 'pending' || !caseId) return

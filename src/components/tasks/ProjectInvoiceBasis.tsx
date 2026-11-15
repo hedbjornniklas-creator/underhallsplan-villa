@@ -1,4 +1,5 @@
 'use client'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileDown, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { emptyInvoiceBasis, invoiceBasisTotals, normalizeInvoiceBasis, type InvoiceBasis, type InvoiceBasisRecord, type ProjectCompletionWorkspace } from '@/lib/action-cases/projectCompletion'
@@ -71,11 +72,7 @@ export default function ProjectInvoiceBasis({ caseId, active, onDirty, readOnly 
   useEffect(() => { if (active && !autosaveRef.current.dirty && !autosaveRef.current.busy) void load(); return invalidateLoad }, [active, load, invalidateLoad])
   useEffect(() => { onDirty(!readOnly && (autosave.dirty || autosave.busy) || pdfBusy) }, [autosave.dirty, autosave.busy, pdfBusy, onDirty, readOnly])
   useEffect(() => { if (readOnly) { const b = data?.bases.find(b => b.id === selected); if (b) setForm(formOf(b.body)) } }, [readOnly, data, selected])
-  useEffect(() => {
-    if (!autosave.dirty && !autosave.busy) return
-    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn)
-  }, [autosave.dirty, autosave.busy])
+  useProjectSaveProtection({ label: 'Betalning och fakturering · Fakturaunderlag', pending: !readOnly && (autosave.dirty || autosave.busy), lossRisk: !autosave.local, view: 'payments', detail: autosave.error || 'Utkastet finns på den här enheten.', flush: autosave.flush })
   const closed = readOnly || data?.status === 'completed' || data?.status === 'cancelled'
   const savedRevision = readOnly ? data?.bases.find(b => b.id === selected)?.revision ?? 0 : autosave.revision()
   async function select(basisId: string | null) {

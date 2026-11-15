@@ -22,6 +22,7 @@ export function useActionScopeAutosave({ onSaved, onError, coordinate = work => 
   const [states, setStates] = useState<Record<string, ScopeSaveState>>({})
   const publish = () => setStates({ ...entries.current })
   const queue = useAutosaveQueue<Record<string, true>, void>({
+    protectUnload: false,
     mergePayload: (previous, next) => ({ ...previous, ...next }),
     save: async (ids) => {
       for (const id of Object.keys(ids)) await coordinate(async () => {

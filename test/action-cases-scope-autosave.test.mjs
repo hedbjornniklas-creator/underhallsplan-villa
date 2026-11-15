@@ -58,7 +58,7 @@ test('the drawer reuses the parent-owned autosave queue and never waits before o
 test('autosave feedback stays in a fixed drawer slot, with recoverable errors on the existing action row', () => {
   const workspace = readFileSync(new URL('../src/components/tasks/ActionCaseWorkspace.tsx', import.meta.url), 'utf8')
   const sheet = readFileSync(new URL('../src/components/tasks/ActionCaseItemSheet.tsx', import.meta.url), 'utf8')
-  assert.doesNotMatch(workspace, /Object\.entries\(scopeAutosave.states\)/, 'No transient save banners above the project list')
+  assert.match(workspace, /useProjectSaveProtection\(\{ label: 'Projektarbete · Omfattning'/, 'Project-wide protection identifies pending scope without moving the drawer status')
   assert.match(workspace, /const save = scopeAutosave.states\[item.id\]/)
   assert.match(workspace, /save\?\.status === 'error' \? 'Kunde inte spara'/)
   assert.match(workspace, /save && !save.draft.title.trim\(\) \? 'Rubrik saknas'/)

@@ -20,7 +20,7 @@ export function useCustomerPlanningAutosave({ initialRevision, save, onSaved, on
   const pending = useRef<Promise<unknown> | null>(null), mounted = useRef(true)
   const [state, setState] = useState<SaveEntry | null>(null)
   const publish = () => { if (mounted.current) setState(entry.current ? { ...entry.current } : null) }
-  const queue = useAutosaveQueue<true, void>({ save: async () => {
+  const queue = useAutosaveQueue<true, void>({ protectUnload: false, save: async () => {
     const submitted = entry.current
     if (submitted?.status !== 'pending') return
     clearTimeout(timer.current)

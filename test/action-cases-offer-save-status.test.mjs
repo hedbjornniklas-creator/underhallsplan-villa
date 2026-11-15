@@ -46,6 +46,7 @@ function harness({ target = 'offer', active = true, dropFirstChange = false, acc
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => `icon:${String(key)}` })
       if (name === '@/components/ui/AppToastProvider') return { useToast: () => ({ error() {}, info() {}, warning() {}, success: message => successes.push(message) }) }
       if (name.startsWith('@/components/')) return { default: name }
+      if (name === './ProjectSaveProtection') return { useProjectSaveProtection() {} }
       if (name.startsWith('./') && file.endsWith('CustomerOfferEditor.tsx') && name !== './useCustomerOfferAutosave') return { default: name, ...new Proxy({}, { get: (_, key) => key }) }
       const path = name.startsWith('@/') ? resolve(root, 'src', name.slice(2)) : resolve(dirname(file), name)
       const dependency = [path, `${path}.ts`, `${path}.tsx`].find(path => existsSync(path))
