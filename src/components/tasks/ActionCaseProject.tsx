@@ -21,6 +21,8 @@ import ProjectDiary from './ProjectDiary'
 import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 import { ProjectSaveProtectionProvider, useProjectSaveNavigation, useProjectSaveProtection } from './ProjectSaveProtection'
+import ProjectSwitcher from './ProjectSwitcher'
+import type { ProjectSwitchOption } from '@/lib/action-cases/projectSwitcher'
 
 const sections = [
   { key: 'overview', label: 'Översikt', icon: LayoutDashboard },
@@ -39,7 +41,7 @@ const offerViews: Partial<Record<ProjectView, CustomerEditorView>> = { offer: 'e
 const projectViews: Record<CustomerEditorView, ProjectView> = { edit: 'offer', contract: 'contract', planning: 'choices', payments: 'payments', customer: 'customer', document: 'review', offerDocument: 'offerReview' }
 const nameIconButton = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[#D5DCDD] bg-white disabled:opacity-50'
 
-function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferError, initialView = 'overview', people = [], issuerName, replyEmail, contractorSource, locate }: {
+function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferError, initialView = 'overview', people = [], issuerName, replyEmail, contractorSource, locate, projectOptions = [], projectOptionsError }: {
   caseId: string
   initialWorkspace: ActionCaseWorkspace
   initialOffer: CustomerOfferWorkspace | null
@@ -49,6 +51,8 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
   issuerName: string
   replyEmail: string
   contractorSource?: Partial<ContractContractor>
+  projectOptions?: ProjectSwitchOption[]
+  projectOptionsError?: string | null
   locate: { current: (view: ProjectView) => void }
 }) {
   const protectNavigation = useProjectSaveNavigation()
@@ -201,9 +205,12 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
   }
   return <main className="gizmo-project-page">
     <header className="gizmo-project-header">
+      <div className="gizmo-project-navigation">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
         if (protectNavigation && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) { event.preventDefault(); void protectNavigation(() => { window.location.href = '/uppdrag?view=projects' }) }
       }}>Alla projekt</PendingLink>
+      <ProjectSwitcher current={project} projects={projectOptions} error={projectOptionsError} />
+      </div>
       <div className="gizmo-project-title"><div className="flex-1"><p className="gizmo-eyebrow">Gizmo · Projekt</p><div className="flex min-w-0 items-start gap-2"><h1 ref={heading} tabIndex={-1} className="min-w-0 break-words">{project.title}</h1><button ref={renameButton} type="button" className={nameIconButton} aria-label="Byt projektnamn" title="Byt projektnamn" aria-expanded={renameOpen} aria-controls="project-name-form" disabled={renameBusy} onClick={() => {
         if (renameOpen) closeRename()
         else { setNameDraft(project.title); setRenameError(''); setRenameOpen(true) }

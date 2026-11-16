@@ -1,5 +1,16 @@
 # Gizmo: sparningsskydd
 
+## Projektval 2026-11-16
+
+Projektvaljaren bredvid Alla projekt anvander samma navigeringsskydd som flikarna.
+Ett byte sparar fardigt befintliga autosparkoer innan projektets oversikt oppnas.
+Valet andras inte om anvandaren stannar kvar i varningen. Browserns atergang
+aterstaller valjarens vantelage. Den vanliga tillbakalanken finns kvar.
+
+Projektlistan hamtar endast id, namn och status inom den behoriga organisationen.
+Lasningen sker parallellt med projektets ovriga lasningar, utan att ladda andra
+projekts kalkyler, avtal, filer eller historik. Inga projektuppgifter andras.
+
 Beslut 2026-11-15: navigation ska inte varna enbart for att en panel ar oppen
 eller en lasning pagar. Endast innehall som riskerar att ga forlorat ska
 utlosa bekraftelse. Befintliga uppgifter, avtal och sparade priser andras inte.

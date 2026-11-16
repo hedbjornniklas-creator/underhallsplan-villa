@@ -11,6 +11,7 @@ import { getTaskPeople } from '@/lib/tasks/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { parseProjectView } from '@/lib/action-cases/projectNavigation'
 import { readOrganizationBranding } from '@/lib/organizations/companyProfile'
+import { getProjectSwitchOptions } from '@/lib/action-cases/projectSwitcherServer'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,7 +32,7 @@ export default async function ProjectPage({ params, searchParams }: {
     return workspace
   })
   const db = createSupabaseAdminClient()
-  const [workspace, offerResult, peopleResult, organization, profile, company] = await Promise.all([
+  const [workspace, offerResult, peopleResult, organization, profile, company, projectOptions] = await Promise.all([
     workspaceRead,
     workspaceRead.then(() => getCustomerOfferWorkspace(ctx, caseId)).then((data) => ({ data, error: null })).catch(() => ({
       data: null, error: 'Offertuppgifterna kunde inte hämtas. Försök igen. Projektarbete och filer är fortfarande tillgängliga.',
@@ -41,11 +42,13 @@ export default async function ProjectPage({ params, searchParams }: {
     db.from('organizations').select('name').eq('id', org.orgId).maybeSingle(),
     db.from('profiles').select('full_name,email,phone').eq('id', org.userId).maybeSingle(),
     readOrganizationBranding(org.orgId).then((data) => ({ data, unavailable: false })).catch(() => ({ data: null, unavailable: true })),
+    getProjectSwitchOptions(ctx).then(projects => ({ projects, error: null }))
+      .catch(() => ({ projects: [], error: 'Projektlistan kunde inte hämtas.' })),
   ])
   return <UppdragScope><div className="gizmo-workspace">
     {peopleResult.unavailable && <p className="mx-auto max-w-7xl px-6 py-3 text-sm" role="alert">Kontaktlistan kunde inte hämtas. Mottagare kan fortfarande anges manuellt.</p>}
     {company.unavailable && <p className="mx-auto max-w-7xl px-6 py-3 text-sm" role="alert">Entreprenörens företagsuppgifter kunde inte hämtas. De kan fyllas i under Avtal.</p>}
-    <ActionCaseProject caseId={caseId} initialWorkspace={workspace} initialOffer={offerResult.data} initialOfferError={offerResult.error}
+    <ActionCaseProject key={caseId} caseId={caseId} initialWorkspace={workspace} initialOffer={offerResult.data} initialOfferError={offerResult.error} projectOptions={projectOptions.projects} projectOptionsError={projectOptions.error}
       initialView={parseProjectView((await searchParams).view)} people={peopleResult.people} issuerName={company.data?.name ?? organization.data?.name ?? ''} replyEmail={profile.data?.email ?? ''}
       contractorSource={{ companyName: company.data?.name ?? organization.data?.name ?? '',
         organizationNumber: company.data?.organizationNumber ?? '', street: company.data?.address ?? '',

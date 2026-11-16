@@ -43,7 +43,7 @@ function loadPage(path, deps) {
   return loaded.exports.default
 }
 const id = '00000000-0000-4000-8000-000000000001'
-function setup({ authorized = true, found = true, offerFails = false, companyFails = false, workspaceWait } = {}) {
+function setup({ authorized = true, found = true, offerFails = false, companyFails = false, switcherFails = false, workspaceWait } = {}) {
   const calls = []
   const page = loadPage('../src/app/(dashboard)/uppdrag/[caseId]/page.tsx', {
     'next/navigation': { notFound: () => { throw new Error('NOT_FOUND') }, redirect: (path) => { throw new Error('REDIRECT:' + path) } },
@@ -56,6 +56,7 @@ function setup({ authorized = true, found = true, offerFails = false, companyFai
     '@/lib/action-cases/server': { getActionCaseWorkspace: async (ctx, caseId) => { calls.push(['workspace', ctx, caseId]); await workspaceWait; return { cases: found ? [{ id: caseId }] : [] } } },
     '@/lib/action-cases/customerOffersServer': { getCustomerOfferWorkspace: async (ctx, caseId) => { calls.push(['offer', ctx, caseId]); if (offerFails) throw new Error('unavailable'); return { revision: 1 } } },
     '@/lib/tasks/server': { getTaskPeople: async (ctx) => { calls.push(['people', ctx]); return [] } },
+    '@/lib/action-cases/projectSwitcherServer': { getProjectSwitchOptions: async ctx => { calls.push(['switcher', ctx]); if (switcherFails) throw Error('unavailable'); return [{ id, title: 'Testprojekt', status: 'in_progress' }] } },
     '@/lib/organizations/companyProfile': { readOrganizationBranding: async (orgId) => {
       calls.push(['company', orgId]); if (companyFails) throw new Error('unavailable')
       return { name: 'Scoped company', organizationNumber: '556000-0000', address: 'Testgatan 1', postalCode: '11122', city: 'Stockholm' }
@@ -74,6 +75,7 @@ test('project page checks module access before loading organization-scoped data'
   assert.deepEqual(calls[1], ['workspace', { orgId: 'org-a', userId: 'user-a' }, id])
   assert.deepEqual(calls.find(([name]) => name === 'offer'), ['offer', { orgId: 'org-a', userId: 'user-a' }, id])
   assert.equal(calls.find(([name]) => name === 'people')[1].isOrgAdmin, true)
+  assert.deepEqual(calls.find(([name]) => name === 'switcher'), ['switcher', { orgId: 'org-a', userId: 'user-a' }])
 })
 
 test('people and branding load during the workspace read, but offers still wait for project existence', async () => {
@@ -109,6 +111,14 @@ test('offer unavailability does not remove access to existing project tools', as
   assert.match(project.props.initialOfferError, /fortfarande tillgängliga/)
   assert.equal(project.props.initialView, 'payments')
   assert.equal(project.props.initialWorkspace.cases[0].id, id)
+})
+
+test('a failed project list leaves the current project and its tools available', async () => {
+  const result=await setup({switcherFails:true}).run()
+  const project=result.props.children.props.children[2]
+  assert.deepEqual(project.props.projectOptions,[])
+  assert.match(project.props.projectOptionsError,/Projektlistan kunde inte hämtas/)
+  assert.equal(project.props.initialWorkspace.cases[0].id,id)
 })
 
 test('contractor defaults use only the checked organization and optional profile failure leaves project tools available', async () => {

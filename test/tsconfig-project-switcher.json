@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig-save-protection.json",
+  "include": ["../next-env.d.ts", "../src/app/(dashboard)/uppdrag/[caseId]/page.tsx", "fixtures/project-switcher-view.tsx"]
+}
