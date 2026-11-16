@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Download, FilePlus2, LockKeyhole, Loader2, X } from 'lucide-react'
+import { Download, Pencil, LockKeyhole, Loader2, X } from 'lucide-react'
 import { activeSigningVersion } from '@/lib/action-cases/contractSigning'
 import type { ContractSigningVersion } from '@/lib/action-cases/customerOffers'
 
@@ -28,8 +28,10 @@ export default function CustomerContractSigning({ caseId, available, versions = 
       {active ? <>
         <p className="mt-2 flex items-center gap-2 text-sm"><LockKeyhole size={16} /> Version {active.version} · Låst för signering</p>
         <p className="mt-1 text-sm text-slate-600">{active.delivery?.signedCopy ? 'Underskriven kopia registrerad.' : 'Inte registrerat som signerat.'}</p>
-        {active.signedCopyTask && <p className="mt-2 text-sm"><a className="text-teal-800 underline" href={`/uppdrag?task=${active.signedCopyTask.id}`}>{active.delivery?.signedCopy ? 'Uppgiften för signerad kopia är slutförd' : 'Att göra: Ladda upp signerat avtal'}</a></p>}
-        {!accepted && !active.delivery?.signedCopy && <button className={`${button} mt-3`} disabled={disabled} onClick={() => { setUnsignedConfirmed(false); setConfirm('new_draft') }}><FilePlus2 size={16} /> Skapa nytt utkast</button>}
+        {!accepted && !active.delivery?.signedCopy && <details className="mt-3 text-sm"><summary className="cursor-pointer">Fler åtgärder</summary>
+          <p className="mt-2 text-slate-600">Behöver ett ännu inte underskrivet avtal ändras? Öppna ett redigerbart utkast. Tidigare PDF och bilagor bevaras. Använd inte detta om någon redan har skrivit under.</p>
+          <button className={`${button} mt-3`} disabled={disabled} onClick={() => { setUnsignedConfirmed(false); setConfirm('new_draft') }}><Pencil size={16} /> Öppna för redigering</button>
+        </details>}
       </> : !accepted && blockers.map((message) => <p key={message} className="mt-2 text-sm text-amber-800">{message}</p>)}
       {confirm && <div className="mt-3 border-l-2 border-teal-700 bg-slate-50 p-3 text-sm" role="alert">
         <p>{confirm === 'freeze' ? 'Låsa den sparade avtalsversionen och skapa PDF för underskrift? Texter, priser, betalningsplan och valda bilagor låses, liksom de kopplade momenten i Projektarbete och deras kalkyler. En intern uppgift skapas för att ladda upp den signerade PDF-kopian. Inget mejl skickas och inget godkännande registreras.' : 'Skapa ett nytt redigerbart utkast? Kopplade moment öppnas för redigering. Den gamla PDF-versionen och dess bilagor behålls oförändrade. Ett redan underskrivet avtal får inte öppnas på detta sätt.'}</p>
@@ -38,11 +40,15 @@ export default function CustomerContractSigning({ caseId, available, versions = 
           <button className={button} disabled={blocked || (confirm === 'freeze' ? blockers.length > 0 : !unsignedConfirmed)} onClick={async () => {
             const done = confirm === 'freeze' ? await onFreeze() : active ? await onNewDraft(active.id) : false
             if (done) setConfirm(null)
-          }}>{busy === confirm ? <Loader2 size={16} className="animate-spin" /> : <LockKeyhole size={16} />}{confirm === 'freeze' ? 'Lås och skapa PDF' : 'Skapa nytt utkast'}</button>
+          }}>{busy === confirm ? <Loader2 size={16} className="animate-spin" /> : <LockKeyhole size={16} />}{confirm === 'freeze' ? 'Lås och skapa PDF' : 'Öppna redigerbart utkast'}</button>
           <button className={button} disabled={Boolean(busy)} onClick={() => setConfirm(null)}><X size={16} /> Avbryt</button>
         </div>
       </div>}
-      {versions.map((version) => <div key={version.id} className="mt-3 border-t border-slate-200 pt-3">
+      {active && active.files.length > 0 && <details className="mt-3 text-sm"><summary className="cursor-pointer">Låsta bilagor ({active.files.length})</summary>
+        <ul className="mt-2 space-y-2">{active.files.map(file => <li key={file.id}><a className="break-all text-teal-800 underline" href={fileUrl(active.id, file.id)} target="_blank" rel="noopener noreferrer">{file.fileName}</a></li>)}</ul>
+      </details>}
+      {versions.some(version => version.id !== active?.id) && <details className="mt-3 text-sm"><summary className="cursor-pointer">Tidigare avtalsversioner</summary>
+      {versions.filter(version => version.id !== active?.id).map((version) => <div key={version.id} className="mt-3 border-t border-slate-200 pt-3">
         <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm">Version {version.version} · {version.releasedAt ? 'Tidigare version' : 'Låst för signering'}</span>
           <a className={button} href={fileUrl(version.id, 'pdf')} target="_blank" rel="noopener noreferrer"><Download size={16} /> Hämta PDF</a></div>
         {version.releasedAt && version.delivery?.sharedAt && !version.delivery.withdrawnAt && onWithdraw && <button className={`${button} mt-2`} disabled={disabled} onClick={() => {
@@ -51,7 +57,7 @@ export default function CustomerContractSigning({ caseId, available, versions = 
         {version.files.length > 0 && <details className="mt-2 text-sm"><summary className="cursor-pointer">Låsta bilagor ({version.files.length})</summary>
           <ul className="mt-2 space-y-2">{version.files.map((file) => <li key={file.id}><a className="inline-flex items-start gap-2 break-all text-teal-800 underline" href={fileUrl(version.id, file.id)} target="_blank" rel="noopener noreferrer"><Download size={15} className="mt-0.5 shrink-0" />{file.fileName}</a></li>)}</ul>
         </details>}
-      </div>)}
+      </div>)}</details>}
     </>}
   </section>
 }

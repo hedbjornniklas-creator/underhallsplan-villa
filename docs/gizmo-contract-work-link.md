@@ -1,5 +1,25 @@
 # Gemensamma arbetsuppgifter i Projektarbete och Avtal
 
+## Beslut 2026-11-16: Signerad Kopia Och Intern Projektuppgift
+
+- Underskriven PDF laddas direkt till privat fillagring, hogst 20 MB. API:t tar
+  endast metadata och ett kortlivat serververifierat uppladdningsbevis. Beviset
+  binder anvandare, organisation, projekt, avtalsversion, filnamn och storlek.
+- Registreringen kontrollerar filens innehall och SHA-256 och anvander befintlig
+  transaktion. Last snapshot, ursprunglig PDF, priser, omfattning och kalkyl
+  skrivs inte om. Ingen delning eller mejlavisering sker vid registrering.
+- Avtalsstatus har en PDF-knapp for aktuell version, signerad kopia fore frivillig
+  bestallardelning och tidigare versioner i en egen utfallning.
+- Den befintliga interna systemuppgiften visas under projektets Fragor och beslut,
+  for projektansvarig och tilldelad intern person. Den ar ingen delad kundfraga.
+  Den visas inte i allmanna Att gora. Befintligt id, historik och automatisk
+  klarmarkering vid registrerad kopia bevaras. Ingen databasflytt kravs.
+- Oppna for redigering finns under Fler atgarder och kraver uttrycklig bekraftelse
+  pa att versionen inte har undertecknats. Det ar inte samma sak som PDF-hamtning.
+  Tidigare PDF och bilagor bevaras. Ett redan underskrivet avtal far aldrig
+  oppnas med detta kommando.
+
+
 Senaste beslutet nedan (2026-11-03) ersatter den tidigare separata hanteringen av
 offertpriser. Gamla utkast och lasta dokument kopplas inte om automatiskt.
 

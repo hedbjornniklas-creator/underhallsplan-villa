@@ -676,7 +676,12 @@ export async function getTaskWorkspace(input: InternalTaskContext): Promise<Task
   const rows = await loadRows(input.orgId)
   const analyticsAsOf = new Date().toISOString()
   const visibleIds = actorCanSeeTaskTree(rows.tasks, input.userId, input.isOrgAdmin)
-  const visibleTasks = rows.tasks.filter((task) => visibleIds.has(task.id))
+  const contractTasks = rows.tasks.length ? await createSupabaseAdminClient().from('action_case_contract_upload_tasks')
+    .select('task_id').eq('org_id', input.orgId).in('task_id', rows.tasks.map(task => task.id)) : { data: [], error: null }
+  if (contractTasks.error && !['42P01', 'PGRST205'].includes(contractTasks.error.code)) throw new Error('TASKS_SCHEMA_REQUIRED')
+  // These system tasks are handled inside their project, not in the general inbox.
+  const projectTaskIds = new Set((contractTasks.data || []).map(task => task.task_id))
+  const visibleTasks = rows.tasks.filter((task) => visibleIds.has(task.id) && !projectTaskIds.has(task.id))
   const profilesById = new Map(rows.profiles.map((profile) => [profile.id, profile]))
   const contactsById = new Map(rows.contacts.map((contact) => [contact.id, contact]))
   const currentProfile = profilesById.get(input.userId)

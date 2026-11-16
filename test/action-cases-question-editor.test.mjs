@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { emptyQuestion, questionAssigneeOptions, questionStatuses } from '../src/lib/action-cases/projectQuestions.ts'
 import * as questionModel from '../src/lib/action-cases/projectQuestions.ts'
+import * as questionUploadBatch from '../src/lib/action-cases/questionUploadBatch.ts'
 import { taskDateTimeInputToIso, taskIsoToDateTimeInput } from '../src/lib/tasks/dateTime.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -47,6 +48,7 @@ function harness({ onWorkspaceChanged, directFiles = false } = {}) {
     useEffect() {}, useCallback: fn => fn, useId: () => 'question-heading'
   }
   const dependencies = {
+    '@/lib/action-cases/questionUploadBatch': questionUploadBatch,
     './ProjectSaveProtection': { useProjectSaveProtection() {} },
     react, 'react-dom': { createPortal: node => node }, 'lucide-react': {}, '@/lib/supabaseClient': { supabase: { storage: { from(bucket) { assert.equal(bucket, 'project-question-files'); return { async uploadToSignedUrl() { return { error: null } } } } } } }, './project-questions.css': {},
     '@/lib/tasks/dateTime': { taskDateTimeInputToIso, taskIsoToDateTimeInput, formatTaskDateTime: value => value },
@@ -231,7 +233,8 @@ test('a direct document upload saves a new question first and selects its acknow
   try {
     await h.start(); h.input('Rubrik', 'Ny fråga med PDF'); h.input('Fråga', 'Fiktivt underlag')
     assert.equal(h.nodes().find(n => n.props?.attachedIds).props.disabled, false)
-    const input = h.nodes().find(n => n.props?.['aria-label'] === 'Ladda upp bilaga till frågan')
+    const input = h.nodes().find(n => n.props?.['aria-label'] === 'Ladda upp bilagor till frågan')
+    assert.equal(input.props.multiple, true)
     input.props.onChange({ target: { files: [new File(['test'], 'Ritning.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()
     input.props.onChange({ target: { files: [new File(['second'], 'Andra.pdf', { type: 'application/pdf' })] } }); await tick(); h.render()
     assert.equal(h.requests.length,1,'a second file selection cannot race the initial question save')
@@ -245,6 +248,19 @@ test('a direct document upload saves a new question first and selects its acknow
     await h.reply(1)
     assert.ok(h.requests.every(r => ['create', 'update'].includes(r.body.operation)))
   } finally { h.dispose() }
+})
+
+test('multi-file selection stays available for retry when the initial question save fails', async () => {
+  const h=harness({directFiles:true})
+  try {
+    await h.start();h.input('Rubrik','Fiktivt sparfel');h.input('Fråga','Ingen verklig fråga')
+    const input=h.nodes().find(n=>n.props?.['aria-label']==='Ladda upp bilagor till frågan')
+    input.props.onChange({target:{files:[new File(['a'],'A.pdf'),new File(['b'],'B.jpg')]}});await tick();h.render()
+    await h.reply(0,'Fiktivt sparfel');await tick();h.render()
+    assert.match(h.text(),/A.pdf/);assert.match(h.text(),/B.jpg/)
+    assert.equal(h.fileRequests.length,0)
+    assert.ok(h.button('Försök igen med misslyckade filer'))
+  } finally {h.dispose()}
 })
 
 test('successful question reads notify the overview after save, but failed reads do not invalidate it', async () => {

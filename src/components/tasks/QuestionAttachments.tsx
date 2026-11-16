@@ -27,7 +27,7 @@ export default function QuestionAttachments({ caseId, questionId, attachedIds, f
     {!readOnly && <div className="gizmo-question-attachment-sources">
       <button type="button" className="gizmo-button" aria-expanded={projectOpen} disabled={disabled || attachedIds.length >= 20} onClick={() => setProjectOpen(value => !value)}><FolderOpen size={17} />Från projektet</button>
       {questionId && <QuestionDiaryImagePicker key={questionId} caseId={caseId} questionId={questionId} buttonLabel="Från bildbanken" projectFiles={projectFiles.filter(file => !attachedIds.includes(file.id) && !file.isQuoteDocument)} remaining={20 - attachedIds.length} disabled={disabled} onAttached={onAttached} onWorking={onWorking} />}
-      <button type="button" className="gizmo-button" disabled={disabled || attachedIds.length >= 20} onClick={onUpload}><Upload size={17} />Ladda upp fil</button>
+      <button type="button" className="gizmo-button" disabled={disabled || attachedIds.length >= 20} onClick={onUpload}><Upload size={17} />Ladda upp filer</button>
     </div>}
     {projectOpen && !readOnly && <div className="gizmo-question-project-picker">
       <div className="gizmo-question-attachment-heading"><h4>Filer i projektet</h4><button type="button" className="gizmo-button gizmo-icon-button" title="Stäng projektfiler" aria-label="Stäng projektfiler" disabled={disabled} onClick={() => setProjectOpen(false)}><X size={16} /></button></div>

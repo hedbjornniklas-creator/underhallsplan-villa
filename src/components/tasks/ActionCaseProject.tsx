@@ -246,7 +246,7 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
               onPendingChange={setSenderPending} onApplied={applyProjectSender} onReload={reloadProjectSender} />}
           </details>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
-        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} onWorkspaceChanged={overviewChanged} projectClosed={project.status === 'completed'} />
+        <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} onWorkspaceChanged={overviewChanged} projectClosed={project.status === 'completed'} contractVersions={offer?.signingVersions} onOpenContract={() => navigate('contract')} />
         <ProjectDiary key={caseId} caseId={caseId} active={view === 'diary'} refreshKey={questionsRefresh} onDirty={setDiaryDirty} />
         <ProjectCustomerSharing key={caseId} caseId={caseId} active={view === 'sharing' || view === 'customer'} preview={view === 'customer'} refreshKey={questionsRefresh} onDirty={setSharingDirty} onPreview={() => navigate('customer')} />
         <ActionCaseWorkspaceTools initialWorkspace={initialWorkspace} initialError={null} caseId={caseId} people={people}

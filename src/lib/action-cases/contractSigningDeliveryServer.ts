@@ -1,6 +1,6 @@
 import 'server-only'
 import { requireCustomerSection } from './customerSharingServer'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { generateAssignmentToken, hashAssignmentToken } from '@/lib/assignments/tokens'
 import { CUSTOMER_OFFER_BUCKET, mapCustomerOffer, offerId, type CustomerOfferSnapshot, type SharedSigningContract } from './customerOffers'
@@ -12,6 +12,27 @@ type StoredFile = { path: string; sha256: string; fileSizeBytes: number; fileNam
 type Delivery = { document_id: string; participant_id: string | null; shared_at: string | null; withdrawn_at: string | null; customer_pdf: StoredFile | null; signed_copy: StoredFile | null; signed_at: string | null }
 const table = 'action_case_contract_signing_delivery'
 const hash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex')
+type UploadTicket = { orgId: string; caseId: string; documentId: string; userId: string; revision: number; path: string; fileName: string; fileSizeBytes: number; expiresAt: number }
+function uploadSignature(value: string) {
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!secret || secret.length < 32) throw new Error('CUSTOMER_OFFER_FILES')
+  return createHmac('sha256', secret).update(`HusHub:signed-contract-upload:v1:${value}`).digest('base64url')
+}
+function uploadTicket(value: UploadTicket) {
+  const encoded = Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encoded}.${uploadSignature(encoded)}`
+}
+function readUploadTicket(ctx: Context, caseId: string, id: string, value: unknown): UploadTicket {
+  if (typeof value !== 'string' || value.length > 4000) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  const [encoded, signature, extra] = value.split('.')
+  const expected = uploadSignature(encoded)
+  if (extra !== undefined || !/^[A-Za-z0-9_-]{43}$/.test(signature || '') || !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  let data: UploadTicket
+  try { data = JSON.parse(Buffer.from(encoded, 'base64url').toString()) } catch { throw new Error('CUSTOMER_OFFER_SIGNED_COPY') }
+  if (data.orgId !== ctx.orgId || data.caseId !== caseId || data.documentId !== id || data.userId !== ctx.userId || !Number.isFinite(data.expiresAt) || data.expiresAt <= Date.now() ||
+    !data.path?.startsWith(`${ctx.orgId}/${caseId}/signing/${id}/signed/`) || !/^[a-f0-9-]{36}\.pdf$/.test(data.path.split('/').at(-1) || '')) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  return data
+}
 function checked(error: { code?: string; message?: string } | null) {
   if (!error) return
   if (['42P01', '42883', 'PGRST202', 'PGRST205'].includes(error.code || '')) throw new Error('CUSTOMER_OFFER_DELIVERY_SCHEMA')
@@ -105,6 +126,53 @@ export async function registerSignedContract(ctx: Context, caseId: string, paylo
     const current = await delivery(ctx, caseId, id).catch(() => undefined)
     if (current !== undefined && current?.signed_copy?.path !== signedCopy.path) await db.storage.from(CUSTOMER_OFFER_BUCKET).remove([signedCopy.path])
   }
+}
+export async function prepareSignedContractUpload(ctx: Context, caseId: string, payload: Record<string, unknown>) {
+  if (payload.confirmed !== true || payload.contentType !== 'application/pdf' || typeof payload.fileName !== 'string' || !payload.fileName || payload.fileName.length > 250 || !/\.pdf$/i.test(payload.fileName) ||
+    !Number.isSafeInteger(payload.revision) || !Number.isSafeInteger(payload.fileSizeBytes) || Number(payload.fileSizeBytes) < 100 || Number(payload.fileSizeBytes) > 20_000_000) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  const id = offerId(payload.id), row = await version(ctx, caseId, id, payload.revision)
+  if (row.released_at) throw new Error('CUSTOMER_OFFER_STALE')
+  if ((await delivery(ctx, caseId, id))?.signed_copy) throw new Error('CUSTOMER_OFFER_IMMUTABLE')
+  const path = `${ctx.orgId}/${caseId}/signing/${id}/signed/${randomUUID()}.pdf`
+  const ticket = uploadTicket({ orgId: ctx.orgId, userId: ctx.userId, caseId, documentId: id, revision: row.draft_revision,
+    path, fileName: payload.fileName, fileSizeBytes: Number(payload.fileSizeBytes), expiresAt: Date.now() + 2 * 60 * 60 * 1000 })
+  const result = await createSupabaseAdminClient().storage.from(CUSTOMER_OFFER_BUCKET).createSignedUploadUrl(path, { upsert: false })
+  checked(result.error)
+  if (!result.data?.token) throw new Error('CUSTOMER_OFFER_FILES')
+  return { bucket: CUSTOMER_OFFER_BUCKET, filePath: path, token: result.data.token, contentType: 'application/pdf', ticket }
+}
+export async function completeSignedContractUpload(ctx: Context, caseId: string, payload: Record<string, unknown>) {
+  if (payload.confirmed !== true) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  const id = offerId(payload.id), ticket = readUploadTicket(ctx, caseId, id, payload.ticket)
+  const row = await version(ctx, caseId, id, payload.revision)
+  if (row.released_at || row.draft_revision !== ticket.revision) throw new Error('CUSTOMER_OFFER_STALE')
+  const db = createSupabaseAdminClient(), result = await db.storage.from(CUSTOMER_OFFER_BUCKET).download(ticket.path)
+  checked(result.error)
+  if (!result.data || result.data.size !== ticket.fileSizeBytes || result.data.size > 20_000_000) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  const bytes = Buffer.from(await result.data.arrayBuffer())
+  if (!bytes.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+  const signedCopy = { path: ticket.path, fileName: ticket.fileName, fileSizeBytes: bytes.length, sha256: hash(bytes) }
+  try {
+    const existing = await delivery(ctx, caseId, id)
+    if (existing?.signed_copy) {
+      if (existing.signed_copy.sha256 !== signedCopy.sha256) throw new Error('CUSTOMER_OFFER_IMMUTABLE')
+      return
+    }
+    await write(ctx, caseId, 'register_signed', { id, revision: ticket.revision, confirmed: true, signedCopy })
+  } finally {
+    const current = await delivery(ctx, caseId, id).catch(() => undefined)
+    if (current?.signed_copy && current.signed_copy.path !== ticket.path) await db.storage.from(CUSTOMER_OFFER_BUCKET).remove([ticket.path])
+  }
+}
+export async function signedContractDownloadUrl(ctx: Context, caseId: string, id: string) {
+  // Verify the archived copy, then let private storage serve it without the app response-size cap.
+  await downloadSignedContract(ctx, caseId, id)
+  const entry = await delivery(ctx, caseId, id)
+  if (!entry?.signed_copy) throw new Error('CUSTOMER_OFFER_NOT_FOUND')
+  const result = await createSupabaseAdminClient().storage.from(CUSTOMER_OFFER_BUCKET).createSignedUrl(entry.signed_copy.path, 60, { download: entry.signed_copy.fileName || 'Signerat-avtal.pdf' })
+  checked(result.error)
+  if (!result.data?.signedUrl) throw new Error('CUSTOMER_OFFER_FILES')
+  return result.data.signedUrl
 }
 export async function downloadSignedContract(ctx: Context, caseId: string, id: string) {
   await version(ctx, caseId, id)

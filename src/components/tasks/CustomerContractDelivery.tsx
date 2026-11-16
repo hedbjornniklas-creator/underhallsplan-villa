@@ -4,6 +4,8 @@ import { useRef, useState } from 'react'
 import { Check, Download, ExternalLink, Loader2, Share2, Upload, X } from 'lucide-react'
 import type { ContractSigningVersion } from '@/lib/action-cases/customerOffers'
 import type { ActionCaseParticipantView } from '@/lib/action-cases/contracts'
+import { signedContractFileIssue } from '@/lib/action-cases/contractSignedUpload'
+import { useProjectSaveProtection } from './ProjectSaveProtection'
 
 export default function CustomerContractDelivery({ caseId, version, available, recipient, disabled, busy, customerUrl, onAction }: {
   caseId: string; version: ContractSigningVersion; available: boolean; recipient?: ActionCaseParticipantView | null
@@ -12,12 +14,16 @@ export default function CustomerContractDelivery({ caseId, version, available, r
 }) {
   const [confirm, setConfirm] = useState<'share' | 'withdraw_share' | null>(null)
   const [file, setFile] = useState<File | null>(null), [checked, setChecked] = useState(false)
+  const [error, setError] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
   const d = version.delivery, shared = Boolean(d?.sharedAt && !d.withdrawnAt)
   const button = 'gizmo-button inline-flex items-center justify-center gap-2 disabled:opacity-50'
+  useProjectSaveProtection({ label: 'Underskriven avtalskopia', pending: Boolean(file && !d?.signedCopy), view: 'contract',
+    detail: busy === 'upload_signed' ? 'PDF-kopian håller på att registreras.' : `${file?.name || 'PDF-filen'} har inte registrerats. Filen måste väljas igen om du lämnar sidan.` })
   if (!available) return <p className="my-3 text-sm text-amber-800">Delning och underskriven kopia behöver aktiveras av administratören.</p>
-  return <section className="my-4 border-b border-slate-200 pb-4" aria-label="Beställarens avtalsversion">
-    <h3 className="font-semibold">Beställarens avtalsversion</h3>
+  const sharing = <details className="mt-5 border-t border-slate-200 pt-3">
+    <summary className="cursor-pointer text-sm font-semibold">Delning med beställaren{shared ? ' · Delad' : ' · Inte delad'}</summary>
+    <p className="mt-2 text-sm text-slate-600">Frivilligt. Delning behövs inte för att registrera en underskriven PDF.</p>
     <p className="mt-2 text-sm">{shared ? `Version ${version.version} är delad med beställaren.` : 'Inte synligt för beställaren.'}</p>
     <p className="mt-1 text-sm text-slate-600">Mottagare: {recipient?.name || 'Saknas'}{recipient?.email ? ` · ${recipient.email}` : ''}</p>
     <div className="mt-3 flex flex-wrap gap-2">
@@ -34,8 +40,9 @@ export default function CustomerContractDelivery({ caseId, version, available, r
       }}>{busy === confirm ? <Loader2 size={16} className="animate-spin" /> : <Share2 size={16} />}{confirm === 'share' ? 'Dela version och hämta länk' : 'Sluta dela'}</button>
         <button className={button} disabled={disabled} onClick={() => setConfirm(null)}><X size={16} /> Avbryt</button></div>
     </div>}
-    <div className="mt-4 border-t border-slate-200 pt-3">
-      <h3 className="font-semibold">Underskriven kopia</h3>
+  </details>
+  return <section id="signed-contract-copy" className="my-4 border-b border-slate-200 pb-4" aria-label="Underskriven avtalskopia">
+      <h3 className="font-semibold">Underskriven kopia · Version {version.version}</h3>
       {d?.signedCopy ? <>
         <p className="mt-2 flex items-start gap-2 text-sm"><Check size={16} className="shrink-0" />Registrerad {new Date(d.signedCopy.registeredAt).toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}</p>
         <a className={`${button} mt-2`} href={`/api/action-cases/${caseId}/contract-signing/${version.id}/signed`} target="_blank" rel="noopener noreferrer"><Download size={16} /> Hämta underskriven kopia</a>
@@ -43,14 +50,23 @@ export default function CustomerContractDelivery({ caseId, version, available, r
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
           <button type="button" className={`${button} shrink-0`} disabled={disabled} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden="true" /> Välj signerad PDF</button>
           <p className="min-w-0 break-all text-sm" role="status" aria-live="polite">{file ? file.name : 'Ingen PDF vald.'}</p>
-          <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden" aria-label="Välj signerad PDF-fil" disabled={disabled} onChange={(event) => { setFile(event.target.files?.[0] || null); setChecked(false) }} />
+          <input ref={fileInput} type="file" accept="application/pdf,.pdf" className="hidden" aria-label="Välj signerad PDF-fil" disabled={disabled} onChange={(event) => {
+            const next = event.target.files?.[0] || null, issue = next ? signedContractFileIssue(next) : ''
+            setError(issue); setFile(issue ? null : next); setChecked(false)
+            if (issue) event.target.value = ''
+          }} />
         </div>
+        <p className="mt-2 text-sm text-slate-600">PDF, högst 20 MB. Välj kopian med samtliga underskrifter.</p>
         <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => setChecked(event.target.checked)} className="mt-0.5 shrink-0" />Jag har kontrollerat att samtliga beställare och entreprenören har skrivit under version {version.version}.</label>
         <button className={`${button} mt-3`} disabled={disabled || !file || !checked} onClick={async () => {
+          setError('')
           if (await onAction('upload_signed', { id: version.id, file, confirmed: true })) { setFile(null); setChecked(false) }
+          else setError('Registreringen kunde inte bekräftas. Filen och din bekräftelse är kvar. Kontrollera felmeddelandet och försök igen.')
         }}>{busy === 'upload_signed' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Registrera underskriven kopia</button>
+        {busy === 'upload_signed' && <p role="status" className="mt-2 text-sm">Laddar upp och kontrollerar PDF-kopian. Stanna kvar tills registreringen är klar.</p>}
+        {error && <p role="alert" className="mt-2 text-sm text-red-800">{error}</p>}
         <p className="mt-2 text-sm text-slate-600">Underskrifterna kontrolleras manuellt. Kopian sparas internt och avtalsversionen förblir låst.</p>
       </>}
-    </div>
+    {sharing}
   </section>
 }

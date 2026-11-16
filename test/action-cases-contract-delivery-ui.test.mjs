@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import * as signedUpload from '../src/lib/action-cases/contractSignedUpload.ts'
 
 const source = readFileSync(new URL('../src/components/tasks/CustomerContractDelivery.tsx', import.meta.url), 'utf8')
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
@@ -18,6 +19,8 @@ function harness(overrides = {}, result = true) {
     react: { useState: slot, useRef: value => slot({ current: value })[0] },
     'react/jsx-runtime': { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }), Fragment: 'fragment' },
     'lucide-react': new Proxy({}, { get: (_, key) => `icon:${String(key)}` }),
+    '@/lib/action-cases/contractSignedUpload': signedUpload,
+    './ProjectSaveProtection': { useProjectSaveProtection() {} },
   }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', compiled)(name => { assert.ok(name in deps, name); return deps[name] }, mod, mod.exports)
@@ -53,7 +56,7 @@ test('signed copy has a styled keyboard-accessible picker and file status withou
   assert.equal(h.find(node => node.props.role === 'status').props.children, 'Ingen PDF vald.')
   picker.props.onClick()
   assert.equal(h.picks, 1)
-  const file = new File(['%PDF-test'], 'Fiktivt underskrivet avtal.pdf', { type: 'application/pdf' })
+  const file = new File(['%PDF-'+'x'.repeat(100)], 'Fiktivt underskrivet avtal.pdf', { type: 'application/pdf' })
   h.select(file)
   assert.equal(h.find(node => node.props.role === 'status').props.children, file.name)
   assert.equal(h.button('Registrera underskriven kopia').props.disabled, true)
@@ -65,7 +68,7 @@ test('registration still requires a chosen file and manual confirmation for that
   const h = harness(), before = structuredClone(h.props.version)
   h.check(true)
   assert.equal(h.button('Registrera underskriven kopia').props.disabled, true)
-  const file = new File(['%PDF-test'], 'Fiktivt-avtal.pdf', { type: 'application/pdf' })
+  const file = new File(['%PDF-'+'x'.repeat(100)], 'Fiktivt-avtal.pdf', { type: 'application/pdf' })
   h.select(file)
   assert.equal(h.checkbox().props.checked, false)
   h.check(true)
@@ -79,12 +82,12 @@ test('registration still requires a chosen file and manual confirmation for that
 })
 
 test('replacing or clearing a file resets confirmation and failed registration retains the selection', async () => {
-  const h = harness({}, false), file = new File(['%PDF-test'], 'Fiktivt-avtal.pdf', { type: 'application/pdf' })
+  const h = harness({}, false), file = new File(['%PDF-'+'x'.repeat(100)], 'Fiktivt-avtal.pdf', { type: 'application/pdf' })
   h.select(file); h.check(true)
   await h.button('Registrera underskriven kopia').props.onClick(); h.render()
   assert.equal(h.find(node => node.props.role === 'status').props.children, file.name)
   assert.equal(h.checkbox().props.checked, true)
-  h.select(new File(['%PDF-other'], 'Annan-kopia.pdf', { type: 'application/pdf' }))
+  h.select(new File(['%PDF-'+'z'.repeat(100)], 'Annan-kopia.pdf', { type: 'application/pdf' }))
   assert.equal(h.checkbox().props.checked, false)
   h.check(true); h.select(null)
   assert.equal(h.checkbox().props.checked, false)

@@ -71,6 +71,7 @@ import { useCustomerOfferAutosave } from './useCustomerOfferAutosave'
 import CustomerContractWorkParts from './CustomerContractWorkParts'
 import type { CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 import CustomerContractDelivery from './CustomerContractDelivery'
+import { uploadSignedContract, type SignedContractUploadAttempt } from '@/lib/action-cases/contractSignedUpload'
 import { contractPricingForEditing, offerBudgetBreakdown } from '@/lib/action-cases/contractPricing'
 import CustomerContractPricing from './CustomerContractPricing'
 import CustomerOfferPricingSummary from './CustomerOfferPricingSummary'
@@ -441,6 +442,7 @@ export default function CustomerOfferEditor({
     detail: documentRecovery ? 'Ett lokalt handlingsutkast behöver granskas.' : autosave.state?.errorMessage || pendingChanges.join(', ') || 'Ändringar väntar på sparning.',
     view: draftTarget === 'offer' ? 'offer' : 'contract', flush: async () => !documentRecovery && await autosave.flush() })
   useProjectSaveProtection({ label: 'Projektets avsändarprofil', pending: senderPending, view: 'overview', detail: 'Profilbytet är inte bekräftat.' })
+  const signedUploadAttempt = useRef<SignedContractUploadAttempt | null>(null)
   async function action(
     operation: string,
     extra: Record<string, unknown> = {}
@@ -459,21 +461,27 @@ export default function CustomerOfferEditor({
     running.current = true
     setBusy(operation)
     try {
-      const upload = operation === 'upload_signed' ? new FormData() : null
-      if (upload) {
+      let data
+      if (operation === 'upload_signed') {
         if (!(extra.file instanceof File)) throw new Error('Välj en underskriven PDF.')
-        upload.set('file', extra.file); upload.set('revision', String(workspace.revision)); upload.set('confirmed', String(extra.confirmed === true))
-      }
-      const response = await fetch(
-        upload ? `/api/action-cases/${actionCase.id}/contract-signing/${extra.id}/signed` : signingAction ? `/api/action-cases/${actionCase.id}/contract-signing` : apiUrl,
-        {
-          method: operation === 'refresh' ? 'GET' : 'POST',
-          headers: upload ? undefined : { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(signingAction ? 150000 : 45000),
-          body:
-            operation === 'refresh'
-              ? undefined
-              : upload || (signingAction ? JSON.stringify({ operation, revision: workspace.revision, ...extra }) : JSON.stringify({
+        if (extra.confirmed !== true) throw new Error('Bekräfta att samtliga parter har skrivit under.')
+        if (signedUploadAttempt.current?.file !== extra.file || signedUploadAttempt.current.revision !== workspace.revision)
+          signedUploadAttempt.current = { file: extra.file, revision: workspace.revision }
+        const { supabase } = await import('@/lib/supabaseClient')
+        data = await uploadSignedContract(`/api/action-cases/${actionCase.id}/contract-signing/${extra.id}/signed`, signedUploadAttempt.current, supabase.storage)
+        if (!Number.isSafeInteger(data.revision) || !data.draft || !Array.isArray(data.offers)) throw new Error('Registreringen kunde inte bekräftas. Kontrollera avtalsstatus och försök igen.')
+        signedUploadAttempt.current = null
+      } else {
+        const response = await fetch(
+          signingAction ? `/api/action-cases/${actionCase.id}/contract-signing` : apiUrl,
+          {
+            method: operation === 'refresh' ? 'GET' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(signingAction ? 150000 : 45000),
+            body:
+              operation === 'refresh'
+                ? undefined
+                : signingAction ? JSON.stringify({ operation, revision: workspace.revision, ...extra }) : JSON.stringify({
                   operation,
                   draftTarget,
                   draft,
@@ -481,12 +489,13 @@ export default function CustomerOfferEditor({
                   revision: workspace.revision,
                   confirmed,
                   ...extra
-                }))
-        }
-      )
-      const data = await response.json()
-      if (!response.ok)
-        throw new Error(data.error || 'Offerten kunde inte hanteras.')
+                })
+          }
+        )
+        data = await response.json()
+        if (!response.ok)
+          throw new Error(data.error || 'Offerten kunde inte hanteras.')
+      }
       if (operation === 'refresh' && (JSON.stringify(currentSnapshot.current.draft) !== JSON.stringify(draft) ||
         JSON.stringify(currentSnapshot.current.costing) !== JSON.stringify(costing)))
         throw new Error('Du hann redigera under hämtningen. Din text har behållits; den hämtade versionen har inte lagts in.')

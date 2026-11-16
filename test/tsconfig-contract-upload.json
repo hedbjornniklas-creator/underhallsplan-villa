@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig-save-protection.json",
+  "include": ["../next-env.d.ts", "../src/components/tasks/ActionCaseProject.tsx", "../src/app/api/action-cases/[caseId]/contract-signing/[documentId]/signed/route.ts", "fixtures/gizmo-signed-upload-view.tsx"]
+}

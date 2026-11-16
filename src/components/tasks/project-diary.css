@@ -66,6 +66,7 @@
 .diary-record-photos { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px; }
 .diary-record-photos img { aspect-ratio:4/3;width:100%;object-fit:cover;border-radius:4px; }
 .diary-record-photos a { min-width:0; }
+.diary-record-photos button { display:block;min-width:0;padding:0;border:0;border-radius:4px;overflow:hidden;background:none;cursor:pointer; }
 .diary-corrections { display:grid;gap:10px;margin-top:14px; }
 .diary-correction { border-left:3px solid #ad8529;padding:8px 12px;font-size:13px; }
 .diary-correction p { white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0; }

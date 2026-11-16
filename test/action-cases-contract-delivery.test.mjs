@@ -11,6 +11,7 @@ const code = ts.transpileModule(readFileSync(new URL('../src/lib/action-cases/co
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 const ctx = { orgId: id(90), userId: id(91) }, caseId = id(1), documentId = id(800), participantId = id(2)
+process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'fictitious-signed-upload-test-secret-not-a-real-key'
 const payload = () => ({ id: documentId, revision: 1, confirmed: true, participantId, recipientName: 'Anna Test', recipientEmail: 'anna@example.test' })
 function harness(options = {}) {
   const snapshot = signingSnapshot(), row = { id: documentId, org_id: ctx.orgId, action_case_id: caseId, version: 1, draft_revision: 1, created_at: '2026-10-11T10:00:00Z', released_at: null, snapshot, files: [] }
@@ -36,6 +37,8 @@ function harness(options = {}) {
       return q
     },
     storage: { from() { return {
+      async createSignedUploadUrl(path) { return { data: { token: 'fake-upload-token', path } } },
+      async createSignedUrl(path, seconds, options) { calls.push({ signedDownload: path, seconds, options }); return { data: { signedUrl: 'https://storage.example.test/private-receipt' } } },
       async upload(path, bytes) { if (blobs.has(path)) return { error: { message: 'exists' } }; blobs.set(path, Buffer.from(bytes)); return {} },
       async download(path) { downloads.push(path); return blobs.has(path) ? { data: new Blob([blobs.get(path)]) } : { error: { message: 'missing' } } },
       async remove(paths) { removed.push(...paths); paths.forEach((path)=>blobs.delete(path)); return {} },
@@ -120,4 +123,61 @@ test('signed receipt is private, exact-version scoped, immutable, validated and 
   await assert.rejects(upload(h,payload(),'not a PDF'+'x'.repeat(1000)),/SIGNED_COPY/)
   const failed=harness({rpcFailed:true});await assert.rejects(upload(failed));assert.equal(failed.blobs.size,0)
   const uncertain=harness({uncertain:true});await assert.rejects(upload(uncertain));assert.equal(uncertain.blobs.size,1)
+})
+
+const metadata = () => ({ ...payload(), fileName: 'Fiktivt signerat avtal.pdf', fileSizeBytes: 11_487_242, contentType: 'application/pdf' })
+test('direct signed upload accepts an 11.5 MB receipt without rewriting the frozen version or sharing it', async () => {
+  const h = harness(), before = JSON.stringify(h.row), upload = await h.prepareSignedContractUpload(ctx, caseId, metadata())
+  assert.match(upload.filePath, new RegExp(`/signing/${documentId}/signed/[a-f0-9-]{36}\\.pdf$`))
+  assert.equal(h.calls.length, 0); assert.equal(h.blobs.size, 0)
+  const bytes = Buffer.alloc(metadata().fileSizeBytes, 32); bytes.write('%PDF-')
+  h.blobs.set(upload.filePath, bytes)
+  const complete = { ...payload(), ticket: upload.ticket }
+  await h.completeSignedContractUpload(ctx, caseId, complete)
+  assert.equal(h.entries[0].signed_copy.fileSizeBytes, bytes.length)
+  assert.equal(h.entries[0].shared_at, null)
+  assert.equal(JSON.stringify(h.row), before)
+  await h.completeSignedContractUpload(ctx, caseId, complete)
+  assert.equal(h.calls.filter(c => c.p_operation === 'register_signed').length, 1)
+  assert.equal(await h.signedContractDownloadUrl(ctx, caseId, documentId), 'https://storage.example.test/private-receipt')
+  assert.equal(h.calls.at(-1).seconds, 60)
+  assert.equal(h.blobs.size, 1)
+})
+
+test('direct upload tickets bind actor, tenant, version, name and byte size; invalid or stale files never register', async () => {
+  const h = harness(), meta = { ...metadata(), fileSizeBytes: 1000 }, upload = await h.prepareSignedContractUpload(ctx, caseId, meta)
+  h.blobs.set(upload.filePath, Buffer.from('%PDF-' + 'x'.repeat(995)))
+  for (const [context, project, patch] of [[{...ctx, userId:id(92)},caseId,{}], [{...ctx,orgId:id(93)},caseId,{}], [ctx,id(9),{}], [ctx,caseId,{id:id(801)}], [ctx,caseId,{confirmed:false}], [ctx,caseId,{revision:2}], [ctx,caseId,{ticket:upload.ticket.slice(0,-1)+'!'}]])
+    await assert.rejects(h.completeSignedContractUpload(context, project, {...payload(), ticket:upload.ticket, ...patch}))
+  h.blobs.set(upload.filePath, Buffer.alloc(1000))
+  await assert.rejects(h.completeSignedContractUpload(ctx,caseId,{...payload(),ticket:upload.ticket}),/SIGNED_COPY/)
+  h.blobs.set(upload.filePath, Buffer.from('%PDF-'+'x'.repeat(996)))
+  await assert.rejects(h.completeSignedContractUpload(ctx,caseId,{...payload(),ticket:upload.ticket}),/SIGNED_COPY/)
+  h.row.released_at='2026-11-16'
+  await assert.rejects(h.completeSignedContractUpload(ctx,caseId,{...payload(),ticket:upload.ticket}),/STALE/)
+  assert.equal(h.entries.length,0)
+  for (const patch of [{fileSizeBytes:20_000_001},{fileSizeBytes:99},{fileName:'bad.html'},{confirmed:false},{revision:2}])
+    await assert.rejects(harness().prepareSignedContractUpload(ctx,caseId,{...meta,...patch}))
+})
+
+test('direct registration retains the uploaded file after failed or uncertain commits for a safe retry', async () => {
+  for (const options of [{rpcFailed:true},{uncertain:true}]) {
+    const h=harness(options), upload=await h.prepareSignedContractUpload(ctx,caseId,{...metadata(),fileSizeBytes:1000})
+    h.blobs.set(upload.filePath,Buffer.from('%PDF-'+'x'.repeat(995)))
+    const complete={...payload(),ticket:upload.ticket}
+    await assert.rejects(h.completeSignedContractUpload(ctx,caseId,complete))
+    assert.equal(h.blobs.size,1)
+    options.rpcFailed=false; options.uncertain=false
+    await h.completeSignedContractUpload(ctx,caseId,complete)
+    assert.equal(h.entries[0].signed_copy.path,upload.filePath)
+  }
+})
+
+test('expired direct-upload tickets cannot register a receipt and do not alter its locked version', async () => {
+  const h=harness(), before=JSON.stringify(h.row), upload=await h.prepareSignedContractUpload(ctx,caseId,{...metadata(),fileSizeBytes:1000}), now=Date.now
+  try {
+    Date.now=()=>now()+3*60*60*1000
+    await assert.rejects(h.completeSignedContractUpload(ctx,caseId,{...payload(),ticket:upload.ticket}),/SIGNED_COPY/)
+    assert.equal(h.calls.length,0);assert.equal(JSON.stringify(h.row),before)
+  } finally { Date.now=now }
 })

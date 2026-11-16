@@ -1,5 +1,18 @@
 # Frågor: beställare och snabbregistrering
 
+## Beslut 2026-11-16: Flera Filer Och Nedladdning
+
+- Ladda upp filer till en fråga tillåter flera bilder och dokument i samma val.
+  Befintliga gränser gäller: 20 bilagor per fråga och 25 MB per fil.
+- Filerna behandlas i turordning. En misslyckad fil stoppar inte de andra.
+  Status visas per fil och återförsök använder samma uppladdning, inte nya kopior.
+  Lyckade bilagor autosparas; delning och avisering sker fortsatt separat.
+- Misslyckade filer stannar i den öppna frågan tills de återförsöks eller tas bort
+  från kön. Stängning varnar bara om sådana lokala filer riskerar att förloras.
+- Gemensam bildvisare har Ladda ned bild, som hämtar originalets innehåll och
+  filnamn via samma behörighetskontroller som bildvisningen. Samma visare används
+  även för aktuella och historiska dagboksbilder. Ingen utökad åtkomst införs.
+
 ## Beslut 2026-10-19
 
 - Frågor och beslut flyttas efter Tidsplan i projektets registerflikar.

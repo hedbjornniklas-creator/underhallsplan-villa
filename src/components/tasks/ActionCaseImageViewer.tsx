@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronLeft, ChevronRight, ImageOff, Loader2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, ImageOff, Loader2, X } from 'lucide-react'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
 
 export const actionCaseImageUrl = (caseId: string, imageId: string) => `/api/action-cases/${caseId}/attachments/${imageId}`
@@ -32,6 +32,7 @@ type Props = {
 
 export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen, onClose, selection, urlForFile, captionForFile }: Props) {
   const dialog = useRef<HTMLDivElement>(null)
+  const downloading = useRef(false), [downloadBusy, setDownloadBusy] = useState(false), [downloadError, setDownloadError] = useState('')
   const index = images.findIndex((image) => image.id === openedId)
   const opened = images[index]
   useEffect(() => {
@@ -42,6 +43,20 @@ export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen
     return () => { document.body.style.overflow = overflow; if (previous?.isConnected) previous.focus() }
   }, [])
   if (!opened || typeof document === 'undefined') return null
+  async function download() {
+    if (downloading.current) return
+    downloading.current = true; setDownloadBusy(true); setDownloadError('')
+    try {
+      const response = await fetch(urlForFile?.(opened.id) ?? actionCaseImageUrl(caseId, opened.id), { cache: 'no-store', signal: AbortSignal.timeout(120000) })
+      if (!response.ok || /text\/html|application\/json/i.test(response.headers.get('content-type') || '')) throw new Error()
+      const blob = await response.blob()
+      if (!blob.size) throw new Error()
+      const url = URL.createObjectURL(blob), anchor = document.createElement('a')
+      anchor.href = url; anchor.download = opened.fileName; document.body.append(anchor); anchor.click(); anchor.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch { setDownloadError('Bilden kunde inte laddas ned. Försök igen eller öppna originalet.') }
+    finally { downloading.current = false; setDownloadBusy(false) }
+  }
   return createPortal(<div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/75 p-2 sm:p-5" onClick={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose() }}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label="Granska bild" tabIndex={-1} className="flex h-[94dvh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-neutral-950 text-white shadow-2xl outline-none" onKeyDown={(e) => {
       // Keep keyboard actions inside this preview, not the underlying request sheet.
@@ -57,11 +72,15 @@ export default function ActionCaseImageViewer({ caseId, images, openedId, onOpen
     }}>
       <header className="flex shrink-0 items-center justify-between gap-3 p-3"><div className="min-w-0 break-words text-sm"><p>{index + 1} / {images.length} · {opened.title || opened.fileName}</p>{captionForFile?.(opened.id) ? <p className="mt-1 text-xs text-neutral-300">{captionForFile(opened.id)}</p> : null}</div><button type="button" onClick={onClose} aria-label="Stäng bild" title="Stäng bild" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-white/10"><X /></button></header>
       <div className="relative min-h-0 flex-1"><ActionCaseAttachmentImage key={opened.id} caseId={caseId} file={opened} src={urlForFile?.(opened.id)} eager /></div>
-      <footer className="flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-        {selection ? <label className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-violet-600" disabled={selection.disabled} checked={selection.selectedIds.includes(opened.id)} onChange={(e) => selection.onChange(opened.id, e.target.checked)} />{selection.label || 'Bifoga bilden'}</label> : null}
+      <footer className="grid shrink-0 grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2 p-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+        {selection ? <label className="col-span-3 flex min-h-11 w-full cursor-pointer items-center justify-center gap-3 text-sm"><input type="checkbox" className="h-5 w-5 accent-violet-600" disabled={selection.disabled} checked={selection.selectedIds.includes(opened.id)} onChange={(e) => selection.onChange(opened.id, e.target.checked)} />{selection.label || 'Bifoga bilden'}</label> : null}
         <button type="button" disabled={index <= 0} onClick={() => onOpen(images[index - 1].id)} aria-label="Föregående bild" title="Föregående bild" className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronLeft /></button>
+        <div className="flex min-w-0 flex-col items-center justify-center gap-1 sm:flex-row sm:flex-wrap sm:gap-4">
+        <button type="button" disabled={downloadBusy} onClick={() => void download()} title="Ladda ned originalbilden" className="inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-sm hover:bg-white/10 disabled:opacity-50">{downloadBusy ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}Ladda ned bild</button>
         <a href={urlForFile?.(opened.id) ?? actionCaseImageUrl(caseId, opened.id)} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-sm underline">Öppna original</a>
+        </div>
         <button type="button" disabled={index >= images.length - 1} onClick={() => onOpen(images[index + 1].id)} aria-label="Nästa bild" title="Nästa bild" className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-white/10 disabled:opacity-30"><ChevronRight /></button>
+        {downloadError && <p role="alert" className="col-span-3 w-full text-center text-sm text-red-200">{downloadError}</p>}
       </footer>
     </div>
   </div>, document.body)

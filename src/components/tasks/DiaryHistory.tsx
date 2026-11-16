@@ -1,8 +1,8 @@
 'use client'
-/* eslint-disable @next/next/no-img-element -- Historical images use authenticated, project-scoped URLs. */
 import { useRef, useState } from 'react'
 import { History, Loader2, RotateCcw } from 'lucide-react'
 import { diaryTimeRange, type DiaryRevision } from '@/lib/action-cases/projectDiary'
+import DiaryPhotos from './DiaryPhotos'
 
 const displayTime = (value: string) => new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Stockholm' }).format(new Date(value))
 export default function DiaryHistory({ endpoint, entryId, revision }: { endpoint: string; entryId: string; revision: number }) {
@@ -27,7 +27,7 @@ export default function DiaryHistory({ endpoint, entryId, revision }: { endpoint
       <p className="diary-muted">{displayTime(version.createdAt)} · {version.actorName}</p>
       <p>{[version.body.workDate, diaryTimeRange(version.body), version.itemTitle].filter(Boolean).join(' · ')}</p>
       <p className="diary-record-text">{version.body.text}</p>
-      {version.photos.length > 0 && <div className="diary-record-photos">{version.photos.map(photo => <a key={photo.id} href={`${endpoint}/photos/${photo.id}`} target="_blank" rel="noreferrer" title={photo.name}><img src={`${endpoint}/photos/${photo.id}`} alt={photo.name} loading="lazy" /></a>)}</div>}
+      {version.photos.length > 0 && <DiaryPhotos endpoint={endpoint} photos={version.photos} />}
     </section>)}
     {busy && <p role="status"><Loader2 size={16} className="inline animate-spin" /> Hämtar historik…</p>}
     {error && <p role="alert" className="diary-error">{error}</p>}

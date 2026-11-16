@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { customerOfferContext, customerOfferError } from '@/lib/action-cases/customerOffersHttp'
-import { downloadSignedContract, registerSignedContract } from '@/lib/action-cases/contractSigningDeliveryServer'
+import { customerOfferContext, customerOfferError, offerRequestBody } from '@/lib/action-cases/customerOffersHttp'
+import { completeSignedContractUpload, prepareSignedContractUpload, registerSignedContract, signedContractDownloadUrl } from '@/lib/action-cases/contractSigningDeliveryServer'
 import { getCustomerOfferWorkspace } from '@/lib/action-cases/customerOffersServer'
 
 export const runtime = 'nodejs'
@@ -11,6 +11,13 @@ export async function POST(request: Request, { params }: Params) {
     const ctx = await customerOfferContext(), { caseId, documentId } = await params
     if ((request.headers.get('origin') && request.headers.get('origin') !== new URL(request.url).origin) || Number(request.headers.get('content-length')) > 20_100_000)
       throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      const data = await offerRequestBody(request), payload = { ...data, id: documentId }
+      if (data.operation === 'prepare') return NextResponse.json({ upload: await prepareSignedContractUpload(ctx, caseId, payload) }, { headers: { 'Cache-Control': 'no-store' } })
+      if (data.operation !== 'complete') throw new Error('CUSTOMER_OFFER_INVALID')
+      await completeSignedContractUpload(ctx, caseId, payload)
+      return NextResponse.json(await getCustomerOfferWorkspace(ctx, caseId), { headers: { 'Cache-Control': 'no-store' } })
+    }
     const reader = request.body?.getReader(), chunks: Buffer[] = []
     if (!reader) throw new Error('CUSTOMER_OFFER_SIGNED_COPY')
     let size = 0
@@ -29,8 +36,7 @@ export async function POST(request: Request, { params }: Params) {
 }
 export async function GET(_request: Request, { params }: Params) {
   try {
-    const ctx = await customerOfferContext(), { caseId, documentId } = await params, result = await downloadSignedContract(ctx, caseId, documentId)
-    return new NextResponse(new Uint8Array(result.bytes), { headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, no-store',
-      'X-Content-Type-Options': 'nosniff', 'Content-Disposition': `attachment; filename="Signerat-avtal.pdf"; filename*=UTF-8''${encodeURIComponent(result.fileName)}` } })
+    const ctx = await customerOfferContext(), { caseId, documentId } = await params
+    return new NextResponse(null, { status: 303, headers: { Location: await signedContractDownloadUrl(ctx, caseId, documentId), 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer' } })
   } catch (error) { return customerOfferError(error) }
 }
