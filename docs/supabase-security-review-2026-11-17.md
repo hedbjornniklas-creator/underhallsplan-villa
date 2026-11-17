@@ -2,7 +2,10 @@
 
 De 33 felen om avstängd RLS är åtgärdade i produktion. Skydd mot läckta
 lösenord har aktiverats och kontrollerats efter att inställningen sparats.
-Återstående varningar behöver fortsatt granskning; samtliga är inte åtgärdade.
+Därefter låstes 32 funktioners `search_path`, onödiga EXECUTE-rättigheter togs
+bort och ett faktiskt behörighetsfel vid skapande av underuppdrag rättades.
+Slutresultatet och kvarstående granskade varningar beskrivs i
+[funktionsgranskningen](supabase-function-hardening-2026-11-17.md).
 
 Varningsmejlet skickades den 10 november och avsåg läget den 8 november.
 Granskningen jämförde mejlet med aktuell Security Advisor, källkod och läsande
@@ -11,7 +14,7 @@ kontroller av produktionsdatabasens schema, rättigheter och policyer.
 | Security Advisor | Före | Efter uppdatering |
 |---|---:|---:|
 | Fel | 33 | 0 |
-| Varningar | 142 | 141 |
+| Varningar | 142 | 42 |
 | Information | 124 | 149 |
 
 Efterkontrollen gjordes den 17 november 2026. Informationsposter är en separat
@@ -19,7 +22,7 @@ klassificering och ska inte räknas som åtgärdade eller nytillkomna säkerhets
 
 ## Genomförda ändringar och verifiering
 
-Tre granskade migrationer kördes i produktionsprojektets SQL Editor:
+Inledningsvis kördes tre granskade migrationer i produktionsprojektets SQL Editor:
 
 - [01: serverstyrda tabeller](db/2026-11-17_01_server_table_rls.sql) aktiverar
   RLS och tar bort direkta klienträttigheter på 25 tabeller. De auktoriserade
@@ -35,8 +38,13 @@ Tre granskade migrationer kördes i produktionsprojektets SQL Editor:
 
 Migrationerna ändrar rättigheter och policyer, inte verksamhetsrader. Inga nya
 GRANT-rättigheter läggs till. Produktionskörningen rapporterade framgång.
-Körartefaktens SHA-256:
+Körartefaktens SHA-256 för 01–03:
 `241e5e206b011f5ca61d9862b0e1c79d7e755c8c2ed543ab826ced7492f9df6d`.
+
+Därefter kördes migrationerna 04–07. Funktionsdelen klarade ytterligare 718
+syntetiska kontroller och verifierades mot produktionsmetadata för 81 funktioner.
+Detaljer, den rättade NULL-kontrollen, körkvitton och avgränsningar finns i
+[funktionsrapporten](supabase-function-hardening-2026-11-17.md).
 
 Efterkontrollerna visar:
 
@@ -63,19 +71,18 @@ Revisionsunderlaget har sparats separat med bland annat
 `security-errors-before.csv`, `security-warnings-before.csv`,
 `schema-access-before.csv`, `warning-details-before.csv`,
 `table-access-after.json`, `http-before.json`, `http-after.json`,
-`security-rls-test-results.json`, `execution-receipt.json` och `advisor-after.json`.
+`security-rls-test-results.json`, `execution-receipt.json`, `advisor-after.json`
+och slutkontrollen `advisor-functions-after.json`.
 Rapporten innehåller inga nycklar, kunduppgifter eller personliga filsökvägar.
 
-## Kvarstående varningar och nästa steg
+## Kvarstående varningar
 
-De 141 kvarstående varningarna motsvarar följande klasser från förkontrollen,
-med lösenordsskyddets varning borttagen:
+Slutkontrollen av Security Advisor visar följande 42 kvarstående varningar:
 
 | Klass | Antal |
 |---|---:|
-| SECURITY DEFINER-funktion tillgänglig för inloggad roll | 50 |
-| SECURITY DEFINER-funktion tillgänglig för anonym roll | 38 |
-| Funktion utan låst `search_path` | 32 |
+| SECURITY DEFINER-funktion tillgänglig för inloggad roll | 18 |
+| SECURITY DEFINER-funktion tillgänglig för anonym roll | 3 |
 | Policy med generellt sant uttryck | 19 |
 | Publik Storage-bucket med listningsvarning | 2 |
 
@@ -86,10 +93,13 @@ organisationsgränser. De generella uttrycken visar därför inte ensamma att
 gränserna kan kringgås. Publik filåtkomst behöver ändå bedömas utifrån vad som
 avsiktligt ska vara offentligt.
 
-Nästa arbete är att låsa `search_path` i de 32 berörda funktionerna efter
-granskning av varje funktions objektberoenden. Därefter bör SECURITY DEFINER-
-funktionernas ägare, auktorisering och EXECUTE-rättigheter begränsas till vad
-respektive server- eller klientflöde behöver. Varningsantalet visar inte i sig
-vilka funktioner som kan anropas som RPC eller har en faktisk åtkomstbrist.
+De 32 varningarna om `search_path` är åtgärdade. De kvarstående 21 EXECUTE-
+fynden gäller 18 unika, avsiktligt anropbara hjälpfunktioner/RPC:er vars aktuella
+kroppar och behörighetskontroller granskats. De tre anonyma OB-hjälparna behövs
+av restriktiva policyer för samma roll. Listningsprov av båda berörda Storage-
+bucketarna gav tomma anonyma svar. Detta betyder inte att samtliga varningar
+är borttagna eller avgör vilka publika fil-URL:er som ska vara offentliga.
+Den fullständiga bedömningen finns i
+[funktionsrapporten](supabase-function-hardening-2026-11-17.md).
 
 Granskningen fastställer inte om historisk obehörig åtkomst har förekommit.
