@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { TextareaHTMLAttributes } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import type { Ref, TextareaHTMLAttributes } from 'react'
 import { getObTextDraftStorageKey } from '@/lib/ob/localTextDrafts'
 
 type DebouncedTextareaProps = Omit<
@@ -12,9 +12,12 @@ type DebouncedTextareaProps = Omit<
   debounceMs?: number
   draftKey?: string
   autoGrow?: boolean
+  saveHandleRef?: Ref<DebouncedTextareaSaveHandle>
   onValueChange?: (value: string) => void
   onSave: (value: string) => void | Promise<void>
 }
+
+export type DebouncedTextareaSaveHandle = { flush: () => Promise<void> }
 
 const readStoredDraft = (draftKey?: string) => {
   const storageKey = getObTextDraftStorageKey(draftKey)
@@ -57,6 +60,7 @@ export default function DebouncedTextarea({
   debounceMs = 700,
   draftKey,
   autoGrow = false,
+  saveHandleRef,
   disabled,
   readOnly,
   onValueChange,
@@ -74,7 +78,7 @@ export default function DebouncedTextarea({
   const draftRef = useRef(value)
   const isDirtyRef = useRef(false)
   const draftVersionRef = useRef(0)
-  const inFlightDraftVersionsRef = useRef(new Set<number>())
+  const inFlightDraftVersionsRef = useRef(new Map<number, Promise<boolean>>())
   const saveVersionRef = useRef(0)
   const latestValueRef = useRef(value)
   const renderedValue = isFocused || isDirty ? draft : value
@@ -198,35 +202,56 @@ export default function DebouncedTextarea({
     }
   }
 
-  const saveNow = async (
+  const saveNow = (
     nextValue: string,
     draftVersion = draftVersionRef.current
-  ) => {
+  ): Promise<boolean> => {
     clearTimer()
-    if (disabled || readOnly || textareaRef.current?.readOnly || textareaRef.current?.matches(':disabled')) return
-    if (!isDirtyRef.current) return
-    if (inFlightDraftVersionsRef.current.has(draftVersion)) return
+    if (!isDirtyRef.current) return Promise.resolve(true)
+    if (disabled || readOnly || textareaRef.current?.readOnly || textareaRef.current?.matches(':disabled')) return Promise.resolve(false)
+    const inFlight = inFlightDraftVersionsRef.current.get(draftVersion)
+    if (inFlight) return inFlight
 
     writeStoredDraft(draftKey, nextValue)
-    inFlightDraftVersionsRef.current.add(draftVersion)
     const version = saveVersionRef.current + 1
     saveVersionRef.current = version
     setIsSaving(true)
 
-    try {
-      await onSave(nextValue)
-      if (saveVersionRef.current !== version || draftRef.current !== nextValue) return
-      clearStoredDraft(draftKey)
-      markDirty(false)
-    } catch {
-      if (saveVersionRef.current !== version || draftRef.current !== nextValue) return
-      writeStoredDraft(draftKey, nextValue)
-      markDirty(true)
-    } finally {
-      inFlightDraftVersionsRef.current.delete(draftVersion)
-      if (saveVersionRef.current === version) setIsSaving(false)
-    }
+    const pending = Promise.resolve().then(async () => {
+      try {
+        await onSave(nextValue)
+        if (saveVersionRef.current === version && draftRef.current === nextValue) {
+          clearStoredDraft(draftKey)
+          markDirty(false)
+        }
+        return true
+      } catch {
+        if (saveVersionRef.current === version && draftRef.current === nextValue) {
+          writeStoredDraft(draftKey, nextValue)
+          markDirty(true)
+        }
+        return false
+      } finally {
+        inFlightDraftVersionsRef.current.delete(draftVersion)
+        if (saveVersionRef.current === version) setIsSaving(false)
+      }
+    })
+    inFlightDraftVersionsRef.current.set(draftVersion, pending)
+    return pending
   }
+
+  useImperativeHandle(saveHandleRef, () => ({
+    async flush() {
+      clearTimer()
+      // Include saves already started by blur or the debounce timer.
+      await Promise.all(inFlightDraftVersionsRef.current.values())
+      while (isDirtyRef.current) {
+        if (!(await saveNow(draftRef.current))) {
+          throw new Error('Texten kunde inte sparas. Försök igen innan du går vidare.')
+        }
+      }
+    },
+  }))
 
   const scheduleSave = (nextValue: string) => {
     clearTimer()

@@ -78,6 +78,13 @@ export function resolveTuReportSectionPolicy(
   return TU_POST_DAMAGE_SECTION_POLICY[sectionKey] ?? null
 }
 
+export function resolveTuReportSectionTitle(
+  templateKey: string | null | undefined,
+  section: { key: string; title?: string | null }
+) {
+  return section.title?.trim() || resolveTuReportSectionPolicy(templateKey, section.key)?.title || 'Rapportdel'
+}
+
 export function ensureTuPostDamageDisclaimer<T extends {
   sectionId: string
   paragraphs: Array<{

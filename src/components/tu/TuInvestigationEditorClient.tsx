@@ -1,9 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import Link from 'next/link'
 import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, FileText, Image as ImageIcon, Images, Loader2, MessageSquareText, MoveDown, MoveUp, Paperclip, Pencil, Plus, Printer, Sparkles, Trash2, Upload, X } from 'lucide-react'
-import DebouncedTextarea from '@/components/ob/DebouncedTextarea'
+import DebouncedTextarea, { type DebouncedTextareaSaveHandle } from '@/components/ob/DebouncedTextarea'
 import TuAnalysisWorkspace from '@/components/tu/TuAnalysisWorkspace'
 import TuInvestigationCustomerEditor from '@/components/tu/TuInvestigationCustomerEditor'
 import TuEvidenceWorkspace from '@/components/tu/TuEvidenceWorkspace'
@@ -31,7 +32,7 @@ import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu
 import {
   resolveTuReportDocumentTitle,
   resolveTuReportProjectType,
-  resolveTuReportSectionPolicy,
+  resolveTuReportSectionTitle,
 } from '@/lib/tu/reportTemplates'
 import type { TuReportSectionTypeOption } from '@/lib/tu/reportSectionTypes'
 import type { TuWorkspaceView } from '@/lib/tu/workflow'
@@ -787,6 +788,10 @@ export default function TuInvestigationEditorClient({
     buildAssignmentPartiesForm(initialInvestigation)
   )
   const [error, setError] = useState<string | null>(null)
+  const [previewOpening, setPreviewOpening] = useState(false)
+  const previewOpeningRef = useRef(false)
+  const textSaveHandles = useRef(new Map<string, DebouncedTextareaSaveHandle>())
+  const imageCaptionSavesRef = useRef<Promise<unknown>>(Promise.resolve())
   const [images, setImages] = useState<TuInvestigationImage[]>([])
   const [imagesLoading, setImagesLoading] = useState(true)
   const [imageBusy, setImageBusy] = useState(false)
@@ -891,6 +896,7 @@ export default function TuInvestigationEditorClient({
   const appendixReorderTimerRef = useRef<number | null>(null)
   const appendixReorderVersionRef = useRef(0)
   const appendixReorderUpdatesRef = useRef<AppendixImageOrderUpdate[]>([])
+  const appendixReorderSaveRef = useRef<{ version: number; promise: Promise<boolean> } | null>(null)
 
   const saveTuPatch = useCallback(
     async (body: Record<string, unknown>): Promise<TuSavePatchResponse> => {
@@ -1258,6 +1264,71 @@ export default function TuInvestigationEditorClient({
       await saveDraft(nextDraft, 'Kunde inte byta deltyp.')
     } catch {
       // saveDraft shows the specific error.
+    }
+  }
+
+  const updateReportSectionTitle = (sectionId: string, title: string) => {
+    const nextDraft = {
+      ...draftRef.current,
+      sections: draftRef.current.sections.map((section) =>
+        getSectionInstanceId(section) === sectionId ? { ...section, title } : section
+      ),
+    }
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+  }
+
+  const saveReportSectionTitle = async (sectionId: string, title: string) => {
+    const section = draftRef.current.sections.find((item) => getSectionInstanceId(item) === sectionId)
+    if (!section || locked) return
+    updateReportSectionTitle(sectionId, title.trim() || getSectionTypeOption(sectionTypeOptions, section.key)?.title || 'Rapportdel')
+    await saveDraft(draftRef.current, 'Kunde inte spara rubriken.')
+  }
+
+  const registerTextSaveHandle = (key: string, handle: DebouncedTextareaSaveHandle | null) => {
+    if (handle) textSaveHandles.current.set(key, handle)
+    else textSaveHandles.current.delete(key)
+  }
+
+  const openReportPreview = async () => {
+    if (previewOpeningRef.current) return
+    if (customerEditsPendingRef.current) {
+      toast.error('Spara beställaruppgifterna innan du förhandsgranskar.')
+      return
+    }
+    previewOpeningRef.current = true
+    setPreviewOpening(true)
+    try {
+      if (!locked) {
+        await Promise.all(Array.from(textSaveHandles.current.values(), (handle) => handle.flush()))
+        if (appendixReorderTimerRef.current) {
+          window.clearTimeout(appendixReorderTimerRef.current)
+          appendixReorderTimerRef.current = null
+        }
+        if (!(await persistAppendixImageOrder(appendixReorderVersionRef.current))) {
+          throw new Error('Bildordningen kunde inte sparas.')
+        }
+        // One final queued snapshot includes blur fields and text in collapsed sections.
+        // It runs after earlier saves and never regenerates or rewrites report content.
+        await savePatch({
+          reportDraft: draftRef.current,
+          title,
+          projectType,
+          ...objectDetailsRef.current,
+        })
+      }
+      // Commit saved state and remove stale unload guards before full-page navigation.
+      // Unlike animation frames, this also completes when the tab is in the background.
+      flushSync(() => setPreviewOpening(false))
+      previewOpeningRef.current = false
+      window.location.assign(organizationUrl(
+        `/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`,
+        investigation.orgId
+      ))
+    } catch {
+      toast.error('Förhandsgranskningen kunde inte öppnas eftersom alla ändringar inte har sparats. Dina ändringar finns kvar här. Försök igen.')
+      previewOpeningRef.current = false
+      setPreviewOpening(false)
     }
   }
 
@@ -2077,26 +2148,32 @@ export default function TuInvestigationEditorClient({
     return updates
   }
 
-  const persistAppendixImageOrder = async (version: number) => {
+  const persistAppendixImageOrder = (version: number): Promise<boolean> => {
+    const previous = appendixReorderSaveRef.current
+    if (previous?.version === version) return previous.promise
     const updates = appendixReorderUpdatesRef.current
     if (updates.length === 0) {
       if (version === appendixReorderVersionRef.current) setAppendixReorderStatus('idle')
-      return
+      return previous?.promise ?? Promise.resolve(true)
     }
 
     setAppendixReorderStatus('saving')
-    try {
-      await Promise.all(
-        updates.map((update) => patchImageRequest(update.id, { sortOrder: update.sortOrder }))
-      )
-    } catch (orderError) {
-      setImageError(orderError instanceof Error ? orderError.message : 'Kunde inte spara bildordningen.')
-    } finally {
-      if (version === appendixReorderVersionRef.current) {
-        appendixReorderUpdatesRef.current = []
-        setAppendixReorderStatus('idle')
+    const promise = (async () => {
+      await previous?.promise
+      try {
+        await Promise.all(updates.map((update) => patchImageRequest(update.id, { sortOrder: update.sortOrder })))
+        if (version === appendixReorderVersionRef.current) appendixReorderUpdatesRef.current = []
+        return true
+      } catch (orderError) {
+        setImageError(orderError instanceof Error ? orderError.message : 'Kunde inte spara bildordningen.')
+        return false
+      } finally {
+        if (appendixReorderSaveRef.current?.version === version) appendixReorderSaveRef.current = null
+        if (version === appendixReorderVersionRef.current) setAppendixReorderStatus('idle')
       }
-    }
+    })()
+    appendixReorderSaveRef.current = { version, promise }
+    return promise
   }
 
   const scheduleAppendixImageOrderSave = (updates: AppendixImageOrderUpdate[]) => {
@@ -2382,7 +2459,7 @@ export default function TuInvestigationEditorClient({
   }
 
   return (
-    <main className="min-h-screen bg-violet-50/40">
+    <main className="min-h-screen bg-violet-50/40" inert={previewOpening} aria-busy={previewOpening}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-6">
         <header className="space-y-4 border-b border-violet-100 pb-4">
           <Link
@@ -2565,16 +2642,16 @@ export default function TuInvestigationEditorClient({
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:items-end">
-            <Link
-              href={organizationUrl(
-                `/tu/investigations/${encodeURIComponent(investigation.inspectionId)}/print`,
-                investigation.orgId
-              )}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50"
+            <button
+              type="button"
+              onClick={() => void openReportPreview()}
+              disabled={previewOpening || imageBusy || imageActionIds.size > 0 || documentBusy || Object.keys(documentActionTargets).length > 0 || aiBusy}
+              aria-busy={previewOpening}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-violet-200 bg-white px-3 py-2 text-sm font-semibold text-violet-800 shadow-sm transition hover:bg-violet-50 disabled:cursor-wait disabled:opacity-60"
             >
-              <Printer size={16} aria-hidden />
-              Förhandsgranska utkast
-            </Link>
+              {previewOpening ? <Loader2 size={16} className="animate-spin" aria-hidden /> : <Printer size={16} aria-hidden />}
+              {previewOpening ? 'Sparar inför förhandsgranskning...' : 'Förhandsgranska utkast'}
+            </button>
             <button
               type="button"
               onClick={() => setWorkspaceView('delivery')}
@@ -3425,12 +3502,13 @@ export default function TuInvestigationEditorClient({
                           </button>
                         </div>
                       </div>
-                      <textarea
+                      <DebouncedTextarea
                         value={image.reportCaption ?? image.caption ?? ''}
+                        draftKey={`tu:${investigation.inspectionId}:image:${image.id}`}
+                        saveHandleRef={(handle) => registerTextSaveHandle(`image:${image.id}`, handle)}
                         rows={3}
                         disabled={locked || actionPending}
-                        onChange={(event) => {
-                          const reportCaption = event.target.value
+                        onValueChange={(reportCaption) => {
                           setImages((current) => {
                             const next = current.map((currentImage) =>
                               currentImage.id === image.id ? { ...currentImage, reportCaption } : currentImage
@@ -3439,7 +3517,17 @@ export default function TuInvestigationEditorClient({
                             return next
                           })
                         }}
-                        onBlur={(event) => void patchImage(image.id, { reportCaption: event.target.value })}
+                        onSave={async (reportCaption) => {
+                          setImageError(null)
+                          const pending = imageCaptionSavesRef.current.then(() => patchImageRequest(image.id, { reportCaption }))
+                          imageCaptionSavesRef.current = pending.catch(() => undefined)
+                          try {
+                            await pending
+                          } catch (saveError) {
+                            setImageError('Kunde inte spara bildtexten. Försök igen.')
+                            throw saveError
+                          }
+                        }}
                         className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-5 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
                         placeholder="Plats, byggnadsdel och vad bilden visar"
                       />
@@ -3662,10 +3750,7 @@ export default function TuInvestigationEditorClient({
 
           {reportEditorSections.map((section, index) => {
             const sectionId = getSectionInstanceId(section)
-            const sectionDisplayTitle = resolveTuReportSectionPolicy(
-              initialInvestigation.reportTemplateKey,
-              section.key
-            )?.title ?? section.title
+            const sectionDisplayTitle = resolveTuReportSectionTitle(initialInvestigation.reportTemplateKey, section)
             const sectionNumberLabel = String(visibleSections.findIndex((item) => getSectionInstanceId(item) === sectionId) + 1)
             const isProtected = PROTECTED_SECTION_KEYS.has(section.key)
             const canChangeSectionType = !isProtected && !section.isRequired
@@ -3683,30 +3768,27 @@ export default function TuInvestigationEditorClient({
                   id={`tu-section-${sectionId}`}
                   className="rounded-lg border border-violet-100 bg-white p-4 shadow-sm"
                 >
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                     <span className="text-base font-semibold text-gray-950">{sectionNumberLabel}.</span>
-                    {!canChangeSectionType ? (
+                    {isProtected ? (
                       <h2 className="text-base font-semibold text-gray-950">{sectionDisplayTitle}</h2>
                     ) : (
-                      <select
-                        value={section.key}
+                      <DebouncedTextarea
+                        value={section.title}
+                        draftKey={`tu:${investigation.inspectionId}:${sectionId}:title`}
+                        saveHandleRef={(handle) => registerTextSaveHandle(`title:${sectionId}`, handle)}
+                        autoGrow
+                        rows={1}
                         disabled={locked}
-                        onChange={(event) =>
-                          void changeReportSectionType(sectionId, event.target.value as TuReportSectionKey)
-                        }
-                        className="h-9 min-w-[260px] rounded-md border border-gray-300 bg-white px-3 text-sm font-semibold text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
-                        aria-label="Välj deltyp"
-                      >
-                        {sectionOptions.map((option) => (
-                          <option key={option.key} value={option.key}>
-                            {option.title}
-                          </option>
-                        ))}
-                      </select>
+                        onValueChange={(value) => updateReportSectionTitle(sectionId, value)}
+                        onSave={(value) => saveReportSectionTitle(sectionId, value)}
+                        className="min-h-10 min-w-0 flex-1 resize-none overflow-hidden rounded-md border border-gray-300 bg-white px-3 py-2 text-base font-semibold leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"
+                        aria-label={`Rubrik för del ${sectionNumberLabel}`}
+                      />
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex shrink-0 items-center justify-end gap-1.5">
                     {!HIDDEN_SECTION_KEYS.has(section.key) ? (
                       <button
                         type="button"
@@ -3769,9 +3851,23 @@ export default function TuInvestigationEditorClient({
 
                 {collapsed ? null : (
                   <div className="space-y-4">
+                    {canChangeSectionType ? (
+                      <label className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-600">
+                        Deltyp
+                        <select
+                          value={section.key}
+                          disabled={locked}
+                          onChange={(event) => void changeReportSectionType(sectionId, event.target.value as TuReportSectionKey)}
+                          className="min-h-9 w-full min-w-0 max-w-full rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-950 sm:w-auto disabled:bg-gray-100"
+                        >
+                          {sectionOptions.map((option) => <option key={option.key} value={option.key}>{option.title}</option>)}
+                        </select>
+                      </label>
+                    ) : null}
                     <DebouncedTextarea
                       value={section.text}
                       draftKey={`tu:${investigation.inspectionId}:${sectionId}`}
+                      saveHandleRef={(handle) => registerTextSaveHandle(`section:${sectionId}`, handle)}
                       data-tu-section-textarea="true"
                       disabled={locked}
                       rows={7}
@@ -3846,7 +3942,9 @@ export default function TuInvestigationEditorClient({
                               </div>
                               <DebouncedTextarea
                                 value={subsection.text}
+                                aria-label={`Text för underrubrik ${sectionNumberLabel}.${subsectionIndex + 1}`}
                                 draftKey={`tu:${investigation.inspectionId}:${sectionId}:${subsection.id}`}
+                                saveHandleRef={(handle) => registerTextSaveHandle(`subsection:${sectionId}:${subsection.id}`, handle)}
                                 disabled={locked}
                                 rows={4}
                                 className="w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 text-sm leading-6 text-gray-950 outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100 disabled:bg-gray-100 disabled:text-gray-500"

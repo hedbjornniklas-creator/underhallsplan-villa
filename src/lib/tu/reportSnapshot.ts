@@ -10,7 +10,7 @@ import type {
 import {
   resolveTuReportDocumentTitle,
   resolveTuReportProjectType,
-  resolveTuReportSectionPolicy,
+  resolveTuReportSectionTitle,
 } from '@/lib/tu/reportTemplates'
 import type { TuObservation } from '@/lib/tu/evidence'
 import { resolveTuPrintImageCaption } from '@/lib/tu/imageAppendix'
@@ -463,8 +463,7 @@ export function buildTuPrintPayload(input: {
     .map((section) => ({
       id: section.id,
       key: section.key,
-      title: resolveTuReportSectionPolicy(investigation.reportTemplateKey, section.key)?.title
-        ?? section.title,
+      title: resolveTuReportSectionTitle(investigation.reportTemplateKey, section),
       text: normalizeSectionText(section.key, section.text),
       subsections: (section.subsections ?? [])
         .map((subsection) => ({

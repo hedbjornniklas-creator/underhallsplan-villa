@@ -30,7 +30,7 @@ import { buildReportPdfFileName } from '@/lib/report/reportFileName'
 import {
   resolveTuReportDocumentTitle,
   resolveTuReportProjectType,
-  resolveTuReportSectionPolicy,
+  resolveTuReportSectionTitle,
 } from '@/lib/tu/reportTemplates'
 
 export const dynamic = 'force-dynamic'
@@ -406,8 +406,7 @@ export default async function TuInvestigationPrintPage({
     .map((section) => ({
       id: section.id,
       key: section.key,
-      title: resolveTuReportSectionPolicy(investigation.reportTemplateKey, section.key)?.title
-        ?? section.title,
+      title: resolveTuReportSectionTitle(investigation.reportTemplateKey, section),
       text: normalizeSectionText(section.key, section.text),
       subsections: (section.subsections ?? [])
         .map((subsection) => ({
