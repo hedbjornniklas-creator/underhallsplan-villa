@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import DetailPage from '../../src/app/(dashboard)/tu/assignments/[id]/page'
-import ListPage from '../../src/app/(dashboard)/tu/assignments/page'
+import TuOverview from '../../src/components/tu/TuOverview'
+import TuDeleteInvestigationButton from '../../src/components/tu/TuDeleteInvestigationButton'
 import { AppToastProvider } from '../../src/components/ui/AppToastProvider'
 import { tuAssignment } from './tu-overview-data'
 import type { AssignmentDetails, AssignmentStatus } from '../../src/lib/assignments/server'
@@ -13,6 +14,7 @@ import type { TuAssignmentWorkflow } from '../../src/lib/tu/assignmentWorkflow'
 const mode = new URLSearchParams(location.search).get('state') || 'sent'
 const listView = new URLSearchParams(location.search).get('view') === 'list'
 const workflowView = new URLSearchParams(location.search).get('view') === 'workflow'
+const deleteView = new URLSearchParams(location.search).get('view') === 'delete'
 let sequence = 0
 const version = () => new Date(Date.UTC(2026, 9, 15, 8, 0, ++sequence)).toISOString()
 let record: AssignmentDetails & { progress?: TuAssignmentProgress } = {
@@ -39,6 +41,12 @@ let workflow: TuAssignmentWorkflow = {
 }
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
+  if (url.pathname === '/api/tu/investigations/test-investigation' && init?.method === 'DELETE') {
+    if (url.searchParams.get('orgId') !== record.org_id) throw new Error('Wrong organization')
+    document.getElementById('request-count')!.textContent = String(++actions)
+    if (slow) await new Promise(resolve => setTimeout(resolve, 500))
+    return fail ? Response.json({ error: 'internal diagnostics' }, { status: 503 }) : Response.json({ inspectionId: 'test-investigation' })
+  }
   if (url.pathname.endsWith('/assignment-workflow')) {
     if (slow) await new Promise(resolve => setTimeout(resolve, 1800))
     if (fail) return Response.json({ error: 'Uppdragsstatus kunde inte uppdateras. Försök igen.' }, { status: 503 })
@@ -88,6 +96,7 @@ window.fetch = async (input, init) => {
 
 function Preview() {
   const [key, setKey] = useState(0)
+  const refresh = () => setKey(value => value + 1)
   return <AppToastProvider><aside className="flex flex-wrap items-center gap-4 border-b border-slate-300 bg-white p-3 text-sm">
     <strong>Lokal testvy. Inga kundmejl eller verkliga ändringar.</strong>
     <label><input type="checkbox" onChange={event => { fail = event.target.checked }} /> Simulera fel</label>
@@ -95,8 +104,11 @@ function Preview() {
     <button type="button" onClick={() => { record.updated_at = version() }}>Ändra i annan flik</button>
     <button type="button" onClick={() => setKey(value => value + 1)}>Ladda om testvy</button>
     <output>Åtgärder: <span id="request-count">0</span></output><output id="navigation-result" />
-  </aside>{workflowView ? <TuAssignmentWorkflowBoundary key={key} initialWorkflow={workflow} inspectionId={workflow.inspectionId} orgId={record.org_id}>
+  </aside>{deleteView ? <TuDeleteInvestigationButton inspectionId="test-investigation" organizationId={record.org_id}
+    title="Syntetisk testutredning" locked={mode === 'locked'} /> : workflowView ? <TuAssignmentWorkflowBoundary key={key} initialWorkflow={workflow} inspectionId={workflow.inspectionId} orgId={record.org_id}>
     <div className="mx-auto max-w-5xl p-4"><h1 className="mb-3 text-xl font-semibold">Granska utlåtandet</h1><label>Rapporttext<textarea className="mt-2 min-h-40 w-full border p-3" defaultValue="Denna manuellt redigerade rapporttext ska bevaras." /></label></div>
-  </TuAssignmentWorkflowBoundary> : listView ? <ListPage key={key} /> : <DetailPage key={key} />}</AppToastProvider>
+  </TuAssignmentWorkflowBoundary> : listView ? <TuOverview key={key} organizationId={record.org_id}
+    assignments={[{ ...record, assignment_type: 'TU' }]} investigations={[]} loading={false} error={null} busy={false}
+    onRefresh={refresh} onStartAssignment={() => { document.getElementById('navigation-result')!.textContent = `/tu/assignments/${record.id}?orgId=${record.org_id}` }} /> : <DetailPage key={key} />}</AppToastProvider>
 }
 createRoot(document.getElementById('root')!).render(<Preview />)

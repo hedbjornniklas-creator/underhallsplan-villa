@@ -118,9 +118,12 @@ export default function TuOverview({ organizationId, assignments, investigations
   return <section className="obo tu-overview" aria-labelledby={heading} aria-busy={loading}>
     <div className="obo-heading">
       <h2 id={heading}>TU-uppdrag</h2>
-      <button type="button" className="obo-icon" onClick={onRefresh} disabled={loading || busy} aria-label="Uppdatera uppdragslistan" title="Uppdatera uppdragslistan">
-        <RefreshCw size={20} className={loading ? 'obo-spinning' : undefined} aria-hidden />
-      </button>
+      <div className="tu-overview-refresh">
+        <span className="tu-overview-status" role="status" aria-live="polite">{loading ? 'Uppdaterar listan...' : ''}</span>
+        <button type="button" className="obo-icon" onClick={onRefresh} disabled={loading || busy} aria-label="Uppdatera uppdragslistan" title="Uppdatera uppdragslistan">
+          <RefreshCw size={20} className={loading ? 'obo-spinning' : undefined} aria-hidden />
+        </button>
+      </div>
     </div>
     <div className="obo-workspace">
       <div className="obo-toolbar">
@@ -152,7 +155,6 @@ export default function TuOverview({ organizationId, assignments, investigations
       {filter === 'to-invoice' && <p className="tu-billing-help">Klara utredningar som inte har markerats fakturerade. Ändra markeringen i utredningens leveranssteg.</p>}
       {filter === 'to-invoice' && result.unavailableBillingCount > 0 && <p className="tu-billing-unavailable" role="status">Fakturastatus kunde inte hämtas för {result.unavailableBillingCount} klara utredningar. Dessa ingår inte i urvalet. Försök uppdatera listan.</p>}
       {error && <div className="obo-error" role="alert"><p>{error}</p><button type="button" onClick={onRefresh} disabled={loading || busy}>Försök igen</button></div>}
-      {loading && <p className="obo-empty" role="status">Uppdaterar uppdragslistan...</p>}
       {!result.items.length && !loading && !error && <div className="obo-empty" role="status">
         <p>{filtered ? 'Inga uppdrag matchar dina val.' : 'Inga TU-uppdrag ännu.'}</p>
         {filtered && <button type="button" onClick={resetFilters}>Rensa filter</button>}

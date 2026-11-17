@@ -6,7 +6,7 @@ import { decryptTuReportLinkToken, encryptTuReportLinkToken } from '../src/lib/t
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 const delivery = read('src/app/api/tu/investigations/[inspectionId]/report-delivery/route.ts')
-const list = read('src/app/(dashboard)/tu/investigations/page.tsx')
+const deliveryActions = read('src/components/tu/TuPrintActions.tsx')
 
 test('encrypts the bearer token and detects corrupted ciphertext', () => {
   const previous = process.env.TU_REPORT_LINK_ENCRYPTION_KEY
@@ -36,6 +36,6 @@ test('resends the latest published revision without revoking its existing link',
 test('keeps an old link alive during the one-time legacy replacement', () => {
   assert.match(delivery, /if \(currentRevision\.status === 'published' && currentRevision\.published_link_id\) \{\s*if \(!reusingPublishedLink\) \{\s*await replacePublishedTuLink/u)
   assert.match(delivery, /tu_token_ciphertext: encryptTuReportLinkToken\(token\)/u)
-  assert.match(list, /Skicka om publicerat utlåtande/u)
-  assert.match(list, /tidigare delade länkar fortsätter fungera/u)
+  assert.match(deliveryActions, /Skicka om samma länk/u)
+  assert.match(deliveryActions, /tidigare delade länkar fortsätter fungera/u)
 })

@@ -134,12 +134,12 @@ export default function TuAssignmentDetailPage() {
                   if (!window.dispatchEvent(new CustomEvent('hushub:before-organization-switch', { cancelable: true }))) return
                   router.push(
                     organizationId
-                      ? organizationUrl('/tu/assignments', organizationId)
-                      : '/tu/assignments'
+                      ? organizationUrl('/tu', organizationId)
+                      : '/tu'
                   )
                 }}
-                aria-label="Till uppdragsbekräftelser"
-                title="Till uppdragsbekräftelser"
+                aria-label="Till TU-översikten"
+                title="Till TU-översikten"
                 className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"
               >
                 <ArrowLeft size={17} aria-hidden />

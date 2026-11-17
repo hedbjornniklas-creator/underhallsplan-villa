@@ -11,7 +11,12 @@ declare global {
   }
 }
 const mode = new URLSearchParams(location.search).get('state')
-const previewData = () => mode === 'billing' ? tuOverviewBillingDemo() : tuOverviewDemo()
+const previewData = () => {
+  if (mode === 'billing') return tuOverviewBillingDemo()
+  const data = tuOverviewDemo()
+  if (mode === 'layout') data.investigations[0].hasReadyPdf = true
+  return data
+}
 window.__tuOverviewTest = { fail: mode === 'error', empty: mode === 'empty', wrongOrg: false, delay: 0, reads: [], writes: 0, submissions: [], failSave: false }
 window.fetch = async (input, init) => {
   if ((init?.method ?? 'GET') !== 'GET') {
@@ -47,6 +52,6 @@ createRoot(document.getElementById('root')!).render(<AppToastProvider>
   </header>
   <TuDashboardClient organizationId={tuPreviewOrg} organizationName="Exempelbolaget AB"
     initialAssignments={mode ? [] : data.assignments} initialInvestigations={mode ? [] : data.investigations}
-    initialReportTemplates={TU_STANDARD_REPORT_TEMPLATES} inspectorProfile={null} initialError={null}
-    initialCopySource={mode === 'copy' ? tuCopyDemo : mode === 'inactive-template' ? { ...tuCopyDemo, reportTemplateKey: 'removed-template' } : null} />
+    initialReportTemplates={TU_STANDARD_REPORT_TEMPLATES.filter(template => template.isActive)} inspectorProfile={null} initialError={null}
+    initialCopySource={mode === 'copy' ? tuCopyDemo : mode === 'inactive-template' ? { ...tuCopyDemo, reportTemplateKey: 'moisture_damage_investigation' } : null} />
 </AppToastProvider>)

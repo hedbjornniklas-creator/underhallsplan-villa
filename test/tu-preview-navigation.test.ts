@@ -56,6 +56,8 @@ async function openInvestigation(query: { orgId?: string; view?: string | string
   }>> } }
   const require = createRequire(import.meta.url)
   new Function('require', 'module', 'exports', code)((name: string) => {
+    if (name === '@/lib/auth/returnPath') return { authLoginUrl: () => '/login' }
+    if (name === '@/lib/auth/serverRecovery') return { currentAuthReturnPath: async (path: string) => path }
     if (name === 'next/navigation') return {
       notFound: () => { throw new Error('Unexpected notFound') },
       redirect: () => { throw new Error('Unexpected redirect') },

@@ -1,12 +1,24 @@
+.tu-overview-refresh { display:flex; align-items:center; gap:.5rem; }
+.tu-overview-status { width:9rem; min-height:1.25rem; color:#596571; font-size:.875rem; line-height:1.25rem; }
+@container ob-overview (width < 24rem) {
+  .tu-overview .obo-heading { gap:.5rem; }
+  .tu-overview-status { width:5rem; min-height:2.5rem; }
+}
 .tu-overview .obo-actions .tu-start-investigation { display: inline-flex; align-items: center; justify-content: center; width: 44px; min-height: 44px; padding: 0; border: 0; color: #245eb5; background: transparent; }
 .tu-overview .tu-start-investigation > span { display: none; }
+.tu-overview .obo-table th:nth-child(2) { width:18%; }
 .tu-overview .obo-table th:nth-child(3) { width:8%; }
-.tu-overview .obo-table th:nth-child(4) { width:11%; }
+.tu-overview .obo-table th:nth-child(4) { width:auto; }
 .tu-overview .obo-table th:nth-child(5) { width:10rem; }
 .tu-overview .obo-table th:nth-child(6) { width:6rem; }
-.tu-overview .obo-table th:nth-child(7) { width:8rem; }
-.tu-overview .obo-table th:nth-child(8) { width:3.5rem; }
-.tu-overview .obo-table th:nth-child(9) { width:9.5rem; }
+.tu-overview .obo-table th:nth-child(7) { width:7rem; }
+.tu-overview .obo-table th:nth-child(8) { width:3.25rem; }
+.tu-overview .obo-table th:nth-child(9) { width:15rem; }
+@container ob-overview (min-width:70rem) {
+  .tu-overview .obo-action-links { display:flex; flex-wrap:nowrap; justify-content:flex-end; }
+  .tu-overview .obo-action-links > :is(a,button) { flex:0 0 44px; }
+  .tu-overview .obo-date { white-space:nowrap; }
+}
 .tu-billing-help { margin:.75rem 1rem; color:#596571; overflow-wrap:anywhere; }
 .tu-billing-unavailable { margin:.75rem 1rem; padding:.75rem; border:1px solid #e6cf90; background:#fffbeb; color:#70531d; border-radius:4px; font-size:.875rem; overflow-wrap:anywhere; }
 /* Nine columns need more room; keep TU's reflow local to this module. */

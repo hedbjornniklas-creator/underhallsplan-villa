@@ -2,7 +2,7 @@ import type { TuCopySource } from '../../src/lib/tu/copy'
 
 export const tuCopyDemo: TuCopySource = {
   inspectionId: '22222222-2222-4222-8222-222222222222',
-  title: 'Tidigare utredning', reportTemplateKey: 'moisture_damage_investigation',
+  title: 'Tidigare utredning', reportTemplateKey: 'deep_technical_investigation',
   objectType: 'villa', customerType: 'consumer',
   customerName: 'Anna Exempel', customerEmail: 'anna@example.com', customerPhone: '0701234567',
   customerAddress: 'Kundgatan 1', customerPostalCode: '12345', customerCity: 'Teststad',

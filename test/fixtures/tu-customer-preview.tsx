@@ -92,7 +92,7 @@ function Report() {
 createRoot(document.getElementById('root')!).render(<AppToastProvider>
   {['print', 'digital'].includes(query.get('screen') ?? '') ? <Report /> : query.get('screen') === 'customer' ? <InvestigationCustomer /> : query.get('screen') === 'accept' ? <AcceptPage /> : query.get('screen') === 'edit' ? <Edit /> :
     <TuDashboardClient organizationId={tuPreviewOrg} organizationName="Testbolaget"
-      initialAssignments={[]} initialInvestigations={[]} initialReportTemplates={TU_STANDARD_REPORT_TEMPLATES}
+      initialAssignments={[]} initialInvestigations={[]} initialReportTemplates={TU_STANDARD_REPORT_TEMPLATES.filter(template => template.isActive)}
       inspectorProfile={null} initialError={null} initialCopySource={{ ...tuCopyDemo, customerType: kind,
         tuCustomer: customer, customerIdentityNumber: customer.identityNumber, customerBinding: null }} />}
 </AppToastProvider>)

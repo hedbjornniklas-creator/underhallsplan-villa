@@ -774,9 +774,7 @@ export default function TuDashboardClient({
               <button type="button" className="obh-primary" disabled={Boolean(busy)} onClick={() => openCreationDialog('scratch')}>
                 <Plus size={20} aria-hidden /><span>Ny utredning</span>
               </button>
-              <nav className="obh-list-links ml-auto flex flex-wrap gap-x-5 gap-y-1 [&>a]:min-h-11 [&>a]:text-[#245eb5]" aria-label="TU-listor och profil">
-                <PendingLink href={organizationUrl('/tu/assignments', organizationId)} autoPending pendingLabel="Öppnar bekräftelser...">Alla uppdragsbekräftelser</PendingLink>
-                <PendingLink href={organizationUrl('/tu/investigations', organizationId)} autoPending pendingLabel="Öppnar utredningar...">Alla utredningar</PendingLink>
+              <nav className="obh-list-links ml-auto flex flex-wrap gap-x-5 gap-y-1 [&>a]:min-h-11 [&>a]:text-[#245eb5]" aria-label="TU-profil">
                 <PendingLink href={organizationUrl('/settings/profil', organizationId)} autoPending pendingLabel="Öppnar visitkort..."
                   icon={<IdCard size={18} aria-hidden />}>Visitkort</PendingLink>
               </nav>

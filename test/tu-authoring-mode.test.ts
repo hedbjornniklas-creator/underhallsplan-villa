@@ -3,6 +3,19 @@ import test from 'node:test'
 
 // @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
 import { isTuReportAuthoringMode, resolveTuReportAuthoringMode, tuReportAuthoringModeLabel, usesTuAiAssistedWorkflow } from '../src/lib/tu/authoring.ts'
+// @ts-expect-error Node's strip-types test runner requires the explicit TypeScript extension.
+import { TU_STANDARD_REPORT_TEMPLATES } from '../src/lib/tu/reportTemplates.ts'
+
+test('retires the moisture template without removing existing report definitions or other templates', () => {
+  const moisture = TU_STANDARD_REPORT_TEMPLATES.find(template => template.key === 'moisture_damage_investigation')
+  assert.ok(moisture)
+  assert.equal(moisture.isActive, false)
+  assert.equal(moisture.authoringMode, 'ai_assisted')
+  assert.equal(moisture.sections?.length, 4)
+  for (const template of TU_STANDARD_REPORT_TEMPLATES.filter(template => template !== moisture)) {
+    assert.equal(template.isActive, true, template.key)
+  }
+})
 
 test('accepts only supported TU authoring modes', () => {
   assert.equal(isTuReportAuthoringMode('standard'), true)

@@ -394,7 +394,7 @@ export const TU_STANDARD_REPORT_TEMPLATES: TuReportTemplateOption[] = [
     workflowProfile: 'field_report',
     version: 2,
     sortOrder: 150,
-    isActive: true,
+    isActive: false,
     isSystem: true,
     sections: [
       {

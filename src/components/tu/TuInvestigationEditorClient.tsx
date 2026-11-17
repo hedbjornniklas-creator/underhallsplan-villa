@@ -25,6 +25,7 @@ import { usesTuAiAssistedWorkflow } from '@/lib/tu/authoring'
 import { normalizeTuOrdererRole } from '@/lib/tu/customerRole'
 import { getTuRequiredReportSectionsBlocker } from '@/lib/tu/reportQuality'
 import TuCopyInvestigationLink from './TuCopyInvestigationLink'
+import TuDeleteInvestigationButton from './TuDeleteInvestigationButton'
 import type { TuDocumentAnalysisSourceRole, TuInvestigationDocument } from '@/lib/tu/documents'
 import { effectiveTuReportImageCaption, isGenericTuImageCaption } from '@/lib/tu/imageAppendix'
 import {
@@ -2385,11 +2386,11 @@ export default function TuInvestigationEditorClient({
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-6">
         <header className="space-y-4 border-b border-violet-100 pb-4">
           <Link
-            href={organizationUrl('/tu/investigations', investigation.orgId)}
+            href={organizationUrl('/tu', investigation.orgId)}
             className="inline-flex items-center gap-2 text-sm font-medium text-violet-800 hover:text-violet-950"
           >
             <ArrowLeft size={16} aria-hidden />
-            Till tekniska utlåtanden
+            Till TU-översikten
           </Link>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -2401,6 +2402,7 @@ export default function TuInvestigationEditorClient({
             </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
               <TuCopyInvestigationLink inspectionId={investigation.inspectionId} organizationId={investigation.orgId} />
+              <TuDeleteInvestigationButton inspectionId={investigation.inspectionId} organizationId={investigation.orgId} title={title} locked={locked} />
               {!aiWorkflowEnabled ? <button
                 type="button"
                 onClick={openAssignmentScopeEditor}

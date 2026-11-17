@@ -140,6 +140,42 @@ export async function testTuOverview(base, output) {
       await layout(`Att fakturera ${width}`)
     }
     console.log('TU billing: 390/960/1440 layouts, current vs invoiced, unknown status, standalone assignments, read-only/private metadata and 12-row pagination passed.')
+    for (const width of [320, 390, 768, 1170, 1280, 1440, 1920]) {
+      await page.setViewport({ width, height: 1000 })
+      await page.goto(`${base}/tu?state=layout`, { waitUntil: 'networkidle0' })
+      await ready()
+      await page.select('.obo-page-size select', '25')
+      await layout(`Single-line actions ${width}`)
+      assert.equal(await page.$$eval('a', nodes => nodes.some(node => /^\/tu\/(assignments|investigations)$/.test(new URL(node.href).pathname))), false,
+        'No navigation to a retired list remains')
+      const linkedRow = 'tr[data-row-id="investigation:inspection-1"]'
+      assert.equal(await page.$$eval(`${linkedRow} .obo-action-links > a, ${linkedRow} .obo-action-links > button`, nodes => nodes.length), 5,
+        'The widest row includes investigation, confirmation, PDF, assignment actions and copy')
+      if (width >= 1170) {
+        assert.deepEqual(await page.$$eval('tr[data-row-id]', nodes => nodes.filter(row => {
+          const buttons = [...row.querySelectorAll('.obo-action-links > a, .obo-action-links > button')]
+          return getComputedStyle(row).display !== 'table-row' || row.getBoundingClientRect().height > 57 ||
+            buttons.some(button => Math.abs(button.getBoundingClientRect().top - buttons[0].getBoundingClientRect().top) > 1)
+        }).map(row => row.dataset.rowId)), [], `${width}: every action stays on one 56px table row`)
+      }
+      const geometry = () => page.evaluate(() => {
+        const rect = selector => {
+          const box = document.querySelector(selector).getBoundingClientRect()
+          return { top: box.top + scrollY, left: box.left, height: box.height }
+        }
+        return { heading: rect('.obo-heading'), toolbar: rect('.obo-toolbar'), table: rect('.obo-table') }
+      })
+      const before = await geometry()
+      await page.evaluate(() => { window.__tuOverviewTest.delay = 700 })
+      await page.click('button[aria-label="Uppdatera uppdragslistan"]')
+      await page.waitForSelector('.tu-overview[aria-busy="true"]')
+      assert.match(await page.$eval('.tu-overview-status', node => node.textContent), /Uppdaterar listan/)
+      assert.deepEqual(await geometry(), before, `${width}: loading status never moves the list`)
+      await ready()
+      assert.deepEqual(await geometry(), before, `${width}: finishing refresh never moves the list`)
+      await page.screenshot({ path: resolve(output, `tu-stable-list-${width}.png`), fullPage: width >= 1170 })
+    }
+    console.log('TU layout: stable refresh positions, no legacy list links, and five inline actions verified across 7 viewports.')
     await page.goto(`${base}/tu?state=empty`, { waitUntil: 'networkidle0' })
     await ready()
     assert.match(await page.$eval('.obo-empty', node => node.textContent), /Inga TU-uppdrag ännu/)
