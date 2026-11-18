@@ -6,7 +6,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getOrganizationCustomerNavigationContext } from '@/lib/customers/server'
 import { requireRenoAppViewerContext } from '@/lib/renoapp/server'
 import {
-  GLOBAL_SEARCH_MODULE_LIMIT, compactGlobalSearchText, globalSearchCandidatePattern, globalSearchExactCandidatePattern, globalSearchSubtitle,
+  GLOBAL_SEARCH_MODULE_LIMIT, compactGlobalSearchText, globalSearchCandidateAnchor, globalSearchCandidatePattern, globalSearchExactCandidatePattern, globalSearchSubtitle,
   matchesGlobalSearch, rankGlobalSearchResults, selectGlobalSearchKinds,
   type GlobalSearchContext, type GlobalSearchIssue, type GlobalSearchProviderResult, type GlobalSearchResult,
 } from './model'
@@ -42,8 +42,7 @@ const denied = new Set(['MODULE_ACCESS_REQUIRED', 'PRODUCT_ACCESS_REQUIRED', 'OR
   'RENOAPP_MEMBERSHIP_REQUIRED', 'CUSTOMER_ORGANIZATION_MEMBER_REQUIRED', 'CUSTOMER_ORGANIZATION_ADMIN_REQUIRED'])
 
 function candidatePattern(query: string) {
-  const first = query.trim().split(/\s+/u)[0]
-  return globalSearchCandidatePattern(first)
+  return globalSearchCandidatePattern(query)
 }
 
 function chunks(values: string[]) {
@@ -244,8 +243,8 @@ async function renoapp(input: GlobalSearchContext & { query: string }): Promise<
     if (result.error) throw new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED')
     for (const row of result.data ?? []) brfs.set(id(row.id), row)
   }
-  const firstWord = input.query.trim().split(/\s+/u)[0]
-  const designationMatches = [...brfs.values()].filter(row => matchesGlobalSearch(firstWord, text(row.name), text(row.address), text(row.property_designation))).map(row => id(row.id))
+  const anchor = globalSearchCandidateAnchor(input.query) || input.query
+  const designationMatches = [...brfs.values()].filter(row => matchesGlobalSearch(anchor, text(row.name), text(row.address), text(row.property_designation))).map(row => id(row.id))
   const exactBrfIds = [...brfs.values()].filter(row => exactDesignation(input.query, row.property_designation)).map(row => id(row.id))
   const columns = 'id,brf_id,case_number,title,status,unit_number_internal,unit_number_skatteverket'
   const fields = ['case_number', 'title', 'unit_number_internal', 'unit_number_skatteverket']

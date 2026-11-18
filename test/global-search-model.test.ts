@@ -29,6 +29,17 @@ test('literal LIKE patterns cannot turn user wildcard characters into broad matc
   assert.equal(globalSearchCandidatePattern('%_'), '%\\%\\_%')
 })
 
+test('numbered designation anchors prefer the object name over a municipality prefix or city suffix', () => {
+  assert.equal(globalSearchCandidatePattern('Stockholm Paddan 4'), '%p_dd_n%')
+  assert.equal(globalSearchCandidatePattern('Stockholm Paddan4'), '%p_dd_n%')
+  assert.equal(globalSearchCandidatePattern('Vallentuna Stora Luttergärde 1:8'), '%l_tt_rg_rd_%')
+  assert.equal(globalSearchCandidatePattern('Lunkentusvägen 8 Bromma'), '%l_nk_nt_sv_g_n%')
+  assert.equal(globalSearchCandidatePattern('Lunkentusvägen8Bromma'), '%l_nk_nt_sv_g_n%')
+  assert.equal(globalSearchCandidatePattern('Björnen1:12'), '%bj_rn_n%')
+  assert.equal(matchesGlobalSearch('Stockholm Paddan 4', 'Paddan 4', 'Stockholm'), true)
+  assert.equal(matchesGlobalSearch('Stockholm Paddan 4', 'Paddan 4', 'Göteborg'), false)
+})
+
 test('ranking prioritizes a property designation and drops external/unsafe destinations', () => {
   const rows = rankGlobalSearchResults('Björnen 1:12', [
     result('title', { title: 'Björnen 1:12' }),

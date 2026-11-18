@@ -203,7 +203,7 @@ test('Gizmo pages past partial title matches and combines linked property metada
       title: 'Badrum', property_id: index === 59 ? 'target-property' : null })),
     properties: [{ id: 'target-property', name: 'Eken', cadastral_id: 'Eken 3:7', action_cases: [{ org_id: ORG }] }],
   } })
-  const result = await h.search('Badrum Eken3:7')
+  const result = await h.search('Badrum Ek')
   assert.deepEqual(result.results.map(row => row.id), ['tasks:project:project-059'])
   assert(h.calls.some(call => call.table === 'action_cases' && call.offset >= 50))
 })
@@ -307,6 +307,53 @@ test('fulfilled field pages survive another field reaching the deadline', async 
   assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
   assert(result.issues?.some(issue => issue.moduleId === 'properties'))
   assert.equal(result.hasMore, true)
+})
+
+test('municipality plus designation uses the specific anchor without scanning the municipality', async () => {
+  const h = harness({ tasksAllowed: false, data: {
+    properties: Array.from({ length: 80 }, (_, index) => ({ id: `p${String(index).padStart(3, '0')}`, owner: USER,
+      municipality: 'Stockholm', cadastral_id: index === 79 ? 'Paddan 4' : `Eken 1:${index}` })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:p079'])
+  assert.equal(result.hasMore, false)
+  assert(h.calls.filter(call => call.table === 'properties').every(call => call.offset === 0))
+  assert(h.calls.some(call => call.filters.some(([method, , value]) => method === 'ilike' && value === '%p_dd_n%')))
+})
+
+test('city plus street number with a suffix preserves cross-field address matches', async () => {
+  const h = harness({ tasksAllowed: false, data: { properties: [
+    { id: 'street', owner: USER, city: 'Stockholm', address: 'Paddanvägen 4 B', cadastral_id: 'Paddan 4' },
+    { id: 'other-street', owner: USER, city: 'Stockholm', address: 'Ekvägen 4 B' },
+  ] } })
+  const result = await h.search('Stockholm Paddanvägen4B')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:street'])
+  assert(h.calls.some(call => call.filters.some(([method, , value]) => method === 'ilike' && value === '%p_dd_nv_g_n%')))
+})
+
+test('Gizmo combines municipality and designation while narrowing linked-property candidates', async () => {
+  const h = harness({ data: {
+    properties: Array.from({ length: 80 }, (_, index) => ({ id: `p${index}`, owner: 'colleague', municipality: 'Stockholm',
+      cadastral_id: index === 79 ? 'Paddan 4' : `Eken 1:${index}`, action_cases: [{ org_id: ORG }] })),
+    action_cases: Array.from({ length: 80 }, (_, index) => ({ id: `project-${String(index).padStart(3, '0')}`, org_id: ORG, property_id: `p${index}`, title: 'Åtgärder' })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['tasks:project:project-079'])
+  assert(h.calls.filter(call => call.table === 'action_cases').every(call => call.offset === 0))
+  assert(h.calls.filter(call => call.mode === 'admin' && call.table === 'properties').every(call => call.offset === 0))
+})
+
+test('RenoApp narrows BRFs by the same specific designation anchor', async () => {
+  const brfIds = Array.from({ length: 80 }, (_, index) => `brf-${index}`)
+  const h = harness({ tasksAllowed: false, authorizedBrfs: brfIds, data: {
+    brf_associations: brfIds.map((id, index) => ({ id, address: 'Stockholm', property_designation: index === 79 ? 'Paddan 4' : `Eken 1:${index}` })),
+    renovation_cases: brfIds.map((brf_id, index) => ({ id: `case-${String(index).padStart(3, '0')}`, brf_id, title: 'Badrum' })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['renoapp:case:case-079'])
+  const relationReads = h.calls.filter(call => call.table === 'renovation_cases' && !call.filters.some(([method]) => method === 'ilike'))
+  assert(relationReads.length > 0)
+  assert(relationReads.every(call => call.filters.some(([method, field, value]) => method === 'in' && field === 'brf_id' && (value as string[]).length === 1 && (value as string[])[0] === 'brf-79')))
 })
 
 test('completed pages survive an SDK abort returned as an error response', async () => {

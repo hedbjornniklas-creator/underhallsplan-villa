@@ -8,7 +8,7 @@ export class GlobalSearchAborted extends Error {
 }
 
 /** One request only. Shared concurrency and cancellation for all search providers. */
-export function createGlobalSearchExecution(parent?: AbortSignal, timeoutMs = 8000, concurrency = 4): GlobalSearchExecution & { dispose(): void } {
+export function createGlobalSearchExecution(parent?: AbortSignal, timeoutMs = 12000, concurrency = 4): GlobalSearchExecution & { dispose(): void } {
   const controller = new AbortController()
   const { signal } = controller
   const abort = () => controller.abort(new GlobalSearchAborted())
