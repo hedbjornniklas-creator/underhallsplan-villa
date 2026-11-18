@@ -95,7 +95,7 @@ async function readFields(database: Database, table: string, columns: string, sc
       for (const pageResult of pages) {
         if (pageResult.status === 'rejected') { failure ??= pageResult.reason; continue }
         const { source, result } = pageResult.value
-        if (result.error) throw new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED')
+        if (result.error) { failure ??= new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED'); continue }
         const page = result.data ?? []
         if (page.length > PAGE_SIZE) throw new Error('GLOBAL_SEARCH_SOURCE_INVALID')
         source.done = page.length < PAGE_SIZE

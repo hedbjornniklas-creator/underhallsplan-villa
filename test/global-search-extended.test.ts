@@ -39,6 +39,7 @@ function harness(options: {
   data?: Record<string, Row[]>; tasksAllowed?: boolean; customerAllowed?: boolean;
   authorizedBrfs?: string[]; renoError?: string; failedTables?: string[];
   timeoutFields?: string[]
+  timeoutResponse?: () => void
   execution?: { signal: AbortSignal; run<T>(work: () => Promise<T>): Promise<T>; check(): void }
   taskAccess?: () => Promise<boolean>
 } = {}) {
@@ -70,6 +71,10 @@ function harness(options: {
     ): PromiseLike<TResult1 | TResult2> {
       calls.push({ mode: this.mode, table: this.table, columns: this.columns, filters: this.filters, offset: this.offset, size: this.size })
       if (this.filters.some(([method, field]) => method === 'ilike' && options.timeoutFields?.includes(`${this.table}.${field}`))) {
+        if (options.timeoutResponse) {
+          options.timeoutResponse()
+          return Promise.resolve({ data: null, error: { message: 'Aborted database request' } }).then(fulfilled, rejected)
+        }
         return Promise.reject(new Error('GLOBAL_SEARCH_TIMEOUT')).then(fulfilled, rejected)
       }
       if (options.failedTables?.includes(this.table)) return Promise.resolve({ data: null, error: { message: 'Private database failure' } }).then(fulfilled, rejected)
@@ -298,6 +303,19 @@ test('fulfilled field pages survive another field reaching the deadline', async 
   const h = harness({ tasksAllowed: false, timeoutFields: ['properties.address'], data: {
     properties: [{ id: 'found-by-name', owner: USER, name: 'Harsyran', cadastral_id: 'Annan 1:2' }],
   } })
+  const result = await h.search('Harsyran')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
+  assert(result.issues?.some(issue => issue.moduleId === 'properties'))
+  assert.equal(result.hasMore, true)
+})
+
+test('completed pages survive an SDK abort returned as an error response', async () => {
+  const controller = new AbortController()
+  const h = harness({ tasksAllowed: false, timeoutFields: ['properties.address'],
+    timeoutResponse: () => controller.abort(new Error('GLOBAL_SEARCH_TIMEOUT')),
+    execution: { signal: controller.signal, run: async work => work(), check() {} },
+    data: { properties: [{ id: 'found-by-name', owner: USER, name: 'Harsyran', cadastral_id: 'Annan 1:2' }] },
+  })
   const result = await h.search('Harsyran')
   assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
   assert(result.issues?.some(issue => issue.moduleId === 'properties'))
