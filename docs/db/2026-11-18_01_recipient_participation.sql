@@ -183,7 +183,7 @@ language plpgsql security definer set search_path=public,pg_catalog as $$
 declare identity_value uuid:=public.recipient_session_identity(p_auth_user_id);
 begin
   if identity_value is null then return; end if;
-  return query select g.id,g.org_id,g.contact_id,g.task_id,question.id,publication.sent_at,publication.revoked_at,
+  return query select g.id,g.org_id,g.contact_id,g.task_id,question.id,publication_start.sent_at,publication.revoked_at,
       coalesce(changes.metadata->'before',jsonb_build_object('title','Delat uppdrag','description',null,'contextLabel',null,'dueAt',null))
         ||jsonb_build_object('closed',t.status in ('approved','cancelled'))
     from public.task_recipient_portal_grants g join public.organization_contacts oc on oc.id=g.contact_id and oc.org_id=g.org_id and oc.is_active
@@ -193,6 +193,12 @@ begin
       where l.task_id=g.task_id and l.org_id=g.org_id and l.contact_id=g.contact_id
         and l.sent_at is not null and l.revoked_at is not null and l.revoked_at>=l.sent_at
       order by l.sent_at desc,l.id desc limit 1) publication on true
+    left join lateral(select max(e.created_at) started_at from public.task_events e
+      where e.task_id=g.task_id and e.org_id=g.org_id and e.event_type='task_recipient_changed'
+        and e.metadata->'after'->>'assigneeContactId'=g.contact_id::text and e.created_at<=publication.sent_at) tenure on true
+    join lateral(select min(l.sent_at) sent_at from public.task_access_links l
+      where l.task_id=g.task_id and l.org_id=g.org_id and l.contact_id=g.contact_id
+        and l.sent_at<=publication.sent_at and l.sent_at>=coalesce(tenure.started_at,'-infinity'::timestamptz)) publication_start on true
     left join lateral(select q.id from public.action_case_question_events e join public.action_case_questions q on q.id=e.question_id and q.org_id=e.org_id
       where e.task_id=g.task_id and e.org_id=g.org_id order by e.created_at limit 1) question on true
     left join lateral(select e.metadata from public.task_events e where e.task_id=g.task_id and e.org_id=g.org_id and e.event_type='task_recipient_changed'

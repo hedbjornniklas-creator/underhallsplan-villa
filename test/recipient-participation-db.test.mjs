@@ -113,6 +113,15 @@ test('a responsibility roundtrip without another send cannot expand the previous
   assert.ok(Date.parse(result.shared_until) < Date.now() - 50 * 60 * 1000)
 })
 
+test('resending within one assignment preserves earlier replies in that assignment', async () => {
+  const before = (await db.query('select * from resolve_recipient_task_participation($1,$2)', [authUser, task])).rows[0]
+  await db.query("insert into task_access_links(org_id,contact_id,task_id,revoked_at,sent_at) values($1,$2,$3,$4,now()-interval '2 days')", [org, contact, task, before.shared_until])
+  const after = (await db.query('select * from resolve_recipient_task_participation($1,$2)', [authUser, task])).rows[0]
+  assert.equal(after.shared_from.getTime(), before.shared_from.getTime())
+  assert.equal(after.shared_until.getTime(), before.shared_until.getTime())
+  assert.equal(after.snapshot.title, before.snapshot.title)
+})
+
 test('participant removal revokes every route; readding sees previous shared history but not old anonymous tokens', async () => {
   const nonce = (await scopes())[0].link_nonce
   await db.query('update action_case_question_participants set active=false,shared=false,link_nonce=gen_random_uuid() where id=$1', [member])
