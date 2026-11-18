@@ -87,11 +87,14 @@ async function readFields(database: Database, table: string, columns: string, sc
   while (sources.some(source => !source.done) && rows.size <= resultLimit) {
     try {
       execution?.check()
-      const pages = await Promise.all(sources.filter(source => !source.done).map(async source => ({
+      const pages = await Promise.allSettled(sources.filter(source => !source.done).map(async source => ({
         source, result: await executeRead(source.read().order('id').range(source.offset, source.offset + PAGE_SIZE - 1), execution),
       })))
       const candidates: Row[] = []
-      for (const { source, result } of pages) {
+      let failure: unknown
+      for (const pageResult of pages) {
+        if (pageResult.status === 'rejected') { failure ??= pageResult.reason; continue }
+        const { source, result } = pageResult.value
         if (result.error) throw new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED')
         const page = result.data ?? []
         if (page.length > PAGE_SIZE) throw new Error('GLOBAL_SEARCH_SOURCE_INVALID')
@@ -102,8 +105,10 @@ async function readFields(database: Database, table: string, columns: string, sc
         }
       }
       for (const row of await accept(candidates)) rows.set(id(row.id), row)
+      if (failure) throw failure
     } catch (error) {
-      if (!isTimeout(error)) throw error
+      const reason = execution?.signal.aborted ? execution.signal.reason : error
+      if (!isTimeout(reason)) throw reason
       timedOut = true
       break
     }
@@ -266,7 +271,7 @@ async function renoapp(input: GlobalSearchContext & { query: string }): Promise<
   return selectedResults(input.query, results, selected, 'renoapp', 'RenoApp')
 }
 
-export async function searchExtendedModules(input: GlobalSearchContext & { query: string }): Promise<Provider> {
+export async function searchExtendedModules(input: GlobalSearchContext & { query: string }, taskAccess?: () => Promise<boolean>): Promise<Provider> {
   const database = createSupabaseServerClient() as unknown as Database
   const work: Array<{ moduleId: string; label: string; run: () => Promise<GlobalSearchProviderResult> }> = [
     { moduleId: 'properties', label: 'Fastigheter', run: () => properties(input, database) },
@@ -274,7 +279,10 @@ export async function searchExtendedModules(input: GlobalSearchContext & { query
     { moduleId: 'renoapp', label: 'RenoApp', run: () => renoapp(input) },
   ]
   work.push({ moduleId: 'tasks', label: 'Gizmo', run: async () => {
-      const allowed = input.execution ? await input.execution.run(() => taskModuleAllowed(input.orgId)) : await taskModuleAllowed(input.orgId)
+      // The caller may reuse its request-scoped access snapshot. Never run-wrap
+      // that callback: its scoped/global checks already acquire their own slots.
+      const allowed = taskAccess ? await taskAccess()
+        : input.execution ? await input.execution.run(() => taskModuleAllowed(input.orgId)) : await taskModuleAllowed(input.orgId)
       if (!allowed) return { results: [], hasMore: false }
       const results = await Promise.allSettled([projects(input, database), tasks(input, database)])
       const available = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])

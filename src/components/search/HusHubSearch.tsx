@@ -203,8 +203,12 @@ function SearchScope({ organizationId, className }: { organizationId?: string; c
     }
   }
 
+  const issueLabels = [...new Set(data?.issues.map(issue => issue.label.trim()).filter(Boolean) ?? [])]
+  const partialMessage = data?.issues.length ? `Resultatet är inte komplett. ${issueLabels.length
+    ? `Kunde inte söka färdigt i: ${issueLabels.join(', ')}.`
+    : 'Alla moduler kunde inte sökas igenom.'}` : ''
   const announcement = !open ? '' : loading ? 'Söker i HusHub…'
-    : data ? `${results.length} ${results.length === 1 ? 'träff' : 'träffar'}${data.hasMore ? ', fler träffar finns' : ''}.${data.issues.length ? ' Resultatet är inte komplett.' : ''}`
+    : data ? `${results.length} ${results.length === 1 ? 'träff' : 'träffar'}${data.hasMore ? ', fler träffar finns' : ''}.${partialMessage ? ` ${partialMessage}` : ''}`
       : current?.phase === 'unauthorized' ? 'Din inloggning behöver förnyas.'
         : current?.phase === 'forbidden' ? 'Du saknar behörighet att söka i den valda organisationen.'
           : current?.phase === 'error' ? 'Sökningen kunde inte hämtas.' : ''
@@ -237,7 +241,7 @@ function SearchScope({ organizationId, className }: { organizationId?: string; c
       {current?.phase === 'unauthorized' && <div className="hh-search-error"><LogIn size={18} aria-hidden="true" /><div><strong>Logga in igen för att söka</strong><p>{loginFailed ? 'Inloggningen kunde inte öppnas. Försök igen.' : 'Din inloggning behöver förnyas. Du kommer tillbaka till den här sidan.'}</p><button type="button" onClick={signInAgain} disabled={loggingIn}>{loggingIn ? 'Öppnar inloggning…' : 'Logga in igen'}</button></div></div>}
       {current?.phase === 'forbidden' && <div className="hh-search-error"><TriangleAlert size={18} aria-hidden="true" /><p>Du saknar behörighet att söka i den valda organisationen.</p></div>}
       {current?.phase === 'error' && <div className="hh-search-error"><TriangleAlert size={18} aria-hidden="true" /><div><strong>Sökningen kunde inte hämtas</strong><p>Kontrollera anslutningen och försök igen.</p><button type="button" onClick={() => setRevision(previous => previous + 1)}><RefreshCw size={13} aria-hidden="true" />Försök igen</button></div></div>}
-      {data?.issues.length ? <div className="hh-search-partial"><TriangleAlert size={15} aria-hidden="true" /><span>Resultatet är inte komplett. Alla moduler kunde inte sökas igenom.</span><button type="button" onClick={() => setRevision(previous => previous + 1)}>Försök igen</button></div> : null}
+      {partialMessage ? <div className="hh-search-partial"><TriangleAlert size={15} aria-hidden="true" /><span>{partialMessage}</span><button type="button" onClick={() => setRevision(previous => previous + 1)}>Försök igen</button></div> : null}
       {data && !results.length && <div className="hh-search-empty"><Search size={23} aria-hidden="true" /><strong>{data.issues.length ? 'Inga träffar i de inlästa modulerna' : 'Inga träffar'}</strong><p>Prova en annan beteckning, adress eller del av namnet.</p></div>}
       <div id={listId} className="hh-search-results" role="listbox" aria-label="Sökresultat i HusHub" aria-busy={loading}>
         {groups.map(group => <div className="hh-search-group" role="group" key={group.id} aria-labelledby={`${id}-module-${group.id}`}>

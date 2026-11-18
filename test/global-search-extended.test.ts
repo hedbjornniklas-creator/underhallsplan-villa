@@ -38,9 +38,12 @@ function like(value: unknown, pattern: string) {
 function harness(options: {
   data?: Record<string, Row[]>; tasksAllowed?: boolean; customerAllowed?: boolean;
   authorizedBrfs?: string[]; renoError?: string; failedTables?: string[];
+  timeoutFields?: string[]
   execution?: { signal: AbortSignal; run<T>(work: () => Promise<T>): Promise<T>; check(): void }
+  taskAccess?: () => Promise<boolean>
 } = {}) {
   const calls: Call[] = []
+  let guardReads = 0
   class Reader implements PromiseLike<{ data: Row[] | null; error: unknown }> {
     filters: Call['filters'] = []
     offset = 0
@@ -66,6 +69,9 @@ function harness(options: {
       rejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
     ): PromiseLike<TResult1 | TResult2> {
       calls.push({ mode: this.mode, table: this.table, columns: this.columns, filters: this.filters, offset: this.offset, size: this.size })
+      if (this.filters.some(([method, field]) => method === 'ilike' && options.timeoutFields?.includes(`${this.table}.${field}`))) {
+        return Promise.reject(new Error('GLOBAL_SEARCH_TIMEOUT')).then(fulfilled, rejected)
+      }
       if (options.failedTables?.includes(this.table)) return Promise.resolve({ data: null, error: { message: 'Private database failure' } }).then(fulfilled, rejected)
       let rows = (options.data?.[this.table] ?? []).filter(row => this.mode !== 'user' || row.visible !== false)
       for (const [method, field, value] of this.filters) rows = rows.filter(row => {
@@ -82,7 +88,7 @@ function harness(options: {
   const database = (mode: Call['mode']) => ({ from: (table: string) => ({ select: (columns: string) => new Reader(mode, table, columns) }) })
   const server = compiled<typeof Extended>('src/lib/globalSearch/extended.ts', {
     'server-only': {}, './model': model,
-    '@/lib/access/server': { hasCurrentUserAccess: async () => options.tasksAllowed ?? true },
+    '@/lib/access/server': { hasCurrentUserAccess: async () => { guardReads++; return options.tasksAllowed ?? true } },
     '@/lib/supabase/server': { createSupabaseServerClient: () => database('user') },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => database('admin') },
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: async (orgId: string) => {
@@ -95,7 +101,7 @@ function harness(options: {
       return { userId: USER, authorizedBrfIds: options.authorizedBrfs ?? [], accessibleBrfIds: ['brf-a'] }
     } },
   })
-  return { calls, search: (query: string) => server.searchExtendedModules({ orgId: ORG, userId: USER, role: 'inspector', query, execution: options.execution }) }
+  return { calls, get guardReads() { return guardReads }, search: (query: string) => server.searchExtendedModules({ orgId: ORG, userId: USER, role: 'inspector', query, execution: options.execution }, options.taskAccess) }
 }
 
 test('Gizmo designation search uses only org-linked properties and preserves private task RLS', async () => {
@@ -269,4 +275,31 @@ test('exact RenoApp designation is retained beyond a page of cases in prefix BRF
   } })
   const result = await h.search('Eken1:2')
   assert.equal(result.results.find(row => row.moduleId === 'renoapp')?.id, 'renoapp:case:case-999')
+})
+
+test('Gizmo reuses request-scoped module access without repeating platform identity reads', async () => {
+  const h = harness({ tasksAllowed: false, taskAccess: async () => true, data: {
+    operational_tasks: [{ id: 'task', org_id: ORG, title: 'Harsyran 12', archived_at: null }],
+  } })
+  const result = await h.search('Harsyran 12')
+  assert(result.results.some(row => row.id === 'tasks:task:task'))
+  assert.equal(h.guardReads, 0)
+})
+
+test('denied request-scoped Gizmo access prevents all project and task queries', async () => {
+  const h = harness({ tasksAllowed: true, taskAccess: async () => false })
+  const result = await h.search('Harsyran 12')
+  assert.deepEqual(result.results, [])
+  assert.equal(h.guardReads, 0)
+  assert(h.calls.every(call => !['action_cases', 'operational_tasks'].includes(call.table)))
+})
+
+test('fulfilled field pages survive another field reaching the deadline', async () => {
+  const h = harness({ tasksAllowed: false, timeoutFields: ['properties.address'], data: {
+    properties: [{ id: 'found-by-name', owner: USER, name: 'Harsyran', cadastral_id: 'Annan 1:2' }],
+  } })
+  const result = await h.search('Harsyran')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
+  assert(result.issues?.some(issue => issue.moduleId === 'properties'))
+  assert.equal(result.hasMore, true)
 })
