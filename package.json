@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:global-search": "node --experimental-strip-types --test test/global-search-model.test.ts test/global-search-candidates.test.ts test/global-search-runtime.test.ts test/global-search-providers.test.ts test/global-search-extended.test.ts test/global-search-server.test.ts test/global-search-ui.test.ts",
     "test:assignments": "node --experimental-strip-types --test test/assignments-mailer.test.ts test/accepted-assignment-confirmation-pdf.test.ts",
     "test:renoapp-brf": "node --experimental-strip-types --test test/renoapp-brf-lifecycle.test.ts test/renoapp-brf-services.test.ts",
     "test:renoapp-navigation": "node --experimental-strip-types --test test/renoapp-admin-navigation.test.ts",

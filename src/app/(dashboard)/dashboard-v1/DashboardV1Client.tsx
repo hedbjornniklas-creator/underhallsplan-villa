@@ -3,10 +3,11 @@
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Lock, MapPin, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, Clock3, Lock, MapPin, Plus, RefreshCw, TriangleAlert } from 'lucide-react'
 import DailyRouteMap from '@/components/dashboard/DailyRouteMap'
 import TravelSummary from '@/components/dashboard/TravelSummary'
 import DashboardAccessRecovery from '@/components/auth/DashboardAccessRecovery'
+import HusHubSearch from '@/components/search/HusHubSearch'
 import type { DashboardAction, DashboardBooking, DashboardData, DashboardModule, DashboardModuleId } from '@/lib/dashboard/model'
 import { bookingCountLabel, bookingDate, bookingMapUrl, bookingStatusLabel, bookingTime, bookingTimeLabel, calendarDateLabel, calendarWeek, compareBookings, isCalendarDate, isCompletedBooking, isTentativeBooking, shiftCalendarDate } from '@/lib/dashboard/calendar'
 import './dashboard.css'
@@ -105,24 +106,20 @@ function BookingCalendar({ bookings, modules, selectedDate, today, onSelectDate 
 
 export function DashboardContent({ data, onRefresh, refreshing = false, error }: { data: DashboardData; onRefresh?: () => void; refreshing?: boolean; error?: string | null }) {
   const [moduleFilter, setModuleFilter] = useState('all')
-  const [search, setSearch] = useState('')
   const [category, setCategory] = useState<ActionFilter>('all')
   const [showAll, setShowAll] = useState(false)
   const [selectedDate, setSelectedDate] = useState(data.today)
   const activeModules = useMemo(() => new Map(data.modules.filter(module => module.active).map(module => [module.id, module])), [data.modules])
   const failedModules = new Set(data.issues?.map(issue => issue.moduleId))
   const effectiveFilter = moduleFilter === 'all' || activeModules.has(moduleFilter as DashboardModuleId) ? moduleFilter : 'all'
-  const words = search.trim().toLocaleLowerCase('sv-SE').split(/\s+/).filter(Boolean)
-  const matches = (moduleId: DashboardModuleId, content: string) => activeModules.has(moduleId) && (effectiveFilter === 'all' || effectiveFilter === moduleId) && words.every(word => content.toLocaleLowerCase('sv-SE').includes(word))
-  const actions = data.actions.filter(action => matches(action.moduleId, `${action.title} ${action.subtitle ?? ''} ${action.nextStep}`))
+  const matches = (moduleId: DashboardModuleId) => activeModules.has(moduleId) && (effectiveFilter === 'all' || effectiveFilter === moduleId)
+  const actions = data.actions.filter(action => matches(action.moduleId))
   const filteredActions = actions.filter(action => category === 'all' || action.category === category)
   const visibleActions = showAll ? filteredActions : filteredActions.slice(0, 8)
   const bookings = useMemo(() => {
-    const terms = search.trim().toLocaleLowerCase('sv-SE').split(/\s+/).filter(Boolean)
     return data.bookings.filter(booking => isCalendarDate(bookingDate(booking.startsAt)) && activeModules.has(booking.moduleId)
-      && (effectiveFilter === 'all' || effectiveFilter === booking.moduleId)
-      && terms.every(term => `${booking.title} ${booking.address ?? ''}`.toLocaleLowerCase('sv-SE').includes(term))).sort(compareBookings)
-  }, [data.bookings, activeModules, effectiveFilter, search])
+      && (effectiveFilter === 'all' || effectiveFilter === booking.moduleId)).sort(compareBookings)
+  }, [data.bookings, activeModules, effectiveFilter])
   const dayBookings = useMemo(() => bookings.filter(booking => bookingDate(booking.startsAt) === selectedDate), [bookings, selectedDate])
   const remainingDayBookings = useMemo(() => dayBookings.filter(booking => !isCompletedBooking(booking)), [dayBookings])
   const confirmedDayBookings = useMemo(() => remainingDayBookings.filter(booking => !isTentativeBooking(booking)), [remainingDayBookings])
@@ -131,14 +128,13 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
   const changeCategory = (value: ActionFilter) => { setCategory(value); setShowAll(false) }
 
   return <div className="dh-dashboard" aria-busy={refreshing}><div className="dh-container">
-    <header className="dh-heading"><div><h1>Min arbetsdag</h1><p>{calendarDateLabel(data.today, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p></div><div className="dh-header-actions">
+    <header className="dh-heading"><div className="dh-heading-intro"><h1>Min arbetsdag</h1><div className="dh-heading-meta"><p>{calendarDateLabel(data.today, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      <label className="dh-module-filter"><span className="dh-sr-only">Filtrera arbetsdagen efter arbetsområde</span><select aria-label="Filtrera arbetsområde" value={effectiveFilter} onChange={event => { setModuleFilter(event.target.value); setShowAll(false) }}><option value="all">Alla moduler</option>{data.modules.filter(module => module.active).map(module => <option value={module.id} key={module.id}>{module.title}</option>)}</select></label>
+    </div></div><div className="dh-header-actions">
+      <HusHubSearch organizationId={data.organizationId} className="dh-global-search" />
       {onRefresh && <button type="button" className="dh-icon-button" aria-label="Uppdatera översikten" title="Uppdatera översikten" onClick={onRefresh} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'dh-spinning' : ''} aria-hidden /></button>}<NewAssignmentMenu modules={data.modules} />
     </div></header>
     <nav className="dh-modules" aria-label="Arbetsområden">{Array.from(activeModules.values()).map(module => <ModuleCard key={module.id} module={module} failed={failedModules.has(module.id)} />)}</nav>
-    <div className="dh-toolbar"><div className="dh-search"><Search size={19} aria-hidden /><input type="search" maxLength={200} placeholder="Sök uppdrag eller fastighet" aria-label="Sök uppdrag eller fastighet" value={search} onChange={event => { setSearch(event.target.value); setShowAll(false) }} />
-      {search && <button type="button" className="dh-search-clear" aria-label="Rensa sökning" onClick={() => setSearch('')}><X size={17} aria-hidden /></button>}</div>
-      <label className="dh-module-filter"><span className="dh-sr-only">Arbetsområde</span><select aria-label="Filtrera arbetsområde" value={effectiveFilter} onChange={event => { setModuleFilter(event.target.value); setShowAll(false) }}><option value="all">Alla moduler</option>{data.modules.filter(module => module.active).map(module => <option value={module.id} key={module.id}>{module.title}</option>)}</select></label>
-    </div>
     {error && <div className="dh-error" role="alert"><TriangleAlert size={19} aria-hidden /><p>{error}</p>{onRefresh && <button className="dh-button" type="button" disabled={refreshing} onClick={onRefresh}>Försök igen</button>}</div>}
     {Boolean(data.issues?.length) && <div className="dh-partial-error" role="status"><TriangleAlert size={18} aria-hidden /><div><strong>Översikten är inte komplett</strong><p>{data.issues?.map(issue => `${data.modules.find(module => module.id === issue.moduleId)?.title ?? issue.moduleId}: ${issue.message}`).join(' ')}</p></div></div>}
     <div className="dh-workspace"><div className="dh-column dh-work-column">
@@ -149,7 +145,7 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
           <div className="dh-action-table-heading" aria-hidden><span>Uppdrag</span><span>Nästa steg</span><span>När</span><span /></div><ul>{visibleActions.map(action => <li className="dh-action-row" data-action-id={action.id} key={action.id}>
             <div className="dh-action-identity"><ModuleBadge module={activeModules.get(action.moduleId)!} small /><div><strong>{action.title}</strong>{action.subtitle && <span>{action.subtitle}</span>}</div></div><span className="dh-next-step">{action.nextStep}</span><DueLabel action={action} today={data.today} />
             <Link className="dh-button dh-row-button" href={action.href} prefetch={false} aria-label={`${action.actionLabel}: ${action.title} – ${action.nextStep}`}>{action.actionLabel}<ArrowRight size={14} aria-hidden /></Link>
-          </li>)}</ul></> : <div className="dh-empty" role="status"><CheckCheck size={28} aria-hidden /><strong>{search || effectiveFilter !== 'all' || category !== 'all' ? 'Inga uppgifter matchar dina val' : data.issues?.length ? 'Inga nästa steg i de inlästa uppdragen' : 'Inga uppgifter att hantera just nu'}</strong><p>{search || effectiveFilter !== 'all' || category !== 'all' ? 'Prova en annan sökning eller ändra filtren.' : 'Nya uppdrag och nästa steg visas här när de finns.'}</p></div>}</div>
+          </li>)}</ul></> : <div className="dh-empty" role="status"><CheckCheck size={28} aria-hidden /><strong>{effectiveFilter !== 'all' || category !== 'all' ? 'Inga uppgifter matchar dina val' : data.issues?.length ? 'Inga nästa steg i de inlästa uppdragen' : 'Inga uppgifter att hantera just nu'}</strong><p>{effectiveFilter !== 'all' || category !== 'all' ? 'Ändra arbetsområde eller kategori för att visa fler uppgifter.' : 'Nya uppdrag och nästa steg visas här när de finns.'}</p></div>}</div>
         <div className="dh-actions-footer"><span aria-live="polite">{filteredActions.length ? `Visar ${visibleActions.length} av ${filteredActions.length} nästa steg` : '0 nästa steg'}</span>{filteredActions.length > 8 && <button type="button" className="dh-text-button" onClick={() => setShowAll(value => !value)}>{showAll ? 'Visa färre' : `Visa alla ${filteredActions.length}`}<ArrowRight size={15} aria-hidden /></button>}</div>
       </section>
       <section className="dh-panel dh-agenda" aria-labelledby="dh-agenda-heading"><div className="dh-panel-heading"><div><div className="dh-heading-count"><h2 id="dh-agenda-heading">{isToday ? 'Dagens uppdrag' : 'Uppdrag denna dag'}</h2><span className="dh-count">{bookingCountLabel(dayBookings)}</span></div>{!isToday && <p>{calendarDateLabel(selectedDate, { weekday: 'long', day: 'numeric', month: 'long' })}</p>}</div></div>
@@ -164,8 +160,8 @@ export function DashboardContent({ data, onRefresh, refreshing = false, error }:
     </div><div className="dh-column dh-plan-column">
       <BookingCalendar bookings={bookings} modules={activeModules} selectedDate={selectedDate} today={data.today} onSelectDate={setSelectedDate} />
       <section className="dh-panel dh-map-panel" aria-labelledby="dh-map-heading"><div className="dh-panel-heading"><div className="dh-heading-count"><h2 id="dh-map-heading">{isToday ? 'Dagens karta' : 'Karta för vald dag'}</h2><span className="dh-muted">{bookingCountLabel(remainingDayBookings)}</span></div></div>
-        <DailyRouteMap key={`${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
-        <TravelSummary key={`travel:${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}:${search}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
+        <DailyRouteMap key={`${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
+        <TravelSummary key={`travel:${data.organizationId ?? 'default'}:${selectedDate}:${effectiveFilter}`} bookings={dayBookings} date={selectedDate} organizationId={data.organizationId} />
       </section>
     </div></div>
   </div></div>

@@ -29,7 +29,7 @@ await new Promise((ok, fail) => webpack({
 const globalSource = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";',
   '@import "tailwindcss" source(none);\n@source "./(dashboard)/dashboard-v1";\n@source "../components/dashboard";\n@source "../../test/fixtures/dashboard-view.tsx";')
 const globalCss = await postcss([tailwind()]).process(globalSource, { from: resolve('src/app/globals.css') })
-const css = `${globalCss.css}\n${await readFile('src/app/(dashboard)/dashboard-v1/dashboard.css', 'utf8')}\n${await readFile('node_modules/leaflet/dist/leaflet.css', 'utf8')}\n
+const css = `${globalCss.css}\n${await readFile('src/app/(dashboard)/dashboard-v1/dashboard.css', 'utf8')}\n${await readFile('src/components/search/HusHubSearch.css', 'utf8')}\n${await readFile('node_modules/leaflet/dist/leaflet.css', 'utf8')}\n
 body{margin:0;background:#f4f6f8;color:#25313b;font-family:DashboardManrope,Arial,sans-serif}
 .preview-notice{padding:6px 16px;background:#edf3fc;color:#245eb5;font-size:12px;text-align:center}
 .preview-header{display:flex;align-items:center;justify-content:space-between;padding:12px 30px;border-bottom:1px solid #dbe3ea;background:white;gap:16px}
