@@ -688,7 +688,7 @@ export default function TaskDetailSheet({
                 onClick={() => onAction('issue_access_link', { taskId: task.id, sendEmail: true })}
                 className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
               >
-                <Link2 size={17} /> Skicka uppdragslänk
+                <Link2 size={17} /> Skicka om länk
               </button>
             </div>
           ) : null}

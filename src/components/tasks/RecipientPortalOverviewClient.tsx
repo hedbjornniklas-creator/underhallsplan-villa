@@ -172,6 +172,13 @@ export default function RecipientPortalOverviewClient({
         .some((value) => value.toLocaleLowerCase('sv-SE').includes(query))
     })
   }, [drilldownTaskIds, filter, initialOverview.tasks, search])
+  const visibleParticipations = useMemo(() => {
+    if (drilldownTaskIds || ['needs_action', 'overdue'].includes(filter)) return []
+    const query = search.trim().toLocaleLowerCase('sv-SE')
+    return (initialOverview.participations || []).filter(item =>
+      (filter === 'all' || (filter === 'completed' ? item.status === 'closed' : item.status !== 'closed'))
+      && (!query || `${item.title} ${item.contextLabel}`.toLocaleLowerCase('sv-SE').includes(query)))
+  }, [drilldownTaskIds, filter, initialOverview.participations, search])
 
   const openTaskDrilldown = (label: string, taskIds: string[]) => {
     setTaskDrilldown({ label, taskIds })
@@ -232,12 +239,14 @@ export default function RecipientPortalOverviewClient({
     router.refresh()
   }
 
+  const sharedItems = initialOverview.participations || []
+  const sharedActive = sharedItems.filter(item => item.status !== 'closed').length
   const filters: Array<{ key: FilterKey; label: string; count: number }> = [
-    { key: 'active', label: 'Aktiva', count: initialOverview.summary.active },
+    { key: 'active', label: 'Aktiva', count: initialOverview.summary.active + sharedActive },
     { key: 'needs_action', label: 'Ditt nästa steg', count: initialOverview.summary.needsAction },
     { key: 'overdue', label: 'Försenade', count: initialOverview.summary.overdue },
-    { key: 'completed', label: 'Avslutade', count: initialOverview.tasks.length - initialOverview.summary.active },
-    { key: 'all', label: 'Alla', count: initialOverview.tasks.length },
+    { key: 'completed', label: 'Avslutade', count: initialOverview.tasks.length - initialOverview.summary.active + sharedItems.length - sharedActive },
+    { key: 'all', label: 'Alla', count: initialOverview.tasks.length + sharedItems.length },
   ]
 
   return (
@@ -268,15 +277,14 @@ export default function RecipientPortalOverviewClient({
             <div>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Det här behöver bli gjort</h1>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                Här finns bara uppdrag som är tilldelade till dig. Öppna en uppgift för att svara,
-                ladda upp underlag eller meddela om något hindrar arbetet.
+                Dina tilldelade uppdrag och delade frågor där du deltar.
               </p>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:min-w-[25rem]">
               <div className="rounded-2xl border border-white/80 bg-white/85 p-3 shadow-sm">
                 <CircleDot className="text-indigo-600" size={19} aria-hidden="true" />
                 <p className="mt-2 text-2xl font-semibold">{initialOverview.summary.active}</p>
-                <p className="text-xs text-slate-500">Aktiva</p>
+                <p className="text-xs text-slate-500">Ditt ansvar</p>
               </div>
               <div className="rounded-2xl border border-white/80 bg-white/85 p-3 shadow-sm">
                 <ClipboardCheck className="text-amber-600" size={19} aria-hidden="true" />
@@ -539,17 +547,25 @@ export default function RecipientPortalOverviewClient({
             <div className="mt-3 grid gap-3 lg:grid-cols-2">
               {visibleTasks.map((task) => <TaskCard key={task.id} task={task} />)}
             </div>
-          ) : (
+          ) : visibleParticipations.length ? null : (
             <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-white/70 px-5 py-12 text-center">
               <CheckCircle2 className="mx-auto text-emerald-600" size={32} aria-hidden="true" />
               <h3 className="mt-3 text-lg font-semibold">Inga uppdrag här just nu</h3>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
                 {initialOverview.tasks.length === 0
-                  ? 'När någon tilldelar dig ett uppdrag visas det här automatiskt.'
+                  ? 'Delade uppdrag och frågor där du deltar visas här.'
                   : 'Byt filter eller sök efter något annat.'}
               </p>
             </div>
           )}
+          {visibleParticipations.length > 0 && <section className="mt-6 border-t border-stone-200 pt-5" aria-labelledby="recipient-participation-heading">
+            <h2 id="recipient-participation-heading" className="mb-3 text-xl font-semibold">Frågor och uppdrag jag deltar i</h2>
+            <ul className="divide-y divide-stone-200">{visibleParticipations.map(item => <li key={`${item.kind}:${item.id}`}>
+              <Link className="flex min-h-16 items-center gap-3 rounded-lg px-3 py-3 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5c756f]" href={item.href}>
+                <ClipboardCheck size={20} className="shrink-0 text-[#5c756f]" aria-hidden="true" /><span className="min-w-0 flex-1"><strong className="block break-words text-base font-semibold">{item.title}</strong><span className="mt-1 block break-words text-sm text-stone-600">{item.contextLabel}{item.contextLabel ? ' · ' : ''}{item.kind === 'question' ? 'Deltagare i frågan' : 'Tidigare ansvarig'}{item.status === 'closed' ? ' · Avslutad' : ''}</span></span><ChevronRight size={19} className="shrink-0" aria-hidden="true" />
+              </Link>
+            </li>)}</ul>
+          </section>}
         </section>
         )}
       </div>

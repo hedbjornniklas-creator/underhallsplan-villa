@@ -1,6 +1,6 @@
 import { after, NextResponse } from 'next/server'
 import { customerOfferContext, customerOfferError, offerRequestBody } from '@/lib/action-cases/customerOffersHttp'
-import { createQuestionContact, deliverQuestionMessages, getQuestionDialogue, writeQuestionDialogue, replyQuestionTask } from '@/lib/action-cases/questionDialogueServer'
+import { createQuestionContact, deliverQuestionMessages, getQuestionDialogue, writeQuestionDialogue, replyQuestionTask, resendQuestionLink } from '@/lib/action-cases/questionDialogueServer'
 import { runTaskFollowupBatch } from '@/lib/tasks/automation'
 
 export const dynamic = 'force-dynamic'
@@ -15,6 +15,11 @@ export async function POST(request: Request, route: Route) {
   try {
     const ctx = await customerOfferContext(), { caseId, questionId } = await route.params, body = await offerRequestBody(request)
     if (body.operation === 'contact') return NextResponse.json({ person: await createQuestionContact(ctx, caseId, questionId, body) }, { headers: { 'Cache-Control': 'no-store' } })
+    if (body.operation === 'resend_link') {
+      const result = await resendQuestionLink(ctx, caseId, questionId, body)
+      after(async () => { try { await deliverQuestionMessages(questionId) } catch { console.error('PROJECT_QUESTION_DELIVERY_FAILED') } })
+      return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store' } })
+    }
     if (body.operation === 'task_reply') {
       const result = await replyQuestionTask(ctx, caseId, questionId, body)
       after(async () => { try { await runTaskFollowupBatch({ limit: 5 }) } catch { console.error('PROJECT_QUESTION_TASK_DELIVERY_FAILED') } })

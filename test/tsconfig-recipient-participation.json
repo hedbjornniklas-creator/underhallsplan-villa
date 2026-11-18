@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig-question-assignment.json",
+  "compilerOptions": { "incremental": false },
+  "include": [
+    "../next-env.d.ts",
+    "../src/lib/tasks/recipientParticipation.ts",
+    "../src/components/tasks/RecipientPortalOverviewClient.tsx",
+    "../src/components/tasks/TaskDetailSheet.tsx",
+    "../src/components/tasks/QuestionDialogue.tsx",
+    "../src/app/mina-uppdrag/fragor/[questionId]/page.tsx",
+    "../src/app/mina-uppdrag/delade-uppdrag/[taskId]/page.tsx",
+    "../src/app/api/mina-uppdrag/projektfragor/[questionId]/**/*.ts",
+    "../src/app/api/mina-uppdrag/delade-uppdrag/[taskId]/**/*.ts"
+  ]
+}

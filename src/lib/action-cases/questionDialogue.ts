@@ -1,6 +1,6 @@
 import { questionUuid, type QuestionParticipant } from './projectQuestions'
 
-export type DialogueMessage = { id: string; participantId: string; actorName: string; actorMethod: 'internal_login' | 'personal_link'; operation: 'share' | 'reply'; text: string; createdAt: string; snapshot: { title: string; description: string } | null; files: Array<{ id: string; name: string }> }
+export type DialogueMessage = { id: string; participantId: string; actorName: string; actorMethod: 'internal_login' | 'personal_link' | 'recipient_login'; operation: 'share' | 'reply'; text: string; createdAt: string; snapshot: { title: string; description: string } | null; files: Array<{ id: string; name: string }> }
 export type QuestionDialogue = { questionId: string; version: number; sharedAt: string | null; snapshot: { title: string; description: string } | null; status: string; managerId?: string | null; canManage: boolean; viewerId: string; participants: QuestionParticipant[]; messages: DialogueMessage[]; deliveries: Array<{ id: string; name: string; status: string }> }
 export function dialogueMutation(value: Record<string, unknown>) {
   const operation = String(value.operation)

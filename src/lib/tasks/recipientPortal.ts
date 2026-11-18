@@ -19,6 +19,7 @@ import {
   type TaskAnalyticsDeadlineRequestInput,
 } from './analytics'
 import { normalizeTaskTimeZone } from './dateTime'
+import { getRecipientSharedItems, type RecipientSharedItem } from './recipientParticipation'
 import { taskActorDisplayName } from './branding'
 import type { ExternalTaskWorkspace } from './external'
 import {
@@ -53,6 +54,7 @@ export type RecipientPortalOverview = {
   recipientName: string
   email: string | null
   tasks: RecipientPortalTaskSummary[]
+  participations?: RecipientSharedItem[]
   summary: {
     active: number
     needsAction: number
@@ -360,12 +362,13 @@ export async function getRecipientPortalOverview(
   session: RecipientPortalSession
 ): Promise<RecipientPortalOverview> {
   const analyticsAsOf = new Date().toISOString()
-  const scopes = await resolvePortalScopes(session.authUserId)
+  const [scopes, participations] = await Promise.all([resolvePortalScopes(session.authUserId), getRecipientSharedItems(session)])
   if (scopes.length === 0) {
     return {
       recipientName: session.fallbackName,
       email: session.email,
       tasks: [],
+      participations,
       summary: { active: 0, needsAction: 0, overdue: 0, completed: 0, unreadMessages: 0 },
       analytics: {
         asOf: analyticsAsOf,
@@ -517,6 +520,7 @@ export async function getRecipientPortalOverview(
     recipientName: asText(primaryContact?.name) || session.fallbackName,
     email: session.email ?? (asText(primaryContact?.email) || null),
     tasks,
+    participations: participations.filter(item => item.kind !== 'task' || !tasks.some(task => task.id === item.id)),
     summary: {
       active: activeTasks.length,
       needsAction: activeTasks.filter((task) => ['assigned', 'returned', 'waiting'].includes(task.status)).length,

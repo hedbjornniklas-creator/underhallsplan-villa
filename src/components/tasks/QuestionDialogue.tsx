@@ -31,6 +31,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false)
   const [importing, setImporting] = useState(false)
   const running = useRef(false), pending = useRef<{ key: string; id: string } | null>(null), selectionDirty = useRef(false)
+  const resendAttempt = useRef<{ participantId: string; requestId: string } | null>(null)
   const seeded = useRef(false), bodyInput = useRef<HTMLTextAreaElement>(null)
   const [composerReady, setComposerReady] = useState(false), [localError, setLocalError] = useState('')
   const [audience, setAudience] = useState<'shared' | 'internal' | 'responsible'>(taskReply && !hasSharedDialogue ? 'responsible' : 'shared')
@@ -126,6 +127,23 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
     selectionDirty.current = false; setConfirmed(false)
     try { await Promise.all([load(undefined, true), onRefresh?.()]); setError('') } catch (e) { setError(e instanceof Error ? e.message : 'Dialogen kunde inte hämtas.') }
   }
+  async function resendLink(participantId: string) {
+    if (running.current || !data?.canManage || !data.sharedAt || rosterSave.isBusy() || selectionDirty.current) return
+    if (resendAttempt.current && resendAttempt.current.participantId !== participantId) return
+    resendAttempt.current ||= { participantId, requestId: crypto.randomUUID() }
+    running.current = true; setBusy(true); onBusy?.(true); setError(''); setNotice('')
+    try {
+      const attempt = resendAttempt.current
+      const response = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'resend_link', ...attempt }) })
+      const result = await response.json()
+      if (!response.ok && response.status >= 400 && response.status < 500 && ![408, 409, 429].includes(response.status)) resendAttempt.current = null
+      if (!response.ok || result.messageId !== attempt.requestId || result.questionId !== data.questionId) throw new Error(result.error || 'Utskicket kunde inte bekräftas. Försök igen med samma mottagare.')
+      resendAttempt.current = null
+      setNotice('En ny avisering med frågelänken har köats. Inga nya bilagor har delats.')
+      await load(); onChanged?.()
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Länken kunde inte skickas.') }
+    finally { running.current = false; setBusy(false); onBusy?.(false) }
+  }
   async function addContact() {
     if (running.current || !data?.canManage) return
     contactAttempt.current ||= { requestId: crypto.randomUUID(), contact: structuredClone(contact) }
@@ -210,6 +228,7 @@ export default function QuestionDialogue({ endpoint, fileBase, initial, mode = '
         {!data.managerId && <p className="gizmo-question-notice" role="status">Projektansvarig är inte utsedd.</p>}
         {data.canManage ? <fieldset disabled={busy || Boolean(pending.current)} className="gizmo-question-participant-options"><legend className="sr-only">Välj deltagare i denna fråga</legend>{candidates.map(p => <label key={refKey(p)}><input type="checkbox" checked={selected.includes(refKey(p)) || required(p)} disabled={required(p)} onChange={e => select(p, e.target.checked)} /><span><strong>{p.name}</strong><small>{p.kind === 'customer' ? 'Beställare' : p.kind === 'profile' ? p.id === data.managerId ? 'Projektansvarig' : 'Intern' : 'Kontakt'}{p.email ? ` · ${p.email}` : ''}</small></span></label>)}</fieldset> : <ul className="gizmo-question-roster">{data.participants.map(p => <li key={p.id}>{p.name}</li>)}</ul>}
         {data.canManage && (contactOpen ? <form className="gizmo-question-new-contact" onSubmit={event => { event.preventDefault(); void addContact() }}><h4>Ny extern kontakt</h4><fieldset disabled={busy || Boolean(contactAttempt.current)}><TaskContactFields value={contact} onChange={setContact} className="gizmo-question-field" /></fieldset><div className="gizmo-question-commands"><button type="button" className={btn} disabled={busy || Boolean(contactAttempt.current)} onClick={() => setContactOpen(false)}><X size={16} />Stäng</button><button type="submit" className={btn} disabled={busy || (!contactAttempt.current && (!contact.name.trim() || !contact.email.trim()))}><Plus size={16} />{contactAttempt.current ? 'Försök lägga till igen' : 'Lägg till deltagare'}</button></div></form> : <button type="button" className={btn} disabled={busy || Boolean(pending.current)} onClick={() => setContactOpen(true)}><Plus size={16} />Ny extern kontakt</button>)}
+        {data.canManage && data.sharedAt && <section className="mt-4 border-t border-stone-200 pt-4" aria-label="Skicka om frågelänk"><h3 className="mb-2 font-semibold">Skicka om länk</h3><ul className="divide-y divide-stone-200">{data.participants.filter(p => p.shared && p.email && p.id !== data.viewerId).map(p => <li key={p.id} className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2"><span className="min-w-0 break-words">{p.name}</span><button type="button" className={btn} disabled={busy || rosterSave.busy || selectionDirty.current || Boolean(resendAttempt.current && resendAttempt.current.participantId !== p.id)} onClick={() => void resendLink(p.id)}><RefreshCw size={16} />{resendAttempt.current?.participantId === p.id ? 'Försök skicka igen' : 'Skicka om länk'}</button></li>)}</ul></section>}
         {data.canManage && <section className="gizmo-question-share"><h3>{data.sharedAt ? 'Uppdatera delad fråga' : 'Dela frågan'}</h3><h4>{preview?.title}</h4><p className="whitespace-pre-wrap">{preview?.description}</p>
           <p className="gizmo-secondary">Deltagare: {data.participants.map(p => p.name).join(', ')}</p>
           <fieldset disabled={busy || closed || selectionDirty.current || Boolean(pending.current)}>

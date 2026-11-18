@@ -61,6 +61,17 @@ async function readDialogue(orgId: string, caseId: string, questionId: string, v
   const participants: QuestionParticipant[] = participantRows.filter(p => internal || p.shared).map(p => ({ id: p.id, kind: p.person_kind, personId: internal ? p.person_id : '', name: p.name, email: internal ? p.email : null, shared: p.shared }))
   const messages = await pages<Record<string, unknown>>((a, b) => db.from('action_case_question_messages').select('id,participant_id,operation,actor_name,actor_method,message,snapshot,created_at,files:action_case_question_message_files(attachment_id,file_name)').eq('question_id', questionId).in('operation', ['share', 'reply']).order('created_at').order('id').range(a, b))
   const mapped: DialogueMessage[] = messages.map(m => ({ id: String(m.id), participantId: String(m.participant_id), operation: m.operation as DialogueMessage['operation'], actorName: String(m.actor_name), actorMethod: m.actor_method as DialogueMessage['actorMethod'], text: String(m.message), snapshot: m.snapshot as DialogueMessage['snapshot'], createdAt: String(m.created_at), files: ((m.files || []) as Array<{ attachment_id: string; file_name: string }>).map(f => ({ id: f.attachment_id, name: f.file_name })) }))
+  if (!internal) {
+    const publications = await pages<Record<string, unknown>>((a, b) => db.from('action_case_question_events')
+      .select('id,actor_id,actor_name,created_at,title:body->>title,description:body->>description')
+      .eq('org_id', orgId).eq('question_id', questionId).eq('operation', 'send').not('task_id', 'is', null).order('created_at').order('id').range(a, b))
+    for (const event of publications) if (typeof event.title === 'string') mapped.push({
+      id: String(event.id), participantId: participantRows.find(p => p.person_kind === 'profile' && p.person_id === event.actor_id)?.id || String(event.id), operation: 'share', actorName: String(event.actor_name),
+      actorMethod: 'internal_login', text: '', snapshot: { title: event.title, description: String(event.description || '') },
+      createdAt: String(event.created_at), files: [],
+    })
+    mapped.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+  }
   let managerId: string | null = null
   let deliveries: QuestionDialogue['deliveries'] = []
   if (internal) {
@@ -86,6 +97,36 @@ export async function getPublicQuestionDialogue(token: string) {
   await publicMember(token)
   return result
 }
+export async function recipientQuestionMember(authUserId: string, questionId: string): Promise<Member> {
+  if (!questionUuid(authUserId) || !questionUuid(questionId)) throw new Error('PROJECT_QUESTION_NOT_FOUND')
+  const result = await createSupabaseAdminClient().rpc('resolve_recipient_question_scope', { p_auth_user_id: authUserId, p_question_id: questionId })
+  checked(result.error)
+  const member = (Array.isArray(result.data) ? result.data : []).find((row: Member) => row.question_id === questionId)
+  if (!member) throw new Error('PROJECT_QUESTION_NOT_FOUND')
+  return member
+}
+export async function getRecipientQuestionDialogue(authUserId: string, questionId: string) {
+  const member = await recipientQuestionMember(authUserId, questionId)
+  const result = await readDialogue(member.org_id, member.action_case_id, member.question_id, member.id, false)
+  await recipientQuestionMember(authUserId, questionId)
+  return result
+}
+export async function replyRecipientQuestion(authUserId: string, questionId: string, value: Record<string, unknown>) {
+  const request = dialogueMutation(value)
+  if (request.operation !== 'reply') throw new Error('PROJECT_QUESTION_FORBIDDEN')
+  const result = await createSupabaseAdminClient().rpc('reply_recipient_project_question', { p_auth_user_id: authUserId, p_question_id: questionId, p_request: request })
+  checked(result.error)
+  return { messageId: String(result.data), questionId }
+}
+export async function resendQuestionLink(ctx: Context, caseId: string, questionId: string, body: Record<string, unknown>) {
+  if (!questionUuid(body.participantId) || !questionUuid(body.requestId)) throw new Error('PROJECT_QUESTION_INVALID')
+  const result = await createSupabaseAdminClient().rpc('resend_project_question_link', {
+    p_org_id: ctx.orgId, p_case_id: caseId, p_question_id: questionId, p_actor_id: ctx.userId,
+    p_participant_id: body.participantId, p_request_id: body.requestId,
+  })
+  checked(result.error)
+  return { messageId: String(result.data), questionId }
+}
 export async function writeQuestionDialogue(ctx: Context, caseId: string, questionId: string, body: Record<string, unknown>) {
   await requireQuestionParticipant(ctx, caseId, questionId)
   const result = await createSupabaseAdminClient().rpc('mutate_project_question_dialogue', { p_org_id: ctx.orgId, p_case_id: caseId, p_question_id: questionId, p_profile_id: ctx.userId, p_participant_id: null, p_nonce: null, p_request: dialogueMutation(body) })
@@ -106,12 +147,16 @@ export async function writePublicQuestionDialogue(token: string, body: Record<st
   checked(result.error)
   return { messageId: String(result.data), questionId: member.question_id }
 }
-export async function questionDialogueFile(caseId: string, questionId: string, fileId: string, identity: Context | string) {
+export async function questionDialogueFile(caseId: string, questionId: string, fileId: string, identity: Context | string | { recipientAuthUserId: string }) {
   const db = createSupabaseAdminClient()
   let orgId: string
   if (typeof identity === 'string') {
     const member = await publicMember(identity)
     if (member.question_id !== questionId || member.action_case_id !== caseId) throw new Error('PROJECT_QUESTION_NOT_FOUND')
+    orgId = member.org_id
+  } else if ('recipientAuthUserId' in identity) {
+    const member = await recipientQuestionMember(identity.recipientAuthUserId, questionId)
+    if (member.action_case_id !== caseId) throw new Error('PROJECT_QUESTION_NOT_FOUND')
     orgId = member.org_id
   } else { await requireQuestionParticipant(identity, caseId, questionId); orgId = identity.orgId }
   if (!questionUuid(fileId)) throw new Error('PROJECT_QUESTION_NOT_FOUND')
@@ -123,6 +168,7 @@ export async function questionDialogueFile(caseId: string, questionId: string, f
   if (!file.data) throw new Error('PROJECT_QUESTION_NOT_FOUND')
   const signed = await db.storage.from(file.data.storage_bucket).createSignedUrl(file.data.file_path, 60)
   if (signed.error || !signed.data?.signedUrl) throw new Error('PROJECT_QUESTION_FAILED')
+  if (typeof identity === 'object' && 'recipientAuthUserId' in identity) await recipientQuestionMember(identity.recipientAuthUserId, questionId)
   return signed.data.signedUrl
 }
 export async function publicQuestionFile(token: string, fileId: string) {
