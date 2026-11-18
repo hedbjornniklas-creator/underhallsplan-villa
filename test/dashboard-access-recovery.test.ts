@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { isValidElement, type ReactNode } from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import ts from 'typescript'
+// @ts-expect-error Native Node TypeScript tests require the extension.
 import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
 
 function fixture(error?: unknown) {

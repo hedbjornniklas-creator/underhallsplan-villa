@@ -31,7 +31,7 @@ function headerLink(pendingNavigationKey: string | null = null) {
   const round = { project: { id: 'project/name' }, inspection: { inspectionId: 'inspection/name' } }
   const before = structuredClone(round)
   const projectNavigationKey = `project:${round.project.id}`
-  const code = ts.transpileModule(`${classes.getText(ast)}
+  const code = ts.transpileModule(`${classes!.getText(ast)}
     const handleNavigation = ${navigationHandler!.getText(ast)};
     const link = (${projectLink!.getText(ast)});`, { fileName: 'actual-review-navigation.tsx', compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX,
