@@ -13,3 +13,11 @@ export function useSearchParams() {
   const query = useSyncExternalStore(subscribe, () => location.search)
   return useMemo(() => new URLSearchParams(query), [query])
 }
+
+export function useRouter() {
+  return useMemo(() => ({
+    push: (path: string) => location.assign(path),
+    replace: (path: string) => location.replace(path),
+    refresh: () => location.reload(),
+  }), [])
+}

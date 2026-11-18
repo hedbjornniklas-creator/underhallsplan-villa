@@ -163,11 +163,15 @@ export default function CustomerRegistryClient() {
   const toast = useToast()
   const searchParams = useSearchParams()
   const selectedOrganizationId = searchParams.get('orgId')
+  const requestedCustomerId = searchParams.get('customerId')
+  const requestedSearch = (searchParams.get('q') ?? '').slice(0, 200)
+  const requestedInactive = searchParams.get('inactive') === '1'
   const [workspace, setWorkspace] = useState<OrganizationCustomerWorkspace | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
-  const [showInactive, setShowInactive] = useState(false)
+  const [search, setSearch] = useState(requestedSearch)
+  const [targetCustomerId, setTargetCustomerId] = useState(requestedCustomerId)
+  const [showInactive, setShowInactive] = useState(requestedInactive)
   const [form, setForm] = useState<CustomerForm>(EMPTY_FORM)
   const [editing, setEditing] = useState<OrganizationCustomer | null>(null)
   const [formOpen, setFormOpen] = useState(false)
@@ -213,18 +217,20 @@ export default function CustomerRegistryClient() {
     setEditing(null)
     setFormOpen(false)
     setForm({ ...EMPTY_FORM })
-    setSearch('')
-    setShowInactive(false)
+    setSearch(requestedSearch)
+    setTargetCustomerId(requestedCustomerId)
+    setShowInactive(requestedInactive)
     void load(selectedOrganizationId ?? undefined)
-  }, [load, selectedOrganizationId])
+  }, [load, requestedCustomerId, requestedInactive, requestedSearch, selectedOrganizationId])
 
   const visibleCustomers = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('sv-SE')
     return (workspace?.customers ?? []).filter((customer) => {
       if (!showInactive && !customer.isActive) return false
+      if (targetCustomerId && customer.id !== targetCustomerId) return false
       return !needle || customerSearchText(customer).includes(needle)
     })
-  }, [search, showInactive, workspace])
+  }, [search, showInactive, targetCustomerId, workspace])
 
   const replaceCustomer = (customer: OrganizationCustomer, orgId: string) => {
     setWorkspace((current) =>
@@ -513,7 +519,7 @@ export default function CustomerRegistryClient() {
             />
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setTargetCustomerId(null) }}
               placeholder="Sök på kundnummer, namn, organisationsnummer eller e-post"
               className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-950 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             />

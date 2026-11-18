@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import ts from 'typescript'
+// @ts-expect-error Native Node TypeScript tests require the extension.
 import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
 import { createElement, type ReactNode } from 'react'
 import type * as Service from '../src/lib/renoapp/consultantReviewServer'

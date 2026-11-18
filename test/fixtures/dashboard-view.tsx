@@ -2,10 +2,21 @@ import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import DashboardV1Client, { DashboardContent } from '../../src/app/(dashboard)/dashboard-v1/DashboardV1Client'
 import { bookingDate, compareBookings } from '../../src/lib/dashboard/calendar'
+import { matchesGlobalSearch, type GlobalSearchResult } from '../../src/lib/globalSearch/model'
 import { supabase as syntheticSupabase } from './ob-overview-client'
 
 const organizationId = '11111111-1111-4111-8111-111111111111'
 const scoped = (path: string) => `${path}?orgId=${organizationId}`
+const searchResults: GlobalSearchResult[] = [
+  { id: 'search-ob-report', moduleId: 'ob', moduleLabel: 'Överlåtelsebesiktning', kind: 'report', title: 'Utlåtande · Rosen 12:3', subtitle: 'Tallstigen 12 · Överlåtelsebesiktning', propertyDesignation: 'Rosen 12:3', status: 'completed', href: scoped('/inspections/test-ob') },
+  { id: 'search-ob-inspection', moduleId: 'ob', moduleLabel: 'Överlåtelsebesiktning', kind: 'inspection', title: 'Besiktning · Tallstigen 12', subtitle: 'Rosen 12:3 · Exempelvilla', propertyDesignation: 'Rosen 12:3', status: 'completed', href: scoped('/inspections/test-ob') },
+  { id: 'search-tu-report', moduleId: 'tu', moduleLabel: 'Tekniska utredningar', kind: 'report', title: 'Tekniskt utlåtande · Rosen 12:3', subtitle: 'Fuktutredning · Tallstigen 12', propertyDesignation: 'Rosen 12:3', status: 'issued', href: scoped('/tu/investigations/test-tu/print') },
+  { id: 'search-eb', moduleId: 'eb', moduleLabel: 'Entreprenadbesiktning', kind: 'inspection', title: 'Slutbesiktning · Rosen 12:3', subtitle: 'Tallstigen 12 · Ombyggnad', propertyDesignation: 'Rosen 12:3', status: 'completed', href: scoped('/eb/projects/test-eb') },
+  { id: 'search-project', moduleId: 'gizmo', moduleLabel: 'Gizmo', kind: 'project', title: 'Åtgärder efter fuktutredning', subtitle: 'Rosen 12:3 · Tallstigen 12', propertyDesignation: 'Rosen 12:3', status: 'in_progress', href: scoped('/uppdrag/test-project') },
+  { id: 'search-reno', moduleId: 'renoapp', moduleLabel: 'RenoApp', kind: 'case', title: 'Renovering av badrum', subtitle: 'Brf Rosen · Ärende R-2026-014', propertyDesignation: 'Rosen 12:3', status: 'approved', href: '/renoapp/app/cases/test-reno' },
+  { id: 'search-property', moduleId: 'properties', moduleLabel: 'Fastigheter', kind: 'property', title: 'Rosen 12:3', subtitle: 'Tallstigen 12 · Nacka', propertyDesignation: 'Rosen 12:3', href: '/properties/test-property' },
+  { id: 'search-customer', moduleId: 'customers', moduleLabel: 'Kunder', kind: 'customer', title: 'Brf Rosen', subtitle: 'Kund 10042 · Tallstigen 12', href: `/settings/kunder?orgId=${organizationId}&q=10042` },
+]
 const modules = [
   { id: 'ob' as const, code: 'ÖB', title: 'Överlåtelsebesiktning', href: scoped('/ob'), active: true, activeCount: 7, actionCount: 2 },
   { id: 'eb' as const, code: 'EB', title: 'Entreprenadbesiktning', href: scoped('/eb'), active: true, activeCount: 4, actionCount: 1 },
@@ -68,6 +79,17 @@ Object.assign(syntheticSupabase.auth, { signOut: async () => {
 window.fetch = async (input, init) => {
   const url = new URL(String(input), location.href)
   window.__dashboardTest.requests.push(`${url.pathname}${url.search}`)
+  if (url.pathname === '/api/hushub/search') {
+    const query = (url.searchParams.get('q') ?? '').trim().replace(/\s+/gu, ' ')
+    const delay = state === 'search-race' && query.toLowerCase() === 'ros' ? 900 : 50
+    await new Promise(resolve => setTimeout(resolve, delay))
+    if (state === 'search-session-expired') return Response.json({ error: 'Logga in igen.' }, { status: 401 })
+    if (state === 'search-forbidden') return Response.json({ error: 'Behörighet saknas.' }, { status: 403 })
+    if (state === 'search-error') return Response.json({ error: 'Ett tillfälligt fel uppstod.' }, { status: 503 })
+    const results = state === 'search-empty' ? [] : searchResults.filter(result => matchesGlobalSearch(query, result.title, result.subtitle, result.propertyDesignation))
+    return Response.json({ query, results, hasMore: state === 'search-more', issues: state === 'search-partial'
+      ? [{ moduleId: 'tu', label: 'Tekniska utredningar', message: 'Tekniska utredningar kunde inte hämtas.' }] : [] })
+  }
   if ((init?.method ?? 'GET') !== 'GET') { window.__dashboardTest.writes++; throw Error('Synthetic preview blocks changes') }
   if (url.pathname === '/api/dashboard') {
     await new Promise(resolve => setTimeout(resolve, window.__dashboardTest.delay))

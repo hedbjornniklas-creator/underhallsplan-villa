@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs'
 import { isValidElement, type ReactNode } from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import ts from 'typescript'
+// @ts-expect-error Native Node TypeScript tests require the extension.
 import { authLoginUrl, safeAuthReturnPath } from '../src/lib/auth/returnPath.ts'
+// @ts-expect-error Native Node TypeScript tests require the extension.
 import * as recipientAuthPaths from '../src/lib/tasks/recipientAuthPaths.ts'
 
 function loadModule(file: string, dependencies: Record<string, unknown>) {

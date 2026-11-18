@@ -24,7 +24,7 @@ test('overview accent reuses the established EB report green instead of an OB bl
 })
 
 test('name links have explicit keyboard focus and touch targets without making the entire row clickable', () => {
-  assert.match(css, /\.eb-overview \.eb-name-link\s*\{[^}]*min-height:44px/s)
+  assert.match(css, /\.eb-overview \.eb-name-link\s*\{[^}]*min-height:44px/)
   assert.match(css, /\.eb-name-link:is\(:hover,:focus-visible\)[^}]*text-decoration:underline/)
   assert.match(css, /\.eb-home :is\(a,button,input,select\):focus-visible[^}]*outline:3px solid var\(--eb-accent\)/)
 })

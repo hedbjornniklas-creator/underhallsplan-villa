@@ -6,6 +6,7 @@ import test from 'node:test'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import ts from 'typescript'
+// @ts-expect-error Native Node TypeScript tests require the extension.
 import { authLoginUrl } from '../src/lib/auth/returnPath.ts'
 
 const require = createRequire(import.meta.url)
