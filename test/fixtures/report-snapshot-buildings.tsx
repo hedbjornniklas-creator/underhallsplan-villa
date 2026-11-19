@@ -1,10 +1,18 @@
 import { createRoot } from 'react-dom/client'
 import ReportSnapshotView from '../../src/components/report/ReportSnapshotView'
 import { snapshotWithBuildings } from './report-snapshot-buildings-data'
+import { buildReportSpec } from '../../src/lib/report/reportSpec'
 
 const snapshot = snapshotWithBuildings()
 const params = new URLSearchParams(location.search)
 const internal = params.has('internal')
+if (params.has('consistency')) {
+  snapshot.inspectionSide = 'seller'
+  snapshot.reportData.mock.inspection_conditions = { furnishing_level: params.get('furnishing') ?? 'omoblerad' }
+  snapshot.reportData.mock.inspections.assignment_confirmation_date = '2026-10-20'
+  snapshot.reportSpec = buildReportSpec({ layoutVersion: 2, inspectionSide: 'seller',
+    dynamicAppendices: { buildings: snapshot.reportData.mock.appendices.buildings } })
+}
 if (params.has('status')) {
   snapshot.inspectionSide = 'status'
   snapshot.reportData.mock.status_report = { assignmentNotice: 'Fryst uppdragstext.', visualConditions: 'Frysta förutsättningar.',

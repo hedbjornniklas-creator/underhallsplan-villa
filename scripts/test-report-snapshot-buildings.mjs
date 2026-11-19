@@ -70,6 +70,18 @@ else {
       await page.goto(base, { waitUntil: 'networkidle0' })
       await page.waitForSelector('[data-snapshot-building="garage"]')
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Overflow at ${width}px`)
+      for (const [level, expected] of [['omoblerad', 'omöblerad'], ['delvis_moblerad', 'delvis möblerad'], ['fullt_moblerad', 'fullt möblerad']]) {
+        await page.goto(`${base}?consistency&furnishing=${level}`, { waitUntil: 'networkidle0' })
+        const text = await page.$eval('body', element => element.innerText)
+        assert.ok(text.includes(`Byggnaden var ${expected} vid besiktningstillfället.`), level)
+        assert.ok(text.includes('2026-10-20'), 'Uses the frozen assignment date')
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Conditions overflow at ${width}px`)
+        if (level === 'omoblerad' && (width === 390 || width === 1280)) {
+          await page.evaluate(() => [...document.querySelectorAll('h2')].find(heading => heading.textContent === 'Okulär besiktning').scrollIntoView())
+          await page.screenshot({ path: resolve(output, `conditions-${width}.png`) })
+        }
+      }
+      await page.goto(base, { waitUntil: 'networkidle0' })
       const buildings = await page.$$eval('[data-snapshot-building]', sections => sections.map(section => {
         const images = [...section.querySelectorAll('img')]
         const heading = section.querySelector('h2')

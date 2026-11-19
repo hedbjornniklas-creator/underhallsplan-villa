@@ -22,11 +22,19 @@ test('report preserves already-readable legacy text and unknown values', () => {
 
 test('server-resolved two-column conditions use the primary building furnishing value', () => {
   const text = 'Byggnaden var fullt m\u00f6blerad vid besiktningstillf\u00e4llet.'
+  const presentation = { exports: {} }
+  new Function('require', 'module', 'exports', ts.transpileModule(
+    readFileSync(new URL('../src/lib/report/reportTextPresentation.ts', import.meta.url), 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    }).outputText)((name: string) => {
+      assert.equal(name, './furnishingLevel')
+      return { formatFurnishingLevel }
+    }, presentation, presentation.exports)
   const dependencies: Record<string, unknown> = {
     'react/jsx-runtime': jsxRuntime,
     '@/content/standardtexts/loadStandardText': { loadStandardText: () => text },
     '@/lib/report/loadAppendixText': { loadAppendixText: () => '' },
-    '@/lib/report/furnishingLevel': { formatFurnishingLevel },
+    '@/lib/report/reportTextPresentation': presentation.exports,
     '@/components/report/ReportRendererClient': { default: () => null },
   }
   const compiled = { exports: {} }

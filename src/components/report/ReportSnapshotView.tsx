@@ -6,6 +6,7 @@ import type { ReportSnapshotPayloadV1 } from '@/lib/report/reportSnapshotPayload
 import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
+import { snapshotReportTexts } from '@/lib/report/reportTextPresentation'
 import {
   defaultCoverIllustrationSrc,
   footerImageSrc,
@@ -301,7 +302,7 @@ function renderBlocks(items: SnapshotInspectionBlock[], headingLevel: 3 | 4 = 3,
   )
 }
 
-function SnapshotBuilding({ building, index, statusInspection = false }: { building: Record<string, unknown>; index: number; statusInspection?: boolean }) {
+function SnapshotBuilding({ building, index, notice, statusInspection = false }: { building: Record<string, unknown>; index: number; notice?: string; statusInspection?: boolean }) {
   const name = toText(building.name, `Byggnad ${index + 2}`)
   const introductions = asRecordArray(building.introduction)
   const furnishing = formatFurnishingLevel(getTextByPath(building, 'conditions.furnishing_level', ''))
@@ -351,6 +352,7 @@ function SnapshotBuilding({ building, index, statusInspection = false }: { build
           {renderBlocks(getBlockArrayByPath(building, `${side}.blocks`), 4, statusInspection)}
         </div>
       ))}
+      {!statusInspection && notice ? <p className="whitespace-pre-wrap border-t border-slate-200 pt-3 text-sm text-slate-700">{notice}</p> : null}
     </section>
   )
 }
@@ -380,19 +382,6 @@ function normalizeInspectionSide(
   if (value === 'apartment') return 'apartment'
   if (value === 'status') return 'status'
   return 'buyer'
-}
-
-function interpolateAssignmentNotice(text: string, assignmentDate: string) {
-  return repairMojibake(text)
-    .replace(/ÅÅÅÅ-MM-DD/g, assignmentDate)
-    .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
-}
-
-function resolveAppendix1Id(inspectionSide: 'buyer' | 'seller' | 'apartment' | 'status') {
-  if (inspectionSide === 'seller') return 'APPENDIX_1_VILLKOR_SELLER_SBR'
-  if (inspectionSide === 'apartment') return 'APPENDIX_1_VILLKOR_APARTMENT_SBR'
-  if (inspectionSide === 'status') return 'APPENDIX_1_VILLKOR_STATUS_SBR'
-  return 'APPENDIX_1_VILLKOR_BUYER_SBR'
 }
 
 function toImageUrl(value: string) {
@@ -440,30 +429,24 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
   const hasCertificationNumber =
     certificationNumber.trim().length > 0 && certificationNumber.trim() !== '--'
 
-  const assignmentDate = getTextByPath(mock, 'inspections.assignment_confirmation_date', '--')
-  const assignmentNoticeId =
-    inspectionSide === 'seller'
-      ? 'STD_ASSIGNMENT_SELLER_NOTICE'
-      : inspectionSide === 'apartment'
-        ? 'STD_ASSIGNMENT_APARTMENT_NOTICE'
-        : 'STD_ASSIGNMENT_BUYER_NOTICE'
+  const presentation = !isStatus ? snapshotReportTexts(props.snapshot, { standard: loadStandardText, appendix: loadAppendixText }) : null
   const frozenStatus = asRecord(mock.status_report)
   const exactStatusText = (key: string) => {
     const value = frozenStatus[key]
     if (typeof value !== 'string' || !value.trim()) throw Error('STB_REPORT_TEXT_MISSING')
     return value
   }
-  const assignmentNoticeText = isStatus ? exactStatusText('assignmentNotice') : interpolateAssignmentNotice(
-    loadStandardText(assignmentNoticeId),
-    assignmentDate
-  )
+  const assignmentNoticeText = isStatus ? exactStatusText('assignmentNotice') : presentation!.assignmentNotice
 
-  const visualConditionsText = isStatus ? exactStatusText('visualConditions') : loadStandardText('STD_VISUAL_INSPECTION_CONDITIONS')
+  const visualConditionsText = isStatus ? exactStatusText('visualConditions') : presentation!.visualConditions
   const statusFurnishing = isStatus ? String(frozenStatus.furnishing ?? '') : ''
-  const visualOralText = isStatus ? exactStatusText('oralInformation') : loadStandardText('STD_VISUAL_INSPECTION_ORAL')
-  const appendix1Text = isStatus ? exactStatusText('terms') : loadAppendixText(resolveAppendix1Id(inspectionSide))
-  const appendix2Text = loadAppendixText('APPENDIX_2_LITEN_BYGGORDBOK_SBR')
-  const appendix3Text = loadAppendixText('APPENDIX_3_LIFESPAN_TABLE_SBR')
+  const visualOralText = isStatus ? exactStatusText('oralInformation') : presentation!.oralInformation
+  const appendix1Text = isStatus ? exactStatusText('terms') : presentation!.appendix1
+  const appendix2Text = presentation?.appendix2 ?? ''
+  const appendix3Text = presentation?.appendix3 ?? ''
+  const membershipText = isStatus
+    ? 'Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.'
+    : presentation!.membership
   const appendices = asRecord(mock.appendices)
   // Extra buildings must come from this published snapshot, never the live inspection.
   const buildings = asRecordArray(appendices.buildings)
@@ -690,9 +673,7 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 <dd>{getTextByPath(mock, 'profile.email')}</dd>
               </div>
             </dl>
-            <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">
-              Besiktningsmannen är medlem i Svenska Byggingenjörers Riksförbund (SBR) och är registrerad i SBR:s förteckning över besiktningsmän med därtill hörande förpliktelser.
-            </p>
+            {membershipText ? <p className="mt-4 whitespace-pre-wrap text-sm text-slate-700">{membershipText}</p> : null}
           </article>
         </section>
 
@@ -746,14 +727,14 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
                 Information från uppdragsgivare, fastighetsägare eller ombud
               </h3>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-                {isStatus ? exactStatusText('ownerInformation') : 'Under denna rubrik är samtliga uppgifter lämnade av fastighetsägare eller dess ombud. Uppgifterna är inte kontrollerade av besiktningsmannen.'}
+                {isStatus ? exactStatusText('ownerInformation') : presentation!.ownerInformation}
               </p>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{disclosureInfo}</p>
 
               {renovations.length > 0 ? (
                 <>
                   <p className="mt-2 text-sm font-medium text-slate-800">
-                    Följande renoveringar och underhåll är utförda:
+                    {presentation?.renovationsLabel ?? 'Följande renoveringar och underhåll är utförda:'}
                   </p>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-sm text-slate-700">
                     {renovations.map((line, idx) => (
@@ -809,10 +790,11 @@ export default function ReportSnapshotView(props: ReportSnapshotViewProps) {
             {isApartmentObject ? 'Noteringar - lägenhet insida' : 'Noteringar - byggnad insida'}
           </h2>
           <div className="mt-3">{renderBlocks(interiorBlocks, 3, isStatus)}</div>
+          {!isStatus && presentation?.mainNotice ? <p className="mt-3 whitespace-pre-wrap border-t border-slate-200 pt-3 text-sm text-slate-700">{presentation.mainNotice}</p> : null}
         </section>
 
         {buildings.map((building, index) => (
-          <SnapshotBuilding key={`${toText(building.id, '')}-${index}`} building={building} index={index} statusInspection={isStatus} />
+          <SnapshotBuilding key={`${toText(building.id, '')}-${index}`} building={building} index={index} notice={presentation?.buildingNotices[index]} statusInspection={isStatus} />
         ))}
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">

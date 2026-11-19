@@ -2,7 +2,7 @@ import { loadStandardText } from '@/content/standardtexts/loadStandardText'
 import { loadAppendixText } from '@/lib/report/loadAppendixText'
 import type { ReportBlock, ReportSection, TextSource } from '@/lib/report/reportSpec'
 import ReportRendererClient from '@/components/report/ReportRendererClient'
-import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
+import { interpolateReportStandardText } from '@/lib/report/reportTextPresentation'
 import type { ObObjectType } from '@/lib/ob/objectType'
 
 type ReportRendererProps = {
@@ -40,26 +40,13 @@ const repairMojibake = (value: string) =>
     .replace(/\u00c3\u00a9/g, '\u00e9')
     .replace(/\u00c3\u2030/g, '\u00c9')
 
-const interpolateStandardText = (text: string, mockData: Record<string, unknown>) => {
-  const assignmentDate = getMockValue(mockData, 'mock.inspections.assignment_confirmation_date')
-  return repairMojibake(text)
-    .replace(/ÅÅÅÅ-MM-DD/g, assignmentDate)
-    .replace(/\{\{\s*assignment_confirmation_date\s*\}\}/g, assignmentDate)
-}
-
 const resolveTextSource = (
   source: TextSource,
   mockData: Record<string, unknown>
 ): TextSource => {
   if (source.kind === 'standardText') {
     const raw = loadStandardText(source.id)
-    let text = interpolateStandardText(raw, mockData)
-    if (source.id === 'STD_VISUAL_INSPECTION_CONDITIONS') {
-      const level = getMockValue(mockData, 'mock.inspection_conditions.furnishing_level').trim()
-      if (level && level !== '--' && level !== 'saknas') {
-        text = text.replace('fullt möblerad', formatFurnishingLevel(level))
-      }
-    }
+    const text = interpolateReportStandardText(source.id, repairMojibake(raw), mockData)
     return { kind: 'static', text }
   }
   return source

@@ -51,6 +51,43 @@ Regression: `node --experimental-strip-types --test test/report-snapshot-buildin
 och `node scripts/test-report-snapshot-buildings.mjs`. Dessa testar den faktiska
 kundkomponenten, inte bara PDF-komponenten i ett webbläsarfönster.
 
+### Informationskontroll 2026-11-19
+
+Möbleringen för huvudbyggnaden använder nu samma textanpassning i PDF-visaren
+och den digitala visaren. Värdet hämtas ur publicerad `inspection_conditions`,
+inte ur aktuell besiktning. Fullt/delvis möblerad, omöblerad och äldre fritext
+testas. Extrabyggnadernas egna sparade möbleringsvärden behålls.
+
+Den digitala visaren läser även rapportmallens sparade textkällor för uppdrag,
+förutsättningar, muntliga uppgifter, besiktningsmannens medlemskap, upplysningarnas
+förklaringar och bilagor. Frysta statiska texter och uttryckligt tomma fält ersätts
+inte med dagens malltext. Generell FTU-information som redan ingår i den sparade
+PDF-mallen visas också digitalt, för huvudbyggnad och extrabyggnader.
+
+Granskade uppgifter:
+
+- Objekt, uppdragsgivare, omfattning, datum/tid och närvarande: publicerat underlag.
+- Besiktningsmannens namn, behörighet, certifiering och kontaktuppgifter: fryst profil.
+- Handlingar, status, noteringar, ägarupplysningar och renoveringar: publicerat underlag.
+- Väder, byggnadsdata och varje extrabyggnads information: respektive frysta byggnadsdel.
+- Noteringar, risk, FTU och bilder: endast publicerade block; tomma texter fylls inte på.
+- Mätvärden, kommentarer och signeringsuppgifter för tilläggsuppdrag: frysta bilagor.
+- Statusbesiktning: behåller sina separata, redan frysta originaltexter.
+
+Kvarstående historisk begränsning: äldre ÖB-mallar kan innehålla enbart ett ID
+till en standardtext eller villkorsbilaga, inte en kopia av textversionen. Dessa
+referenser läses fortfarande med befintlig mallhantering; den exakta historiska
+ordalydelsen kan inte återskapas ur ID:t. Arkiverad PDF är originalet. Detta arbete
+skriver inte om äldre snapshots för att fylla luckan. Bild- och logotypadresser
+är frysta, men arbetet inför ingen ny versionslagring av de länkade bildfilerna.
+Den digitala layouten är inte en sidtrogen PDF-kopia och återger inte alla
+bolagsuppgifter från PDF-sidfoten. Inga nya företagsuppgifter hämtas i efterhand.
+
+Regression: `test/report-digital-consistency.test.ts`, `test/report-furnishing-level.test.ts`
+och befintliga snapshot-, status-, publicerings- och byggnadstester. Webbläsartestet
+ovan kontrollerar även möblering och sparat uppdragsdatum vid 320–1600 px.
+Ingen SQL, sparning av besiktningsdata eller omskapande av arkiverad PDF ingår.
+
 Verifierat lokalt 2026-09-27: 30 regressionstester och TypeScript-kontroll
 godkända. Kundvyn testad vid 375, 390, 768, 1280 och 1600 px, med flera
 byggnader, öppning/stängning av noteringsbilder och äldre rapport utan
