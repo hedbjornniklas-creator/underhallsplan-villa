@@ -11,7 +11,7 @@ import { formatFurnishingLevel } from '@/lib/report/furnishingLevel'
 import { resolveObObjectType } from '@/lib/ob/objectType'
 import { defaultCoverIllustrationSrc, sbrLogoSrc } from '@/lib/report/reportAssets'
 
-export type WordImage = { data: Buffer; width: number; height: number }
+export type WordImage = { data: Buffer; width: number; height: number; format?: 'png' | 'jpg' }
 export type WordReportOptions = { loadImage: (url: string) => Promise<WordImage>; draft?: boolean }
 type Child = Paragraph | Table
 type Row = Record<string, unknown>
@@ -73,7 +73,7 @@ export async function buildWordReport(snapshot: ReportSnapshotPayloadV1, options
     }
     const source = await images.get(url)!
     const scale = Math.min(maxWidth / source.width, maxHeight / source.height, 1)
-    return new ImageRun({ type: 'png', data: source.data,
+    return new ImageRun({ type: source.format ?? 'png', data: source.data,
       transformation: { width: Math.round(source.width * scale), height: Math.round(source.height * scale) },
       altText: { title: label, description: label, name: label } })
   }

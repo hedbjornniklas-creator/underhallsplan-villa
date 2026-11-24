@@ -88,6 +88,29 @@ och befintliga snapshot-, status-, publicerings- och byggnadstester. Webbläsart
 ovan kontrollerar även möblering och sparat uppdragsdatum vid 320–1600 px.
 Ingen SQL, sparning av besiktningsdata eller omskapande av arkiverad PDF ingår.
 
+### Word-exportens bildstorlek 2026-11-24
+
+- Fotografier i Word-kopian kodas som JPEG med kvalitet 78, högst 1400 pixlar
+  på längsta sidan och utan uppskalning. Telefonbilder roteras efter orientering.
+  Genomskinliga bilder, SVG och lokala rapportlogotyper behåller PNG.
+- Cirka 5 MB för hela Word-filen är ett riktmärke, inte en hård gräns.
+  Många bilder får ge en större fil; inga bilder tas bort för att nå målet.
+- Gränsen för inbäddade bildkopior är fortsatt 64 MiB. Originalfilerna får en
+  separat total nedladdningsbudget på 256 MiB; varje källbild är fortfarande
+  begränsad till 10 MiB och 40 miljoner pixlar. Högst 250 unika bilder och
+  högst 64 MiB färdig Word-fil gäller fortfarande. Inga bilder utelämnas tyst.
+- Tillåtna bildadresser, nekade omdirigeringar, timeout och befintliga
+  behörighets- och versionskontroller behålls. Endast exportens minneskopior
+  förändras. Inga bildfiler, besiktningsuppgifter eller snapshots skrivs om.
+- Word-svaret strömmas i 64 KiB-block. Detta följer Vercels rekommendation för
+  stora binära svar och undviker gränsen för buffrade funktionssvar:
+  https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions
+- Ingen SQL, miljöändring eller ändring av PDF-arkivering behövs.
+
+Regression: `test/word-image-compression.test.ts` och `test/ob-word-export.test.ts`
+provar JPEG/PNG, transparens, orientering, oförändrade källbytes, separata
+storleksgränser, rätt DOCX-medietyper samt exakta strömmade bytes över 4,5 MB.
+
 Verifierat lokalt 2026-09-27: 30 regressionstester och TypeScript-kontroll
 godkända. Kundvyn testad vid 375, 390, 768, 1280 och 1600 px, med flera
 byggnader, öppning/stängning av noteringsbilder och äldre rapport utan

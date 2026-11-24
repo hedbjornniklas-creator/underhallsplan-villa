@@ -76,7 +76,7 @@ test('each report block type is handled explicitly and Word never reads the muta
 })
 
 const context = { params: Promise.resolve({ id: 'inspection' }) }
-function harness(options: { denied?: boolean; colleague?: boolean; missing?: boolean; locked?: boolean; archived?: boolean; error?: string } = {}) {
+function harness(options: { denied?: boolean; colleague?: boolean; missing?: boolean; locked?: boolean; archived?: boolean; error?: string; bytes?: Buffer } = {}) {
   const snapshot = fixture()
   const calls = { snapshots: [] as string[], builds: 0, exports: [] as unknown[], orgs: [] as unknown[] }
   const access = async (_id: string, org: unknown, draft = false) => {
@@ -101,7 +101,7 @@ function harness(options: { denied?: boolean; colleague?: boolean; missing?: boo
       assert.deepEqual(opts, { readOnly: true }); calls.builds++; return snapshot.reportData
     } },
     '@/lib/report/word/buildWordReport': { buildWordReport: async (value: unknown, opts: unknown) => {
-      calls.exports.push({ value, opts }); if (options.error) throw Error(options.error); return Buffer.from('PK-frozen-word')
+      calls.exports.push({ value, opts }); if (options.error) throw Error(options.error); return options.bytes ?? Buffer.from('PK-frozen-word')
     } },
     '@/lib/report/word/wordReportImages': { createWordImageLoader: () => loadImage },
   })
@@ -137,6 +137,24 @@ test('Word draft is explicit, read-only, owner-only and refused for locked or ar
     assert.equal(h.calls.builds, 0)
     assert.equal(h.calls.exports.length, 0)
   }
+})
+
+test('large Word responses stream exact binary chunks without a buffered Content-Length', async () => {
+  const bytes = Buffer.alloc(6 * 1024 * 1024 + 37, 173)
+  const { get } = harness({ bytes })
+  const response = await get('report=selected')
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-length'), null)
+  const reader = response.body!.getReader()
+  let total = 0
+  for (;;) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    assert.ok(chunk.value.byteLength <= 64 * 1024)
+    assert.ok(Buffer.from(chunk.value).equals(bytes.subarray(total, total + chunk.value.byteLength)))
+    total += chunk.value.byteLength
+  }
+  assert.equal(total, bytes.byteLength)
 })
 
 test('missing/denied report, ambiguous query, size/asset failures fail closed without loading current data', async () => {
