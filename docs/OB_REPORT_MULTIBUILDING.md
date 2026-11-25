@@ -51,6 +51,66 @@ Regression: `node --experimental-strip-types --test test/report-snapshot-buildin
 och `node scripts/test-report-snapshot-buildings.mjs`. Dessa testar den faktiska
 kundkomponenten, inte bara PDF-komponenten i ett webbläsarfönster.
 
+### Informationskontroll 2026-11-19
+
+Möbleringen för huvudbyggnaden använder nu samma textanpassning i PDF-visaren
+och den digitala visaren. Värdet hämtas ur publicerad `inspection_conditions`,
+inte ur aktuell besiktning. Fullt/delvis möblerad, omöblerad och äldre fritext
+testas. Extrabyggnadernas egna sparade möbleringsvärden behålls.
+
+Den digitala visaren läser även rapportmallens sparade textkällor för uppdrag,
+förutsättningar, muntliga uppgifter, besiktningsmannens medlemskap, upplysningarnas
+förklaringar och bilagor. Frysta statiska texter och uttryckligt tomma fält ersätts
+inte med dagens malltext. Generell FTU-information som redan ingår i den sparade
+PDF-mallen visas också digitalt, för huvudbyggnad och extrabyggnader.
+
+Granskade uppgifter:
+
+- Objekt, uppdragsgivare, omfattning, datum/tid och närvarande: publicerat underlag.
+- Besiktningsmannens namn, behörighet, certifiering och kontaktuppgifter: fryst profil.
+- Handlingar, status, noteringar, ägarupplysningar och renoveringar: publicerat underlag.
+- Väder, byggnadsdata och varje extrabyggnads information: respektive frysta byggnadsdel.
+- Noteringar, risk, FTU och bilder: endast publicerade block; tomma texter fylls inte på.
+- Mätvärden, kommentarer och signeringsuppgifter för tilläggsuppdrag: frysta bilagor.
+- Statusbesiktning: behåller sina separata, redan frysta originaltexter.
+
+Kvarstående historisk begränsning: äldre ÖB-mallar kan innehålla enbart ett ID
+till en standardtext eller villkorsbilaga, inte en kopia av textversionen. Dessa
+referenser läses fortfarande med befintlig mallhantering; den exakta historiska
+ordalydelsen kan inte återskapas ur ID:t. Arkiverad PDF är originalet. Detta arbete
+skriver inte om äldre snapshots för att fylla luckan. Bild- och logotypadresser
+är frysta, men arbetet inför ingen ny versionslagring av de länkade bildfilerna.
+Den digitala layouten är inte en sidtrogen PDF-kopia och återger inte alla
+bolagsuppgifter från PDF-sidfoten. Inga nya företagsuppgifter hämtas i efterhand.
+
+Regression: `test/report-digital-consistency.test.ts`, `test/report-furnishing-level.test.ts`
+och befintliga snapshot-, status-, publicerings- och byggnadstester. Webbläsartestet
+ovan kontrollerar även möblering och sparat uppdragsdatum vid 320–1600 px.
+Ingen SQL, sparning av besiktningsdata eller omskapande av arkiverad PDF ingår.
+
+### Word-exportens bildstorlek 2026-11-24
+
+- Fotografier i Word-kopian kodas som JPEG med kvalitet 78, högst 1400 pixlar
+  på längsta sidan och utan uppskalning. Telefonbilder roteras efter orientering.
+  Genomskinliga bilder, SVG och lokala rapportlogotyper behåller PNG.
+- Cirka 5 MB för hela Word-filen är ett riktmärke, inte en hård gräns.
+  Många bilder får ge en större fil; inga bilder tas bort för att nå målet.
+- Gränsen för inbäddade bildkopior är fortsatt 64 MiB. Originalfilerna får en
+  separat total nedladdningsbudget på 256 MiB; varje källbild är fortfarande
+  begränsad till 10 MiB och 40 miljoner pixlar. Högst 250 unika bilder och
+  högst 64 MiB färdig Word-fil gäller fortfarande. Inga bilder utelämnas tyst.
+- Tillåtna bildadresser, nekade omdirigeringar, timeout och befintliga
+  behörighets- och versionskontroller behålls. Endast exportens minneskopior
+  förändras. Inga bildfiler, besiktningsuppgifter eller snapshots skrivs om.
+- Word-svaret strömmas i 64 KiB-block. Detta följer Vercels rekommendation för
+  stora binära svar och undviker gränsen för buffrade funktionssvar:
+  https://vercel.com/kb/guide/how-to-bypass-vercel-body-size-limit-serverless-functions
+- Ingen SQL, miljöändring eller ändring av PDF-arkivering behövs.
+
+Regression: `test/word-image-compression.test.ts` och `test/ob-word-export.test.ts`
+provar JPEG/PNG, transparens, orientering, oförändrade källbytes, separata
+storleksgränser, rätt DOCX-medietyper samt exakta strömmade bytes över 4,5 MB.
+
 Verifierat lokalt 2026-09-27: 30 regressionstester och TypeScript-kontroll
 godkända. Kundvyn testad vid 375, 390, 768, 1280 och 1600 px, med flera
 byggnader, öppning/stängning av noteringsbilder och äldre rapport utan

@@ -55,7 +55,15 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const base = buildReportPdfFileName({ inspectionFamily: 'OB', inspectionSide: snapshot.inspectionSide,
       assignmentNumber: inspection?.assignment_number, inspectionDate: inspection?.date }).replace(/\.pdf$/, '')
     const fileName = `${base}${draft ? ' - utkast' : ''}.docx`
-    return new Response(new Uint8Array(bytes), { headers: { ...ORGANIZATION_RESPONSE_HEADERS,
+    // Binary streaming also avoids the hosting platform's buffered-response size limit.
+    let offset = 0
+    const stream = new ReadableStream<Uint8Array>({ pull(controller) {
+      if (offset >= bytes.byteLength) { controller.close(); return }
+      const end = Math.min(offset + 64 * 1024, bytes.byteLength)
+      controller.enqueue(new Uint8Array(bytes.buffer, bytes.byteOffset + offset, end - offset))
+      offset = end
+    } })
+    return new Response(stream, { headers: { ...ORGANIZATION_RESPONSE_HEADERS,
       'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       'X-Content-Type-Options': 'nosniff',

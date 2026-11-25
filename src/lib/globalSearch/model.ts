@@ -54,11 +54,24 @@ export function globalSearchPattern(query: string): string {
   return `%${query.replace(/[\\%_]/gu, character => `\\${character}`)}%`
 }
 
-/** Broad DB candidate only; exact normalized matching still happens afterward. */
-export function globalSearchCandidatePattern(query: string): string {
+/** A selective query word; final matching still requires every query word. */
+export function globalSearchCandidateAnchor(query: string): string {
   const words = normalizeGlobalSearchText(query).replace(/(\p{L})(\p{N})/gu, '$1 $2').replace(/(\p{N})(\p{L})/gu, '$1 $2')
     .match(/[\p{L}\p{N}]+/gu) ?? []
-  const anchor = words.sort((left, right) => right.length - left.length)[0]
+  const firstNumber = words.findIndex(word => /^\p{N}/u.test(word))
+  const nameBeforeNumber = firstNumber > 0 ? words.slice(0, firstNumber) : []
+  // Numbered designations often start with a municipality; an address may end
+  // with its city after the street number. Prefer the object's name in both
+  // cases without relying on a list of municipalities. Every query word is
+  // still checked against the combined metadata after retrieving candidates.
+  const anchors = nameBeforeNumber.length > 1 ? nameBeforeNumber.slice(1)
+    : nameBeforeNumber.length ? nameBeforeNumber : words
+  return [...anchors].sort((left, right) => right.length - left.length)[0] ?? ''
+}
+
+/** Broad DB candidate only; exact normalized matching still happens afterward. */
+export function globalSearchCandidatePattern(query: string): string {
+  const anchor = globalSearchCandidateAnchor(query)
   // Vowel positions may hold Swedish diacritics in storage (a/å/ä, o/ö).
   // Only this generated pattern contains wildcards; user punctuation stays literal.
   return anchor ? `%${anchor.replace(/[aeiouy]/gu, '_')}%` : globalSearchPattern(query)

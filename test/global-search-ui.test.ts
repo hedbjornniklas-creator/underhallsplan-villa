@@ -203,3 +203,19 @@ test('result text is escaped and unsafe destinations fail closed', async t => {
   await ui.settle(); assert.match(text(ui.render()), /Sökningen kunde inte hämtas/)
   assert.equal(nodes(ui.render()).some(node => node.props.role === 'option'), false); assert.equal(ui.pushes.length, 0)
 })
+
+test('partial results name incomplete modules once without exposing technical errors', async t => {
+  const ui = harness(); t.after(ui.dispose); await ui.settle(); ui.focus(); ui.change('Svanen'); ui.advance(250)
+  ui.answer(0, 'Tillgänglig träff', { issues: [
+    { moduleId: 'tu', label: 'Tekniska utredningar', message: 'GLOBAL_SEARCH_TIMEOUT private metadata' },
+    { moduleId: 'tu', label: ' Tekniska utredningar ', message: 'GLOBAL_SEARCH_SOURCE_READ_FAILED' },
+    { moduleId: 'ob', label: 'Överlåtelsebesiktning', message: 'raw database details' },
+  ] })
+  await ui.settle()
+  const tree = ui.render()
+  const notice = nodes(tree).find(node => node.props.className === 'hh-search-partial')!
+  assert.match(text(notice), /Resultatet är inte komplett\. Kunde inte söka färdigt i: Tekniska utredningar, Överlåtelsebesiktning\./)
+  assert.equal(text(notice).match(/Tekniska utredningar/g)?.length, 1)
+  assert.match(text(tree), /Tillgänglig träff/)
+  assert.doesNotMatch(text(tree), /GLOBAL_SEARCH|private metadata|raw database details/)
+})

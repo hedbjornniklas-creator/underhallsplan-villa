@@ -6,7 +6,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getOrganizationCustomerNavigationContext } from '@/lib/customers/server'
 import { requireRenoAppViewerContext } from '@/lib/renoapp/server'
 import {
-  GLOBAL_SEARCH_MODULE_LIMIT, compactGlobalSearchText, globalSearchCandidatePattern, globalSearchExactCandidatePattern, globalSearchSubtitle,
+  GLOBAL_SEARCH_MODULE_LIMIT, compactGlobalSearchText, globalSearchCandidateAnchor, globalSearchCandidatePattern, globalSearchExactCandidatePattern, globalSearchSubtitle,
   matchesGlobalSearch, rankGlobalSearchResults, selectGlobalSearchKinds,
   type GlobalSearchContext, type GlobalSearchIssue, type GlobalSearchProviderResult, type GlobalSearchResult,
 } from './model'
@@ -42,8 +42,7 @@ const denied = new Set(['MODULE_ACCESS_REQUIRED', 'PRODUCT_ACCESS_REQUIRED', 'OR
   'RENOAPP_MEMBERSHIP_REQUIRED', 'CUSTOMER_ORGANIZATION_MEMBER_REQUIRED', 'CUSTOMER_ORGANIZATION_ADMIN_REQUIRED'])
 
 function candidatePattern(query: string) {
-  const first = query.trim().split(/\s+/u)[0]
-  return globalSearchCandidatePattern(first)
+  return globalSearchCandidatePattern(query)
 }
 
 function chunks(values: string[]) {
@@ -87,12 +86,15 @@ async function readFields(database: Database, table: string, columns: string, sc
   while (sources.some(source => !source.done) && rows.size <= resultLimit) {
     try {
       execution?.check()
-      const pages = await Promise.all(sources.filter(source => !source.done).map(async source => ({
+      const pages = await Promise.allSettled(sources.filter(source => !source.done).map(async source => ({
         source, result: await executeRead(source.read().order('id').range(source.offset, source.offset + PAGE_SIZE - 1), execution),
       })))
       const candidates: Row[] = []
-      for (const { source, result } of pages) {
-        if (result.error) throw new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED')
+      let failure: unknown
+      for (const pageResult of pages) {
+        if (pageResult.status === 'rejected') { failure ??= pageResult.reason; continue }
+        const { source, result } = pageResult.value
+        if (result.error) { failure ??= new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED'); continue }
         const page = result.data ?? []
         if (page.length > PAGE_SIZE) throw new Error('GLOBAL_SEARCH_SOURCE_INVALID')
         source.done = page.length < PAGE_SIZE
@@ -102,8 +104,10 @@ async function readFields(database: Database, table: string, columns: string, sc
         }
       }
       for (const row of await accept(candidates)) rows.set(id(row.id), row)
+      if (failure) throw failure
     } catch (error) {
-      if (!isTimeout(error)) throw error
+      const reason = execution?.signal.aborted ? execution.signal.reason : error
+      if (!isTimeout(reason)) throw reason
       timedOut = true
       break
     }
@@ -239,8 +243,8 @@ async function renoapp(input: GlobalSearchContext & { query: string }): Promise<
     if (result.error) throw new Error('GLOBAL_SEARCH_EXTENDED_READ_FAILED')
     for (const row of result.data ?? []) brfs.set(id(row.id), row)
   }
-  const firstWord = input.query.trim().split(/\s+/u)[0]
-  const designationMatches = [...brfs.values()].filter(row => matchesGlobalSearch(firstWord, text(row.name), text(row.address), text(row.property_designation))).map(row => id(row.id))
+  const anchor = globalSearchCandidateAnchor(input.query) || input.query
+  const designationMatches = [...brfs.values()].filter(row => matchesGlobalSearch(anchor, text(row.name), text(row.address), text(row.property_designation))).map(row => id(row.id))
   const exactBrfIds = [...brfs.values()].filter(row => exactDesignation(input.query, row.property_designation)).map(row => id(row.id))
   const columns = 'id,brf_id,case_number,title,status,unit_number_internal,unit_number_skatteverket'
   const fields = ['case_number', 'title', 'unit_number_internal', 'unit_number_skatteverket']
@@ -266,7 +270,7 @@ async function renoapp(input: GlobalSearchContext & { query: string }): Promise<
   return selectedResults(input.query, results, selected, 'renoapp', 'RenoApp')
 }
 
-export async function searchExtendedModules(input: GlobalSearchContext & { query: string }): Promise<Provider> {
+export async function searchExtendedModules(input: GlobalSearchContext & { query: string }, taskAccess?: () => Promise<boolean>): Promise<Provider> {
   const database = createSupabaseServerClient() as unknown as Database
   const work: Array<{ moduleId: string; label: string; run: () => Promise<GlobalSearchProviderResult> }> = [
     { moduleId: 'properties', label: 'Fastigheter', run: () => properties(input, database) },
@@ -274,7 +278,10 @@ export async function searchExtendedModules(input: GlobalSearchContext & { query
     { moduleId: 'renoapp', label: 'RenoApp', run: () => renoapp(input) },
   ]
   work.push({ moduleId: 'tasks', label: 'Gizmo', run: async () => {
-      const allowed = input.execution ? await input.execution.run(() => taskModuleAllowed(input.orgId)) : await taskModuleAllowed(input.orgId)
+      // The caller may reuse its request-scoped access snapshot. Never run-wrap
+      // that callback: its scoped/global checks already acquire their own slots.
+      const allowed = taskAccess ? await taskAccess()
+        : input.execution ? await input.execution.run(() => taskModuleAllowed(input.orgId)) : await taskModuleAllowed(input.orgId)
       if (!allowed) return { results: [], hasMore: false }
       const results = await Promise.allSettled([projects(input, database), tasks(input, database)])
       const available = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : [])

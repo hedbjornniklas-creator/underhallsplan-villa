@@ -38,9 +38,13 @@ function like(value: unknown, pattern: string) {
 function harness(options: {
   data?: Record<string, Row[]>; tasksAllowed?: boolean; customerAllowed?: boolean;
   authorizedBrfs?: string[]; renoError?: string; failedTables?: string[];
+  timeoutFields?: string[]
+  timeoutResponse?: () => void
   execution?: { signal: AbortSignal; run<T>(work: () => Promise<T>): Promise<T>; check(): void }
+  taskAccess?: () => Promise<boolean>
 } = {}) {
   const calls: Call[] = []
+  let guardReads = 0
   class Reader implements PromiseLike<{ data: Row[] | null; error: unknown }> {
     filters: Call['filters'] = []
     offset = 0
@@ -66,6 +70,13 @@ function harness(options: {
       rejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
     ): PromiseLike<TResult1 | TResult2> {
       calls.push({ mode: this.mode, table: this.table, columns: this.columns, filters: this.filters, offset: this.offset, size: this.size })
+      if (this.filters.some(([method, field]) => method === 'ilike' && options.timeoutFields?.includes(`${this.table}.${field}`))) {
+        if (options.timeoutResponse) {
+          options.timeoutResponse()
+          return Promise.resolve({ data: null, error: { message: 'Aborted database request' } }).then(fulfilled, rejected)
+        }
+        return Promise.reject(new Error('GLOBAL_SEARCH_TIMEOUT')).then(fulfilled, rejected)
+      }
       if (options.failedTables?.includes(this.table)) return Promise.resolve({ data: null, error: { message: 'Private database failure' } }).then(fulfilled, rejected)
       let rows = (options.data?.[this.table] ?? []).filter(row => this.mode !== 'user' || row.visible !== false)
       for (const [method, field, value] of this.filters) rows = rows.filter(row => {
@@ -82,7 +93,7 @@ function harness(options: {
   const database = (mode: Call['mode']) => ({ from: (table: string) => ({ select: (columns: string) => new Reader(mode, table, columns) }) })
   const server = compiled<typeof Extended>('src/lib/globalSearch/extended.ts', {
     'server-only': {}, './model': model,
-    '@/lib/access/server': { hasCurrentUserAccess: async () => options.tasksAllowed ?? true },
+    '@/lib/access/server': { hasCurrentUserAccess: async () => { guardReads++; return options.tasksAllowed ?? true } },
     '@/lib/supabase/server': { createSupabaseServerClient: () => database('user') },
     '@/lib/supabase/admin': { createSupabaseAdminClient: () => database('admin') },
     '@/lib/customers/server': { getOrganizationCustomerNavigationContext: async (orgId: string) => {
@@ -95,7 +106,7 @@ function harness(options: {
       return { userId: USER, authorizedBrfIds: options.authorizedBrfs ?? [], accessibleBrfIds: ['brf-a'] }
     } },
   })
-  return { calls, search: (query: string) => server.searchExtendedModules({ orgId: ORG, userId: USER, role: 'inspector', query, execution: options.execution }) }
+  return { calls, get guardReads() { return guardReads }, search: (query: string) => server.searchExtendedModules({ orgId: ORG, userId: USER, role: 'inspector', query, execution: options.execution }, options.taskAccess) }
 }
 
 test('Gizmo designation search uses only org-linked properties and preserves private task RLS', async () => {
@@ -192,7 +203,7 @@ test('Gizmo pages past partial title matches and combines linked property metada
       title: 'Badrum', property_id: index === 59 ? 'target-property' : null })),
     properties: [{ id: 'target-property', name: 'Eken', cadastral_id: 'Eken 3:7', action_cases: [{ org_id: ORG }] }],
   } })
-  const result = await h.search('Badrum Eken3:7')
+  const result = await h.search('Badrum Ek')
   assert.deepEqual(result.results.map(row => row.id), ['tasks:project:project-059'])
   assert(h.calls.some(call => call.table === 'action_cases' && call.offset >= 50))
 })
@@ -269,4 +280,91 @@ test('exact RenoApp designation is retained beyond a page of cases in prefix BRF
   } })
   const result = await h.search('Eken1:2')
   assert.equal(result.results.find(row => row.moduleId === 'renoapp')?.id, 'renoapp:case:case-999')
+})
+
+test('Gizmo reuses request-scoped module access without repeating platform identity reads', async () => {
+  const h = harness({ tasksAllowed: false, taskAccess: async () => true, data: {
+    operational_tasks: [{ id: 'task', org_id: ORG, title: 'Harsyran 12', archived_at: null }],
+  } })
+  const result = await h.search('Harsyran 12')
+  assert(result.results.some(row => row.id === 'tasks:task:task'))
+  assert.equal(h.guardReads, 0)
+})
+
+test('denied request-scoped Gizmo access prevents all project and task queries', async () => {
+  const h = harness({ tasksAllowed: true, taskAccess: async () => false })
+  const result = await h.search('Harsyran 12')
+  assert.deepEqual(result.results, [])
+  assert.equal(h.guardReads, 0)
+  assert(h.calls.every(call => !['action_cases', 'operational_tasks'].includes(call.table)))
+})
+
+test('fulfilled field pages survive another field reaching the deadline', async () => {
+  const h = harness({ tasksAllowed: false, timeoutFields: ['properties.address'], data: {
+    properties: [{ id: 'found-by-name', owner: USER, name: 'Harsyran', cadastral_id: 'Annan 1:2' }],
+  } })
+  const result = await h.search('Harsyran')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
+  assert(result.issues?.some(issue => issue.moduleId === 'properties'))
+  assert.equal(result.hasMore, true)
+})
+
+test('municipality plus designation uses the specific anchor without scanning the municipality', async () => {
+  const h = harness({ tasksAllowed: false, data: {
+    properties: Array.from({ length: 80 }, (_, index) => ({ id: `p${String(index).padStart(3, '0')}`, owner: USER,
+      municipality: 'Stockholm', cadastral_id: index === 79 ? 'Paddan 4' : `Eken 1:${index}` })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:p079'])
+  assert.equal(result.hasMore, false)
+  assert(h.calls.filter(call => call.table === 'properties').every(call => call.offset === 0))
+  assert(h.calls.some(call => call.filters.some(([method, , value]) => method === 'ilike' && value === '%p_dd_n%')))
+})
+
+test('city plus street number with a suffix preserves cross-field address matches', async () => {
+  const h = harness({ tasksAllowed: false, data: { properties: [
+    { id: 'street', owner: USER, city: 'Stockholm', address: 'Paddanvägen 4 B', cadastral_id: 'Paddan 4' },
+    { id: 'other-street', owner: USER, city: 'Stockholm', address: 'Ekvägen 4 B' },
+  ] } })
+  const result = await h.search('Stockholm Paddanvägen4B')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:street'])
+  assert(h.calls.some(call => call.filters.some(([method, , value]) => method === 'ilike' && value === '%p_dd_nv_g_n%')))
+})
+
+test('Gizmo combines municipality and designation while narrowing linked-property candidates', async () => {
+  const h = harness({ data: {
+    properties: Array.from({ length: 80 }, (_, index) => ({ id: `p${index}`, owner: 'colleague', municipality: 'Stockholm',
+      cadastral_id: index === 79 ? 'Paddan 4' : `Eken 1:${index}`, action_cases: [{ org_id: ORG }] })),
+    action_cases: Array.from({ length: 80 }, (_, index) => ({ id: `project-${String(index).padStart(3, '0')}`, org_id: ORG, property_id: `p${index}`, title: 'Åtgärder' })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['tasks:project:project-079'])
+  assert(h.calls.filter(call => call.table === 'action_cases').every(call => call.offset === 0))
+  assert(h.calls.filter(call => call.mode === 'admin' && call.table === 'properties').every(call => call.offset === 0))
+})
+
+test('RenoApp narrows BRFs by the same specific designation anchor', async () => {
+  const brfIds = Array.from({ length: 80 }, (_, index) => `brf-${index}`)
+  const h = harness({ tasksAllowed: false, authorizedBrfs: brfIds, data: {
+    brf_associations: brfIds.map((id, index) => ({ id, address: 'Stockholm', property_designation: index === 79 ? 'Paddan 4' : `Eken 1:${index}` })),
+    renovation_cases: brfIds.map((brf_id, index) => ({ id: `case-${String(index).padStart(3, '0')}`, brf_id, title: 'Badrum' })),
+  } })
+  const result = await h.search('Stockholm Paddan4')
+  assert.deepEqual(result.results.map(row => row.id), ['renoapp:case:case-079'])
+  const relationReads = h.calls.filter(call => call.table === 'renovation_cases' && !call.filters.some(([method]) => method === 'ilike'))
+  assert(relationReads.length > 0)
+  assert(relationReads.every(call => call.filters.some(([method, field, value]) => method === 'in' && field === 'brf_id' && (value as string[]).length === 1 && (value as string[])[0] === 'brf-79')))
+})
+
+test('completed pages survive an SDK abort returned as an error response', async () => {
+  const controller = new AbortController()
+  const h = harness({ tasksAllowed: false, timeoutFields: ['properties.address'],
+    timeoutResponse: () => controller.abort(new Error('GLOBAL_SEARCH_TIMEOUT')),
+    execution: { signal: controller.signal, run: async work => work(), check() {} },
+    data: { properties: [{ id: 'found-by-name', owner: USER, name: 'Harsyran', cadastral_id: 'Annan 1:2' }] },
+  })
+  const result = await h.search('Harsyran')
+  assert.deepEqual(result.results.map(row => row.id), ['properties:property:found-by-name'])
+  assert(result.issues?.some(issue => issue.moduleId === 'properties'))
+  assert.equal(result.hasMore, true)
 })

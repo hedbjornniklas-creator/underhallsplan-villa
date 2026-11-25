@@ -32,7 +32,7 @@ export async function searchHusHub(queryValue: unknown, requestedOrgId?: unknown
   }
   const access = await execution.run(() => createDashboardAccessRequest())
   if (access.userId !== context.userId) throw new Error('UNAUTHORIZED')
-  const allowed = async (moduleKey?: (typeof MODULES)[number]['key']) => {
+  const allowed = async (moduleKey?: (typeof MODULES)[number]['key'] | 'tasks') => {
     const [scoped, global] = await Promise.all([
       execution.run(() => access.hasAccess({ moduleKey, scopeType: 'organization', scopeId: context.orgId })),
       execution.run(() => access.hasAccess({ moduleKey, scopeType: 'global' })),
@@ -56,7 +56,7 @@ export async function searchHusHub(queryValue: unknown, requestedOrgId?: unknown
         throw error
       }
     } })),
-    { id: 'extended', label: 'Övriga arbetsområden', read: () => searchExtendedModules({ ...selected, query }) },
+    { id: 'extended', label: 'Övriga arbetsområden', read: () => searchExtendedModules({ ...selected, query }, () => allowed('tasks')) },
   ]
   const outcomes = await Promise.allSettled(readers.map(reader => reader.read()))
   const response: GlobalSearchResponse = { query, results: [], hasMore: false, issues: [] }

@@ -35,7 +35,8 @@ organisation vars destinationssidor annars skulle öppnas i fel organisation.
 - Högst åtta träffar per modul och 40 totalt. Gränssnittet ber användaren förfina
   sökningen när fler träffar finns. En fastighets exakta beteckning prioriteras.
 - Fördröjd start vid inmatning och avbrutna äldre sökningar minskar onödiga anrop.
-  Delvisa fel visas som delresultat, inte som ett fullständigt tomt resultat.
+  Servern har en gemensam tidsgräns på tolv sekunder och högst fyra samtidiga
+  läsningar. Delvisa fel visas med namnen på de berörda modulerna.
 - `/api/hushub/search?q=…&orgId=…` är en autentiserad, läsande serverroute med
   `private, no-store`. Klienten sparar inga träffar i lokal lagring.
 - Utgången session erbjuder ny inloggning med återgång till aktuell sida.
