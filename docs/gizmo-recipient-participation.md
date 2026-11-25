@@ -21,6 +21,9 @@ beroende av aktuell ansvarig eller av att ett aviseringsmejl har kommit fram.
   samma request-id, och mottagaren har en kort frekvensbegransning.
 - Vanliga uppgifter anvander sin befintliga utskicksfunktion med knappnamnet
   Skicka om lank. En projektfragans privata ansvariguppdrag finns separat.
+- En delad fraga med ett eget kopplat uppdrag visas en gang under Aktiva/Alla.
+  Det egna uppdraget och dess privata historik oppnas fran fragan. Ansvarsstatistik,
+  Ditt nasta steg och Forsenade behaller uppdragets befintliga statusflode.
 
 ## Driftsattning
 

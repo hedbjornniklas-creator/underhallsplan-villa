@@ -362,7 +362,8 @@ export async function getRecipientPortalOverview(
   session: RecipientPortalSession
 ): Promise<RecipientPortalOverview> {
   const analyticsAsOf = new Date().toISOString()
-  const [scopes, participations] = await Promise.all([resolvePortalScopes(session.authUserId), getRecipientSharedItems(session)])
+  const scopes = await resolvePortalScopes(session.authUserId)
+  const participations = await getRecipientSharedItems(session, scopes.map(scope => scope.task_id))
   if (scopes.length === 0) {
     return {
       recipientName: session.fallbackName,

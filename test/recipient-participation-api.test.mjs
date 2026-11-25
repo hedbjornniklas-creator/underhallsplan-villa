@@ -2,13 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import React from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import * as icons from 'lucide-react'
+import * as jsxRuntime from 'react/jsx-runtime'
 import { questionUuid } from '../src/lib/action-cases/projectQuestions.ts'
 
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const user = id(1), org = id(2), project = id(3), question = id(4), memberId = id(5), contact = id(6), file = id(7)
 function load(path, deps) {
   const loaded = { exports: {} }
-  const source = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText
+  const source = ts.transpileModule(readFileSync(new URL(path, import.meta.url), 'utf8'), { fileName: path, compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true, jsx: ts.JsxEmit.ReactJSX } }).outputText
   new Function('require', 'module', 'exports', source)(name => deps[name] || {}, loaded, loaded.exports)
   return loaded.exports
 }
@@ -100,6 +104,46 @@ test('the portal reads more than one thousand participations without fetching pr
   const result = await server.getRecipientSharedItems({ authUserId: user })
   assert.equal(result.length, 1001); assert.ok(result.some(row => row.id === members.at(-1).question_id))
   for (const call of calls.filter(call => call.table === 'action_case_questions')) assert.equal(call.fields, 'id,number,action_case_id,status:body->>status')
+})
+
+test('question links contain only this recipients assigned task ids, never other participants ids', async () => {
+  const calls = [], own = id(50), foreign = id(51)
+  const tables = {
+    action_case_questions: [{ id: question, number: 12, action_case_id: project, status: 'open' }],
+    action_case_question_conversations: [{ question_id: question, shared_body: { title: 'Published' }, shared_at: '2026-01-01' }],
+    action_cases: [{ id: project, title: 'Project' }],
+    action_case_question_events: [{ id: id(60), question_id: question, task_id: own }, { id: id(61), question_id: question, task_id: foreign }],
+  }
+  const db = { rpc(name) { return query(name, name === 'resolve_recipient_question_scope' ? [{ id: memberId, question_id: question, action_case_id: project }] : [], calls) }, from(table) { return query(table, tables[table] || [], calls) } }
+  const server = load('../src/lib/tasks/recipientParticipation.ts', { '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/action-cases/projectQuestions': { questionUuid } })
+  const result = await server.getRecipientSharedItems({ authUserId: user }, [own])
+  assert.deepEqual(result[0].assignedTaskIds, [own]); assert.doesNotMatch(JSON.stringify(result), new RegExp(foreign))
+})
+
+test('the inbox shows four unique cases, while linked tasks remain available to responsibility filters', () => {
+  const analytics = load('../src/lib/tasks/analytics.ts', { './contracts': load('../src/lib/tasks/contracts.ts', {}) }).buildTaskAnalyticsScope({ tasks: [], deadlineRequests: [], asOf: '2026-11-25T10:00:00Z' })
+  const overview = {
+    recipientName: 'Recipient', tasks: [
+      { id: id(50), title: 'DUPLICATE-TASK-CARD', status: 'in_progress', risk: 'green', dueAt: '2027-01-01T10:00:00Z', dueTimeZone: 'Europe/Stockholm', issuerName: 'Manager', unreadMessageCount: 0 },
+      { id: id(51), title: 'Completed ordinary task', status: 'approved', risk: 'green', dueAt: '2027-01-01T10:00:00Z', dueTimeZone: 'Europe/Stockholm', issuerName: 'Manager', unreadMessageCount: 0 },
+    ], summary: { active: 1, needsAction: 0, overdue: 0, completed: 1, unreadMessages: 0 }, analytics: { asOf: '2026-11-25T10:00:00Z', defaultPeriod: '90d', self: analytics },
+    participations: [12, 21, 2].map(n => ({ id: id(n), kind: 'question', title: `Question ${n}`, status: 'open', contextLabel: 'Project', href: '#', sharedAt: '2026-11-25', assignedTaskIds: n === 2 ? [id(50)] : [] })),
+  }
+  for (const filter of ['active', 'all']) {
+    const ui = load('../src/components/tasks/RecipientPortalOverviewClient.tsx', {
+      react: { ...React, useState: value => React.useState(value === 'active' ? filter : value) }, 'react/jsx-runtime': jsxRuntime,
+      'next/link': { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) }, 'next/navigation': { useRouter: () => ({}) }, 'lucide-react': icons,
+      './SigneMark': { SigneMark: () => null }, './TaskStatusBadge': { TaskRiskDot: () => null, TaskStatusBadge: () => null },
+      '@/lib/tasks/dateTime': { formatTaskDateTime: () => '1 januari', normalizeTaskTimeZone: () => 'Europe/Stockholm', taskTimeZoneLabel: () => 'Stockholm' },
+      '@/lib/tasks/recipientAuthPaths': { recipientTaskPath: value => `/mina-uppdrag/uppdrag/${value}` },
+    }).default
+    const html = renderToStaticMarkup(React.createElement(ui, { initialOverview: overview }))
+    assert.doesNotMatch(html, /DUPLICATE-TASK-CARD/)
+    assert.equal((html.match(/Question (?:12|21|2)</g) || []).length, 3)
+    assert.equal(html.includes('Completed ordinary task'), filter === 'all')
+  }
+  const source = readFileSync(new URL('../src/components/tasks/RecipientPortalOverviewClient.tsx', import.meta.url), 'utf8')
+  assert.match(source, /!drilldownTaskIds && \['active', 'completed', 'all'\]\.includes\(filter\)/)
 })
 
 test('new endpoints require the real session and same-origin body validation, not a caller-supplied user', async () => {

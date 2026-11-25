@@ -160,18 +160,20 @@ export default function RecipientPortalOverviewClient({
     () => taskDrilldown ? new Set(taskDrilldown.taskIds) : null,
     [taskDrilldown]
   )
+  const linkedTaskIds = useMemo(() => new Set((initialOverview.participations || []).flatMap(item => item.assignedTaskIds || [])), [initialOverview.participations])
 
   const visibleTasks = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('sv-SE')
     return initialOverview.tasks.filter((task) => {
       if (drilldownTaskIds && !drilldownTaskIds.has(task.id)) return false
+      if (!drilldownTaskIds && ['active', 'completed', 'all'].includes(filter) && linkedTaskIds.has(task.id)) return false
       if (!matchesFilter(task, filter)) return false
       if (!query) return true
       return [task.title, task.contextLabel, task.organizationName, task.issuerName]
         .filter((value): value is string => Boolean(value))
         .some((value) => value.toLocaleLowerCase('sv-SE').includes(query))
     })
-  }, [drilldownTaskIds, filter, initialOverview.tasks, search])
+  }, [drilldownTaskIds, filter, initialOverview.tasks, linkedTaskIds, search])
   const visibleParticipations = useMemo(() => {
     if (drilldownTaskIds || ['needs_action', 'overdue'].includes(filter)) return []
     const query = search.trim().toLocaleLowerCase('sv-SE')
@@ -241,12 +243,14 @@ export default function RecipientPortalOverviewClient({
 
   const sharedItems = initialOverview.participations || []
   const sharedActive = sharedItems.filter(item => item.status !== 'closed').length
+  const standaloneTasks = initialOverview.tasks.filter(task => !linkedTaskIds.has(task.id))
+  const standaloneActive = standaloneTasks.filter(task => !TERMINAL_STATUSES.has(task.status)).length
   const filters: Array<{ key: FilterKey; label: string; count: number }> = [
-    { key: 'active', label: 'Aktiva', count: initialOverview.summary.active + sharedActive },
+    { key: 'active', label: 'Aktiva', count: standaloneActive + sharedActive },
     { key: 'needs_action', label: 'Ditt nästa steg', count: initialOverview.summary.needsAction },
     { key: 'overdue', label: 'Försenade', count: initialOverview.summary.overdue },
-    { key: 'completed', label: 'Avslutade', count: initialOverview.tasks.length - initialOverview.summary.active + sharedItems.length - sharedActive },
-    { key: 'all', label: 'Alla', count: initialOverview.tasks.length + sharedItems.length },
+    { key: 'completed', label: 'Avslutade', count: standaloneTasks.length - standaloneActive + sharedItems.length - sharedActive },
+    { key: 'all', label: 'Alla', count: standaloneTasks.length + sharedItems.length },
   ]
 
   return (

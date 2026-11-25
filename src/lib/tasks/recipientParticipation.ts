@@ -12,6 +12,7 @@ export type RecipientSharedItem = {
   status: 'open' | 'closed'
   href: string
   sharedAt: string
+  assignedTaskIds?: string[]
 }
 export type RecipientTaskParticipation = {
   grant_id: string; org_id: string; contact_id: string; task_id: string; question_id: string | null
@@ -38,7 +39,7 @@ export async function recipientTaskParticipations(authUserId: string, taskId: st
   return [...new Map(result.filter(row => questionUuid(row.task_id) && questionUuid(row.contact_id) && Number.isFinite(Date.parse(row.shared_from)) && Date.parse(row.shared_until) >= Date.parse(row.shared_from)).map(row => [row.grant_id, row])).values()]
 }
 
-export async function getRecipientSharedItems(session: RecipientPortalSession): Promise<RecipientSharedItem[]> {
+export async function getRecipientSharedItems(session: RecipientPortalSession, assignedTaskIds: readonly string[] = []): Promise<RecipientSharedItem[]> {
   const db = createSupabaseAdminClient()
   const members = await all<QuestionScope>((from, to) => db.rpc('resolve_recipient_question_scope', { p_auth_user_id: session.authUserId, p_question_id: null }).order('id').range(from, to))
   const ids = [...new Set(members.map(row => row.question_id).filter(questionUuid))]
@@ -53,12 +54,22 @@ export async function getRecipientSharedItems(session: RecipientPortalSession): 
     checked(projects.error)
     const published = new Map(rows<{ question_id: string; shared_body: { title?: string }; shared_at: string | null }>(conversations.data).map(row => [row.question_id, row]))
     const labels = new Map(rows<{ id: string; title: string }>(projects.data).map(row => [row.id, row.title]))
+    const linkedTasks = new Map<string, Set<string>>()
+    for (let taskOffset = 0; taskOffset < assignedTaskIds.length; taskOffset += 200) {
+      const ownTasks = assignedTaskIds.slice(taskOffset, taskOffset + 200)
+      const links = await all<{ question_id: string; task_id: string }>((from, to) => db.from('action_case_question_events')
+        .select('id,question_id,task_id').in('question_id', batch).in('task_id', ownTasks).order('id').range(from, to))
+      for (const link of links) {
+        const set = linkedTasks.get(link.question_id) || new Set<string>()
+        set.add(link.task_id); linkedTasks.set(link.question_id, set)
+      }
+    }
     for (const q of rows<{ id: string; number: number; action_case_id: string; status: string }>(questions.data)) {
       const c = published.get(q.id)
       if (!c?.shared_at || !c.shared_body?.title) continue
       result.push({ id: q.id, kind: 'question', title: `F-${String(q.number).padStart(3, '0')} ${c.shared_body.title}`,
         contextLabel: labels.get(q.action_case_id) || 'Projektfråga', status: q.status === 'closed' ? 'closed' : 'open',
-        href: `/mina-uppdrag/fragor/${q.id}`, sharedAt: c.shared_at })
+        href: `/mina-uppdrag/fragor/${q.id}`, sharedAt: c.shared_at, assignedTaskIds: [...linkedTasks.get(q.id) || []] })
     }
   }
   const questionIds = new Set(result.map(row => row.id))
