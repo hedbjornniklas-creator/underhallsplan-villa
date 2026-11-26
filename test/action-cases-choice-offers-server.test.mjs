@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -29,7 +30,7 @@ function harness(options = {}) {
     './customerOffers': { offerId(value) { if (!/^[0-9a-f-]{36}$/.test(value)) throw Error('CUSTOMER_OFFER_INVALID'); return value } },
     './customerOffersServer': { async getCustomerPlanning(context, project) { calls.push({ context, project }); if (options.forbidden) throw Error('CUSTOMER_OFFER_NOT_FOUND'); return planning } },
     './choiceOfferPdf': { async renderChoiceOfferPdf(value) { renders.push(value); if (options.renderFail) throw Error('renderer'); return Buffer.from('%PDF-TEST') } } }
-  const mod = { exports: {} }; new Function('require', 'module', 'exports', code)(name => { assert.ok(name in deps, name); return deps[name] }, mod, mod.exports)
+  const mod = { exports: {} }; new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation(name => { assert.ok(name in deps, name); return deps[name] }), mod, mod.exports)
   return { download: (revision = 4, optionId = item.id) => mod.exports.downloadChoiceOfferPdf(ctx, caseId, optionId, revision), reads, renders, calls }
 }
 test('export authorizes first, reads only this tenant/project and sends no private worksheet to PDF', async () => {

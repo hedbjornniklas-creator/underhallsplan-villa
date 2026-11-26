@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -25,8 +26,8 @@ function editor(value) {
   const priceInput = () => null
   const loaded = { exports: {} }
   const source = ts.transpileModule(readFileSync(new URL('../src/components/tasks/CustomerContractPricing.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  new Function('require','module','exports',source)(name => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'lucide-react': {},
-    '@/lib/action-cases/contractPricing': pricing, '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': { default: priceInput } })[name], loaded, loaded.exports)
+  new Function('require','module','exports',source)(withLegacyCustomerPresentation(name => ({ react, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'lucide-react': {},
+    '@/lib/action-cases/contractPricing': pricing, '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': { default: priceInput } })[name]), loaded, loaded.exports)
   const render = () => { cursor = 0; return loaded.exports.default(props) }
   return { props, changes, render, document: () => loaded.exports.ContractPriceDocument({ value: props.value }),
     modes: title => nodes(render()).find(node => node.props.title === title && node.type?.name === 'Modes'),

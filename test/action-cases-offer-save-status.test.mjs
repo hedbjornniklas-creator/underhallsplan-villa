@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync, existsSync } from 'node:fs'
@@ -40,7 +41,7 @@ function harness({ target = 'offer', active = true, dropFirstChange = false, acc
     if (modules.has(file)) return modules.get(file).exports
     const compiled = { exports: {} }; modules.set(file, compiled)
     const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
-    new Function('require', 'module', 'exports', 'window', 'fetch', 'setTimeout', 'clearTimeout', code)(name => {
+    new Function('require', 'module', 'exports', 'window', 'fetch', 'setTimeout', 'clearTimeout', code)(withLegacyCustomerPresentation(name => {
       if (name === 'react') return react
       if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: 'fragment' }
       if (name === 'lucide-react') return new Proxy({}, { get: (_, key) => `icon:${String(key)}` })
@@ -57,7 +58,7 @@ function harness({ target = 'offer', active = true, dropFirstChange = false, acc
         return { ...api, change: value => { changeCalls++; if (changeCalls > 1) api.change(value) } }
       } }
       return result
-    }, compiled, compiled.exports, window, (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })),
+    }), compiled, compiled.exports, window, (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })),
     fn => { const id = Symbol(); timers.set(id, fn); return id }, id => timers.delete(id))
     return compiled.exports
   }

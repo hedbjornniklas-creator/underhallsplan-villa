@@ -1,11 +1,12 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Eye, EyeOff, Loader2, Paperclip, Plus, RefreshCw, Trash2, Undo2 } from 'lucide-react'
 import { useToast } from '@/components/ui/AppToastProvider'
 import { categoryOptions, currentCategoryChoice, legacyChoiceCategories, type CustomerChoiceCategory, type CustomerChoiceFileRef, type CustomerPlannedItem, type CustomerPlanning } from '@/lib/action-cases/customerPlanning'
 import type { ActionCaseAttachmentView } from '@/lib/action-cases/contracts'
-import { money } from '@/lib/action-cases/customerOffers'
+
 import { choiceCalculatedPrice, type CustomerChoiceCosting } from '@/lib/action-cases/customerChoiceCosting'
 import { choiceOfferBudget, choiceOfferForEditing, choicePriceLabel, synchronizeChoiceOffers } from '@/lib/action-cases/choiceOffer'
 import { retainNewerDraft } from '@/lib/action-cases/draftSave'
@@ -26,6 +27,7 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
   onDirty: (dirty: boolean) => void
   onSaved: (value: CustomerPlanning) => void
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const [saved, setSaved] = useState(initial), [items, setItems] = useState(initial.items)
   const [categories, setCategories] = useState(initial.categories ?? legacyChoiceCategories(initial.items))
   const [costing, setCosting] = useState<CustomerChoiceCosting>(initial.costing ?? {})
@@ -182,7 +184,7 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
             <label className="text-sm sm:col-span-3">Gemensam specifikation<textarea aria-label={`Specifikation för ${category.title}`} className={field} rows={3} maxLength={12000} value={category.specification} onChange={(e) => patchCategory(category.id, { specification: e.target.value })} /></label>
           </div>
           {pendingDelete === category.id && <div role="alert" className="mb-4 border-l-4 border-amber-500 bg-amber-50 p-3 text-sm"><p>Ta bort kategorin {category.title} och dess {options.length} alternativ ur den interna planeringen?</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" className={button} onClick={() => setPendingDelete(null)}>Avbryt</button><button type="button" className={`${button} bg-white text-rose-700`} onClick={() => removeCategory(category.id)}><Trash2 size={16} /> Ta bort kategori</button></div></div>}
-          <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">Prisunderlag inkl. moms</span></div>
+          <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">{vatText("Prisunderlag inkl. moms")}</span></div>
           <div className="divide-y divide-[#D5DCDD]">
             {options.map((option) => <h4 key={option.id}><button type="button" className="flex min-h-12 w-full items-center gap-3 px-3 py-3 text-left text-sm hover:bg-[#F4F6F6]" aria-haspopup="dialog" aria-label={`Redigera ${option.title || 'Nytt alternativ'}`} onClick={() => setExpandedOption(option.id)}>
               <span className="min-w-0 flex-1 break-words font-semibold">{option.title || 'Nytt alternativ'}</span>{optionFiles.some((r) => r.optionId === option.id) && <span className="inline-flex shrink-0 items-center gap-1 text-xs text-[#596368]"><Paperclip size={14} /><span>{optionFiles.filter((r) => r.optionId === option.id).length} PDF</span></span>}<span className="max-w-[45%] break-words text-right tabular-nums">{choicePriceLabel(option, money)}</span><ChevronRight size={17} className="shrink-0" /></button></h4>)}
@@ -229,10 +231,11 @@ export default function CustomerPlanningEditor({ caseId, initial, files = [], on
 
 // Previously shared, flat plans remain read-only until explicitly shared as categories.
 export function CustomerPlannedItems({ items }: { items: CustomerPlannedItem[] }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const [expanded, setExpanded] = useState<string | null>(null)
   return <section aria-label="Val och tillval" className="gizmo-choice-categories py-6"><h2 className="text-xl">Val och tillval</h2><p className="mt-2 text-sm text-[#596368]">Inte beställda · Påverkar inte avtalet</p>
     {legacyChoiceCategories(items).map((category) => <ProjectEditorRow key={category.id} title={category.title} summary={`${category.optionIds.length} alternativ · Inget val registrerat`} open={expanded === category.id} onToggle={() => setExpanded(expanded === category.id ? null : category.id)}>
-      {categoryOptions(category, items).map((item) => <article key={item.id} className="border-b border-[#D5DCDD] py-3"><h4 className="font-semibold">{item.title}</h4><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.scope}</p><p className="mt-2 text-sm">{item.budgetOre === null ? 'Pris ej fastställt' : `Prisunderlag: ${money(item.budgetOre)} inklusive moms`}</p></article>)}
+      {categoryOptions(category, items).map((item) => <article key={item.id} className="border-b border-[#D5DCDD] py-3"><h4 className="font-semibold">{item.title}</h4><p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.scope}</p><p className="mt-2 text-sm">{item.budgetOre === null ? 'Pris ej fastställt' : vatText(`Prisunderlag: ${money(item.budgetOre)} inklusive moms`)}</p></article>)}
     </ProjectEditorRow>)}
     {!items.length && <p className="mt-5 text-sm text-[#596368]">Inga val eller tillval har delats ännu.</p>}
   </section>

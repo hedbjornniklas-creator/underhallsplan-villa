@@ -22,6 +22,8 @@ import { sharedWorkScopeKey } from '@/lib/action-cases/contractWork'
 import CustomerContractSenderProfile from './CustomerContractSenderProfile'
 import { ProjectSaveProtectionProvider, useProjectSaveNavigation, useProjectSaveProtection } from './ProjectSaveProtection'
 import ProjectSwitcher from './ProjectSwitcher'
+import ProjectCustomerPresentation from './ProjectCustomerPresentation'
+import { CustomerPriceDisplay } from './CustomerPriceDisplay'
 import type { ProjectSwitchOption } from '@/lib/action-cases/projectSwitcher'
 
 const sections = [
@@ -71,6 +73,7 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
   } : null)
   const [estimateDirty, setEstimateDirty] = useState(false)
   const [senderPending, setSenderPending] = useState(false), [senderReset, setSenderReset] = useState(0)
+  const [customerSelectionPending, setCustomerSelectionPending] = useState(false), [customerSelectionDirty, setCustomerSelectionDirty] = useState(false)
   const [offerDirty, setOfferDirty] = useState(false)
   const [workBusy, setWorkBusy] = useState(false)
   const [workDirty, setWorkDirty] = useState(false)
@@ -148,13 +151,13 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
     finally { renameRunning.current = false; setRenameBusy(false) }
   }
   const navigate = useCallback((next: ProjectView) => {
-    if (senderPending) return
+    if (senderPending || customerSelectionPending) return
     const change = () => {
       setView(next)
       if (new URLSearchParams(window.location.search).get('view') !== next) window.history.pushState(null, '', projectUrl(caseId, next))
     }
     if (protectNavigation) void protectNavigation(change); else change()
-  }, [caseId, senderPending, protectNavigation])
+  }, [caseId, senderPending, customerSelectionPending, protectNavigation])
   locate.current = next => { setView(next); window.history.pushState(null, '', projectUrl(caseId, next)) }
   const navigateOffer = useCallback((next: CustomerEditorView) => navigate(projectViews[next]), [navigate])
   useEffect(() => {
@@ -179,14 +182,15 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
   const published = offer?.offers.find((item) => item.status === 'published')
   const paper = activeSigningVersion(offer?.signingVersions)
   const senderLocked = Boolean(accepted || paper || offer?.signingVersions?.some(version => version.delivery?.signedCopy))
-  const senderBlocked = offerDirty || estimateDirty || workBusy || workDirty || scheduleDirty || renameBusy || renameDirty
+  const sharedSettingBlocked = offerDirty || estimateDirty || workBusy || workDirty || scheduleDirty || renameBusy || renameDirty
+  const senderBlocked = sharedSettingBlocked || customerSelectionPending || customerSelectionDirty
   function applyProjectSender(next: CustomerOfferWorkspace) {
     receiveContract(next)
     receiveEstimate({ ...next, ...next.offerDraft, offerDraft: undefined })
     setSenderReset(value => value + 1)
   }
   async function reloadProjectSender() {
-    if (senderBlocked || senderPending) return false
+    if (sharedSettingBlocked || customerSelectionPending || senderPending) return false
     try {
       const response = await fetch(`/api/action-cases/${caseId}/customer-offers`, { cache: 'no-store' })
       const result = await response.json()
@@ -203,7 +207,7 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
     setQuestionOpenRequest(current => ({ id, token: (current?.token ?? 0) + 1 }))
     navigate('questions')
   }
-  return <main className="gizmo-project-page">
+  return <CustomerPriceDisplay value={offer?.customerPresentation?.value}><main className="gizmo-project-page">
     <header className="gizmo-project-header">
       <div className="gizmo-project-navigation">
       <PendingLink autoPending icon={<ArrowLeft size={17} />} pendingLabel="Öppnar projektlistan…" className="gizmo-back" href="/uppdrag?view=projects" onClick={(event) => {
@@ -246,12 +250,14 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
         <ProjectOverview key={`overview:${caseId}`} project={project} offer={offer} active={view === 'overview'} refreshKey={questionsRefresh + overviewRefresh}
           completionBlocked={senderPending || offerDirty || estimateDirty || workDirty || workBusy || scheduleDirty || questionsDirty || diaryDirty || sharingDirty || renameBusy || renameDirty} onStatus={receiveStatus} onCompletionDirty={setCompletionDirty}
           questionsDirty={questionsDirty} scheduleDirty={scheduleDirty} sharingDirty={sharingDirty} onManagerChanged={managerChanged} onNavigate={navigate} onQuestion={openQuestion}
-          senderControls={offer && <details className="gizmo-home-manager"><summary>Projektets avsändarprofil · {offer.draft.senderProfile?.name ?? issuerName}{senderLocked ? ' · Låst' : ''}</summary>
+          senderControls={offer && <><ProjectCustomerPresentation key={`customer:${senderReset}`} caseId={caseId} workspace={offer} active={view === 'overview'} locked={senderLocked}
+            blocked={sharedSettingBlocked || senderPending || Boolean(published)} onPending={setCustomerSelectionPending} onDirty={setCustomerSelectionDirty} onApplied={applyProjectSender} onReload={reloadProjectSender} />
+          <details className="gizmo-home-manager"><summary>Projektets avsändarprofil · {offer.draft.senderProfile?.name ?? issuerName}{senderLocked ? ' · Låst' : ''}</summary>
             {senderLocked ? <p className="py-3 text-sm">{offer.draft.senderProfile?.legalName ?? issuerName}{offer.draft.senderProfile && <> · {offer.draft.senderProfile.organizationNumber}</>}</p> : <CustomerContractSenderProfile project caseId={caseId} organizationId={offer.customerLink?.organizationId}
               selected={offer.draft.senderProfile ?? null} revision={offer.revision} currentCompanyName={issuerName} active={view === 'overview'}
               blockedReason={senderBlocked ? 'Vänta tills pågående ändringar är sparade innan du byter avsändarprofil.' : published ? 'Återkalla det utskickade avtalet innan du byter avsändarprofil.' : null}
               onPendingChange={setSenderPending} onApplied={applyProjectSender} onReload={reloadProjectSender} />}
-          </details>} />
+          </details></>} />
         {/* Keep the existing editors mounted so switching sections cannot discard drafts or uploads. */}
         <ProjectQuestions caseId={caseId} active={view === 'questions'} refreshKey={questionsRefresh} openRequest={questionOpenRequest} files={project.attachments} onFiles={questionFiles} onDirty={setQuestionsDirty} onWorkspaceChanged={overviewChanged} projectClosed={project.status === 'completed'} contractVersions={offer?.signingVersions} onOpenContract={() => navigate('contract')} />
         <ProjectDiary key={caseId} caseId={caseId} active={view === 'diary'} refreshKey={questionsRefresh} onDirty={setDiaryDirty} />
@@ -284,7 +290,7 @@ function ProjectContent({ caseId, initialWorkspace, initialOffer, initialOfferEr
         </section>
       </div>
     </div>
-  </main>
+  </main></CustomerPriceDisplay>
 }
 
 export default function ActionCaseProject(props: Omit<Parameters<typeof ProjectContent>[0], 'locate'>) {

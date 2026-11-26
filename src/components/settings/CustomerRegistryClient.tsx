@@ -649,8 +649,9 @@ function CustomerFormSection({
               onChange('identityNumber', '')
             }}
           >
-            <option value="business">Företag / BRF</option>
+            <option value="business">Företag</option>
             <option value="private">Privatperson</option>
+            <option value="association">Förening / BRF</option>
           </SelectField>
           <TextField
             label="Namn"
@@ -663,13 +664,13 @@ function CustomerFormSection({
           />
           <TextField
             label={
-              form.customerType === 'business'
+              form.customerType !== 'private'
                 ? 'Organisationsnummer'
                 : 'Personnummer (valfritt)'
             }
             value={form.identityNumber}
-            placeholder={form.customerType === 'business' ? 'XXXXXX-XXXX' : 'ÅÅMMDD-XXXX'}
-            required={form.customerType === 'business'}
+            placeholder={form.customerType !== 'private' ? 'XXXXXX-XXXX' : 'ÅÅMMDD-XXXX'}
+            required={form.customerType !== 'private'}
             autoComplete="off"
             onChange={(value) => onChange('identityNumber', value)}
           />
@@ -839,9 +840,9 @@ function CustomerTableRow({
   onExportToFortnox: (customer: OrganizationCustomer) => void
   onToggleActive: (customer: OrganizationCustomer) => void
 }) {
-  const IdentityIcon = customer.customerType === 'business' ? Building2 : UserRound
+  const IdentityIcon = customer.customerType !== 'private' ? Building2 : UserRound
   const identity =
-    customer.customerType === 'business'
+    customer.customerType !== 'private'
       ? customer.identityNumber
       : privateIdentityLabel(customer.identityNumber)
 
@@ -860,7 +861,7 @@ function CustomerTableRow({
           <div>
             <div className="font-medium text-gray-950">{customer.name}</div>
             <div className="mt-0.5 text-xs text-gray-500">
-              {customer.customerType === 'business' ? 'Företag / BRF' : 'Privatperson'}
+              {customer.customerType === 'association' ? 'Förening / BRF' : customer.customerType === 'business' ? 'Företag' : 'Privatperson'}
               {identity ? ` · ${identity}` : ''}
             </div>
           </div>
@@ -967,7 +968,7 @@ function CustomerMobileCard({
           </p>
           <h3 className="mt-1 font-semibold text-gray-950">{customer.name}</h3>
           <p className="mt-1 text-xs text-gray-500">
-            {customer.customerType === 'business' ? 'Företag / BRF' : 'Privatperson'}
+            {customer.customerType === 'association' ? 'Förening / BRF' : customer.customerType === 'business' ? 'Företag' : 'Privatperson'}
           </p>
         </div>
         <StatusBadge active={customer.isActive} />

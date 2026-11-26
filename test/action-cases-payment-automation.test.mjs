@@ -183,7 +183,7 @@ test('UI exposes payment days, compact rows, explicit reconciliation, editable t
   assert.match(ui, /Reservera slutbetalning 10 %/)
   assert.match(ui, /Anpassa till avtalets belopp/)
   assert.match(ui, /Övriga betalningsvillkor/)
-  assert.match(ui, /output aria-label="Automatiskt belopp inkl. moms"/)
+  assert.match(ui, /output aria-label=\{vatText\("Automatiskt belopp inkl\. moms"\)\}/)
   assert.match(ui, /Boolean\(plan\?\.automation\) === Boolean\(value\.automation\)/)
   const server = readFileSync(new URL('../src/lib/action-cases/customerOffersServer.ts', import.meta.url), 'utf8')
   assert.match(server, /rpc\('assert_payment_automation'/)

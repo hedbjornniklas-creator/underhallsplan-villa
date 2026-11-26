@@ -1,5 +1,7 @@
 import type { CustomerChoiceCosting } from './customerChoiceCosting'
 // @ts-expect-error Explicit extensions support the shared Node test runner.
+import { normalizeCustomerPresentation, type CustomerPresentation } from './customerPresentation.ts'
+// @ts-expect-error Explicit extensions support the shared Node test runner.
 import { normalizeChoiceOffer, type ChoiceOffer } from './choiceOffer.ts'
 
 export const planningStatuses = {
@@ -54,6 +56,7 @@ export type CustomerChoice = {
   selectedAt: string
 }
 export type SharedCustomerChoices = {
+  customerPresentation?: CustomerPresentation
   revision: number
   categories: CustomerChoiceCategory[]
   items: CustomerPlannedItem[]
@@ -159,6 +162,7 @@ export function normalizeSharedChoices(raw: Record<string, unknown>): SharedCust
     return { categoryId: choice.categoryId, categoryVersion: choice.categoryVersion, optionId: choice.optionId, revision: choice.revision, selectedAt: choice.selectedAt }
   })
   return { revision: Number(raw.revision), categories, items, versions: Object.fromEntries(categories.map((c) => [c.id, versions[c.id]])), choices: safeChoices,
+    ...(raw.customerPresentation === undefined ? {} : { customerPresentation: normalizeCustomerPresentation(raw.customerPresentation) }),
     ...(raw.files !== undefined ? { files: normalizeSharedChoiceFiles(raw.files, items) } : {}) }
 }
 export function normalizePlannedItems(

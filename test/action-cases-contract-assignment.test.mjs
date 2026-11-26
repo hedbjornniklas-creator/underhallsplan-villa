@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -110,7 +111,7 @@ function editor() {
   }).outputText
   const loaded = { exports: {} }, jsx = (type, props) => ({ type, props })
   const hooks = []; let slot = 0
-  new Function('require','module','exports',code)((name) => {
+  new Function('require','module','exports',code)(withLegacyCustomerPresentation((name) => {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx }
     if (name === 'react') return {
       Fragment: 'fragment', useId: () => 'documents', useLayoutEffect: () => {},
@@ -124,10 +125,10 @@ function editor() {
     if (name === '@/lib/action-cases/standardContractTerms') return standardTerms
     if (name === './CustomerContractFormSelect') return { default: 'contract-form-select' }
     throw Error(name)
-  }, loaded, loaded.exports)
+  }), loaded, loaded.exports)
   return (props) => { slot = 0; return loaded.exports.default(props) }
 }
-const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : !node || typeof node !== 'object' ? [node] : [node,...flatten(node.props?.children)]
+const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : !node || typeof node !== 'object' ? [node] : typeof node.type === 'function' ? flatten(node.type(node.props)) : [node,...flatten(node.props?.children)]
 
 test('automatic ABS18 is a fixed linked row, not an editable or removable project reference', () => {
   const std = { id:id(140), fileName:standardTerms.ABS18_TERMS.fileName, contentType:'application/pdf', fileSizeBytes:standardTerms.ABS18_TERMS.size }
@@ -305,7 +306,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}
   }).outputText
   const loaded={exports:{}}, jsx=(type,props)=>({type,props})
-  new Function('require','module','exports',code)((name)=>{
+  new Function('require','module','exports',code)(withLegacyCustomerPresentation((name)=>{
     if(name==='react/jsx-runtime') return {jsx,jsxs:jsx}
     if(name==='react') return {useId:()=> 'test'}
     if(name==='lucide-react') return {Check:'svg',Download:'svg',FileText:'svg'}
@@ -321,7 +322,7 @@ test('the real contract document prints ordered metadata, extra scope and exclus
     if(name==='@/lib/action-cases/standardContractTerms') return standardTerms
     if(name==='@/lib/action-cases/contractPricing') return pricing
     throw Error(name)
-  },loaded,loaded.exports)
+  }),loaded,loaded.exports)
   const d=structured(), view=(body)=>loaded.exports.default({offer:{id:'draft',version:0,status:'published',snapshot:body,files:[],publishedAt:''}, selected:[], purpose:'contract', fileUrl:(id)=>`/file/${id}`})
   const tree=view(d), nodes=flatten(tree)
   for(const text of ['Uppdraget','Samt enligt följande','Extra anslutning','Ingen målning','Revision B gäller.','Ritning','Ritning A.pdf','2026-10-07','Datum vid publicering']) assert(nodes.includes(text),text)

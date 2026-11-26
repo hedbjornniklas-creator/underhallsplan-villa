@@ -32,7 +32,7 @@ export function projectCustomerPortal(portal: ActionCasePortal, sharing: Custome
   return {
     accessState: portal.accessState, participant: portal.participant, sharing: { revision: sharing.revision, tabs },
     customerContact: identity,
-    sharedPayment: tabs.payments && contract ? { version: contract.version, stage, plan: contract.snapshot.paymentPlan, terms: contract.snapshot.paymentTerms, conditions: contract.snapshot.paymentConditions } : undefined,
+    sharedPayment: tabs.payments && contract ? { ...(contract.snapshot.customerPresentation ? { customerPresentation: contract.snapshot.customerPresentation } : {}), version: contract.version, stage, plan: contract.snapshot.paymentPlan, terms: contract.snapshot.paymentTerms, conditions: contract.snapshot.paymentConditions } : undefined,
     sharedContractSchedule: tabs.schedule && contract?.snapshot.schedule ? { version: contract.version, accepted: Boolean(accepted), text: contract.snapshot.schedule } : undefined,
     customerOffers: {
       enabled: Boolean(source?.enabled || sharing.revision > 0),

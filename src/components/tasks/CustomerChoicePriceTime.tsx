@@ -1,16 +1,18 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { Plus, Trash2 } from 'lucide-react'
 import type { ChoiceOffer } from '@/lib/action-cases/choiceOffer'
 import type { ContractPricing } from '@/lib/action-cases/contractPricing'
 import { contractFixedAmount } from '@/lib/action-cases/contractPricing'
-import { money } from '@/lib/action-cases/customerOffers'
-import PriceInput from './CustomerOfferPriceInput'
+
+import { CustomerPriceInput as PriceInput } from './CustomerOfferPriceInput'
 
 const input = 'mt-1 block min-h-11 w-full min-w-0 rounded-md border border-[#D5DCDD] bg-white px-3 py-2 text-base sm:text-sm'
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold'
 
 export default function CustomerChoicePriceTime({ value, onChange }: { value: ChoiceOffer; onChange: (value: ChoiceOffer) => void }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const p = value.pricing
   const patch = (change: Partial<ChoiceOffer>) => onChange({ ...value, ...change })
   const price = (change: Partial<ContractPricing>) => patch({ pricing: { ...p, ...change } })
@@ -28,22 +30,22 @@ export default function CustomerChoicePriceTime({ value, onChange }: { value: Ch
         {value.priceSource === 'manual' && <>
           <div className="grid gap-4 sm:grid-cols-2"><label className="text-sm">Beräkning<select className={input} value={p.basis} onChange={event => price({ basis: event.target.value as ContractPricing['basis'], ...(event.target.value === 'total' ? { display: p.display === 'priced' ? 'total' as const : p.display } : {}) })}><option value="total">Fast klumpsumma</option><option value="rows">Summan av prisraderna</option></select></label>
           <label className="text-sm">Arbete och material<select className={input} value={p.split} onChange={event => price({ split: event.target.value as ContractPricing['split'] })}><option value="combined">Tillsammans</option><option value="separate">Separat</option></select></label></div>
-          {p.basis === 'total' && (p.split === 'combined' ? <PriceInput label={p.mode === 'mixed' ? 'Fast del inkl. moms (kr)' : 'Fast pris inkl. moms (kr)'} value={p.totalOre} onChange={totalOre => price({ totalOre })} /> : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label="Arbete inkl. moms (kr)" value={p.labourOre} onChange={labourOre => price({ labourOre })} /><PriceInput label="Material inkl. moms (kr)" value={p.materialOre} onChange={materialOre => price({ materialOre })} /></div>)}
+          {p.basis === 'total' && (p.split === 'combined' ? <PriceInput label={p.mode === 'mixed' ? vatText('Fast del inkl. moms (kr)') : vatText('Fast pris inkl. moms (kr)')} value={p.totalOre} onChange={totalOre => price({ totalOre })} /> : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label={vatText("Arbete inkl. moms (kr)")} value={p.labourOre} onChange={labourOre => price({ labourOre })} /><PriceInput label={vatText("Material inkl. moms (kr)")} value={p.materialOre} onChange={materialOre => price({ materialOre })} /></div>)}
           {p.rows.map(row => <fieldset key={row.id} className="space-y-3 border-t border-[#D5DCDD] pt-3"><div className="flex items-end gap-2"><label className="min-w-0 flex-1 text-sm">Moment<input className={input} value={row.title} maxLength={250} onChange={event => updateRow(row.id, { title: event.target.value })} /></label><button type="button" className={`${button} h-11 w-11 shrink-0 px-0`} title="Ta bort prisrad" aria-label={`Ta bort prisrad ${row.title || 'utan namn'}`} onClick={() => price({ rows: p.rows.filter(other => other.id !== row.id) })}><Trash2 size={16} /></button></div>
             {p.mode === 'mixed' && <label className="block text-sm">Momentets prisform<select className={input} value={row.kind} onChange={event => updateRow(row.id, { kind: event.target.value as 'fixed' | 'running' })}><option value="fixed">Fast pris</option><option value="running">Löpande räkning</option></select></label>}
-            {p.basis === 'rows' && !(p.mode === 'mixed' && row.kind === 'running') && (p.split === 'combined' ? <PriceInput label="Momentets pris inkl. moms (kr)" value={row.amountOre} onChange={amountOre => updateRow(row.id, { amountOre })} /> : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label="Arbete inkl. moms (kr)" value={row.labourOre} onChange={labourOre => updateRow(row.id, { labourOre })} /><PriceInput label="Material inkl. moms (kr)" value={row.materialOre} onChange={materialOre => updateRow(row.id, { materialOre })} /></div>)}
+            {p.basis === 'rows' && !(p.mode === 'mixed' && row.kind === 'running') && (p.split === 'combined' ? <PriceInput label={vatText("Momentets pris inkl. moms (kr)")} value={row.amountOre} onChange={amountOre => updateRow(row.id, { amountOre })} /> : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label={vatText("Arbete inkl. moms (kr)")} value={row.labourOre} onChange={labourOre => updateRow(row.id, { labourOre })} /><PriceInput label={vatText("Material inkl. moms (kr)")} value={row.materialOre} onChange={materialOre => updateRow(row.id, { materialOre })} /></div>)}
           </fieldset>)}
           <button type="button" className={button} disabled={p.rows.length >= 50} onClick={() => price({ rows: [...p.rows, { id: crypto.randomUUID(), title: '', kind: 'fixed', amountOre: null, labourOre: null, materialOre: null }] })}><Plus size={16} />Lägg till prisrad</button>
         </>}
-        <dl className="flex flex-wrap items-center justify-between gap-3 bg-[#EDF1F1] p-3 font-semibold"><dt>{p.mode === 'mixed' ? 'Fast del inkl. moms' : 'Fast pris inkl. moms'}</dt><dd>{contractFixedAmount(p) === null ? 'Pris ej fastställt' : money(contractFixedAmount(p))}</dd></dl>
+        <dl className="flex flex-wrap items-center justify-between gap-3 bg-[#EDF1F1] p-3 font-semibold"><dt>{p.mode === 'mixed' ? vatText('Fast del inkl. moms') : vatText('Fast pris inkl. moms')}</dt><dd>{contractFixedAmount(p) === null ? 'Pris ej fastställt' : money(contractFixedAmount(p))}</dd></dl>
       </section>}
       {p.mode !== 'fixed' && <section className="space-y-4 border-y border-[#D5DCDD] py-4" aria-label="Löpande ersättning för tillvalet"><h3 className="font-semibold">Löpande ersättning</h3>
-        <PriceInput label="Arbete inkl. arvode och moms (kr/tim)" value={p.running.hourlyOre} onChange={hourlyOre => running({ hourlyOre })} />
+        <PriceInput label={vatText("Arbete inkl. arvode och moms (kr/tim)")} value={p.running.hourlyOre} onChange={hourlyOre => running({ hourlyOre })} />
         <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={p.running.managementOre === null} onChange={event => running({ managementOre: event.target.checked ? null : p.running.hourlyOre ?? 0 })} />Samma timpris för arbetsledning</label>
-        {p.running.managementOre !== null && <PriceInput label="Arbetsledning inkl. arvode och moms (kr/tim)" value={p.running.managementOre} onChange={managementOre => running({ managementOre })} />}
-        <PriceInput label="Påslag på självkostnad: material, UE och övrigt (%)" max={100_000} value={p.running.markupPercent === null ? null : Math.round(p.running.markupPercent * 100)} onChange={amount => running({ markupPercent: amount === null ? null : amount / 100 })} />
+        {p.running.managementOre !== null && <PriceInput label={vatText("Arbetsledning inkl. arvode och moms (kr/tim)")} value={p.running.managementOre} onChange={managementOre => running({ managementOre })} />}
+        <PriceInput raw label="Påslag på självkostnad: material, UE och övrigt (%)" max={100_000} value={p.running.markupPercent === null ? null : Math.round(p.running.markupPercent * 100)} onChange={amount => running({ markupPercent: amount === null ? null : amount / 100 })} />
         <p className="text-sm text-[#596368]">Moms tillkommer på självkostnad och påslag.</p>
-        <PriceInput label="Ungefärligt pris för den löpande delen inkl. moms (kr, valfritt)" value={p.running.approximateOre} onChange={approximateOre => running({ approximateOre })} />
+        <PriceInput label={vatText("Ungefärligt pris för den löpande delen inkl. moms (kr, valfritt)")} value={p.running.approximateOre} onChange={approximateOre => running({ approximateOre })} />
       </section>}
     </>}
     <section className="space-y-4 border-t border-[#D5DCDD] pt-4" aria-label="Tillvalets tidspåverkan"><h3 className="font-semibold">Tidspåverkan</h3>

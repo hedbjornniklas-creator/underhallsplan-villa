@@ -6,8 +6,9 @@ import { renderPdfDocument } from '../pdf/renderDocument.ts'
 // @ts-expect-error Shared with the Node strip-types test runner.
 import { choiceOfferSections } from './choiceOfferDocument.ts'
 import type { CustomerPlannedItem } from './customerPlanning'
+import type { CustomerPresentation } from './customerPresentation'
 
-export type ChoicePdfInput = { item: CustomerPlannedItem; category: string; specification: string; propertyAddress: string; issuer: string; reference: string; date: string; files: string[] }
+export type ChoicePdfInput = { item: CustomerPlannedItem; category: string; specification: string; propertyAddress: string; issuer: string; reference: string; date: string; files: string[]; customerPresentation?: CustomerPresentation | null }
 let fonts = false
 function registerFonts() {
   if (fonts) return
@@ -36,7 +37,7 @@ export async function renderChoiceOfferPdf(input: ChoicePdfInput): Promise<Buffe
   const sections = [
     ...(input.specification ? [{ title: 'Gemensam specifikation', paragraphs: [input.specification] }] : []),
     { title: 'Omfattning', paragraphs: [input.item.scope || 'Omfattningen är inte fastställd.'] },
-    ...choiceOfferSections(input.item),
+    ...choiceOfferSections(input.item, input.customerPresentation),
     ...(input.files.length ? [{ title: 'Bilageförteckning', paragraphs: [...input.files.map((name, i) => `${i + 1}. ${name}`), 'Bilagorna bifogas separat. De är inte inbäddade i denna PDF.'] }] : []),
   ]
   const document = h(Document, { title: `${kind}: ${input.item.title}`, author: input.issuer, language: 'sv-SE' } as DocumentProps,

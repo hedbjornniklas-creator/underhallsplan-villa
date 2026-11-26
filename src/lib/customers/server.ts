@@ -149,14 +149,14 @@ function mapCustomer(
   row: CustomerRow,
   options: { includePersonalIdentity?: boolean } = {}
 ): OrganizationCustomer {
-  const customerType = row.customer_type === 'private' ? 'private' : 'business'
+  const customerType = row.customer_type === 'private' ? 'private' : row.customer_type === 'association' ? 'association' : 'business'
   return {
     id: row.id,
     customerNumber: String(row.customer_number),
     customerType,
     name: row.name,
     identityNumber:
-      customerType === 'business'
+      customerType !== 'private'
         ? row.organization_number
         : options.includePersonalIdentity
           ? row.personal_identity_number
@@ -189,7 +189,7 @@ function toDatabaseValues(input: OrganizationCustomerInput, profileId: string) {
   return {
     customer_type: input.customerType,
     name: input.name,
-    organization_number: input.customerType === 'business' ? input.identityNumber : null,
+    organization_number: input.customerType !== 'private' ? input.identityNumber : null,
     personal_identity_number: input.customerType === 'private' ? input.identityNumber : null,
     email: input.email,
     phone: input.phone,

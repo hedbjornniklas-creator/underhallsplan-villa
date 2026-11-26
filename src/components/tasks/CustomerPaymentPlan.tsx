@@ -1,12 +1,13 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Download, Plus, Trash2, Undo2 } from 'lucide-react'
-import { money } from '@/lib/action-cases/customerOffers'
+
 import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
 import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
 import { abs18PaymentText, configurePaymentPlan, distributePaymentPlan, importPaymentPlanRows, paymentConditionsText, paymentPlanIssues, paymentPlanTotal, type CustomerPayment, type CustomerPaymentPlan, type PaymentConditions } from '@/lib/action-cases/customerPaymentPlan'
-import PriceInput from './CustomerOfferPriceInput'
+import { CustomerPriceInput as PriceInput } from './CustomerOfferPriceInput'
 import ProjectEditorRow from './ProjectEditorRow'
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50'
@@ -16,6 +17,7 @@ const field = 'mt-1 block w-full rounded-md border border-slate-300 bg-white px-
 export function PaymentPlanSummary({ plan, baseAmount, paymentTerms, conditions, priceMode }: {
   plan?: CustomerPaymentPlan | null; baseAmount: number | null; paymentTerms: string; conditions?: PaymentConditions; priceMode?: string
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const terms = paymentConditionsText(conditions, paymentTerms)
   const total = plan ? paymentPlanTotal(plan) : 0
   const remaining = baseAmount === null ? null : baseAmount - total
@@ -25,7 +27,7 @@ export function PaymentPlanSummary({ plan, baseAmount, paymentTerms, conditions,
     <p className="gizmo-payment-summary-terms whitespace-pre-wrap text-sm">{terms || 'Betalningsvillkor saknas.'}</p>
     {plan?.installments.length ? <>
       <table className="gizmo-payment-summary-table" aria-label="Avtalets betalningsplan">
-        <thead><tr><th scope="col">Delbetalning</th><th scope="col">Villkor för fakturering</th><th scope="col">Planerat datum</th><th scope="col">Belopp inkl. moms</th></tr></thead>
+        <thead><tr><th scope="col">Delbetalning</th><th scope="col">Villkor för fakturering</th><th scope="col">Planerat datum</th><th scope="col">{vatText("Belopp inkl. moms")}</th></tr></thead>
         <tbody>{plan.installments.map((row, index) => <tr key={row.id}>
           <th scope="row">{index + 1}. {row.title || 'Delbetalning'}{row.kind && <span className="block text-sm font-normal text-slate-600">{row.kind === 'final' ? '10 %' : plan.automation?.initialPercent === null || plan.automation?.initialPercent === undefined ? 'Procent saknas' : `${plan.automation.initialPercent} %`}</span>}</th>
           <td className="whitespace-pre-wrap">{row.condition || 'Faktureringsvillkor saknas'}</td>
@@ -35,8 +37,8 @@ export function PaymentPlanSummary({ plan, baseAmount, paymentTerms, conditions,
       </table>
       <div className="gizmo-payment-sum" aria-label="Avtalets betalningsplans summa">
         <dl className="gizmo-payment-summary-total">
-          <dt className="font-semibold">{plan.installments.some((row) => row.amountOre === null) ? 'Summa angivna belopp inkl. moms' : 'Summa inkl. moms'}</dt><dd className="font-semibold">{money(total)}</dd>
-          <dt>Avtalsbelopp inkl. moms</dt><dd>{baseAmount === null ? priceMode === 'running' ? 'Löpande räkning' : 'Pris saknas' : money(baseAmount)}</dd>
+          <dt className="font-semibold">{plan.installments.some((row) => row.amountOre === null) ? vatText('Summa angivna belopp inkl. moms') : vatText('Summa inkl. moms')}</dt><dd className="font-semibold">{money(total)}</dd>
+          <dt>{vatText("Avtalsbelopp inkl. moms")}</dt><dd>{baseAmount === null ? priceMode === 'running' ? 'Löpande räkning' : 'Pris saknas' : money(baseAmount)}</dd>
           {remaining !== null && remaining !== 0 && <><dt>{remaining < 0 ? 'Överfördelat' : 'Kvar att fördela'}</dt><dd>{money(Math.abs(remaining))}</dd></>}
         </dl>
         {issues.length ? <ul className="mt-2 space-y-1 text-sm text-amber-800" aria-label="Kontroll av betalningsplan">{issues.map((issue) => <li key={issue}>{issue}</li>)}</ul>
@@ -49,6 +51,7 @@ export function PaymentPlanSummary({ plan, baseAmount, paymentTerms, conditions,
 export function PaymentPlanDocument({ plan, paymentTerms, conditions, showTerms = true }: {
   plan?: CustomerPaymentPlan | null; paymentTerms: string; conditions?: PaymentConditions; showTerms?: boolean
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   return <div>
     {plan?.installments.length ? <>
       <ol className="divide-y divide-slate-200">
@@ -62,7 +65,7 @@ export function PaymentPlanDocument({ plan, paymentTerms, conditions, showTerms 
         </li>)}
       </ol>
       <div className="flex flex-wrap justify-between gap-2 border-y border-slate-200 py-4 text-sm font-semibold">
-        <span>Summa inklusive moms</span><span>{money(paymentPlanTotal(plan))}</span>
+        <span>{vatText("Summa inklusive moms")}</span><span>{money(paymentPlanTotal(plan))}</span>
       </div>
     </> : <p className="py-4 text-sm text-slate-600">Ingen uppdelad betalningsplan finns i denna avtalsversion.</p>}
     {showTerms && <div className="py-5">
@@ -79,6 +82,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
   onConditionsChange: (value: PaymentConditions) => void
   onChange: (plan: CustomerPaymentPlan | null) => void; onTermsChange: (text: string) => void
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const [removed, setRemoved] = useState<{ row: CustomerPayment; index: number } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -142,7 +146,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
       </label>
     </details>
     <dl className="gizmo-payment-totals" aria-live="polite">
-      {[['Grundavtal inkl. moms', baseAmount], ['Fördelat', total], [remaining !== null && remaining < 0 ? 'Överfördelat' : 'Kvar att fördela', remaining === null ? null : Math.abs(remaining)]].map(([label, value]) =>
+      {[[vatText('Grundavtal inkl. moms'), baseAmount], ['Fördelat', total], [remaining !== null && remaining < 0 ? 'Överfördelat' : 'Kvar att fördela', remaining === null ? null : Math.abs(remaining)]].map(([label, value]) =>
         <div key={String(label)}><dt className="text-sm text-slate-600">{label}</dt><dd className="mt-1 text-lg font-semibold">{value === null ? 'Pris saknas' : money(Number(value))}</dd></div>)}
     </dl>
     <div className="flex flex-wrap items-center gap-3 py-3">
@@ -150,7 +154,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
       {importBlocked && <span className="text-sm text-slate-600">Vänta tills Projektarbete har sparats.</span>}
     </div>
     {importOpen && <section aria-label="Hämta delbetalningar från Projektarbete" className="border-y border-slate-200 py-3">
-      <p className="mb-3 text-sm">Valda moment ersätter alla vanliga delbetalningar, inklusive deras villkor och datum. Eventuell första- och slutbetalning behålls. Kundpriser hämtas inklusive moms utan omfördelning.</p>
+      <p className="mb-3 text-sm">{vatText("Valda moment ersätter alla vanliga delbetalningar, inklusive deras villkor och datum. Eventuell första- och slutbetalning behålls. Kundpriser hämtas inklusive moms utan omfördelning.")}</p>
       <label className="flex min-h-9 items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={priced.length > 0 && priced.every((row) => selected.includes(row.id))} disabled={importBlocked || !priced.length} onChange={(e) => setSelected(e.target.checked ? priced.map((row) => row.id) : [])} />Välj alla moment med kontrollerat pris</label>
       <div className="max-h-80 overflow-y-auto divide-y divide-slate-200">
         {available.map((row) => <label key={row.id} className="flex min-h-11 items-center gap-3 py-2 text-sm">
@@ -175,7 +179,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
     {plan && <div className="gizmo-payment-settings">
       {!plan.automation ? <button type="button" className={button} disabled={!canAutomate || plan.installments.length >= 60} onClick={() => replace(() => configurePaymentPlan(plan, baseAmount))}>Reservera slutbetalning 10 %</button> : <>
         <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" aria-label="Första delbetalning i procent" checked={plan.automation.initialEnabled} disabled={!plan.automation.initialEnabled && (!canAutomate || plan.installments.length >= 60)} onChange={(e) => replace(() => configurePaymentPlan(plan, baseAmount, e.target.checked, plan.automation!.initialPercent ?? 10))} />Första delbetalning i procent</label>
-        {plan.automation.initialEnabled && <div className="gizmo-payment-percent"><PriceInput label="Procent (%)" value={plan.automation.initialPercent === null ? null : Math.round(plan.automation.initialPercent * 100)} max={9000} onChange={(value) => replace(() => configurePaymentPlan(plan, baseAmount, true, value === null ? null : value / 100))} /></div>}
+        {plan.automation.initialEnabled && <div className="gizmo-payment-percent"><PriceInput raw label="Procent (%)" value={plan.automation.initialPercent === null ? null : Math.round(plan.automation.initialPercent * 100)} max={9000} onChange={(value) => replace(() => configurePaymentPlan(plan, baseAmount, true, value === null ? null : value / 100))} /></div>}
         <label className="flex min-h-9 items-center gap-2 text-sm"><input type="checkbox" aria-label="Slutbetalning 10 %" checked={finalEnabled} disabled={!finalEnabled && (!canAutomate || plan.installments.length >= 60)} onChange={(e) => replace(() => configurePaymentPlan(plan, baseAmount, plan.automation!.initialEnabled, plan.automation!.initialPercent, e.target.checked))} />Slutbetalning 10 %</label>
       </>}
       <button type="button" className={button} disabled={!canAutomate || !plan.installments.some((r) => !r.kind)} onClick={() => replace(() => distributePaymentPlan(plan, baseAmount!))}>Anpassa till avtalets belopp</button>
@@ -204,7 +208,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="text-sm font-medium">Rubrik *<input className={field} maxLength={250} value={row.title} onChange={(e) => update(row.id, { title: e.target.value })} /></label>
-            {row.kind ? <div className="text-sm"><span>Automatiskt belopp inkl. moms</span><output aria-label="Automatiskt belopp inkl. moms" className="mt-2 block font-semibold">{money(row.amountOre)}</output></div> : <PriceInput label="Belopp inkl. moms (kr) *" value={row.amountOre} onChange={(amountOre) => update(row.id, { amountOre })} />}
+            {row.kind ? <div className="text-sm"><span>{vatText("Automatiskt belopp inkl. moms")}</span><output aria-label={vatText("Automatiskt belopp inkl. moms")} className="mt-2 block font-semibold">{money(row.amountOre)}</output></div> : <PriceInput label={vatText("Belopp inkl. moms (kr) *")} value={row.amountOre} onChange={(amountOre) => update(row.id, { amountOre })} />}
             <label className="text-sm font-medium sm:col-span-2">Villkor för fakturering *<textarea className={field} rows={2} maxLength={6000} value={row.condition} onChange={(e) => update(row.id, { condition: e.target.value })} /></label>
             <label className="text-sm font-medium">Planerat faktureringsdatum (valfritt)<input className={field} type="date" min="0001-01-01" max="9999-12-31" value={row.plannedDate} onChange={(e) => { if (!e.target.value || e.target.validity.valid) update(row.id, { plannedDate: e.target.value }) }} onBlur={(e) => { if (e.target.reportValidity() && e.target.value !== row.plannedDate) update(row.id, { plannedDate: e.target.value }) }} /></label>
             {!row.kind && <div className="flex items-end">
@@ -216,7 +220,7 @@ export function PaymentPlanEditor({ plan, baseAmount, paymentTerms, conditions, 
       </ol>
       <div aria-label="Betalningsplanens summa" className="gizmo-payment-sum" role="status">
         <dl className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-semibold">
-          <dt>{plan.installments.some((row) => row.amountOre === null) ? 'Summa angivna belopp inkl. moms' : 'Summa inkl. moms'}</dt>
+          <dt>{plan.installments.some((row) => row.amountOre === null) ? vatText('Summa angivna belopp inkl. moms') : vatText('Summa inkl. moms')}</dt>
           <dd className="whitespace-nowrap tabular-nums">{money(total)}</dd>
         </dl>
         <p className="mt-1 text-sm text-slate-600">{remaining === null ? 'Avtalets pris saknas' : remaining === 0 ? 'Stämmer med avtalets belopp' : `${remaining < 0 ? 'Överfördelat' : 'Kvar att fördela'}: ${money(Math.abs(remaining))}`}</p>

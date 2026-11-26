@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from '@/lib/supabase/admin'
 import { getCustomerPlanning } from './customerOffersServer'
 import { offerId } from './customerOffers'
 import { renderChoiceOfferPdf, type ChoicePdfInput } from './choiceOfferPdf'
+import { getProjectCustomerPresentation } from './customerPresentationServer'
 
 export async function downloadChoiceOfferPdf(ctx: { orgId: string; userId: string }, caseId: string, optionId: string, revision: number) {
   offerId(caseId); offerId(optionId)
@@ -28,7 +29,8 @@ export async function downloadChoiceOfferPdf(ctx: { orgId: string; userId: strin
       files.push(file.file_name)
     }
   }
-  const content = { item, category: category?.title ?? '', specification: category?.specification ?? '', propertyAddress: project.data.property_address || '', issuer: issuer.data.name || '', files }
+  const presentation = await getProjectCustomerPresentation(ctx, caseId)
+  const content = { item, category: category?.title ?? '', specification: category?.specification ?? '', propertyAddress: project.data.property_address || '', issuer: issuer.data.name || '', files, customerPresentation: presentation.value }
   const digest = createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
   const reference = `${optionId.slice(0, 8)}-v${revision}-${digest}`
   const input: ChoicePdfInput = { ...content, reference, date: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' }) }
@@ -37,5 +39,6 @@ export async function downloadChoiceOfferPdf(ctx: { orgId: string; userId: strin
   // A concurrent save must not silently turn the download into an obsolete document.
   const latest = await db.from('action_case_customer_planning').select('revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
   if (latest.error || latest.data?.revision !== revision) throw new Error('CUSTOMER_CHOICE_PDF_STALE')
+  if ((await getProjectCustomerPresentation(ctx, caseId)).revision !== presentation.revision) throw new Error('CUSTOMER_CHOICE_PDF_STALE')
   return { bytes, fileName: `Val-tillval-${optionId.slice(0, 8)}-v${revision}.pdf` }
 }

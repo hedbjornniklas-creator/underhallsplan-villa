@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -87,7 +88,7 @@ test('real form selector exposes both commercial forms and the customer editor c
   assert.match(selector, /value="ab04"/); assert.match(selector, /value="abt06"/)
   const jsx = (type, props) => ({ type, props }), mod = { exports: {} }
   const code = ts.transpileModule(source('src/components/tasks/CustomerContractPartiesEditor.tsx'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText
-  new Function('require', 'module', 'exports', code)(name => name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'react' ? { useState: v => [v, () => {}] } : new Proxy({}, { get: () => 'icon' }), mod, mod.exports)
+  new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation(name => name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'react' ? { useState: v => [v, () => {}] } : new Proxy({}, { get: () => 'icon' })), mod, mod.exports)
   const tree = mod.exports.ContractCustomerEditor({ value: parties(), onChange() {} })
   const flatten = node => Array.isArray(node) ? node.flatMap(flatten) : node && typeof node === 'object' ? [node, ...flatten(node.props?.children)] : []
   const fields = flatten(tree).filter(row => row.type === 'input').map(row => row.props['aria-label'])

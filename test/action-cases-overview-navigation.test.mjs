@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -48,9 +49,9 @@ function harness() {
     './ProjectManagerField': () => null, './ProjectCompletion': () => null, './project-overview.css': {},
   }
   const mod = { exports: {} }
-  new Function('require', 'module', 'exports', 'fetch', 'Date', 'window', code)(name => {
+  new Function('require', 'module', 'exports', 'fetch', 'Date', 'window', code)(withLegacyCustomerPresentation(name => {
     assert.ok(name in deps, name); return deps[name]
-  }, mod, mod.exports, (url, options) => new Promise(resolve => {
+  }), mod, mod.exports, (url, options) => new Promise(resolve => {
     requests.push({ url, options, finish(status = 200) {
       resolve({ ok: status === 200, json: async () => url.endsWith('/questions')
         ? { questions: [], assignees: [], userId: 'me', managerId: null }

@@ -45,7 +45,7 @@ export type FortnoxCustomerIdentity = {
 }
 
 export type FortnoxCustomerDraftInput = {
-  customerType: 'business' | 'private'
+  customerType: 'business' | 'private' | 'association'
   name: string
   customerNumber: string
   externalReference: string
@@ -391,7 +391,7 @@ export function buildFortnoxCustomerDraft(input: FortnoxCustomerDraftInput): For
   if (
     !isRecord(input) ||
     Object.keys(input).some((key) => !CUSTOMER_DRAFT_INPUT_KEYS.has(key)) ||
-    (input.customerType !== 'business' && input.customerType !== 'private')
+    !['business', 'private', 'association'].includes(input.customerType)
   ) {
     throw new Error('FORTNOX_CUSTOMER_PAYLOAD_INVALID')
   }
@@ -435,7 +435,7 @@ export function buildFortnoxCustomerDraft(input: FortnoxCustomerDraftInput): For
 
   const organizationNumber = normalizeFortnoxOrganizationNumber(input.organizationNumber)
   if (
-    (input.customerType === 'business' && !organizationNumber) ||
+    (input.customerType !== 'private' && !organizationNumber) ||
     (input.customerType === 'private' && input.organizationNumber != null)
   ) {
     throw new Error('FORTNOX_CUSTOMER_PAYLOAD_INVALID')
@@ -445,7 +445,7 @@ export function buildFortnoxCustomerDraft(input: FortnoxCustomerDraftInput): For
     Name: name,
     CustomerNumber: customerNumber,
     ExternalReference: externalReference,
-    Type: input.customerType === 'business' ? 'COMPANY' : 'PRIVATE',
+    Type: input.customerType !== 'private' ? 'COMPANY' : 'PRIVATE',
     ...(email === undefined ? {} : { Email: email }),
     ...(invoiceEmail === undefined ? {} : { EmailInvoice: invoiceEmail }),
     ...(phone === undefined ? {} : { Phone1: phone }),

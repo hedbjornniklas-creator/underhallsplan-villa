@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -285,10 +286,10 @@ function harness(options = {}) {
   new Function('module', 'exports', 'require', 'process', code)(
     mod,
     mod.exports,
-    (name) => {
+    withLegacyCustomerPresentation((name) => {
       assert.ok(name in deps, name)
       return deps[name]
-    },
+    }),
     {
       env: {
         NODE_ENV: 'production',

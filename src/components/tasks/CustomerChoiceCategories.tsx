@@ -3,20 +3,24 @@
 import { useRef, useState } from 'react'
 import { Check, ChevronDown, Download, ExternalLink, Loader2, RefreshCw, Save, Undo2 } from 'lucide-react'
 import { categoryOptions, currentCategoryChoice, normalizeSharedChoices, type CustomerChoiceCategory, type SharedCustomerChoices } from '@/lib/action-cases/customerPlanning'
-import { money } from '@/lib/action-cases/customerOffers'
+import { CustomerPriceDisplay, useCustomerPriceDisplay } from './CustomerPriceDisplay'
 import ProjectEditorRow from './ProjectEditorRow'
 import CustomerChoiceOfferSummary from './CustomerChoiceOfferSummary'
 import { choicePriceLabel } from '@/lib/action-cases/choiceOffer'
 
 const button = 'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#D5DCDD] px-3 py-2 text-sm font-semibold disabled:opacity-50'
 
-export default function CustomerChoiceCategories({ shared, onSaved, token, previewCaseId, readOnly = false }: {
+export default function CustomerChoiceCategories(props: Parameters<typeof CustomerChoiceCategoriesContent>[0]) {
+  return <CustomerPriceDisplay value={props.shared.customerPresentation}><CustomerChoiceCategoriesContent {...props} /></CustomerPriceDisplay>
+}
+function CustomerChoiceCategoriesContent({ shared, onSaved, token, previewCaseId, readOnly = false }: {
   shared: SharedCustomerChoices
   onSaved: (value: SharedCustomerChoices) => void
   token?: string
   previewCaseId?: string
   readOnly?: boolean
 }) {
+  const { money, text: vatText } = useCustomerPriceDisplay()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [details, setDetails] = useState<string | null>(null)
   const [draft, setDraft] = useState<Record<string, string | null>>({})
@@ -68,7 +72,7 @@ export default function CustomerChoiceCategories({ shared, onSaved, token, previ
           {category.specification && <div className="mb-4 max-w-3xl"><h4 className="text-sm font-semibold">Specifikation</h4><p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{category.specification}</p></div>}
           <fieldset disabled={Boolean(busy) || stale} className="min-w-0">
             <legend className="mb-2 text-sm font-semibold">Alternativ för {category.title}</legend>
-            <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">Prisunderlag inkl. moms</span></div>
+            <div className="flex justify-between gap-3 bg-[#EDF1F1] px-3 py-2 text-xs font-semibold"><span>Alternativ</span><span className="text-right">{vatText('Prisunderlag inkl. moms')}</span></div>
             {options.map((option) => <div key={option.id} className="border-b border-[#D5DCDD]">
               <div className="flex items-start gap-2 px-3 py-3">
                 <label className="grid min-h-11 min-w-0 flex-1 cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-x-3 gap-y-1 py-2 text-sm sm:flex">

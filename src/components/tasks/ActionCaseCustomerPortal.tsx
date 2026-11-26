@@ -23,9 +23,10 @@ import type { ActionCasePortal } from '@/lib/action-cases/contracts'
 import {
   customerOfferTotal,
   customerPriceLabel,
-  money,
   type CustomerOffer
 } from '@/lib/action-cases/customerOffers'
+import { customerMoney, customerVatText } from '@/lib/action-cases/customerPresentation'
+import { CustomerPriceDisplay } from './CustomerPriceDisplay'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import { CustomerPlannedItems } from './CustomerPlanningEditor'
 import CustomerChoiceCategories from './CustomerChoiceCategories'
@@ -76,7 +77,7 @@ export default function ActionCaseCustomerPortal({
   const decisionDates = choiceDecisionDates(plannedItems, plannedChoices)
   const offeredOptions = latest?.snapshot.items.filter((i) => i.kind === 'option') ?? []
   const contract = latestExternal && !latestExternal.releasedAt ? latest : accepted ?? offers.find((o) => o.status === 'published')
-  const payment = portal.sharing ? portal.sharedPayment : contract ? { version: contract.version, stage: latestExternal ? latestExternal.signedCopyRegisteredAt ? 'signed' : 'shared' : accepted ? 'accepted' : 'proposed', plan: contract.snapshot.paymentPlan, terms: contract.snapshot.paymentTerms, conditions: contract.snapshot.paymentConditions } : undefined
+  const payment = portal.sharing ? portal.sharedPayment : contract ? { customerPresentation: contract.snapshot.customerPresentation, version: contract.version, stage: latestExternal ? latestExternal.signedCopyRegisteredAt ? 'signed' : 'shared' : accepted ? 'accepted' : 'proposed', plan: contract.snapshot.paymentPlan, terms: contract.snapshot.paymentTerms, conditions: contract.snapshot.paymentConditions } : undefined
   const contractTiming = portal.sharing ? portal.sharedContractSchedule : contract?.snapshot.schedule ? { version: contract.version, accepted: Boolean(accepted), text: contract.snapshot.schedule } : undefined
   const contact = portal.customerContact ?? (latest ? { issuerName: latest.snapshot.issuerName, replyEmail: latest.snapshot.replyEmail } : undefined)
   const sharedFiles = c.attachments.filter(
@@ -277,7 +278,7 @@ export default function ActionCaseCustomerPortal({
                     <span>
                       Jag är beställaren eller behörig företrädare och godkänner
                       version {offer.version}{offer.snapshot.items.some((i) => i.kind === 'option') ? ', valda tillval' : ''}, villkor och
-                      bilagor. {offer.snapshot.contractPricing ? <>Prisgrunder: {customerPriceLabel(offer.snapshot)}. {offer.snapshot.contractPricing.mode !== 'fixed' ? 'Den löpande delen debiteras enligt avtalets timpriser och arvoden.' : 'Inklusive moms.'}</> : <>Totalt {money(customerOfferTotal(offer.snapshot, selection))} inklusive moms.</>}
+                      bilagor. {offer.snapshot.contractPricing ? <>Prisgrunder: {customerPriceLabel(offer.snapshot)}. {offer.snapshot.contractPricing.mode !== 'fixed' ? 'Den löpande delen debiteras enligt avtalets timpriser och arvoden.' : customerVatText('Inklusive moms.', offer.snapshot.customerPresentation?.vatBasis)}</> : <>Totalt {customerMoney(customerOfferTotal(offer.snapshot, selection), offer.snapshot.customerPresentation)} {customerVatText('inklusive moms.', offer.snapshot.customerPresentation?.vatBasis)}</>}
                     </span>
                   </label>
                   {challengeId ? (
@@ -359,7 +360,7 @@ export default function ActionCaseCustomerPortal({
           <summary className="cursor-pointer text-sm font-semibold">Val i tidigare avtalsversion</summary>
           {offeredOptions.map((item) => <div key={item.id} className="border-b border-slate-200 py-4">
             <h3 className="font-semibold">{item.title}</h3>
-            <p className="mt-2 text-sm">{money(item.amountOre)} · {accepted?.acceptedOptionIds.includes(item.id) ? 'Ingår i det godkända avtalet' : 'Se ursprunglig avtalsversion'}</p>
+            <p className="mt-2 text-sm">{customerMoney(item.amountOre, accepted?.snapshot.customerPresentation)} · {accepted?.acceptedOptionIds.includes(item.id) ? 'Ingår i det godkända avtalet' : 'Se ursprunglig avtalsversion'}</p>
           </div>)}
           <button className={`${button} mt-4`} onClick={() => { setOfferId(latest.id); navigate('offer') }}>Visa avtalsversion</button>
         </details>}
@@ -369,7 +370,7 @@ export default function ActionCaseCustomerPortal({
         {payment ? <>
           <p className="mt-3 text-sm font-medium">{payment.stage === 'signed' ? 'Betalningsplan · Underskriven kopia registrerad' : payment.stage === 'shared' ? 'Delad betalningsplan · Väntar på underskrift' : payment.stage === 'accepted' ? 'Avtalad betalningsplan' : 'Föreslagen betalningsplan · Avtalet är inte godkänt'} · Version {payment.version}</p>
           <p className="mt-2 text-sm text-slate-600">Grundavtalet · Inklusive moms. Detta är en betalningsplan, inte fakturor eller betalningskvitton.</p>
-          <PaymentPlanDocument plan={payment.plan} paymentTerms={payment.terms} conditions={payment.conditions} />
+          <CustomerPriceDisplay value={payment.customerPresentation}><PaymentPlanDocument plan={payment.plan} paymentTerms={payment.terms} conditions={payment.conditions} /></CustomerPriceDisplay>
         </> : <p className="mt-3 text-sm text-slate-600">Ingen betalningsplan har delats ännu.</p>}
       </section>}
       {activeView === 'schedule' && <section className="py-6">

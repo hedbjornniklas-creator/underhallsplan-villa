@@ -355,7 +355,7 @@ export default function TuDashboardClient({
     }
     setForm((current) => ({
       ...current,
-      customerType: customer.customerType === 'business' ? (current.customerType === 'association' ? 'association' : 'business') : 'consumer',
+      customerType: customer.customerType === 'association' ? 'association' : customer.customerType === 'business' ? (current.customerType === 'association' ? 'association' : 'business') : 'consumer',
       priceBasis: current.priceAmount.trim() ? current.priceBasis : defaultTuPriceBasis(customer.customerType === 'business' && current.customerType !== 'association' ? 'business' : 'consumer'),
       invoiceReference: customer.invoiceReference ?? '',
       customerIdentityNumber: customer.identityNumber ?? '',

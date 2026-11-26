@@ -1,28 +1,17 @@
 'use client'
 
 import { Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
+import { customerTypeLabels } from '@/lib/action-cases/customerPresentation'
 import type { ContractContractor, ContractParties } from '@/lib/action-cases/customerContractParties'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-50'
 const button = 'inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold'
 
 export function ContractCustomerEditor({ value, onChange }: { value: ContractParties; onChange: (value: ContractParties) => void }) {
-  const [confirmType, setConfirmType] = useState<'private' | 'business' | null>(null)
-  const changeType = (type: 'private' | 'business') => onChange({ ...value,
-    business: type === 'business' ? { organizationNumber: '', contactName: '', signatoryName: '' } : null,
-    customers: [{ name: value.customers[0]?.name ?? '', personalNumber: '' }] })
+  const { presentation } = useCustomerPriceDisplay()
   return <div className="space-y-5">
-    <label className="block text-sm">Beställartyp<select aria-label="Beställartyp" className={field} value={value.business ? 'business' : 'private'} onChange={event => {
-      const type = event.target.value as 'private' | 'business'
-      if (Boolean(value.business) === (type === 'business')) return
-      if (value.business || value.customers.length > 1 || value.customers.some(row => row.personalNumber)) setConfirmType(type)
-      else changeType(type)
-    }}><option value="private">Privatperson</option><option value="business">Företag eller förening</option></select></label>
-    {confirmType && <div role="alertdialog" aria-label="Byt beställartyp" className="border border-amber-300 bg-amber-50 p-3 text-sm">
-      <p>Byta beställartyp? Personnummer, extra beställare och företagets kompletterande uppgifter tas bort från utkastet. Namn och kontaktuppgifter behålls. Kontrollera dem efter bytet.</p>
-      <div className="mt-3 flex gap-2"><button type="button" className={button} onClick={() => setConfirmType(null)}>Avbryt</button><button type="button" className={button} onClick={() => { changeType(confirmType); setConfirmType(null) }}>Byt beställartyp</button></div>
-    </div>}
+    <p className="text-sm">Beställartyp: <strong>{customerTypeLabels[presentation?.customerType ?? (value.business ? 'business' : 'private')]}</strong> · <a className="underline" href="?view=overview">Beställarval under Översikt</a></p>
     {value.business ? <div className="grid gap-4 sm:grid-cols-2">
       <label className="min-w-0 text-sm sm:col-span-2">Företagets eller föreningens namn *<input aria-label="Beställare: Företagets eller föreningens namn" className={field} maxLength={250} value={value.customers[0].name} onChange={event => onChange({ ...value, customers: [{ name: event.target.value, personalNumber: '' }] })} /></label>
       {([['organizationNumber', 'Organisationsnummer'], ['contactName', 'Kontaktperson'], ['signatoryName', 'Behörig undertecknare']] as const).map(([key,label]) => <label key={key} className="min-w-0 text-sm">{label}<input aria-label={`Beställare: ${label}`} className={field} maxLength={key === 'organizationNumber' ? 20 : 250} value={value.business![key]} onChange={event => onChange({ ...value, business: { ...value.business!, [key]: event.target.value } })} /></label>)}

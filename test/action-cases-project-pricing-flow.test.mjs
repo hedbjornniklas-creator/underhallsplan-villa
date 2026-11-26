@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -53,7 +54,7 @@ const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({
 function load(path, deps) {
   const code = ts.transpileModule(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const m = { exports: {} }
-  new Function('require', 'module', 'exports', code)(name => { assert.ok(name in deps, name); return deps[name] }, m, m.exports)
+  new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation(name => { assert.ok(name in deps, name); return deps[name] }), m, m.exports)
   return m.exports.default
 }
 function nodes(tree) {
@@ -81,7 +82,7 @@ function priceHarness(initialTerms = null, overrides = {}) {
 test('existing saved customer prices are never adopted, recalculated or rounded by opening the billing section', () => {
   const t = terms(), before = structuredClone(t), h = priceHarness(t)
   assert.equal(h.writes.length, 0)
-  h.find(n => n.props?.['aria-label'] === 'Beloppsinmatning').props.onChange({ target: { value: 'incl' } }); h.render()
+  assert.equal(h.all().some(n => n.props?.['aria-label'] === 'Beloppsinmatning'), false)
   assert.equal(h.writes.length, 0); assert.deepEqual(t, before)
   assert.equal(h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.value, 10001)
   h.button('Använd kalkylens belopp').props.onClick(); h.render()
@@ -93,11 +94,11 @@ test('new pricing is proposed from calculation but saved only after an explicit 
   assert.equal(h.writes.length, 0)
   h.button('Ange prisform från kalkylen').props.onClick(); h.render()
   assert.equal(h.writes.length, 0); assert.equal(h.dirty.at(-1), true)
-  assert.equal(h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.value, 24000)
+  assert.equal(h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.value, 30000)
   h.button('Spara och använd för momentet').props.onClick(); h.render()
   assert.equal(h.writes[0].terms.combined.fixedOre, 30000); assert.equal(h.writes[0].immediate, true)
   h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.onChange(10000); h.render()
-  assert.equal(h.writes.at(-1).terms.combined.fixedOre, 12500)
+  assert.equal(h.writes.at(-1).terms.combined.fixedOre, 10000)
   h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.onChange(null)
   assert.equal(h.writes.at(-1).terms.combined.fixedOre, null)
 })

@@ -1,6 +1,8 @@
 import type { CustomerContractDetails } from './customerContract'
 import type { CustomerOfferDraft, CustomerOfferFile } from './customerOffers'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { customerVatText, type VatBasis } from './customerPresentation.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { assignmentForEditing, assignmentPatch, type ContractDocumentReference } from './contractAssignment.ts'
 
 export const changeMarkupFields = [
@@ -23,6 +25,10 @@ export type ContractChanges = {
 // A project-specific summary; the original ABS 18 document is not modified.
 export const defaultChangeConditions = 'Om parterna inte avtalar ett särskilt fast pris för ett ändrings- eller tilläggsarbete används nedanstående prisgrunder. Timpriserna inkluderar entreprenörarvode och moms. Kostnader för material, varor, överenskomna underentreprenader, hjälpmedel och övrigt utgår från självkostnad exklusive moms, med avtalat påslag. Moms tillkommer på kostnad och arvode. Arbetsledning debiteras enligt ordinarie timpris om inget särskilt timpris anges.\n\nÄndrings- och tilläggsarbeten ska dokumenteras i en separat skriftlig överenskommelse med omfattning, pris eller prisgrund och påverkan på tiden. Prisgrunderna innebär inte i sig en beställning av ytterligare arbete. Parterna behöver också beakta om arbetena påverkar försäkringarnas eller säkerheternas omfattning.'
 export const changeEntryText = 'Prisgrunder för ÄTA anges i avtalets ÄTA-sektion.'
+
+export function displayedChangeConditions(text: string, basis: VatBasis = 'incl') {
+  return text === defaultChangeConditions ? customerVatText(text, basis) : text
+}
 
 export function changesForEditing(details: CustomerContractDetails): ContractChanges {
   return details.changesPricing ?? {

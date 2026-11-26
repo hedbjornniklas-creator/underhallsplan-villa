@@ -93,6 +93,41 @@ async function fixture() {
   } catch (error) { await db.close(); throw error }
 }
 
+test('project customer presentation reuses real buyer and sender writers; association binding preserves all price fields and freezes after locking', async () => {
+  const f = await fixture()
+  try {
+    for (const name of ['2026-10-12_03_action_case_contract_sender_profiles', '2026-11-03_02_project_sender_profile',
+      '2026-10-18_01_customer_choice_categories', '2026-10-18_02_customer_choice_files', '2026-10-22_01_customer_choice_offers',
+      '2026-11-03_04_commercial_contracts']) await f.db.exec(migration(name))
+    const p = await f.project(), before = await saved(f.db, p.id), customerId = randomUUID()
+    const sql = migration('2026-11-26_01_project_customer_presentation')
+    await f.db.exec(sql); await f.db.exec(sql)
+    assert.deepEqual(await saved(f.db, p.id), before)
+    await f.db.query(`insert into organization_customers(id,org_id,customer_type,name,organization_number,email,address,postal_code,city)
+      values($1,$2,'association','Fiktiv Brf','559281-0823','brf@example.test','Testgatan 1','12345','Teststad')`, [customerId, f.org])
+    const customer = (await f.db.query('select * from organization_customers where id=$1', [customerId])).rows[0]
+    const request = { requestId: randomUUID(), revision: 0, contractRevision: before.revision, offerRevision: 0,
+      value: { version: 1, customerType: 'association', vatBasis: 'excl' }, customerId, customerVersion: Number(customer.version) }
+    const apply = data => f.db.query('select select_project_customer_presentation($1,$2,$3,$4::jsonb)', [f.org, p.id, f.actor, JSON.stringify(data)])
+    await apply(request)
+    const after = await saved(f.db, p.id), offer = (await f.db.query('select * from action_case_customer_offer_drafts where action_case_id=$1', [p.id])).rows[0]
+    assert.deepEqual(after.body.items, before.body.items); assert.equal(after.body.baseAmountOre, before.body.baseAmountOre)
+    assert.deepEqual(after.internal_costing, before.internal_costing)
+    assert.equal(after.body.contractParties.business.organizationNumber, '559281-0823')
+    assert.equal(after.body.contractParties.customers[0].name, 'Fiktiv Brf')
+    assert.deepEqual(after.body.customerPresentation, offer.body.customerPresentation)
+    assert.equal((await f.db.query('select organization_customer_id from action_cases where id=$1', [p.id])).rows[0].organization_customer_id, customerId)
+    assert.deepEqual(normalizeCustomerOffer(after.body), after.body)
+    await apply(request); assert.deepEqual(await saved(f.db, p.id), after)
+    const next = { ...request, requestId: randomUUID(), revision: 1, contractRevision: after.revision, offerRevision: offer.revision, customerId: null, customerVersion: null }
+    await assert.rejects(apply({ ...next, value: { version: 1, customerType: 'private', vatBasis: 'incl' } }), /CUSTOMER_PRESENTATION_CUSTOMER/)
+    const locked = await paper(f, p.id), frozen = (await f.db.query('select snapshot from action_case_contract_signing_documents where id=$1', [locked.id])).rows[0]
+    await assert.rejects(apply({ ...next, value: { ...next.value, vatBasis: 'incl' } }), /LOCKED/)
+    assert.deepEqual((await f.db.query('select snapshot from action_case_contract_signing_documents where id=$1', [locked.id])).rows[0], frozen)
+    assert.deepEqual(await saved(f.db, p.id), after)
+  } finally { await f.db.close() }
+})
+
 test('project sender selection updates editable documents together and is locked for the whole project', async () => {
   const f = await fixture()
   try {

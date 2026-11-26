@@ -1,4 +1,5 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import PendingLink from '@/components/ui/PendingLink'
 import { useEffect, useRef, useState } from 'react'
@@ -27,23 +28,13 @@ import type {
   ActionCaseView,
   ActionCasePortal
 } from '@/lib/action-cases/contracts'
-import {
-  customerOfferBaseAmount,
-  customerPriceLabel,
-  mapCustomerOffer,
-  money,
-  offerPublishIssues,
-  type CustomerOffer,
-  type CustomerOfferDraft,
-  type CustomerOfferSnapshot,
-  type CustomerOfferWorkspace
-} from '@/lib/action-cases/customerOffers'
+import { customerOfferBaseAmount, customerPriceLabel, mapCustomerOffer, offerPublishIssues, type CustomerOffer, type CustomerOfferDraft, type CustomerOfferSnapshot, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
 import { standardTermsFor, standardTermsForFile, withAbs18ContractDefaults, withStandardContractTerms } from '@/lib/action-cases/standardContractTerms'
 import CustomerContractFormSelect from './CustomerContractFormSelect'
 import { useToast } from '@/components/ui/AppToastProvider'
 import CustomerOfferDocument from './CustomerOfferDocument'
 import ActionCaseCustomerPortal from './ActionCaseCustomerPortal'
-import PriceInput from './CustomerOfferPriceInput'
+import { CustomerPriceInput as PriceInput } from './CustomerOfferPriceInput'
 import CustomerOfferCostCalculator from './CustomerOfferCostCalculator'
 import type { CustomerOfferCosting } from '@/lib/action-cases/customerOfferCosting'
 import CustomerContractFields from './CustomerContractFields'
@@ -142,6 +133,7 @@ export default function CustomerOfferEditor({
   offerItems?: CustomerOfferItem[]
   onEditProjectWork?: (itemId?: string) => void
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const initialCustomer = initial.recipient ?? actionCase.participants.find((p) => p.role === 'customer')
   const [workspace, setWorkspace] = useState(initial),
     [draft, setDraft] = useState<CustomerOfferDraft>(() => draftTarget === 'offer' ? !active || initial.offers.some(offer => offer.status === 'accepted') ? initial.draft : withOfferProjectDetails(initial.draft, projectDetails ?? initial.offerProjectDetails,
@@ -678,8 +670,8 @@ export default function CustomerOfferEditor({
       <div className="mt-3 flex flex-wrap gap-2"><button className={`${button} bg-white`} onClick={() => { update({ pricingMode: 'itemized' }); setConfirmItemized(false) }}><Check size={17} /> Byt till delpriser</button>
         <button className={button} onClick={() => setConfirmItemized(false)}><ArrowLeft size={17} /> Avbryt</button></div>
     </div>}
-    {draft.pricingMode !== 'itemized' ? <PriceInput label="Grundpris inkl. moms (kr) *" value={draft.baseAmountOre} onChange={(baseAmountOre) => update({ baseAmountOre })} /> : draft.items.filter((i) => i.kind === 'included').map((item) => <div key={item.id} className="mt-4 border-t border-slate-200 pt-3">
-      <PriceInput label={`${item.title || 'Arbetsdel'} - delpris inkl. moms (kr) *`} value={item.amountOre} onChange={(amountOre) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) })} />
+    {draft.pricingMode !== 'itemized' ? <PriceInput label={vatText("Grundpris inkl. moms (kr) *")} value={draft.baseAmountOre} onChange={(baseAmountOre) => update({ baseAmountOre })} /> : draft.items.filter((i) => i.kind === 'included').map((item) => <div key={item.id} className="mt-4 border-t border-slate-200 pt-3">
+      <PriceInput label={vatText(`${item.title || 'Arbetsdel'} - delpris inkl. moms (kr) *`)} value={item.amountOre} onChange={(amountOre) => update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) })} />
       {workspace.costingAvailable && <CustomerOfferCostCalculator value={costing[item.id]} customerPrice={item.amountOre}
         onChange={(calculation) => updateCosting(item.id, calculation)}
         onApply={(amountOre) => { update({ items: draft.items.map((i) => i.id === item.id ? { ...i, amountOre } : i) }); toast.success('Kundpriset har uppdaterats i utkastet.') }} />}
@@ -1173,12 +1165,12 @@ export default function CustomerOfferEditor({
               </p>
               <p className="mt-1 text-sm text-slate-500">
                 {draft.offerAlternatives ? 'Ingen totalsumma före beställarens skriftliga val' : draft.contractPricing?.mode === 'running' ? draftTarget === 'offer' ? 'Prisgrunder enligt offerten' : 'Prisgrunder enligt avtalet'
-                  : draft.contractPricing?.mode === 'mixed' ? 'Fast del inklusive moms och löpande prisgrunder'
+                  : draft.contractPricing?.mode === 'mixed' ? vatText('Fast del inklusive moms och löpande prisgrunder')
                   : draft.pricingMode === 'itemized'
-                  ? 'Summa grundåtagande inklusive moms'
-                  : 'Grundpris inklusive moms'}
+                  ? vatText('Summa grundåtagande inklusive moms')
+                  : vatText('Grundpris inklusive moms')}
               </p>
-              {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">Budgeterade löpande poster inkl. moms</dt><dd className="mt-1 font-semibold">{money(offerBudgetBreakdown(draft.contractPricing)?.runningOre ?? null)}</dd></dl>}
+              {draft.contractPricing?.budget && <dl className="my-3 text-sm"><dt className="text-[#596368]">{vatText("Budgeterade löpande poster inkl. moms")}</dt><dd className="mt-1 font-semibold">{money(offerBudgetBreakdown(draft.contractPricing)?.runningOre ?? null)}</dd></dl>}
               {!draft.offerAlternatives && draft.pricingMode === 'itemized' && baseAmount === null && (
                 <p className="mt-2 text-sm text-amber-700">
                   {missingPriceCount} {missingPriceCount === 1 ? 'arbetsdel saknar' : 'arbetsdelar saknar'} pris

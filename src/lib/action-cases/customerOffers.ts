@@ -1,5 +1,7 @@
 import type { CustomerOfferCosting } from './customerOfferCosting'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { customerMoney, normalizeCustomerPresentation, type CustomerPresentation, type ProjectCustomerPresentation } from './customerPresentation.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { publicProjectPricing } from './projectCustomerPricing.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeOfferDocuments, type OfferDocuments } from './offerDocuments.ts'
@@ -34,6 +36,7 @@ export type CustomerOfferItem = {
   sourceReview?: Partial<Record<'title' | 'scope' | 'scopeConditions' | 'scopeExclusions' | 'scopeAdvice' | 'amountOre', string>>
 }
 export type CustomerOfferDraft = {
+  customerPresentation?: CustomerPresentation
   offerDocuments?: OfferDocuments | null
   offerAlternatives?: OfferAlternatives | null
   offerHourEstimate?: OfferHourEstimate | null
@@ -85,6 +88,7 @@ export type CustomerOffer = {
   acceptedTotalOre: number | null
 }
 export type CustomerOfferWorkspace = {
+  customerPresentation?: ProjectCustomerPresentation
   offerProjectDetails?: import('./offerProjectDetails').OfferProjectDetails
   deliveryAvailable?: boolean
   signingAvailable?: boolean
@@ -210,6 +214,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
   if (termsAttachmentId && !attachmentIds.includes(termsAttachmentId))
     throw new Error('CUSTOMER_OFFER_INVALID')
   const draft: CustomerOfferDraft = {
+    ...(d.customerPresentation === undefined ? {} : { customerPresentation: normalizeCustomerPresentation(d.customerPresentation) }),
     ...(d.offerDocuments === undefined ? {} : { offerDocuments: normalizeOfferDocuments(d.offerDocuments, attachmentIds) }),
     ...(d.offerAlternatives === undefined ? {} : { offerAlternatives: normalizeOfferAlternatives(d.offerAlternatives) }),
     ...(d.offerHourEstimate === undefined ? {} : { offerHourEstimate: normalizeOfferHourEstimate(d.offerHourEstimate) }),
@@ -236,6 +241,7 @@ export function normalizeCustomerOffer(value: unknown): CustomerOfferDraft {
     items
   }
   if (draft.contractParties && draft.contractDetails) draft.contractDetails.fields.parties = { status: 'specified', text: contractPartiesSummary(draft.contractParties) }
+  if (draft.customerPresentation && draft.contractParties && (draft.customerPresentation.customerType === 'private') === Boolean(draft.contractParties.business)) throw new Error('CUSTOMER_PRESENTATION_INVALID')
   if (draft.offerAlternatives && (draft.items.length || draft.contractPricing || draft.offerHourEstimate || draft.baseAmountOre !== null || draft.paymentPlan?.installments.length))
     throw new Error('CUSTOMER_OFFER_INVALID')
   if (draft.contractDetails?.assignment?.documents.some((doc) => !attachmentIds.includes(doc.fileId)))
@@ -391,7 +397,7 @@ export function money(ore: number | null) {
 export function customerPriceLabel(d: CustomerOfferDraft): string {
   if (d.offerAlternatives) return `${d.offerAlternatives.parts.length} valbara offertdelar`
   if (d.contractPricing?.mode === 'running') return contractPriceModeLabel(d.contractPricing)
-  const amount = money(customerOfferBaseAmount(d))
+  const amount = customerMoney(customerOfferBaseAmount(d), d.customerPresentation)
   return d.contractPricing?.mode === 'mixed' ? `Fast del ${amount} + löpande räkning${d.contractPricing.budget ? ' med budget' : ''}` : amount
 }
 export function parseKronor(value: string): number | null {

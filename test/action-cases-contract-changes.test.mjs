@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomUUID } from 'node:crypto'
@@ -129,7 +130,7 @@ function documentText(value) {
   const loaded = { exports: {} }, jsx = (type, props) => ({ type, props })
   const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, react: {}, 'lucide-react': {}, '@/lib/action-cases/contractChanges': changes,
     '@/lib/action-cases/customerOffers': { money: (v) => v === null ? 'Pris saknas' : `${v / 100} kr` }, '@/lib/action-cases/contractAssignment': {}, './CustomerOfferPriceInput': {} }
-  new Function('require', 'module', 'exports', code)((name) => modules[name], loaded, loaded.exports)
+  new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation((name) => modules[name]), loaded, loaded.exports)
   const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : node && typeof node === 'object' ? flatten(node.props?.children) : [node]
   return flatten(loaded.exports.ContractChangesDocument({ value })).filter((v) => typeof v === 'string' || typeof v === 'number').join(' ')
 }

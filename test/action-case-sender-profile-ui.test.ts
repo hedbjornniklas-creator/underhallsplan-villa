@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import type * as SenderComponent from '../src/components/tasks/CustomerContractSenderProfile'
 import type { CustomerOfferWorkspace } from '../src/lib/action-cases/customerOffers'
 import type { ContractSenderProfileSnapshot } from '../src/lib/action-cases/contractSenderProfile'
@@ -17,10 +18,10 @@ const source = (file: string) => readFileSync(new URL(`../${file}`, import.meta.
 function load<T>(file: string, dependencies: Record<string, unknown>, globals: Record<string, unknown> = {}): T {
   const code = ts.transpileModule(source(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const compiled = { exports: {} }
-  new Function('require', 'module', 'exports', ...Object.keys(globals), code)((name: string) => {
+  new Function('require', 'module', 'exports', ...Object.keys(globals), code)(withLegacyCustomerPresentation((name: string) => {
     if (Object.hasOwn(dependencies, name)) return dependencies[name]
     throw new Error(`Unexpected dependency ${name}`)
-  }, compiled, compiled.exports, ...Object.values(globals))
+  }), compiled, compiled.exports, ...Object.values(globals))
   return compiled.exports as T
 }
 const snapshotModule = load('src/lib/action-cases/contractSenderProfile.ts', {})
@@ -232,15 +233,15 @@ test('shared project selector stays mounted and guards both document editors whi
   const editor = source('src/components/tasks/CustomerOfferEditor.tsx')
   const project = source('src/components/tasks/ActionCaseProject.tsx')
   assert.doesNotMatch(editor, /<CustomerContractSenderProfile/)
-  assert.match(project, /senderControls=\{offer && <details/)
+  assert.match(project, /senderControls=\{offer && <>[\s\S]*?<details/)
   assert.match(project, /senderLocked \? <p[\s\S]*?: <CustomerContractSenderProfile project/)
   assert.match(project, /active=\{view === 'overview'\}/)
   assert.equal((project.match(/projectOperationPending=\{senderPending\}/g) ?? []).length, 2)
   assert.match(editor, /const senderPending = projectOperationPending/)
-  assert.match(editor, /onDirtyChange\?\.\(dirty \|\| planningDirty \|\| billingDirty \|\| Boolean\(documentRecovery\)/)
+  assert.match(editor, /onDirtyChange\?\.\(dirty \|\| planningDirty \|\| paymentDirty \|\| Boolean\(documentRecovery\)/)
   assert.match(editor, /if \(senderOperation\.current \|\| running\.current \|\| autosave\.isPending\(\)\) return false/)
   assert.equal((editor.match(/if \(senderOperation\.current\) return/g) ?? []).length, 2)
-  assert.match(editor, /if \(!dirty && !planningDirty && !billingDirty && !senderPending\) return/)
+  assert.match(editor, /dirty \|\| planningDirty \|\| paymentDirty \|\| senderPending/)
   assert.match(editor, /issuerName: draft\.senderProfile\?\.name \?\? issuerName/)
   assert.match(editor, /companyFieldsReadonly=\{Boolean\(draft\.senderProfile\)\}/)
 })

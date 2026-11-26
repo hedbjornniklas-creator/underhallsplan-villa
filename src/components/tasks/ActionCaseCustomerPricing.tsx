@@ -10,6 +10,7 @@ import PriceInput from './CustomerOfferPriceInput'
 import ActionCaseContractPrice from './ActionCaseContractPrice'
 import { billingCalculation, exclusiveAmount, inclusiveAmount, applyBillingCalculation, type BillingPart } from '@/lib/action-cases/projectPricingFlow'
 import { money } from '@/lib/action-cases/customerOffers'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 export default function ActionCaseCustomerPricing({ item, entry, blocked, onChange, onRetry, onReload, onDraftDirty }: {
   item: ActionCaseItemView; entry?: CustomerPricingEntry; blocked: boolean
@@ -18,7 +19,7 @@ export default function ActionCaseCustomerPricing({ item, entry, blocked, onChan
 }) {
   const shared = item.contractWork?.customerPricing
   const [initial, setInitial] = useState<ProjectCustomerPricing | null>(null)
-  const [amountBasis, setAmountBasis] = useState<'excl' | 'incl'>('excl')
+  const { basis: amountBasis } = useCustomerPriceDisplay()
   const [reloadConfirmation, setReloadConfirmation] = useState(false)
   const groupName = useId()
   const value = entry?.terms ?? shared?.terms ?? initial
@@ -55,7 +56,7 @@ export default function ActionCaseCustomerPricing({ item, entry, blocked, onChan
       {shared.candidates.length > 1 && <p className="text-sm text-[#815B18]">Offert och Avtal kan ha olika villkor. Välj underlag och granska innan du kopplar ihop dem.</p>}
     </div>}
     {value && <fieldset disabled={blocked || locked} className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3"><label className="text-sm">Beloppsinmatning<select className="ml-2 rounded-md border border-[#B9C3C4] px-2 py-2" aria-label="Beloppsinmatning" value={amountBasis} onChange={e => setAmountBasis(e.target.value as 'excl' | 'incl')}><option value="excl">Exklusive moms</option><option value="incl">Inklusive moms</option></select></label></div>
+      <p className="text-sm text-[#596368]">Kundbelopp {amountBasis === 'excl' ? 'exklusive' : 'inklusive'} moms · <a className="underline" href="?view=overview">Projektets momsvisning</a></p>
       <fieldset><legend className="mb-2 text-sm font-medium">Arbete och material</legend><div className="gizmo-price-modes">
         {([['combined', 'Samlat pris'], ['separate', 'Separata prisformer']] as const).map(([key, label]) => <label key={key} className={value.split === key ? 'selected' : ''}><input type="radio" name={groupName} checked={value.split === key} onChange={() => change({ ...value, split: key })} />{label}</label>)}
       </div></fieldset>

@@ -2,6 +2,13 @@
 
 import { useState } from 'react'
 import { parseKronor } from '@/lib/action-cases/customerOffers'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
+
+export function CustomerPriceInput({ raw = false, ...props }: Parameters<typeof CustomerOfferPriceInput>[0] & { raw?: boolean }) {
+  const { display, store, text } = useCustomerPriceDisplay()
+  return <CustomerOfferPriceInput key={raw ? 'raw' : text('inkl. moms')} {...props} label={raw ? props.label : text(props.label)}
+    value={raw ? props.value : display(props.value)} onChange={value => props.onChange(raw ? value : store(value))} />
+}
 
 export default function CustomerOfferPriceInput({ value, onChange, label, disabled, hideLabel = false, max = 100_000_000_000 }: {
   value: number | null

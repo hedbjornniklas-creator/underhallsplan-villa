@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -98,10 +99,10 @@ test('the real offer document prints rates and estimated labour once, never inte
       compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 }
     }).outputText
     const loaded = { exports: {} }
-    new Function('require', 'module', 'exports', code)(key => {
+    new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation(key => {
       if (!(key in modules)) throw Error(key)
       return modules[key]
-    }, loaded, loaded.exports)
+    }), loaded, loaded.exports)
     return loaded.exports
   }
   modules['./CustomerContractPricing'] = load('CustomerContractPricing')

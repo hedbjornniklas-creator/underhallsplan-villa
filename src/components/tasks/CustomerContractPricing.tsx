@@ -1,4 +1,5 @@
 'use client'
+import { CustomerPriceTotals, useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -7,8 +8,8 @@ import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
 import { importableCustomerPrice } from '@/lib/action-cases/offerImport'
 import { contractBudgetAmount, contractBudgetRows, defaultBudgetReviewTerms, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, importContractPrices, offerCompensationText, offerBudgetBreakdown, type ContractPricing, type ContractPriceRow } from '@/lib/action-cases/contractPricing'
 import { customerPricingParts, customerChargeLabels } from '@/lib/action-cases/projectCustomerPricing'
-import { money } from '@/lib/action-cases/customerOffers'
-import PriceInput from './CustomerOfferPriceInput'
+
+import { CustomerPriceInput as PriceInput } from './CustomerOfferPriceInput'
 
 const field = 'mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 const modeLabels = { fixed: 'Fast pris', running: 'Löpande räkning', mixed: 'Fast + löpande' }
@@ -24,6 +25,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
   value: ContractPricing; sources: ActionCaseItemView[]; blocked: boolean; importBlocked: boolean; onChange: (value: ContractPricing) => void
   purpose?: 'offer' | 'contract'; runningDetails?: ReactNode
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const document = purpose === 'offer' ? 'offerten' : 'avtalet'
   const pricesTitle = purpose === 'offer' ? 'Offertens priser' : 'Avtalets priser'
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -74,7 +76,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
     const next = { ...value, ...values }
     patch({ ...values, totalOre: next.labourOre === null || next.materialOre === null ? null : next.labourOre + next.materialOre })
   }
-  const budgetInput = (row: ContractPriceRow) => <span className="gizmo-budget-input"><small className="gizmo-budget-mobile-label">Budget inkl. moms</small><PriceInput hideLabel label={`Budget för ${row.title || 'nytt moment'} inkl. moms (kr)`} value={value.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null} onChange={amountOre => patch({ budget: { ...value.budget!, rows: [...value.budget!.rows.filter(entry => entry.id !== row.id), { id: row.id, amountOre }] } })} /></span>
+  const budgetInput = (row: ContractPriceRow) => <span className="gizmo-budget-input"><small className="gizmo-budget-mobile-label">{vatText("Budget inkl. moms")}</small><PriceInput hideLabel label={vatText(`Budget för ${row.title || 'nytt moment'} inkl. moms (kr)`)} value={value.budget!.rows.find(entry => entry.id === row.id)?.amountOre ?? null} onChange={amountOre => patch({ budget: { ...value.budget!, rows: [...value.budget!.rows.filter(entry => entry.id !== row.id), { id: row.id, amountOre }] } })} /></span>
   return <fieldset disabled={blocked} className="gizmo-contract-pricing min-w-0 space-y-6" aria-label={purpose === 'offer' ? 'Offertens pris' : 'Avtalets pris'}>
     {shared && <p className="text-sm">Prisformer och kundvillkor för kopplade moment ändras i Projektarbete. Redovisningen nedan gäller bara detta dokument.</p>}
     <fieldset disabled={shared}><Modes title="Prisform" value={value.mode === 'running' && value.budget ? 'budget' : value.mode} choices={[
@@ -133,10 +135,10 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
         }}><Download size={17} />Hämta och ersätt valda priser ({selected.length})</button>
       </section>}
       <div className="gizmo-price-table" role="table" aria-label="Prisrader" data-columns={showSplit ? 'split' : showPriceColumn ? 'priced' : 'unpriced'}>
-        {visibleRows.length > 0 && <div role="row" className="gizmo-price-header"><span role="columnheader">Moment</span>{showSplit ? <><span role="columnheader">Arbete inkl. moms</span><span role="columnheader">Material inkl. moms</span><span role="columnheader">{value.budget ? 'Pris / budget inkl. moms' : 'Summa'}</span></> : showPriceColumn && <span role="columnheader">{value.budget ? value.mode === 'mixed' ? 'Pris / budget inkl. moms' : 'Budget inkl. moms' : showPrices ? 'Pris inkl. moms' : 'Prisform'}</span>}<span role="columnheader" className="sr-only">Redigera</span></div>}
+        {visibleRows.length > 0 && <div role="row" className="gizmo-price-header"><span role="columnheader">Moment</span>{showSplit ? <><span role="columnheader">{vatText("Arbete inkl. moms")}</span><span role="columnheader">{vatText("Material inkl. moms")}</span><span role="columnheader">{value.budget ? vatText('Pris / budget inkl. moms') : 'Summa'}</span></> : showPriceColumn && <span role="columnheader">{value.budget ? value.mode === 'mixed' ? vatText('Pris / budget inkl. moms') : vatText('Budget inkl. moms') : showPrices ? vatText('Pris inkl. moms') : 'Prisform'}</span>}<span role="columnheader" className="sr-only">Redigera</span></div>}
         {visibleRows.map((row) => row.projectPricing ? <div key={row.id} className="border-b border-[#D5DCDD] px-3 py-3 text-sm">
           <div className="flex flex-wrap justify-between gap-2"><strong>{row.title}</strong>{!blocked && <a href="?view=work" className="underline">Ändra i Projektarbete</a>}</div>
-          <dl className="mt-2 space-y-2">{customerPricingParts(row.projectPricing.terms).map(part => <div key={part.key} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt>{part.label || 'Arbete och material'} · {customerChargeLabels[part.charge.mode]}</dt><dd className="text-right">{part.charge.mode === 'fixed' ? showPrices ? money(part.charge.fixedOre) : 'Fast pris' : <>{part.charge.mode === 'budget' && <span className="block">Budget {money(part.charge.budgetOre)}</span>}{part.key !== 'material' && <span className="block">{money(part.charge.hourlyOre)}/tim inkl. moms</span>}{part.key !== 'labour' && <span className="block">Självkostnad + {part.charge.markupPercent ?? 'Ej angivet'} % exkl. moms</span>}</>}</dd></div>)}</dl>
+          <dl className="mt-2 space-y-2">{customerPricingParts(row.projectPricing.terms).map(part => <div key={part.key} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt>{part.label || 'Arbete och material'} · {customerChargeLabels[part.charge.mode]}</dt><dd className="text-right">{part.charge.mode === 'fixed' ? showPrices ? money(part.charge.fixedOre) : 'Fast pris' : <>{part.charge.mode === 'budget' && <span className="block">Budget {money(part.charge.budgetOre)}</span>}{part.key !== 'material' && <span className="block">{money(part.charge.hourlyOre)}{vatText("/tim inkl. moms")}</span>}{part.key !== 'labour' && <span className="block">Självkostnad + {part.charge.markupPercent ?? 'Ej angivet'} % exkl. moms</span>}</>}</dd></div>)}</dl>
         </div> : <div key={row.id}>
           <div role="row" className={`gizmo-price-row ${expanded === row.id ? 'open' : ''}`}>
             <div role="cell" className="min-w-0"><button type="button" className="gizmo-price-row-title w-full break-words text-left font-semibold" aria-expanded={expanded === row.id} aria-label={`Redigera pris för ${row.title || 'nytt moment'}`} onClick={() => setExpanded(expanded === row.id ? null : row.id)}>{row.title || 'Nytt moment'}</button></div>
@@ -150,38 +152,38 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
             <label className="block text-sm font-medium">Moment<input className={field} maxLength={250} value={row.title} aria-label="Prisradens moment" onChange={(e) => patchRow(row.id, { title: e.target.value })} /></label>
             {value.mode === 'mixed' && <Modes title="Momentets prisform" value={row.kind} choices={[{ value: 'fixed', label: 'Fast pris' }, { value: 'running', label: 'Löpande räkning' }]} onChange={(kind) => patchRow(row.id, { kind })} />}
             {value.mode !== 'running' && value.basis === 'rows' && (value.mode !== 'mixed' || row.kind === 'fixed') && (value.split === 'combined'
-              ? <PriceInput label="Momentets pris inkl. moms (kr)" value={row.amountOre} onChange={(amountOre) => patchRow(row.id, { amountOre })} />
-              : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label="Arbete inkl. moms (kr)" value={row.labourOre} onChange={(labourOre) => patchRow(row.id, { labourOre })} /><PriceInput label="Material inkl. moms (kr)" value={row.materialOre} onChange={(materialOre) => patchRow(row.id, { materialOre })} /></div>)}
+              ? <PriceInput label={vatText("Momentets pris inkl. moms (kr)")} value={row.amountOre} onChange={(amountOre) => patchRow(row.id, { amountOre })} />
+              : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label={vatText("Arbete inkl. moms (kr)")} value={row.labourOre} onChange={(labourOre) => patchRow(row.id, { labourOre })} /><PriceInput label={vatText("Material inkl. moms (kr)")} value={row.materialOre} onChange={(materialOre) => patchRow(row.id, { materialOre })} /></div>)}
           </div>}
         </div>)}
       </div>
       {value.mode !== 'running' && <>
         <div className="gizmo-price-total" aria-label={purpose === 'offer' ? 'Offertens totalsumma' : 'Avtalets totalsumma'}>
-          {value.split === 'separate' && <dl className="gizmo-price-total-line text-sm"><dt>Arbete inkl. moms</dt><dd>{money(splitAmount('labourOre'))}</dd><dt>Material inkl. moms</dt><dd>{money(splitAmount('materialOre'))}</dd></dl>}
-          <dl className="gizmo-price-total-line font-semibold"><dt>{value.mode === 'mixed' ? 'Fast del inkl. moms' : 'Totalsumma inkl. moms'}</dt><dd>{money(total)}</dd></dl>
+          {value.split === 'separate' && <dl className="gizmo-price-total-line text-sm"><dt>{vatText("Arbete inkl. moms")}</dt><dd>{money(splitAmount('labourOre'))}</dd><dt>{vatText("Material inkl. moms")}</dt><dd>{money(splitAmount('materialOre'))}</dd></dl>}
+          <dl className="gizmo-price-total-line font-semibold"><dt>{value.mode === 'mixed' ? vatText('Fast del inkl. moms') : vatText('Totalsumma inkl. moms')}</dt><dd>{money(total)}</dd></dl>
         </div>
-        {value.basis === 'total' && <div className="gizmo-price-row-editor py-3">{value.split === 'combined' ? <PriceInput label="Fast klumpsumma inkl. moms (kr)" value={value.totalOre} onChange={(totalOre) => patch({ totalOre, labourOre: null, materialOre: null })} />
-          : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label="Totalt arbete inkl. moms (kr)" value={value.labourOre} onChange={(labourOre) => splitTotal({ labourOre })} /><PriceInput label="Totalt material inkl. moms (kr)" value={value.materialOre} onChange={(materialOre) => splitTotal({ materialOre })} /></div>}</div>}
+        {value.basis === 'total' && <div className="gizmo-price-row-editor py-3">{value.split === 'combined' ? <PriceInput label={vatText("Fast klumpsumma inkl. moms (kr)")} value={value.totalOre} onChange={(totalOre) => patch({ totalOre, labourOre: null, materialOre: null })} />
+          : <div className="grid gap-4 sm:grid-cols-2"><PriceInput label={vatText("Totalt arbete inkl. moms (kr)")} value={value.labourOre} onChange={(labourOre) => splitTotal({ labourOre })} /><PriceInput label={vatText("Totalt material inkl. moms (kr)")} value={value.materialOre} onChange={(materialOre) => splitTotal({ materialOre })} /></div>}</div>}
       </>}
     </section>
     {value.budget && <section aria-label="Planeringsbudget" className="space-y-4 border-t border-[#D5DCDD] pt-4">
       <h3 className="font-semibold">Planeringsbudget</h3>
-      <div className="gizmo-price-total"><dl className="gizmo-price-total-line font-semibold"><dt>{purpose === 'offer' ? 'Budgeterade löpande poster inkl. moms' : 'Planeringsbudget totalt inkl. moms'}</dt><dd>{offerBudget ? money(offerBudget.runningOre) : contractBudgetAmount(value) === null ? 'Budget ej komplett' : money(contractBudgetAmount(value))}</dd></dl></div>
+      <div className="gizmo-price-total"><dl className="gizmo-price-total-line font-semibold"><dt>{purpose === 'offer' ? vatText('Budgeterade löpande poster inkl. moms') : vatText('Planeringsbudget totalt inkl. moms')}</dt><dd>{offerBudget ? money(offerBudget.runningOre) : contractBudgetAmount(value) === null ? 'Budget ej komplett' : money(contractBudgetAmount(value))}</dd></dl></div>
       <label className="block text-sm font-medium">Budgetens förutsättningar och osäkerheter<textarea className={field} rows={3} maxLength={6000} value={value.budget.assumptions} onChange={event => patch({ budget: { ...value.budget!, assumptions: event.target.value } })} /></label>
       <label className="block text-sm font-medium">Uppföljning och samråd<textarea className={field} rows={5} maxLength={6000} value={value.budget.reviewTerms} onChange={event => patch({ budget: { ...value.budget!, reviewTerms: event.target.value } })} /></label>
     </section>}
     {shared && runningDetails}
     {value.mode !== 'fixed' && (!shared || legacyRunning) && <section className="space-y-5 border-t border-[#D5DCDD] pt-5" aria-label="Löpande prisgrunder">
       <h3 className="font-semibold">Arbete</h3>
-      <PriceInput label="Timpris inkl. arvode och moms (kr/tim)" value={value.running.hourlyOre} onChange={(hourlyOre) => running({ hourlyOre })} />
+      <PriceInput label={vatText("Timpris inkl. arvode och moms (kr/tim)")} value={value.running.hourlyOre} onChange={(hourlyOre) => running({ hourlyOre })} />
       {!shared && runningDetails}
       <Modes title="Arbetsledning" value={value.running.managementOre === null ? 'same' : 'own'} choices={[{ value: 'same', label: 'Samma timpris' }, { value: 'own', label: 'Eget timpris' }]} onChange={(next) => running({ managementOre: next === 'same' ? null : 0 })} />
-      {value.running.managementOre !== null && <PriceInput label="Arbetsledning inkl. arvode och moms (kr/tim)" value={value.running.managementOre} onChange={(managementOre) => running({ managementOre: managementOre ?? 0 })} />}
+      {value.running.managementOre !== null && <PriceInput label={vatText("Arbetsledning inkl. arvode och moms (kr/tim)")} value={value.running.managementOre} onChange={(managementOre) => running({ managementOre: managementOre ?? 0 })} />}
       <h3 className="border-t border-[#D5DCDD] pt-4 font-semibold">Material, varor, hjälpmedel, UE och övrigt</h3>
       <p className="text-sm">Självkostnad</p>
-      <PriceInput label="Arvode på självkostnad (%)" max={100000} value={value.running.markupPercent === null ? null : Math.round(value.running.markupPercent * 100)} onChange={(amount) => running({ markupPercent: amount === null ? null : amount / 100 })} />
+      <PriceInput raw label="Arvode på självkostnad (%)" max={100000} value={value.running.markupPercent === null ? null : Math.round(value.running.markupPercent * 100)} onChange={(amount) => running({ markupPercent: amount === null ? null : amount / 100 })} />
       <p className="text-sm text-[#596368]">Moms tillkommer på kostnader och arvode.</p>
-      {!value.budget && <PriceInput label="Ungefärligt pris för den löpande delen inkl. moms (kr, valfritt)" value={value.running.approximateOre} onChange={(approximateOre) => running({ approximateOre })} />}
+      {!value.budget && <PriceInput label={vatText("Ungefärligt pris för den löpande delen inkl. moms (kr, valfritt)")} value={value.running.approximateOre} onChange={(approximateOre) => running({ approximateOre })} />}
       <p className="text-sm text-[#596368]">Beställaren får granska originalverifikationerna för arbetena.</p>
       {value.mode === 'running' && <p className="text-sm">{purpose === 'offer' ? 'Ingen fast offertsumma.' : 'Ingen fast kontraktssumma.'}</p>}
     </section>}
@@ -189,6 +191,7 @@ export default function CustomerContractPricing({ value, sources, blocked, impor
 }
 
 export function ContractPriceDocument({ value, compact = false, purpose = 'contract' }: { value: ContractPricing; compact?: boolean; purpose?: 'offer' | 'contract' }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const p = contractDisplayPricing(value), projectRates = projectRunningPrices(value)
   const shared = value.rows.some(row => row.projectPricing)
   const legacyRunning = value.rows.some(row => !row.projectPricing && (value.mode === 'running' || row.kind === 'running'))
@@ -202,29 +205,30 @@ export function ContractPriceDocument({ value, compact = false, purpose = 'contr
     {p.mode !== 'running' && <>
       <p className="font-semibold">{purpose === 'offer' ? 'Fasta priser' : p.mode === 'mixed' ? 'Fast pris för den fasta delen' : 'Fast pris'}</p>
       {p.display !== 'total' && fixed.length > 0 && <div className={`gizmo-price-document ${p.display === 'priced' && p.split === 'separate' ? 'gizmo-price-document-split' : ''}`}>
-        <table className="w-full text-left"><thead className="bg-[#EDF1F1]"><tr><th>Moment</th>{p.display === 'priced' && (p.split === 'combined' ? <th>Pris inkl. moms</th> : <><th>Arbete</th><th>Material</th><th>Summa</th></>)}</tr></thead>
+        <table className="w-full text-left"><thead className="bg-[#EDF1F1]"><tr><th>Moment</th>{p.display === 'priced' && (p.split === 'combined' ? <th>{vatText("Pris inkl. moms")}</th> : <><th>Arbete</th><th>Material</th><th>Summa</th></>)}</tr></thead>
           <tbody>{fixed.map((row) => <tr key={row.id}><td>{row.title || 'Moment saknar namn'}</td>{p.display === 'priced' && (p.split === 'combined' ? <td>{money(row.amountOre)}</td> : <><td>{money(row.labourOre)}</td><td>{money(row.materialOre)}</td><td>{money(contractRowAmount(p, row))}</td></>)}</tr>)}</tbody></table>
       </div>}
-      {p.split === 'separate' ? <dl className="grid grid-cols-2 gap-2"><dt>Arbete inkl. moms</dt><dd className="text-right">{money(splitTotals('labourOre'))}</dd><dt>Material inkl. moms</dt><dd className="text-right">{money(splitTotals('materialOre'))}</dd></dl> : purpose === 'contract' && <p>Arbete och material tillsammans</p>}
-      <p className="font-semibold">{p.mode === 'mixed' ? 'Fast del' : 'Totalsumma'} inkl. moms: {money(total)}</p>
+      {p.split === 'separate' ? <dl className="grid grid-cols-2 gap-2"><dt>{vatText("Arbete inkl. moms")}</dt><dd className="text-right">{money(splitTotals('labourOre'))}</dd><dt>{vatText("Material inkl. moms")}</dt><dd className="text-right">{money(splitTotals('materialOre'))}</dd></dl> : purpose === 'contract' && <p>Arbete och material tillsammans</p>}
+      <p className="font-semibold">{p.mode === 'mixed' ? 'Fast del' : 'Totalsumma'} {vatText(" inkl. moms: ")}{money(total)}</p>
+      <CustomerPriceTotals grossOre={total} />
     </>}
     {p.mode !== 'fixed' && <div className="space-y-2">
       <p className="font-semibold">{purpose === 'offer' ? 'Löpande räkning - prisgrunder' : p.budget ? 'Löpande räkning med budget' : 'Löpande räkning'}</p>
       {p.rows.length > 0 && !p.budget && <p>Moment: {p.rows.filter((row) => p.mode === 'running' || row.kind === 'running').map((row) => row.title).join(', ')}</p>}
-      {projectRates.map(rate => <div key={rate.title}><strong>{rate.title}</strong>{rate.hourly && <p>Timpris inkl. arvode och moms: {money(rate.hourlyOre)}/tim.</p>}{rate.markup && <p>Självkostnad + {rate.markupPercent ?? 'Ej angivet'} % påslag exkl. moms. Moms tillkommer.</p>}</div>)}
-      {(!shared || legacyRunning) && <><p>Arbete: {money(p.running.hourlyOre)}/tim inklusive entreprenörarvode och moms.</p>
-      <p>Arbetsledning: {money(p.running.managementOre ?? p.running.hourlyOre)}/tim inklusive entreprenörarvode och moms.</p>
+      {projectRates.map(rate => <div key={rate.title}><strong>{rate.title}</strong>{rate.hourly && <p>{vatText("Timpris inkl. arvode och moms: ")}{money(rate.hourlyOre)}/tim.</p>}{rate.markup && <p>Självkostnad + {rate.markupPercent ?? 'Ej angivet'} % påslag exkl. moms. Moms tillkommer.</p>}</div>)}
+      {(!shared || legacyRunning) && <><p>Arbete: {money(p.running.hourlyOre)}{vatText("/tim inklusive entreprenörarvode och moms.")}</p>
+      <p>Arbetsledning: {money(p.running.managementOre ?? p.running.hourlyOre)}{vatText("/tim inklusive entreprenörarvode och moms.")}</p>
       <p>Material, varor, hjälpmedel, överenskomna underentreprenader och övriga kostnader: självkostnad + {p.running.markupPercent ?? 'Ej angivet'} % entreprenörarvode. Moms tillkommer på kostnader och arvode.</p></>}
       <p>Beställaren får granska originalverifikationerna för arbetena.</p>
-      {p.running.approximateOre !== null && <p>Ungefärligt pris för den löpande delen inklusive moms: {money(p.running.approximateOre)}.</p>}
+      {p.running.approximateOre !== null && <p>{vatText("Ungefärligt pris för den löpande delen inklusive moms: ")}{money(p.running.approximateOre)}.</p>}
       {p.mode === 'running' && <p>{purpose === 'offer' ? 'Ingen fast offertsumma.' : 'Ingen fast kontraktssumma.'}</p>}
     </div>}
     {p.budget && <section aria-label="Planeringsbudget" className="space-y-3">
-      <h4 className="font-semibold">{purpose === 'offer' ? 'Planeringsbudget för löpande arbeten och inköp' : 'Planeringsbudget inklusive moms'}</h4>
-      <div className="gizmo-price-document"><table className="w-full text-left"><thead><tr><th>Moment</th><th className="text-right">Budget inkl. moms</th></tr></thead><tbody>
+      <h4 className="font-semibold">{purpose === 'offer' ? 'Planeringsbudget för löpande arbeten och inköp' : vatText('Planeringsbudget inklusive moms')}</h4>
+      <div className="gizmo-price-document"><table className="w-full text-left"><thead><tr><th>Moment</th><th className="text-right">{vatText("Budget inkl. moms")}</th></tr></thead><tbody>
         {contractBudgetRows(value).map(row => <tr key={row.id}><td>{row.title}</td><td className="text-right">{purpose === 'offer' && row.amountOre === null ? 'Ej budgeterat' : money(row.amountOre)}</td></tr>)}
-        {purpose === 'contract' && !shared && p.mode === 'mixed' && <tr><td>Fast del inkl. moms</td><td className="text-right">{money(contractFixedAmount(p))}</td></tr>}
-        <tr className="font-semibold"><td>{purpose === 'offer' ? partial ? 'Summa budgeterade löpande poster inkl. moms' : 'Summa budget, löpande del inkl. moms' : 'Planeringsbudget totalt inkl. moms'}</td><td className="text-right">{budget ? money(budget.runningOre) : contractBudgetAmount(p) === null ? 'Budget ej komplett' : money(contractBudgetAmount(p))}</td></tr>
+        {purpose === 'contract' && !shared && p.mode === 'mixed' && <tr><td>{vatText("Fast del inkl. moms")}</td><td className="text-right">{money(contractFixedAmount(p))}</td></tr>}
+        <tr className="font-semibold"><td>{purpose === 'offer' ? partial ? vatText('Summa budgeterade löpande poster inkl. moms') : vatText('Summa budget, löpande del inkl. moms') : vatText('Planeringsbudget totalt inkl. moms')}</td><td className="text-right">{budget ? money(budget.runningOre) : contractBudgetAmount(p) === null ? 'Budget ej komplett' : money(contractBudgetAmount(p))}</td></tr>
       </tbody></table></div>
       {partial && <p>Följande poster saknar budget och ingår inte i budgetbeloppet: {budget!.unbudgetedTitles.join(', ')}. Tom budget innebär inte att posten är kostnadsfri.</p>}
       <p className="font-semibold">Budgetens förutsättningar och osäkerheter</p><p className="whitespace-pre-line">{p.budget.assumptions}</p>

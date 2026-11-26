@@ -1,17 +1,19 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useId, useState } from 'react'
 import { ExternalLink, Pencil, Plus, Trash2, X } from 'lucide-react'
 import type { CustomerOfferDraft, CustomerOfferFile } from '@/lib/action-cases/customerOffers'
-import { money } from '@/lib/action-cases/customerOffers'
+
 import { assignmentForEditing } from '@/lib/action-cases/contractAssignment'
-import { changeMarkupFields, changesForEditing, changePricingPatch, type ChangeRate, type ContractChanges } from '@/lib/action-cases/contractChanges'
-import PriceInput from './CustomerOfferPriceInput'
+import { changeMarkupFields, changesForEditing, changePricingPatch, displayedChangeConditions, type ChangeRate, type ContractChanges } from '@/lib/action-cases/contractChanges'
+import { CustomerPriceInput as PriceInput } from './CustomerOfferPriceInput'
 
 const field = 'mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm'
 export default function CustomerContractChanges({ draft, files, caseId, blocked, onChange }: {
   draft: CustomerOfferDraft; files: CustomerOfferFile[]; caseId: string; blocked: boolean; onChange: (patch: Partial<CustomerOfferDraft>) => void
 }) {
+  const { text: vatText, money, basis } = useCustomerPriceDisplay()
   const name = useId()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [removeId, setRemoveId] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export default function CustomerContractChanges({ draft, files, caseId, blocked,
           <button type="button" className="gizmo-button" disabled={blocked || value.rates.length >= 50} onClick={() => addRate(value.rates.some((row) => row.kind === 'ordinary') ? 'other' : 'ordinary', value.rates.some((row) => row.kind === 'ordinary') ? '' : 'Ordinarie arbete')}><Plus size={16} />Lägg till timpris</button>
         </div>
         <div role="table" aria-label="ÄTA-timpriser" className="gizmo-change-table">
-          <div role="row" className="gizmo-change-rate gizmo-change-header"><span role="columnheader">Arbete eller roll</span><span role="columnheader">Kr/tim inkl. moms</span><span role="columnheader" className="sr-only">Verktyg</span></div>
+          <div role="row" className="gizmo-change-rate gizmo-change-header"><span role="columnheader">Arbete eller roll</span><span role="columnheader">{vatText("Kr/tim inkl. moms")}</span><span role="columnheader" className="sr-only">Verktyg</span></div>
           {value.rates.map((row) => <div key={row.id}>
             <div role="row" className={`gizmo-change-rate ${expanded === row.id ? 'open' : ''}`}>
               <div role="cell" className="min-w-0"><button type="button" className="gizmo-change-title" aria-label={`Redigera ÄTA-timpris ${row.title || 'ny roll'}`} aria-expanded={expanded === row.id} onClick={() => setExpanded(expanded === row.id ? null : row.id)}>{row.title || 'Ny roll'}</button></div>
@@ -59,7 +61,7 @@ export default function CustomerContractChanges({ draft, files, caseId, blocked,
             </div>}
             {expanded === row.id && <div role="group" aria-label={`Redigera timpris ${row.title || 'ny roll'}`} className="gizmo-change-rate-editor border-b border-slate-200 bg-slate-50 p-3">
               <label className="min-w-0 text-sm font-medium">Arbete eller roll<input aria-label="ÄTA-timprisets roll" className={field} maxLength={250} value={row.title} onChange={(e) => editRate(row.id, { title: e.target.value })} /></label>
-              <PriceInput label="ÄTA-timpris inkl. arvode och moms (kr/tim)" value={row.hourlyOre} onChange={(hourlyOre) => editRate(row.id, { hourlyOre })} />
+              <PriceInput label={vatText("ÄTA-timpris inkl. arvode och moms (kr/tim)")} value={row.hourlyOre} onChange={(hourlyOre) => editRate(row.id, { hourlyOre })} />
             </div>}
           </div>)}
         </div>
@@ -74,7 +76,7 @@ export default function CustomerContractChanges({ draft, files, caseId, blocked,
         <div role="table" aria-label="ÄTA-påslag" className="gizmo-change-table">
           <div role="row" className="gizmo-change-markup gizmo-change-header"><span role="columnheader">Kostnadsslag</span><span role="columnheader">Påslag (%)</span></div>
           {changeMarkupFields.map(({ key, title }) => <div key={key} role="row" className="gizmo-change-markup"><span role="cell">{title}</span><div role="cell">
-            <PriceInput label={`ÄTA-påslag ${title.toLocaleLowerCase('sv-SE')} (%)`} value={value.markups[key] === null ? null : Math.round(value.markups[key]! * 100)} max={100000} onChange={(amount) => change({ markups: { ...value.markups, [key]: amount === null ? null : amount / 100 } })} />
+            <PriceInput raw label={`ÄTA-påslag ${title.toLocaleLowerCase('sv-SE')} (%)`} value={value.markups[key] === null ? null : Math.round(value.markups[key]! * 100)} max={100000} onChange={(amount) => change({ markups: { ...value.markups, [key]: amount === null ? null : amount / 100 } })} />
           </div></div>)}
         </div>
       </section>
@@ -98,17 +100,18 @@ export default function CustomerContractChanges({ draft, files, caseId, blocked,
         <a className="inline-flex min-h-9 items-center gap-2 text-sm text-teal-800 underline" href={`/api/action-cases/${caseId}/attachments/${value.annex.fileId}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} />Öppna prisbilaga</a>
       </>}
     </section>}
-    <label className="block text-sm font-medium">Avtalsvillkor för ÄTA<textarea aria-label="Avtalsvillkor för ÄTA" className={field} rows={4} maxLength={6000} value={value.standardText} onChange={(e) => change({ standardText: e.target.value })} /></label>
+    <label className="block text-sm font-medium">Avtalsvillkor för ÄTA<textarea aria-label="Avtalsvillkor för ÄTA" className={field} rows={4} maxLength={6000} value={displayedChangeConditions(value.standardText, basis)} onChange={(e) => change({ standardText: e.target.value })} /></label>
     <label className="block text-sm font-medium">Övriga ÄTA-villkor<textarea aria-label="Övriga ÄTA-villkor" className={field} rows={2} maxLength={6200} value={value.notes} onChange={(e) => change({ notes: e.target.value })} /></label>
   </fieldset>
 }
 
 export function ContractChangesDocument({ value, fileUrl }: { value: ContractChanges; fileUrl?: (id: string) => string }) {
+  const { text: vatText, money, basis } = useCustomerPriceDisplay()
   const ordinary = value.rates.find((row) => row.kind === 'ordinary')
   return <section aria-label="Ändringar och tilläggsarbeten" className="min-w-0 space-y-3 text-sm">
-    <p className="whitespace-pre-wrap leading-6">{value.standardText}</p>
+    <p className="whitespace-pre-wrap leading-6">{displayedChangeConditions(value.standardText, basis)}</p>
     {value.mode === 'fields' ? <>
-      <div className="gizmo-price-document"><table className="w-full text-left"><thead className="bg-[#EDF1F1]"><tr><th>Arbete eller roll</th><th>Kr/tim inkl. arvode och moms</th></tr></thead><tbody>
+      <div className="gizmo-price-document"><table className="w-full text-left"><thead className="bg-[#EDF1F1]"><tr><th>Arbete eller roll</th><th>{vatText("Kr/tim inkl. arvode och moms")}</th></tr></thead><tbody>
         {value.rates.map((row) => <tr key={row.id}><td>{row.title || 'Roll saknar namn'}</td><td>{money(row.hourlyOre)}</td></tr>)}
         {!value.rates.some((row) => row.kind === 'management') && <tr><td>Arbetsledning</td><td>{money(ordinary?.hourlyOre ?? null)}</td></tr>}
       </tbody></table></div>

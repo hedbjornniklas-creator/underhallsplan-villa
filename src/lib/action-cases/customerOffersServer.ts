@@ -1,4 +1,5 @@
 import 'server-only'
+import { getProjectCustomerPresentation } from './customerPresentationServer'
 import { requireCustomerSection, requireCustomerSectionForToken } from './customerSharingServer'
 import { randomInt, randomUUID } from 'node:crypto'
 import { createSupabaseAdminClient } from '@/lib/supabase/admin'
@@ -107,7 +108,7 @@ export async function getCustomerOfferWorkspace(
     return { savedDraft, costingAvailable, body, standardTermsFile }
   }
   // Keep authorization first; only independent, organization-scoped reads overlap.
-  const [draftResult, estimate, contractSource, offers, sender, recipient, linked, propertyLink, signing, planning] = await Promise.all([
+  const [draftResult, estimate, contractSource, offers, sender, recipient, linked, propertyLink, signing, planning, presentation] = await Promise.all([
     readDraft(),
     target === 'contract' ? db.from('action_case_customer_offer_drafts')
       .select('body,revision,internal_costing').eq('action_case_id', caseId).eq('org_id', ctx.orgId).maybeSingle() : Promise.resolve(null),
@@ -123,6 +124,7 @@ export async function getCustomerOfferWorkspace(
     getProjectPropertyLink(c.property_id ?? null, 'property_id' in c),
     target === 'contract' ? getContractSigningVersions(ctx, caseId) : Promise.resolve({}),
     getCustomerPlanning(ctx, caseId),
+    getProjectCustomerPresentation(ctx, caseId),
   ])
   const { savedDraft, costingAvailable, standardTermsFile } = draftResult
   if (estimate) checked(estimate.error)
@@ -146,6 +148,7 @@ export async function getCustomerOfferWorkspace(
     : contractSource?.data ? normalizeCustomerOffer(contractSource.data.body) : emptyCustomerOffer(c.title),
     target === 'contract' ? savedDraft?.revision ?? 0 : contractSource?.data?.revision ?? 0, propertyLink.property)
   return {
+    customerPresentation: presentation,
     offerProjectDetails: projectDetails,
     ...signing,
     ...(estimate ? { offerDraft: { draft: offerSender(estimate.data ? normalizeCustomerOffer(estimate.data.body) : emptyCustomerOffer(c.title)),

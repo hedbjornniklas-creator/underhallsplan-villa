@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
@@ -20,8 +21,8 @@ const text = value => typeof value === 'string' || typeof value === 'number' ? S
 function html(p, purpose) {
   const compiled = ts.transpileModule(readFileSync(new URL('../src/components/tasks/CustomerContractPricing.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
   const m = { exports: {} }
-  new Function('require', 'module', 'exports', compiled)(name => ({ react: {}, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'lucide-react': {},
-    '@/lib/action-cases/contractPricing': pricing, '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': {} })[name], m, m.exports)
+  new Function('require', 'module', 'exports', compiled)(withLegacyCustomerPresentation(name => ({ react: {}, 'react/jsx-runtime': { jsx, jsxs: jsx }, 'lucide-react': {},
+    '@/lib/action-cases/contractPricing': pricing, '@/lib/action-cases/customerOffers': offers, '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': {} })[name]), m, m.exports)
   return m.exports.ContractPriceDocument({ value: p, purpose })
 }
 

@@ -33,6 +33,15 @@ function loadDomain() {
 
 const domain = loadDomain()
 
+test('associations retain a separate kind and use organization identity validation, never private identity rules', () => {
+  const input = businessInput({ customerType: 'association' })
+  const result = domain.parseOrganizationCustomerInput(input)
+  assert.equal(result.customerType, 'association')
+  assert.equal(result.identityNumber, '556123-4567')
+  assert.throws(() => domain.parseOrganizationCustomerInput({ ...input, identityNumber: null }), /IDENTITY_REQUIRED/)
+  assert.throws(() => domain.parseOrganizationCustomerInput({ ...input, identityNumber: '700101-1234' }), /IDENTITY_INVALID/)
+})
+
 function businessInput(overrides: Record<string, unknown> = {}) {
   return {
     customerType: 'business',

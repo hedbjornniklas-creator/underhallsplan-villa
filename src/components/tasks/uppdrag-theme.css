@@ -268,14 +268,14 @@
 .gizmo-project-title > div { min-width: 0; }
 .gizmo-address { display: flex; align-items: flex-start; gap: 8px; color: var(--uppdrag-muted); margin-top: 6px; overflow-wrap: anywhere; }
 .gizmo-address svg { flex-shrink: 0; margin-top: 3px; }
-.gizmo-workspace .gizmo-button {
+.gizmo-workspace .gizmo-button, .gizmo-customer-presentation .gizmo-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 44px; padding: 10px 16px; border: 1px solid var(--uppdrag-line); border-radius: 6px;
   font: inherit; font-weight: 600; background: white; color: var(--uppdrag-ink);
   text-align: center; flex-shrink: 0;
 }
-.gizmo-workspace .gizmo-button:hover:not(:disabled) { background: #f5f7f7; }
-.gizmo-workspace .gizmo-button:disabled { opacity: .45; }
+.gizmo-workspace .gizmo-button:hover:not(:disabled), .gizmo-customer-presentation .gizmo-button:hover:not(:disabled) { background: #f5f7f7; }
+.gizmo-workspace .gizmo-button:disabled, .gizmo-customer-presentation .gizmo-button:disabled { opacity: .45; }
 .gizmo-workspace .gizmo-primary { background: var(--uppdrag-ink); border-color: var(--uppdrag-ink); color: white; }
 .gizmo-workspace .gizmo-primary:hover:not(:disabled) { background: var(--uppdrag-hover); }
 .gizmo-text-button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; color: var(--uppdrag-link); text-align: left; }

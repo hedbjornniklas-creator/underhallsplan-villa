@@ -38,6 +38,7 @@ import { useActionSaveCoordinator } from './useActionSaveCoordinator'
 import { mergeCalculationSave, overlayCalculation, sameCalculationVersion } from '@/lib/action-cases/calculationSave'
 import { workItemSum, workProjectSum } from '@/lib/action-cases/workSums'
 import { useProjectSaveProtection } from './ProjectSaveProtection'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 type Props = {
   initialWorkspace: Workspace | null
@@ -337,6 +338,7 @@ function costActionMessage(name: string, payload: Record<string, unknown>) {
 }
 
 export default function ActionCaseWorkspace({ initialWorkspace, initialError, people = [], caseId, section = 'work', onWorkspaceChange, onBusyChange, onDirtyChange, customerRefresh = 0, openWorkRequest }: Props) {
+  const { basis, text: vatText } = useCustomerPriceDisplay()
   const toast = useToast()
   const [createdProjectId, setCreatedProjectId] = useState<string>()
   const [workspace, setWorkspace] = useState(initialWorkspace)
@@ -478,12 +480,12 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
     }} />}
   </>
   if (!selectedCase) return <p role="alert">Projektet är inte tillgängligt. <PendingLink autoPending pendingLabel="Öppnar projektlistan…" href="/uppdrag">Till projektlistan</PendingLink></p>
-  const projectSum = workProjectSum(selectedCase.items)
+  const projectSum = workProjectSum(selectedCase.items, basis)
 
   return <>
     <section hidden={section !== 'work'} aria-label="Projektarbete">
       <div className="gizmo-section-heading"><div><h2>Projektarbete</h2><p>{selectedCase.items.length} åtgärder · {selectedCase.items.filter((item) => completion(item) === 100).length} kalkylklara</p></div></div>
-      <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span className="gizmo-work-amount">Kalkyl inkl. moms</span><span /></div>
+      <div className="gizmo-work-columns" aria-hidden="true"><span>Åtgärd</span><span>Behöver hanteras</span><span>Status</span><span className="gizmo-work-amount">{vatText('Kalkyl inkl. moms')}</span><span /></div>
       <ul className="gizmo-work-rows" aria-label="Projektets åtgärder">{selectedCase.items.map((item) => {
         const save = scopeAutosave.states[item.id]
         const calculationEntries = Object.values(calculation.states).filter(entry => entry.edit.itemId === item.id)
@@ -491,15 +493,15 @@ export default function ActionCaseWorkspace({ initialWorkspace, initialError, pe
           : calculationEntries.some(entry => entry.status === 'error') ? 'Kalkylen är inte sparad'
           : calculationEntries.some(entry => entry.status === 'invalid') ? 'Komplettera kalkylrad'
           : calculationEntries.some(entry => entry.status === 'pending' || entry.status === 'saving') ? 'Sparar kalkyl' : null
-        const sum = workItemSum(item)
+        const sum = workItemSum(item, basis)
         const excluded = ['cancelled', 'declined'].includes(item.status)
         return <li key={item.id}><button type="button" onClick={() => selectWorkItem(item.id)} className="gizmo-work-row" aria-haspopup="dialog" aria-expanded={selectedItem?.id === item.id}>
           <strong>{item.title}</strong><span>{item.contractWork?.locked ? item.contractWork.differences.length ? 'Befintlig skillnad mot avtalet' : 'Ingår i låst avtal' : saveIssue === 'Sparar kalkyl' ? 'Ändringar sparas i bakgrunden' : saveIssue ? 'Öppna för att spara' : completion(item) === 100 ? 'Kalkylunderlaget är komplett' : nextAction(item)}</span><span>{item.contractWork?.locked ? 'Låst' : saveIssue ?? ITEM_STATUS[item.status]}</span>
-          <span className="gizmo-work-amount"><span className="gizmo-work-amount-label">Kalkyl inkl. moms</span><b>{sumLabel(sum.amountOre)}</b>{excluded ? <small>Ej i totalsumman</small> : sum.partial && sum.amountOre !== null ? <small>Preliminärt</small> : null}</span><ChevronRight size={18} aria-hidden="true" />
+          <span className="gizmo-work-amount"><span className="gizmo-work-amount-label">{vatText('Kalkyl inkl. moms')}</span><b>{sumLabel(sum.amountOre)}</b>{excluded ? <small>Ej i totalsumman</small> : sum.partial && sum.amountOre !== null ? <small>Preliminärt</small> : null}</span><ChevronRight size={18} aria-hidden="true" />
         </button></li>
       })}</ul>
       {!selectedCase.items.length && <p className="gizmo-empty">Inga åtgärder ännu.</p>}
-      <div className="gizmo-work-total" aria-label="Projektarbetets totalsumma"><div><strong>{projectSum.partial ? 'Preliminärt kalkylerat kundpris inkl. moms' : 'Totalt kalkylerat kundpris inkl. moms'}</strong>{projectSum.incompleteItems > 0 && <small>{projectSum.incompleteItems} {projectSum.incompleteItems === 1 ? 'åtgärd har' : 'åtgärder har'} ofullständig kalkyl</small>}</div><strong>{sumLabel(projectSum.amountOre)}</strong></div>
+      <div className="gizmo-work-total" aria-label="Projektarbetets totalsumma"><div><strong>{vatText(projectSum.partial ? 'Preliminärt kalkylerat kundpris inkl. moms' : 'Totalt kalkylerat kundpris inkl. moms')}</strong>{projectSum.incompleteItems > 0 && <small>{projectSum.incompleteItems} {projectSum.incompleteItems === 1 ? 'åtgärd har' : 'åtgärder har'} ofullständig kalkyl</small>}</div><strong>{sumLabel(projectSum.amountOre)}</strong></div>
       <form className="gizmo-add-work" onSubmit={(event) => {
         event.preventDefault()
         if (busy || !newItemTitle.trim()) return

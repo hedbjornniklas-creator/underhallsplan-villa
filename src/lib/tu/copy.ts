@@ -51,7 +51,7 @@ export type TuCopyRegisteredCustomer = {
 export function tuCopyMatchesCustomer(source: TuCopySource, customer: TuCopyRegisteredCustomer) {
   const text = (value: string | null) => (value ?? '').trim()
   return customer.is_active &&
-    (source.customerType === 'consumer' ? 'consumer' : 'business') === (customer.customer_type === 'business' ? 'business' : 'consumer') &&
+    (source.customerType === 'consumer' ? 'consumer' : 'business') === (customer.customer_type !== 'private' ? 'business' : 'consumer') &&
     [
       [source.customerName, customer.name], [source.customerEmail.toLowerCase(), customer.email?.toLowerCase() ?? ''],
       [source.customerPhone, customer.phone], [source.customerAddress, customer.address],

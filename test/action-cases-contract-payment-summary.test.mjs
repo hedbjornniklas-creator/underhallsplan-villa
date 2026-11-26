@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
@@ -14,10 +15,10 @@ const loaded = { exports: {} }, jsx = (type, props) => ({ type, props })
 const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, react: {}, 'lucide-react': {},
   '@/lib/action-cases/customerOffers': { money }, '@/lib/action-cases/customerPaymentPlan': payment,
   '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': {}, './ProjectEditorRow': {} }
-new Function('require', 'module', 'exports', code)((name) => {
+new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation((name) => {
   assert(name in modules, `Unexpected dependency: ${name}`)
   return modules[name]
-}, loaded, loaded.exports)
+}), loaded, loaded.exports)
 const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : !node || typeof node !== 'object' ? [node] : [node, ...flatten(node.props?.children)]
 const row = (id, title, amountOre) => ({ id, title, amountOre, condition: `Efter utfört ${title}.`, plannedDate: '2026-11-30' })
 const plan = () => ({ version: 1, installments: [row('one', 'Mark', 10000), row('two', 'Stomme', 20000)] })

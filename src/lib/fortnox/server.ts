@@ -129,7 +129,7 @@ type FortnoxCustomerDatabaseRow = {
   id: string
   org_id: string
   customer_number: number | string
-  customer_type: 'business' | 'private'
+  customer_type: 'business' | 'private' | 'association'
   name: string
   organization_number: string | null
   personal_identity_number: string | null
@@ -509,14 +509,14 @@ function assertFortnoxCustomerVersion(value: unknown) {
 function mapFortnoxCustomerDatabaseRow(
   row: FortnoxCustomerDatabaseRow
 ): OrganizationCustomer {
-  const customerType = row.customer_type === 'private' ? 'private' : 'business'
+  const customerType = row.customer_type === 'private' ? 'private' : row.customer_type === 'association' ? 'association' : 'business'
   return {
     id: row.id,
     customerNumber: String(row.customer_number),
     customerType,
     name: row.name,
     identityNumber:
-      customerType === 'business'
+      customerType !== 'private'
         ? row.organization_number
         : row.personal_identity_number,
     email: row.email,
@@ -924,7 +924,7 @@ export async function exportOrganizationCustomerToFortnox(
   )
 
   let fortnoxCustomerNumber: string | null = null
-  if (row.customer_type === 'business') {
+  if (row.customer_type !== 'private') {
     const organizationNumber = normalizeFortnoxOrganizationNumber(
       row.organization_number
     )

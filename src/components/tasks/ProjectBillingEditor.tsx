@@ -162,7 +162,7 @@ export default function ProjectBillingEditor({ caseId, parties, active, onDirtyC
           </div>
           {mode === 'update' && <p className="text-sm text-amber-800">Ändringen sparas i organisationens gemensamma kundregister. Signerade avtal ändras inte.</p>}
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm">Kundtyp<select className={field} value={draft.customerType} onChange={(event) => setDraft({ ...draft, customerType: event.target.value as OrganizationCustomerInput['customerType'], identityNumber: null })}><option value="private">Privatperson</option><option value="business">Företag</option></select></label>
+            <label className="block text-sm">Kundtyp<select className={field} value={draft.customerType} onChange={(event) => setDraft({ ...draft, customerType: event.target.value as OrganizationCustomerInput['customerType'], identityNumber: null })}><option value="private">Privatperson</option><option value="business">Företag</option><option value="association">Förening / BRF</option></select></label>
             {input('name', 'Kundnamn *')}
             {input('identityNumber', draft.customerType === 'private' ? 'Personnummer (valfritt)' : 'Organisationsnummer *')}
             {input('email', 'Kontaktmejl', 'email')}{input('phone', 'Telefon', 'tel')}

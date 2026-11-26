@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import assert from 'node:assert/strict'
 import { before, after, test } from 'node:test'
 import { readFileSync } from 'node:fs'
@@ -179,10 +180,10 @@ function component(file, extra = {}) {
     './CustomerContractChanges': { ContractChangesDocument: 'change-pricing' },
     ...extra
   }
-  new Function('require', 'module', 'exports', code)((name) => {
+  new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation((name) => {
     if (!(name in modules)) throw Error(name)
     return modules[name]
-  }, loaded, loaded.exports)
+  }), loaded, loaded.exports)
   return loaded.exports
 }
 function flatten(node) {

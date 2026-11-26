@@ -32,6 +32,12 @@ export async function offerRequestBody(request: Request) {
 export function customerOfferError(error: unknown) {
   const code = error instanceof Error ? error.message : ''
   const errors: Record<string, [number, string]> = {
+    CUSTOMER_PRESENTATION_INVALID: [400, 'Kontrollera beställartyp och momsvisning. Privatpriser visas inklusive moms.'],
+    CUSTOMER_PRESENTATION_STALE: [409, 'Projektets beställaruppgifter eller utkast har ändrats. Hämta sparade uppgifter innan du fortsätter.'],
+    CUSTOMER_PRESENTATION_IDENTITY: [409, 'Ta först hand om personnummer eller extra beställare i Avtal. De tas inte bort automatiskt vid byte till företag eller förening.'],
+    CUSTOMER_PRESENTATION_CUSTOMER: [409, 'Beställartypen måste stämma med den kopplade kunden. Välj rätt kund eller uppdatera kundtypen i kundregistret först.'],
+    CUSTOMER_PRESENTATION_SCHEMA: [503, 'Projektets momsvisning behöver aktiveras i databasen.'],
+    CUSTOMER_PRESENTATION_FAILED: [500, 'Beställarvalet kunde inte bekräftas. Dina val är kvar; försök igen.'],
     PROJECT_ADMIN_INVALID: [400, 'Kontrollera underlagets datum, rader och belopp.'],
     BILLING_USE_FLOW: [409, 'Använd projektets nya Fakturering. Tidigare underlag är skrivskyddade.'],
     BILLING_INCOMPLETE: [409, 'Faktureringsavstämningen behöver vara klar före projektavslut. Öppna Betalning och fakturering → Fakturering.'],

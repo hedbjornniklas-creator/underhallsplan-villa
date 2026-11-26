@@ -1,6 +1,6 @@
 import { normalizeFortnoxOrganizationNumber } from '@/lib/fortnox/domain'
 
-export const ORGANIZATION_CUSTOMER_TYPES = ['business', 'private'] as const
+export const ORGANIZATION_CUSTOMER_TYPES = ['business', 'private', 'association'] as const
 
 export type OrganizationCustomerType = (typeof ORGANIZATION_CUSTOMER_TYPES)[number]
 
@@ -128,12 +128,12 @@ export function normalizeOrganizationCustomerIdentity(
   const compact = value.trim().replace(/[\s-]/gu, '')
   const tenDigits =
     compact.length === 12 &&
-    (customerType === 'business'
+    (customerType !== 'private'
       ? compact.startsWith('16')
       : compact.startsWith('19') || compact.startsWith('20'))
       ? compact.slice(2)
       : compact
-  if (customerType === 'business') return normalizeFortnoxOrganizationNumber(tenDigits)
+  if (customerType !== 'private') return normalizeFortnoxOrganizationNumber(tenDigits)
   if (!/^[0-9]{10}$/u.test(tenDigits)) return null
   return `${tenDigits.slice(0, 6)}-${tenDigits.slice(6)}`
 }
@@ -154,7 +154,7 @@ export function parseOrganizationCustomerInput(value: unknown): OrganizationCust
     ? normalizeOrganizationCustomerIdentity(rawIdentity, customerType)
     : null
   if (rawIdentity && !identityNumber) throw new Error('CUSTOMER_IDENTITY_INVALID')
-  if (customerType === 'business' && !identityNumber) {
+  if (customerType !== 'private' && !identityNumber) {
     throw new Error('CUSTOMER_IDENTITY_REQUIRED')
   }
 

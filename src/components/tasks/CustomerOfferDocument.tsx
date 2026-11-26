@@ -1,4 +1,5 @@
 'use client'
+import { CustomerPriceDisplay, CustomerPriceTotals, useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useId } from 'react'
 import { Check, Download, FileText } from 'lucide-react'
@@ -12,16 +13,7 @@ import { OfferHourEstimateDocument } from './CustomerOfferHourEstimate'
 import { OfferAlternativesDocument } from './CustomerOfferAlternatives'
 import { contractFormName } from '@/lib/action-cases/standardContractTerms'
 import { contractPricingForEditing, offerCompensationText } from '@/lib/action-cases/contractPricing'
-import {
-  customerOfferBaseAmount,
-  customerOfferOptionGroup,
-  customerOfferTotal,
-  customerPriceLabel,
-  money,
-  selectCustomerOfferOption,
-  type CustomerOffer,
-  type CustomerOfferItem
-} from '@/lib/action-cases/customerOffers'
+import { customerOfferBaseAmount, customerOfferOptionGroup, customerOfferTotal, customerPriceLabel, selectCustomerOfferOption, type CustomerOffer, type CustomerOfferItem } from '@/lib/action-cases/customerOffers'
 
 function ScopeNotes({ item }: { item: CustomerOfferItem }) {
   return <>{([['scopeConditions', 'Förutsättningar'], ['scopeExclusions', 'Ingår inte'], ['scopeAdvice', 'Avrådan']] as const).map(([key, title]) => item[key]?.trim() ? (
@@ -29,7 +21,11 @@ function ScopeNotes({ item }: { item: CustomerOfferItem }) {
   ) : null)}</>
 }
 
-export default function CustomerOfferDocument({
+export default function CustomerOfferDocument(props: Parameters<typeof CustomerOfferDocumentContent>[0]) {
+  return <CustomerPriceDisplay value={props.offer.snapshot.customerPresentation}><CustomerOfferDocumentContent {...props} /></CustomerPriceDisplay>
+}
+
+function CustomerOfferDocumentContent({
   offer,
   selected,
   onSelect,
@@ -44,6 +40,7 @@ export default function CustomerOfferDocument({
   readOnly?: boolean
   purpose?: 'offer' | 'contract'
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const s = offer.snapshot,
     accepted = offer.status === 'accepted'
   const groupId = useId()
@@ -114,7 +111,7 @@ export default function CustomerOfferDocument({
           <h3 className="text-lg font-semibold">{purpose === 'contract' && s.contractDetails?.assignment ? 'Uppdraget' : 'Grundåtagande'}</h3>
           {!s.contractPricing && <strong className="text-xl">{money(baseAmount)}</strong>}
         </div>
-        {!s.contractPricing && <p className="mt-1 text-sm text-slate-500">Fast pris inklusive moms</p>}
+        {!s.contractPricing && <><p className="mt-1 text-sm text-slate-500">{vatText("Fast pris inklusive moms")}</p><CustomerPriceTotals grossOre={baseAmount} /></>}
           {purpose === 'contract' && s.contractDetails?.assignment && <div className="mt-4">
             <h4 className="font-semibold">Handlingar som ingår i uppdraget</h4>
             <div className="mt-2 overflow-x-auto">
@@ -191,7 +188,7 @@ export default function CustomerOfferDocument({
         return (
           <fieldset key={group} className="min-w-0 border-t border-slate-200 py-6">
             <legend className="text-lg font-semibold">{group}</legend>
-            <p className="text-sm text-slate-500">Valfritt tillval · Högst ett alternativ · Inklusive moms</p>
+            <p className="text-sm text-slate-500">{vatText("Valfritt tillval · Högst ett alternativ · Inklusive moms")}</p>
             <div className="mt-3 divide-y divide-slate-200">
               {options.map((i) => (
                 <label key={i.id} className="flex items-start gap-3 py-4">
@@ -320,7 +317,7 @@ export default function CustomerOfferDocument({
           <p className="mt-1 text-2xl font-bold" aria-live="polite">
             {s.contractPricing ? customerPriceLabel(s) : money(accepted ? offer.acceptedTotalOre : total)}
           </p>
-          {s.contractPricing?.mode !== 'running' && <p className="mt-1 text-sm text-slate-500">{s.contractPricing?.mode === 'mixed' ? 'Den fasta delen inklusive moms. Den löpande delen tillkommer enligt prisgrunderna ovan.' : 'Inklusive moms'}</p>}
+          {s.contractPricing?.mode !== 'running' && <p className="mt-1 text-sm text-slate-500">{s.contractPricing?.mode === 'mixed' ? vatText('Den fasta delen inklusive moms. Den löpande delen tillkommer enligt prisgrunderna ovan.') : vatText('Inklusive moms')}</p>}
         </div>
         {accepted && (
           <p className="flex items-start gap-2 text-sm text-emerald-700">

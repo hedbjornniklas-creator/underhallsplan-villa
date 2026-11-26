@@ -1,9 +1,10 @@
 'use client'
+import { useCustomerPriceDisplay } from './CustomerPriceDisplay'
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowRight, ArrowUpRight, CalendarCheck2, CalendarClock, CircleAlert, FileText, HardHat, LockKeyhole, MessageCircle, PanelsTopLeft, Plus, RefreshCw, ShieldCheck, WalletCards } from 'lucide-react'
 import type { ActionCaseView } from '@/lib/action-cases/contracts'
-import { money, type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
+import { type CustomerOfferWorkspace } from '@/lib/action-cases/customerOffers'
 import { overviewDate, overviewPointStatus, overviewTimeline, overviewToday, projectOverview, type OverviewPoint } from '@/lib/action-cases/projectOverview'
 import type { QuestionWorkspace } from '@/lib/action-cases/projectQuestions'
 import { scheduleStatuses, type ProjectSchedule } from '@/lib/action-cases/projectSchedule'
@@ -29,6 +30,7 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
   senderControls?: ReactNode
   completionBlocked: boolean; onStatus: (status: ActionCaseStatus) => void; onCompletionDirty: (dirty: boolean) => void
 }) {
+  const { text: vatText, money } = useCustomerPriceDisplay()
   const [questions, setQuestions] = useState<Resource<QuestionWorkspace>>(pending)
   const [schedule, setSchedule] = useState<Resource<ProjectSchedule>>(pending)
   const [reload, setReload] = useState(0), [mine, setMine] = useState(false), [all, setAll] = useState(false)
@@ -134,7 +136,7 @@ export default function ProjectOverview({ project, offer, active, refreshKey, qu
       </section>
       <section className="gizmo-home-finance" aria-label="Ekonomi">
         <SectionHead title="Ekonomi">{openButton('payments', 'Öppna betalning och fakturering')}</SectionHead>
-        <div className="gizmo-home-finance-amount"><span>{model.contract.draft?.contractPricing?.mode === 'mixed' ? 'Avtalets fasta del' : 'Avtalsbelopp'} · {model.contract.source}</span><strong>{base !== null ? money(base) : model.contract.draft?.contractPricing?.mode === 'running' ? 'Löpande räkning' : 'Belopp saknas'}</strong><small>{!model.contract.draft ? 'Underlag saknas' : base !== null ? model.contract.draft.contractPricing?.mode === 'mixed' ? 'Inklusive moms · löpande del tillkommer' : 'Inklusive moms' : model.contract.draft.contractPricing?.mode === 'running' ? 'Enligt avtalets prisgrunder' : 'Inget komplett belopp i underlaget'}</small></div>
+        <div className="gizmo-home-finance-amount"><span>{model.contract.draft?.contractPricing?.mode === 'mixed' ? 'Avtalets fasta del' : 'Avtalsbelopp'} · {model.contract.source}</span><strong>{base !== null ? money(base) : model.contract.draft?.contractPricing?.mode === 'running' ? 'Löpande räkning' : 'Belopp saknas'}</strong><small>{!model.contract.draft ? 'Underlag saknas' : base !== null ? model.contract.draft.contractPricing?.mode === 'mixed' ? vatText('Inklusive moms · löpande del tillkommer') : vatText('Inklusive moms') : model.contract.draft.contractPricing?.mode === 'running' ? 'Enligt avtalets prisgrunder' : 'Inget komplett belopp i underlaget'}</small></div>
         {[{ title: 'Kundpris i Projektarbete', amount: model.calculation, className: '', view: 'work' as const }, { title: 'Fördelat i betalningsplan', amount: model.contract.planAmount, className: 'blue', view: 'payments' as const }].map(row => <div className="gizmo-home-moneyrow" key={row.title}><div><button type="button" className="gizmo-home-moneylink" onClick={() => onNavigate(row.view)}>{row.title}</button><strong>{row.amount === null ? 'Ej fastställt' : money(row.amount)}</strong></div><div className="gizmo-home-track" aria-hidden="true"><div className={`gizmo-home-fill ${row.className}`} style={{ width: `${row.amount === null ? 0 : row.amount / scale * 100}%` }} />{base !== null && <span className="gizmo-home-reference" style={{ left: `${base / scale * 100}%` }} />}</div></div>)}
         {model.contract.difference !== null && <div className="gizmo-home-finance-diff">{model.contract.difference !== 0 && <CircleAlert size={16} aria-hidden="true" />}{model.contract.difference > 0 ? `${money(model.contract.difference)} kvar att fördela` : model.contract.difference < 0 ? `${money(-model.contract.difference)} över avtalsbeloppet` : 'Betalningsplanen motsvarar avtalsbeloppet'}</div>}
         {base !== null && <p className="gizmo-home-finance-sub">Avtalets belopp</p>}{missing > 0 && <p className="gizmo-home-secondary">{missing} moment saknar komplett pris.</p>}

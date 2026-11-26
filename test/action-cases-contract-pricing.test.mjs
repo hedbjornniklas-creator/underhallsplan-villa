@@ -1,3 +1,4 @@
+import { withLegacyCustomerPresentation } from './helpers/legacy-customer-presentation.mjs'
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { randomUUID } from 'node:crypto'
@@ -166,7 +167,7 @@ function priceDocument(value) {
   const modules = { 'react/jsx-runtime': { jsx, jsxs: jsx }, react: {}, 'lucide-react': {},
     '@/lib/action-cases/contractPricing': prices, '@/lib/action-cases/customerOffers': offers,
     '@/lib/action-cases/offerImport': {}, './CustomerOfferPriceInput': {} }
-  new Function('require', 'module', 'exports', code)((name) => modules[name], loaded, loaded.exports)
+  new Function('require', 'module', 'exports', code)(withLegacyCustomerPresentation((name) => modules[name]), loaded, loaded.exports)
   const flatten = (node) => Array.isArray(node) ? node.flatMap(flatten) : node && typeof node === 'object' ? flatten(node.props?.children) : [node]
   return flatten(loaded.exports.ContractPriceDocument({ value })).filter((n) => typeof n === 'string' || typeof n === 'number').join(' ')
 }
