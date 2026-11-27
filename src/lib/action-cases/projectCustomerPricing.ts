@@ -1,4 +1,5 @@
 export type CustomerCharge = {
+  status?: 'awaiting'
   mode: 'fixed' | 'running' | 'budget'
   fixedOre: number | null
   budgetOre: number | null
@@ -6,7 +7,7 @@ export type CustomerCharge = {
   markupPercent: number | null
 }
 export type ProjectCustomerPricing = {
-  version: 1
+  version: 1 | 2
   split: 'combined' | 'separate'
   combined: CustomerCharge
   labour: CustomerCharge
@@ -40,18 +41,19 @@ function money(value: unknown): number | null {
 }
 export function normalizeProjectCustomerPricing(value: unknown): ProjectCustomerPricing {
   const input = object(value)
-  if (input.version !== 1 || !['combined', 'separate'].includes(String(input.split))) invalid()
+  if (![1, 2].includes(Number(input.version)) || typeof input.version !== 'number' || !['combined', 'separate'].includes(String(input.split))) invalid()
   const charge = (value: unknown): CustomerCharge => {
     const part = object(value), percent = part.markupPercent
+    if (part.status !== undefined && (input.version !== 2 || part.status !== 'awaiting')) invalid()
     if (!['fixed', 'running', 'budget'].includes(String(part.mode)) ||
       (percent !== null && (typeof percent !== 'number' || !Number.isFinite(percent) || percent < 0 || percent > 1000 || Math.abs(percent * 100 - Math.round(percent * 100)) > 0.00001))) invalid()
-    return { mode: part.mode as CustomerCharge['mode'], fixedOre: money(part.fixedOre), budgetOre: money(part.budgetOre), hourlyOre: money(part.hourlyOre), markupPercent: percent as number | null }
+    return { ...(part.status === 'awaiting' ? { status: 'awaiting' as const } : {}), mode: part.mode as CustomerCharge['mode'], fixedOre: money(part.fixedOre), budgetOre: money(part.budgetOre), hourlyOre: money(part.hourlyOre), markupPercent: percent as number | null }
   }
   const text = (key: string) => {
     if (typeof input[key] !== 'string' || input[key].length > 6000) invalid()
     return (input[key] as string).trim()
   }
-  const result: ProjectCustomerPricing = { version: 1, split: input.split as ProjectCustomerPricing['split'],
+  const result: ProjectCustomerPricing = { version: input.version as 1 | 2, split: input.split as ProjectCustomerPricing['split'],
     combined: charge(input.combined), labour: charge(input.labour), material: charge(input.material), assumptions: text('assumptions'), reviewTerms: text('reviewTerms') }
   for (const key of ['fixedOre', 'budgetOre'] as const) {
     if (customerPricingParts(result).reduce((sum, part) => sum + (part.charge[key] ?? 0), 0) > 100_000_000_000) invalid()
@@ -68,18 +70,24 @@ export function customerPricingParts(terms: ProjectCustomerPricing) {
     { key: 'labour', label: 'Arbete', charge: terms.labour }, { key: 'material', label: 'Material', charge: terms.material },
   ]
 }
+export function customerChargeUsesHourly(part: string, charge: CustomerCharge): boolean {
+  return charge.status !== 'awaiting' && (part === 'labour' || (part === 'combined' && charge.hourlyOre !== null))
+}
+export function customerPricedParts(terms: ProjectCustomerPricing) {
+  return customerPricingParts(terms).filter(part => part.charge.status !== 'awaiting')
+}
 export function projectPricingIssues(terms: ProjectCustomerPricing): string[] {
   const issues: string[] = []
-  for (const { key, label, charge } of customerPricingParts(terms)) {
+  for (const { key, label, charge } of customerPricedParts(terms)) {
     const prefix = label ? `${label}: ` : ''
     if (charge.mode === 'fixed' && charge.fixedOre === null) issues.push(`${prefix}ange fast pris inklusive moms.`)
     if (charge.mode !== 'fixed') {
-      if (key !== 'material' && (charge.hourlyOre === null || charge.hourlyOre <= 0)) issues.push(`${prefix}ange timpris inklusive moms.`)
+      if (customerChargeUsesHourly(key, charge) && (charge.hourlyOre === null || charge.hourlyOre <= 0)) issues.push(`${prefix}ange timpris inklusive moms.`)
       if (key !== 'labour' && charge.markupPercent === null) issues.push(`${prefix}ange påslag på självkostnad, även om det är 0 %.`)
       if (charge.mode === 'budget' && charge.budgetOre === null) issues.push(`${prefix}ange planeringsbudget inklusive moms.`)
     }
   }
-  if (customerPricingParts(terms).some(part => part.charge.mode === 'budget')) {
+  if (customerPricedParts(terms).some(part => part.charge.mode === 'budget')) {
     if (!terms.assumptions.trim()) issues.push('Beskriv budgetens förutsättningar.')
     if (!terms.reviewTerms.trim()) issues.push('Ange när samråd om budgeten ska ske.')
   }
@@ -89,12 +97,13 @@ export function projectPricingIssues(terms: ProjectCustomerPricing): string[] {
 // Inactive entries are editing memory, never customer-visible price promises.
 export function publicProjectPricing(reference: ProjectPricingReference, showFixedAmounts: boolean): ProjectPricingReference {
   const terms = reference.terms, blank = emptyCustomerCharge()
-  const visible = (charge: CustomerCharge): CustomerCharge => ({ ...charge,
+  const visible = (charge: CustomerCharge): CustomerCharge => charge.status === 'awaiting'
+    ? { ...blank, status: 'awaiting' } : ({ ...charge,
     fixedOre: showFixedAmounts && charge.mode === 'fixed' ? charge.fixedOre : null,
     budgetOre: charge.mode === 'budget' ? charge.budgetOre : null,
     hourlyOre: charge.mode !== 'fixed' ? charge.hourlyOre : null,
     markupPercent: charge.mode !== 'fixed' ? charge.markupPercent : null })
-  const budget = customerPricingParts(terms).some(part => part.charge.mode === 'budget')
+  const budget = customerPricedParts(terms).some(part => part.charge.mode === 'budget')
   return { revision: reference.revision, terms: { ...terms,
     combined: terms.split === 'combined' ? visible(terms.combined) : blank,
     labour: terms.split === 'separate' ? visible(terms.labour) : blank,

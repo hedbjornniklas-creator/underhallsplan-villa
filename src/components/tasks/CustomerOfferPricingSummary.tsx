@@ -22,8 +22,8 @@ export default function CustomerOfferPricingSummary({ draft, sources, blocked, o
   const budget = p ? offerBudgetBreakdown(p) : null
   const issues = p ? contractPricingIssues(p) : []
   const rates = p ? projectRunningPrices(p) : []
-  const modeLabel = (mode: typeof rows[number]['mode']) => mode === 'missing' ? 'Inte angiven' : mode === 'fixed' ? 'Fast pris' : mode === 'budget' ? 'Löpande med planeringsbudget' : 'Löpande räkning'
-  const rowAmount = (row: typeof rows[number]) => row.mode === 'running' ? 'Enligt prisgrunder' : row.amountOre === null ? 'Ej angivet' : money(row.amountOre)
+  const modeLabel = (mode: typeof rows[number]['mode']) => mode === 'awaiting' ? 'Pris inväntas' : mode === 'missing' ? 'Inte angiven' : mode === 'fixed' ? 'Fast pris' : mode === 'budget' ? 'Löpande med planeringsbudget' : 'Löpande räkning'
+  const rowAmount = (row: typeof rows[number]) => row.mode === 'awaiting' ? 'Ingår inte i fastprissumman' : row.mode === 'running' ? 'Enligt prisgrunder' : row.amountOre === null ? 'Ej angivet' : money(row.amountOre)
   if (p && p.rows.some(row => !row.projectPricing && (p.mode === 'running' || row.kind === 'running'))) rates.push({ title: 'Äldre gemensamma prisgrunder', hourlyOre: p.running.hourlyOre, markupPercent: p.running.markupPercent, hourly: true, markup: true })
   const edit = (itemId?: string) => onEditWork ? <button type="button" className="gizmo-button" disabled={blocked} title={itemId ? 'Ändra prisvillkor i Projektarbete' : 'Öppna Projektarbete'} aria-label={itemId ? `Ändra prisvillkor för ${sources.find(item => item.id === itemId)?.title ?? 'momentet'} i Projektarbete` : undefined} onClick={() => onEditWork(itemId)}>{itemId ? <Pencil size={16} /> : <><Wrench size={16} />Projektarbete</>}</button> : null
   return <section aria-label="Offertens prissammanställning" className="min-w-0 space-y-4">

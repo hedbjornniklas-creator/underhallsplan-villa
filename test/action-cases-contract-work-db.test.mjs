@@ -473,6 +473,10 @@ async function sharedPriceFixture() {
     await db.exec(read('2026-11-03_01_running_price_budget'))
     await db.exec(read('2026-11-03_03_project_customer_pricing'))
     await db.exec(read('2026-11-03_03_project_customer_pricing'))
+    await db.exec(read('2026-11-27_02_project_external_costs'))
+    await db.exec(read('2026-11-27_02_project_external_costs'))
+    await db.exec(read('2026-11-27_03_project_price_awaiting'))
+    await db.exec(read('2026-11-27_03_project_price_awaiting'))
     assert.deepEqual((await db.query('select * from action_case_contract_signing_documents order by id')).rows, before)
     projectPricingInstalled = true
   }
@@ -488,6 +492,77 @@ async function sharedPriceFixture() {
 const charge = (mode = 'fixed', fixedOre = null) => ({ mode, fixedOre, budgetOre: null, hourlyOre: null, markupPercent: null })
 const terms = () => ({ version: 1, split: 'separate', combined: charge(), labour: charge('fixed', 25000000),
   material: { ...charge('budget'), budgetOre: 10000000, markupPercent: 15 }, assumptions: 'Material enligt senare val.', reviewTerms: 'Samrad fore fortsatt arbete om budgeten riskerar att overskridas.' })
+
+test('external-only running terms validate and synchronize without inventing a labour or fixed price', async () => {
+  const f = await sharedPriceFixture()
+  const costs = (await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows
+  const t = { ...terms(), split: 'combined', combined: { ...charge('running'), markupPercent: 10 } }
+  await f.writePrice(t)
+  for (const state of [await f.state(), await f.offerState()]) {
+    assert.equal(state.body.contractPricing.mode, 'running')
+    assert.equal(state.body.baseAmountOre, null)
+    await db.query('select assert_contract_pricing($1,true)', [state.body])
+  }
+  for (const hourlyOre of [0, -1]) await assert.rejects(db.query('select assert_project_customer_price($1,true)', [{ ...t, combined: { ...t.combined, hourlyOre } }]), /INCOMPLETE|INVALID/)
+  await assert.rejects(db.query('select assert_project_customer_price($1,true)', [{ ...t, combined: { ...t.combined, markupPercent: null } }]), /INCOMPLETE/)
+  await db.query('select assert_project_customer_price($1,true)', [{ ...t, combined: { ...t.combined, markupPercent: 0 } }])
+  await assert.rejects(db.query('select assert_project_customer_price($1,true)', [{ ...terms(), labour: charge('running') }]), /INCOMPLETE/)
+  assert.deepEqual((await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows, costs)
+})
+
+test('awaiting material keeps fixed labour, survives saves, blocks version downgrade and never changes frozen evidence', async () => {
+  const f = await sharedPriceFixture()
+  const t = { ...terms(), version: 2, material: { ...charge('fixed', 123456), status: 'awaiting' } }
+  const work = (await db.query('select * from action_case_items where id=$1', [f.item])).rows
+  const costs = (await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows
+  await f.writePrice(t)
+  for (const state of [await f.state(), await f.offerState()]) {
+    assert.equal(state.body.baseAmountOre, 25000000)
+    assert.equal(state.body.contractPricing.mode, 'fixed')
+    assert.equal(state.body.contractPricing.rows[0].projectPricing.terms.material.fixedOre, 123456)
+    await db.query('select assert_contract_pricing($1,true)', [state.body])
+  }
+  await assert.rejects(f.writePrice(terms()), /PROJECT_PRICE_STALE/)
+  assert.deepEqual((await db.query('select * from action_case_items where id=$1', [f.item])).rows, work)
+  assert.deepEqual((await db.query('select * from action_case_cost_lines where action_case_item_id=$1', [f.item])).rows, costs)
+  const frozen = await f.freeze(), before = await f.state()
+  const record = (await db.query('select * from action_case_contract_signing_documents where id=$1', [frozen.document])).rows
+  await db.exec(read('2026-11-27_03_project_price_awaiting'))
+  await assert.rejects(f.writePrice({ ...t, material: charge('fixed', 999) }), /CONTRACT_LOCKED/)
+  assert.deepEqual(await f.state(), before)
+  assert.deepEqual((await db.query('select * from action_case_contract_signing_documents where id=$1', [frozen.document])).rows, record)
+})
+
+test('all-awaiting terms are neither fixed zero prices nor running charges', async () => {
+  const f = await sharedPriceFixture()
+  const t = { ...terms(), version: 2, split: 'combined', combined: { ...charge(), status: 'awaiting' } }
+  await f.writePrice(t)
+  for (const state of [await f.state(), await f.offerState()]) {
+    assert.equal(state.body.baseAmountOre, null)
+    await db.query('select assert_contract_pricing($1,true)', [state.body])
+  }
+  assert.deepEqual((await db.query('select * from customer_price_parts($1)', [t])).rows, [])
+  for (const invalid of [{ ...t, version: 1 }, { ...t, combined: { ...t.combined, status: 'other' } }]) await assert.rejects(db.query('select assert_project_customer_price($1,false)', [invalid]), /INVALID/)
+})
+
+test('explicitly linking a legacy montage price preserves its amount and scope when material starts awaiting', async () => {
+  const f = await sharedPriceFixture(), state = await f.state(), body = structuredClone(state.body)
+  const amount = body.contractPricing.rows[0].amountOre
+  delete body.contractPricing.rows[0].sourceItemId
+  body.contractPricing.rows[0].id = randomUUID()
+  body.contractPricing.rows[0].title = 'Separat sparat montagepris'
+  await f.save(body)
+  const before = await f.state(), linked = structuredClone(before.body)
+  linked.contractPricing.rows[0].sourceItemId = f.item
+  linked.contractPricing.rows[0].title = linked.items[0].title
+  await f.save(linked)
+  const t = { ...terms(), version: 2, labour: charge('fixed', amount), material: { ...charge(), status: 'awaiting' } }
+  await f.writePrice(t)
+  const after = await f.state()
+  assert.equal(after.body.contractPricing.rows.length, 1)
+  assert.equal(after.body.baseAmountOre, amount)
+  assert.deepEqual(after.body.items, before.body.items)
+})
 
 test('shared customer pricing adopts explicitly and projects fixed labour + budgeted material atomically to both drafts', async () => {
   const f = await sharedPriceFixture(), original = await f.state(), offer = await f.offerState()

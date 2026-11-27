@@ -3,7 +3,7 @@ import type { CustomerOfferDraft } from './customerOffers'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { costLineCustomerAmount } from './domain.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
-import { contractDisplayPricing, contractFixedAmount, contractPricingForEditing, contractRowAmount, importContractPrices, normalizeContractPricing } from './contractPricing.ts'
+import { contractDisplayPricing, contractFixedAmount, contractPricingForEditing, contractRowAmount, importContractPrices, normalizeContractPricing, projectAwaitingPrices } from './contractPricing.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeProjectCustomerPricing, type ProjectCustomerPricing } from './projectCustomerPricing.ts'
 
@@ -38,7 +38,7 @@ export function billingCalculation(item: Pick<ActionCaseItemView, 'costLines' | 
 
 export function applyBillingCalculation(terms: ProjectCustomerPricing, item: Pick<ActionCaseItemView, 'costLines' | 'lumpSum'>, part: BillingPart) {
   const amount = billingCalculation(item, part)
-  if (!amount.available || terms[part].mode === 'running') throw new Error('PROJECT_PRICE_CALCULATION_UNAVAILABLE')
+  if (!amount.available || terms[part].status === 'awaiting' || terms[part].mode === 'running') throw new Error('PROJECT_PRICE_CALCULATION_UNAVAILABLE')
   return normalizeProjectCustomerPricing({ ...terms, [part]: { ...terms[part], [terms[part].mode === 'fixed' ? 'fixedOre' : 'budgetOre']: amount.grossOre } })
 }
 
@@ -56,7 +56,8 @@ export function offerBillingSummary(draft: CustomerOfferDraft) {
     return { id: row.id, title: row.title, mode: running ? budget ? 'budget' as const : 'running' as const : 'fixed' as const,
       amountOre: running ? budget?.amountOre ?? null : row.amountOre, sourceItemId: stored?.sourceItemId,
       shared: Boolean(stored?.projectPricing) }
-  })
+  }) as { id: string; title: string; mode: 'fixed' | 'running' | 'budget' | 'awaiting'; amountOre: number | null; sourceItemId?: string; shared: boolean }[]
+  result.push(...projectAwaitingPrices(p).map(row => ({ ...row, mode: 'awaiting' as const, amountOre: null, shared: true })))
   if (p.basis === 'total' && p.mode === 'mixed') result.unshift({ id: 'total', title: 'Fast klumpsumma', mode: 'fixed', amountOre: contractFixedAmount(p), sourceItemId: undefined, shared: false })
   return result
 }

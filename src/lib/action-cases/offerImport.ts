@@ -162,7 +162,7 @@ export function importableCustomerPrice(item: ActionCaseItemView): number | null
   const terms = item.contractWork?.customerPricing?.terms
   if (terms) {
     const parts = customerPricingParts(terms)
-    return parts.some(part => part.charge.mode !== 'fixed' || part.charge.fixedOre === null) ? null : parts.reduce((sum, part) => sum + part.charge.fixedOre!, 0)
+    return parts.some(part => part.charge.status === 'awaiting' || part.charge.mode !== 'fixed' || part.charge.fixedOre === null) ? null : parts.reduce((sum, part) => sum + part.charge.fixedOre!, 0)
   }
   if (item.lumpSum) return item.lumpSum.verified && item.lumpSum.customerPrice !== null
     ? Math.round(item.lumpSum.customerPrice * (1 + item.lumpSum.vatRate / 100) * 100) : null

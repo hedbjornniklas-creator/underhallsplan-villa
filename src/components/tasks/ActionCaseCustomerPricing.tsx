@@ -3,7 +3,7 @@
 import { useId, useState } from 'react'
 import { ArrowDownToLine, Check, Loader2, LockKeyhole, RotateCcw } from 'lucide-react'
 import type { ActionCaseItemView } from '@/lib/action-cases/contracts'
-import { customerChargeLabels, customerPricingParts, emptyProjectCustomerPricing, projectPricingIssues, type CustomerCharge, type ProjectCustomerPricing } from '@/lib/action-cases/projectCustomerPricing'
+import { customerChargeLabels, customerPricedParts, customerPricingParts, emptyProjectCustomerPricing, projectPricingIssues, type CustomerCharge, type ProjectCustomerPricing } from '@/lib/action-cases/projectCustomerPricing'
 import { defaultBudgetReviewTerms } from '@/lib/action-cases/contractPricing'
 import type { CustomerPricingEntry } from './useProjectCustomerPricingAutosave'
 import PriceInput from './CustomerOfferPriceInput'
@@ -68,22 +68,26 @@ export default function ActionCaseCustomerPricing({ item, entry, blocked, onChan
         return <fieldset key={key} className="min-w-0 space-y-3 border-t border-[#D5DCDD] pt-3">
         <legend className="px-1 text-sm font-semibold">{label || 'Arbete och material'}</legend>
         <p className="text-sm text-[#596368]">Moms {rate} %</p>
-        <label className="block text-sm">Prisform<select className="mt-1 w-full rounded-md border border-[#B9C3C4] bg-white px-3 py-2" aria-label={`${label || 'Samlad'} prisform`} value={charge.mode} onChange={e => patchPart(key, { mode: e.target.value as CustomerCharge['mode'] })}>
+        <label className="block text-sm">Prisform / status<select className="mt-1 w-full rounded-md border border-[#B9C3C4] bg-white px-3 py-2" aria-label={`${label || 'Samlad'} prisform`} value={charge.status === 'awaiting' ? 'awaiting' : charge.mode} onChange={e => {
+          if (e.target.value === 'awaiting') change({ ...value, version: 2, [key]: { ...charge, status: 'awaiting' } })
+          else patchPart(key, { status: undefined, mode: e.target.value as CustomerCharge['mode'] })
+        }}>
           {Object.entries(customerChargeLabels).map(([mode, text]) => <option key={mode} value={mode}>{text}</option>)}
+          <option value="awaiting">Pris inväntas</option>
         </select></label>
-        {charge.mode === 'fixed' ? field('fixedOre', 'Fast pris') : <>
-          {key !== 'material' && field('hourlyOre', 'Timpris inkl. arvode')}
+        {charge.status === 'awaiting' ? <p className="border-l-2 border-[#AD8529] pl-3 text-sm">Pris inväntas. Ingår inte i fastprissumma eller budget. Pris eller ersättningsgrund och eventuell tidspåverkan överenskoms skriftligen före berörda inköp eller arbeten.</p> : charge.mode === 'fixed' ? field('fixedOre', 'Fast pris') : <>
+          {key !== 'material' && field('hourlyOre', key === 'combined' ? 'Timpris inkl. arvode (valfritt vid enbart externa kostnader)' : 'Timpris inkl. arvode')}
           {key !== 'labour' && <PriceInput label="Påslag på självkostnad exkl. moms (%)" max={100000} value={charge.markupPercent === null ? null : Math.round(charge.markupPercent * 100)} onChange={n => patchPart(key, { markupPercent: n === null ? null : n / 100 })} />}
           {charge.mode === 'budget' && field('budgetOre', 'Planeringsbudget')}
         </>}
-        {charge.mode !== 'running' && <div className="space-y-2">
+        {charge.status !== 'awaiting' && charge.mode !== 'running' && <div className="space-y-2">
           <button type="button" className="gizmo-button" disabled={!calculation.available} onClick={() => change(applyBillingCalculation(value, item, key as BillingPart))}><ArrowDownToLine size={16} />Använd kalkylens belopp</button>
           <p className="text-sm text-[#596368]">Kalkylens beräknade kundpris: {money(calculation.netOre)} exkl. moms{calculation.available ? ` · ${money(calculation.grossOre)} inkl. moms` : ''}</p>
           {calculation.reason && <p className="text-sm text-[#815B18]">{calculation.reason}</p>}
           {amount !== null && <dl className="grid grid-cols-3 gap-2 border-t border-[#D5DCDD] pt-2 text-sm"><div><dt>Exkl. moms</dt><dd>{money(exclusiveAmount(amount, rate))}</dd></div><div><dt>Moms {rate} %</dt><dd>{money(amount - (exclusiveAmount(amount, rate) ?? 0))}</dd></div><div><dt>Inkl. moms</dt><dd>{money(amount)}</dd></div></dl>}
         </div>}
       </fieldset>})}</div>
-      {customerPricingParts(value).some(part => part.charge.mode === 'budget') && <div className="grid gap-4">
+      {customerPricedParts(value).some(part => part.charge.mode === 'budget') && <div className="grid gap-4">
         <label className="text-sm">Budgetens förutsättningar<textarea className="mt-1 w-full rounded-md border border-[#B9C3C4] p-3" rows={3} maxLength={6000} value={value.assumptions} onChange={e => change({ ...value, assumptions: e.target.value })} /></label>
         <label className="text-sm">Uppföljning och samråd<textarea className="mt-1 w-full rounded-md border border-[#B9C3C4] p-3" rows={5} maxLength={6000} value={value.reviewTerms} onChange={e => change({ ...value, reviewTerms: e.target.value })} /></label>
       </div>}

@@ -1,6 +1,6 @@
 import type { CustomerOfferDraft } from './customerOffers'
 // @ts-expect-error Node strip-types tests require the explicit extension.
-import { customerPricingParts, normalizeProjectPricingReference, projectPricingIssues, type ProjectPricingReference } from './projectCustomerPricing.ts'
+import { customerChargeUsesHourly, customerPricedParts, customerPricingParts, normalizeProjectPricingReference, projectPricingIssues, type ProjectPricingReference } from './projectCustomerPricing.ts'
 
 export type ContractPriceRow = {
   id: string; title: string; sourceItemId?: string; kind: 'fixed' | 'running'
@@ -102,11 +102,11 @@ export function contractDisplayPricing(p: ContractPricing): ContractPricing {
   const rows = p.rows.flatMap(row => {
     if (!row.projectPricing) return [{ ...row, amountOre: contractRowAmount(p, row), labourOre: null, materialOre: null }]
     const terms = row.projectPricing.terms
-    if (customerPricingParts(terms).some(part => part.charge.mode === 'budget')) {
+    if (customerPricedParts(terms).some(part => part.charge.mode === 'budget')) {
       if (terms.assumptions) assumptions.push(`${row.title}: ${terms.assumptions}`)
       if (terms.reviewTerms) reviews.set(terms.reviewTerms, [...(reviews.get(terms.reviewTerms) ?? []), row.title])
     }
-    return customerPricingParts(terms).map(part => {
+    return customerPricedParts(terms).map(part => {
       const id = `${row.id}:${part.key}`
       if (part.charge.mode === 'budget') budgetRows.push({ id, amountOre: part.charge.budgetOre })
       return { id, title: part.label ? `${row.title} – ${part.label.toLocaleLowerCase('sv-SE')}` : row.title,
@@ -114,7 +114,9 @@ export function contractDisplayPricing(p: ContractPricing): ContractPricing {
         amountOre: part.charge.mode === 'fixed' ? part.charge.fixedOre : null, labourOre: null, materialOre: null }
     })
   })
-  return { ...p, rows, split: 'combined',
+  const modes = rows.map(row => p.mode === 'running' && !row.id.includes(':') ? 'running' : row.kind)
+  const mode = projectAwaitingPrices(p).length ? modes.includes('fixed') ? modes.includes('running') ? 'mixed' : 'fixed' : 'running' : p.mode
+  return { ...p, mode, rows, split: 'combined',
     budget: budgetRows.length ? { version: 1, rows: budgetRows, assumptions: assumptions.join('\n\n'),
       reviewTerms: [...reviews].map(([text, titles]) => titles.length ? `${titles.join(', ')}: ${text}` : text).join('\n\n') } : null }
 }
@@ -127,11 +129,18 @@ export function contractPricingForEditing(draft: CustomerOfferDraft): ContractPr
     running: { hourlyOre: null, managementOre: null, markupPercent: null, approximateOre: null } }
 }
 export function projectRunningPrices(p: ContractPricing) {
-  return p.rows.flatMap(row => row.projectPricing ? customerPricingParts(row.projectPricing.terms).filter(part => part.charge.mode !== 'fixed').map(part => ({
+  return p.rows.flatMap(row => row.projectPricing ? customerPricedParts(row.projectPricing.terms).filter(part => part.charge.mode !== 'fixed').map(part => ({
     title: part.label ? `${row.title} – ${part.label.toLocaleLowerCase('sv-SE')}` : row.title,
     hourlyOre: part.key !== 'material' ? part.charge.hourlyOre : null,
     markupPercent: part.key !== 'labour' ? part.charge.markupPercent : null,
-    hourly: part.key !== 'material', markup: part.key !== 'labour',
+    hourly: customerChargeUsesHourly(part.key, part.charge), markup: part.key !== 'labour',
+  })) : [])
+}
+export const awaitingPriceTerms = 'Dessa delar ingår inte i den redovisade fastprissumman eller planeringsbudgeten. Pris eller ersättningsgrund samt eventuell tidspåverkan ska överenskommas skriftligen innan berörda inköp eller arbeten påbörjas.'
+export function projectAwaitingPrices(p: ContractPricing) {
+  return p.rows.flatMap(row => row.projectPricing ? customerPricingParts(row.projectPricing.terms).filter(part => part.charge.status === 'awaiting').map(part => ({
+    id: `${row.id}:${part.key}`, sourceItemId: row.sourceItemId,
+    title: part.label ? `${row.title} – ${part.label.toLocaleLowerCase('sv-SE')}` : row.title,
   })) : [])
 }
 export function contractRowAmount(p: ContractPricing, row: Pick<ContractPriceRow, 'amountOre' | 'labourOre' | 'materialOre'>): number | null {
@@ -154,20 +163,25 @@ export function contractBudgetAmount(p: ContractPricing): number | null {
   return !rows.length || fixed === null || amounts.some(amount => amount === null) ? null : fixed + amounts.reduce<number>((sum, amount) => sum + amount!, 0)
 }
 export function contractPriceModeLabel(p: ContractPricing): string {
+  if (projectAwaitingPrices(p).length && !contractDisplayPricing(p).rows.length) return 'Pris inväntas'
+  const pending = projectAwaitingPrices(p).length > 0
   p = contractDisplayPricing(p)
-  if (p.mode === 'fixed') return 'Fast pris'
+  if (p.mode === 'fixed') return pending ? 'Fast pris + pris inväntas' : 'Fast pris'
   if (p.mode === 'mixed') return p.budget ? 'Fast pris + löpande med budget' : 'Fast + löpande'
   return p.budget ? 'Löpande räkning med budget' : 'Löpande räkning'
 }
 export function offerCompensationText(p: ContractPricing): string {
+  const pending = projectAwaitingPrices(p)
   p = contractDisplayPricing(p)
+  if (pending.length && !p.rows.length) return `Pris inväntas för angivna delar. ${awaitingPriceTerms}`
   const basis = p.mode === 'mixed'
-    ? 'Offerten kombinerar fast pris och löpande räkning. Fast pris gäller endast de arbeten och leveranser som anges under Fasta priser. Övriga angivna arbeten och inköp ersätts enligt prisgrunderna för löpande räkning.'
-    : p.mode === 'fixed' ? 'Fast pris gäller för den omfattning och de leveranser som anges i offerten.'
+    ? 'Offerten kombinerar fast pris och löpande räkning. Fast pris gäller endast de arbeten och leveranser som anges under Fasta priser. Löpande räkning gäller endast de delar som redovisas med prisgrunder för löpande räkning.'
+    : p.mode === 'fixed' ? pending.length ? 'Fast pris gäller endast de delar som anges under Fasta priser.' : 'Fast pris gäller för den omfattning och de leveranser som anges i offerten.'
       : 'Arbeten och inköp ersätts på löpande räkning enligt angivna timpriser och påslag.'
-  return p.budget
+  const text = p.budget
     ? `${basis} Budgetbeloppen redovisas separat som underlag för planering, kostnadsuppföljning och samråd. Fast pris och budget ska inte läsas som ett fast totalpris för hela uppdraget.`
     : basis
+  return pending.length ? `${text} För delar markerade Pris inväntas återstår en skriftlig överenskommelse om pris eller ersättningsgrund.` : text
 }
 export function contractBudgetRows(p: ContractPricing) {
   const view = contractDisplayPricing(p)
@@ -230,7 +244,7 @@ export function importContractPrices(p: ContractPricing, sources: { id: string; 
       rows.push(target)
     }
     target.sourceItemId = id
-    if (source.projectPricing) { target.projectPricing = source.projectPricing; target.kind = customerPricingParts(source.projectPricing.terms).some(part => part.charge.mode !== 'fixed') ? 'running' : 'fixed'; continue }
+    if (source.projectPricing) { target.projectPricing = source.projectPricing; target.kind = customerPricedParts(source.projectPricing.terms).some(part => part.charge.mode !== 'fixed') ? 'running' : 'fixed'; continue }
     if (target.projectPricing) throw new Error('PROJECT_PRICE_READ_ONLY')
     if (budget && (p.mode === 'running' || target.kind === 'running')) {
       budget.rows = [...budget.rows.filter(row => row.id !== target.id), { id: target.id, amountOre: source.amountOre }]
@@ -238,7 +252,7 @@ export function importContractPrices(p: ContractPricing, sources: { id: string; 
   }
   // Project prices are combined customer amounts; never guess a labour/material split.
   if (rows.some(row => row.projectPricing)) {
-    const modes = rows.flatMap(row => row.projectPricing ? customerPricingParts(row.projectPricing.terms).map(part => part.charge.mode === 'fixed' ? 'fixed' : 'running') : [p.mode === 'running' ? 'running' : row.kind])
+    const modes = rows.flatMap(row => row.projectPricing ? customerPricedParts(row.projectPricing.terms).map(part => part.charge.mode === 'fixed' ? 'fixed' : 'running') : [p.mode === 'running' ? 'running' : row.kind])
     const mode = modes.includes('fixed') ? modes.includes('running') ? 'mixed' : 'fixed' : 'running'
     return normalizeContractPricing({ ...p, mode, rows: rows.map(row => row.projectPricing ? row : { ...row, kind: p.mode === 'running' ? 'running' : row.kind }),
       ...(budget === undefined ? {} : { budget }), basis: 'rows', split: 'combined', totalOre: null, labourOre: null, materialOre: null })

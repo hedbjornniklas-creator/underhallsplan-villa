@@ -1,5 +1,45 @@
 # Gemensamma arbetsuppgifter i Projektarbete och Avtal
 
+## Beslut 2026-11-27: Pris Invantas Per Moment Eller Del
+
+- Anvandaren har godkant en explicit status Pris invantas i befintlig prisvaljare
+  i Kundpris. Statusen kan galla hela momentet eller arbete/material separat.
+  Den andrar inte omfattning och innebar varken nollpris, lopande debitering,
+  budget eller automatiskt ATA. Befintliga belopp bevaras som redigeringsminne.
+- Offert, avtalsvisning och PDF visar dessa delar under Pris invantas, utanfor
+  fasta priser, planeringsbudget och faktureringsbara prisgrunder. Texten kraver
+  skriftlig overenskommelse om pris/prisgrund och eventuell tidspaverkan fore
+  berorda inkop eller arbeten. Ett vanligt tomt pris ar fortsatt en brist i utkastet.
+- Gemensamma villkor med status anvander formatversion 2. Aldre version 1 behalls
+  oforandrad tills anvandaren uttryckligen valjer status. SQL sparrar nedgradering
+  fran version 2 sa att en gammal flik inte kan radera statusen tyst.
+- Kundprojektioner tar inte med tidigare inaktiva prisbelopp for vantande delar.
+  Lasta versioner och arkiverade PDF:er skrivs aldrig om. Ingen backfill ingar.
+- SQL: kor 2026-11-27_02_project_external_costs och sedan
+  2026-11-27_03_project_price_awaiting fore applikationsuppdateringen.
+- iDance: dorrmontagets befintliga pris behalls, dorrleverans och el markeras
+  uttryckligen som vantande. Ovriga priser, omfattning och intern kalkyl bevaras.
+
+## Avgransad rattning 2026-11-27: Lopande Externa Kostnader
+
+- Befintliga val behalls. Samlat pris + lopande rakning kan ha enbart arvode
+  pa verifierade externa kostnader, utan timpris eller en konstgjord arbetsdel
+  med fast pris noll. Timpris ar fortfarande obligatoriskt for separat arbete.
+  Ett ifyllt timpris maste vara positivt; tomt och noll ar inte samma sak.
+- PDF och kundvisning visar bara tillampliga prisgrunder. PDF-texten anger
+  redovisning mot leverantorsfakturor eller andra verifikationer samt att moms
+  tillkommer pa sjalvkostnad och entreprenorsarvode.
+- Ingen befintlig nollprisrad doljs automatiskt. Ett avtalat nollpris kan vara
+  korrekt. Overgang fran separat arbete/material till ren extern kostnad gors
+  uttryckligen i momentets Kundpris; intern kalkyl och ovriga moment andras inte.
+- Tabellfragment har fortsatt matt fontlayout. Fortsattning far en ny sida innan
+  kolumnrubriken upprepas, och normala pristabeller ryms i ett enda fragment.
+- SQL 2026-11-27_02_project_external_costs andrar endast valideringsfunktionen.
+  Ingen backfill, ny prisform eller omskrivning av priser/frysta dokument ingar.
+  Publicering verifieras tillsammans med statusen Pris invantas ovan.
+- Saknat inkopspris gor inte en del till lopande rakning, nollpris eller ATA.
+  iDance behaller skriftligt prisbeslut fore bestallning.
+
 ## Beslut 2026-11-16: Signerad Kopia Och Intern Projektuppgift
 
 - Underskriven PDF laddas direkt till privat fillagring, hogst 20 MB. API:t tar

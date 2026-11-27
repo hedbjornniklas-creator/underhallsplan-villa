@@ -16,6 +16,20 @@ test('locked customer price and sender are read, never replaced by newer live ca
   assert.match(ctx.issuer, /Fryst bolag/)
   assert.deepEqual(raw, before)
 })
+
+test('awaiting parts are not billable candidates and cannot leak old inactive amounts', () => {
+  const raw = source()
+  raw.frozen.snapshot.contractPricing = structuredClone(pricing)
+  const t = raw.frozen.snapshot.contractPricing.rows[0].projectPricing.terms
+  t.version = 2
+  t.material = part('fixed', { status: 'awaiting', fixedOre: 987654321 })
+  const before = structuredClone(raw), context = billingSourceContext(raw, manager)
+  assert.equal(context.baseFixedGrossOre, 1250000)
+  assert.equal(context.candidates.length, 1)
+  assert.ok(context.candidates[0].key.endsWith(':labour'))
+  assert.doesNotMatch(JSON.stringify(context), /987654321/)
+  assert.deepEqual(raw, before)
+})
 test('valid frozen payment plan replaces fixed work candidates, not running material', () => {
   const raw = source(), row = id()
   raw.frozen.snapshot.paymentPlan = { version: 1, installments: [{ id: row, title: 'Delbetalning', condition: 'Utfört', plannedDate: '', amountOre: 1250000 }] }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 // @ts-expect-error Node strip-types tests.
 import { normalizeContractPricing, contractFixedAmount, contractRowAmount } from './contractPricing.ts'
 // @ts-expect-error Node strip-types tests.
-import { normalizeProjectCustomerPricing, customerPricingParts } from './projectCustomerPricing.ts'
+import { normalizeProjectCustomerPricing, customerPricedParts } from './projectCustomerPricing.ts'
 // @ts-expect-error Node strip-types tests.
 import { normalizePaymentPlan } from './customerPaymentPlan.ts'
 // @ts-expect-error Node strip-types tests.
@@ -24,7 +24,7 @@ export function billingSourceContext(raw: Json, userId: string): BillingContext 
   const add = (v: Omit<BillingCandidate, 'fingerprint'>, source: unknown) => candidates.push({ ...v, fingerprint: createHash('sha256').update(JSON.stringify({ source, ...v })).digest('hex') })
   const parts = (key: string, title: string, group: 'base' | 'change', terms: unknown, source: unknown, suppressFixed = false) => {
     const p = normalizeProjectCustomerPricing(terms)
-    for (const { key: part, label, charge } of customerPricingParts(p)) {
+    for (const { key: part, label, charge } of customerPricedParts(p)) {
       if (suppressFixed && charge.mode === 'fixed') continue
       add({ key: `${key}:${part}`, title: title + (label ? ` / ${label}` : ''), group, mode: charge.mode, fixedGrossOre: charge.fixedOre, hourlyGrossOre: charge.hourlyOre,
         budgetGrossOre: charge.budgetOre, markupPercent: charge.markupPercent, conditions: p.reviewTerms, reference }, source)
@@ -51,7 +51,7 @@ export function billingSourceContext(raw: Json, userId: string): BillingContext 
           budgetGrossOre: pricing.budget?.rows.find(b => b.id === row.id)?.amountOre ?? null, reference, conditions: pricing.budget?.reviewTerms ?? str(document.paymentTerms) }, { frozen, row, running: pricing.running, budget: pricing.budget })
       }
     }
-    if (pricing.mode !== 'fixed' && !candidates.some(c => c.group === 'base' && c.mode !== 'fixed')) {
+    if (pricing.mode !== 'fixed' && (!pricing.rows.length || pricing.rows.some(row => !row.projectPricing)) && !candidates.some(c => c.group === 'base' && c.mode !== 'fixed')) {
       add({ key: 'base:running', title: 'Grundavtalets löpande del', group: 'base', mode: 'running', fixedGrossOre: null, hourlyGrossOre: pricing.running.hourlyOre,
         markupPercent: pricing.running.markupPercent, budgetGrossOre: null, reference, conditions: str(document.paymentTerms) }, { frozen, running: pricing.running })
     }

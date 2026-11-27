@@ -111,6 +111,20 @@ test('locked and failed customer terms retain the existing protections and retry
   assert.equal(locked.all().filter(n => n.type === 'PriceInput').length, 0)
 })
 
+test('awaiting status reuses the existing selector, hides inactive figures and preserves them when pricing resumes', () => {
+  const t = terms(), h = priceHarness(t)
+  h.find(n => n.type === 'select').props.onChange({ target: { value: 'awaiting' } }); h.render()
+  assert.equal(h.writes.at(-1).terms.version, 2)
+  assert.equal(h.writes.at(-1).terms.combined.fixedOre, 10001)
+  assert.equal(h.all().filter(n => n.type === 'PriceInput').length, 0)
+  assert.match(h.content(), /Pris inväntas/)
+  assert.match(h.content(), /skriftligen före berörda inköp eller arbeten/)
+  assert.throws(() => billing.applyBillingCalculation(h.writes.at(-1).terms, item(), 'combined'), /UNAVAILABLE/)
+  h.find(n => n.type === 'select').props.onChange({ target: { value: 'fixed' } }); h.render()
+  assert.equal(h.writes.at(-1).terms.combined.status, undefined)
+  assert.equal(h.find(n => n.type === 'PriceInput' && n.props.label.startsWith('Fast pris')).props.value, 10001)
+})
+
 test('offer summary reads the saved document, not a newer calculation, and separates fixed and budget amounts', () => {
   const t = { ...terms(), split: 'separate', labour: { ...shared.emptyCustomerCharge(), fixedOre: 10000 }, material: { ...shared.emptyCustomerCharge(), mode: 'budget', budgetOre: 25000, markupPercent: 15 } }
   const p = { version: 1, mode: 'mixed', basis: 'rows', split: 'combined', display: 'priced', rows: [{ id: 'stored', sourceItemId: 'moment', title: 'Sparat moment', kind: 'running', amountOre: null, labourOre: null, materialOre: null, projectPricing: { revision: 1, terms: t } }], running: { hourlyOre: null, markupPercent: null }, totalOre: null, labourOre: null, materialOre: null }

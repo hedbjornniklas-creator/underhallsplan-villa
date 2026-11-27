@@ -77,6 +77,77 @@ test('normalization rejects unsafe inactive fields, malformed revisions, percent
   assert.throws(() => pricing.normalizeContractPricing(p), /INVALID/)
 })
 
+test('combined external costs use running terms without a dummy labour price or hourly rate', () => {
+  const t = { ...shared.emptyProjectCustomerPricing(), combined: { ...shared.emptyCustomerCharge(), mode: 'running', markupPercent: 10 } }
+  const p = pricing.normalizeContractPricing({ ...price(t), mode: 'running' }), before = structuredClone(p)
+  assert.deepEqual(shared.projectPricingIssues(t), [])
+  assert.deepEqual(pricing.contractPricingIssues(p), [])
+  assert.equal(pricing.contractFixedAmount(p), null)
+  assert.equal(pricing.contractDisplayPricing(p).rows.length, 1)
+  assert.deepEqual(pricing.projectRunningPrices(p), [{ title: 'Fiktivt byggarbete', hourlyOre: null, markupPercent: 10, hourly: false, markup: true }])
+  const document = contractSigningSections({ snapshot: { ...draft(p), issuerName: 'Fiktiv byggare', replyEmail: '', customerName: 'Fiktiv kund', customerEmail: '', projectTitle: 'Fiktivt projekt', propertyAddress: 'Testgatan 1' }, files: [] })
+  const running = document.find(part => part.title === 'Momentens prisgrunder för löpande räkning')
+  assert.equal(document.some(part => part.title === 'Fast del av priset'), false)
+  assert.match(running.paragraphs.join(' '), /leverantörsfakturor eller andra verifikationer/)
+  assert.doesNotMatch(JSON.stringify(running), /Timpris|arbete – arbete|arbete – material|\/tim/)
+  assert.deepEqual(running.rows, [['Fiktivt byggarbete', 'Självkostnad + 10 % exkl. moms']])
+  assert.deepEqual(p, before)
+})
+
+test('external cost terms keep explicit zero markups and reject zero or missing labour rates', () => {
+  const t = { ...shared.emptyProjectCustomerPricing(), combined: { ...shared.emptyCustomerCharge(), mode: 'running', markupPercent: 0 } }
+  assert.deepEqual(shared.projectPricingIssues(t), [])
+  assert.ok(shared.projectPricingIssues({ ...t, combined: { ...t.combined, markupPercent: null } }).length)
+  assert.ok(shared.projectPricingIssues({ ...t, combined: { ...t.combined, hourlyOre: 0 } }).length)
+  const separate = { ...t, split: 'separate', labour: { ...shared.emptyCustomerCharge(), mode: 'running' }, material: { ...shared.emptyCustomerCharge(), fixedOre: 0 } }
+  assert.ok(shared.projectPricingIssues(separate).some(issue => issue.startsWith('Arbete: ange timpris')))
+  assert.deepEqual(shared.projectPricingIssues({ ...separate, labour: { ...separate.labour, hourlyOre: 75000 } }), [])
+})
+
+test('intentional free labour is still visible; no zero prices are silently hidden', () => {
+  const t = terms(); t.labour.fixedOre = 0; t.material = { ...shared.emptyCustomerCharge(), mode: 'running', markupPercent: 10 }
+  const p = price(t), before = structuredClone(p)
+  assert.equal(pricing.contractFixedAmount(p), 0)
+  assert.equal(pricing.contractDisplayPricing(p).rows.find(row => row.kind === 'fixed').amountOre, 0)
+  assert.deepEqual(p, before)
+})
+
+test('awaiting is explicit, excludes inactive figures and retains fixed labour and scope', () => {
+  const t = { ...terms(), version: 2, material: { ...shared.emptyCustomerCharge(), fixedOre: 7654321, status: 'awaiting' } }
+  const p = pricing.normalizeContractPricing({ ...price(t), mode: 'fixed' }), before = structuredClone(p)
+  assert.deepEqual(pricing.contractPricingIssues(p), [])
+  assert.equal(pricing.contractFixedAmount(p), 25000000)
+  assert.equal(pricing.offerBudgetBreakdown(p), null)
+  assert.deepEqual(pricing.projectRunningPrices(p), [])
+  assert.equal(pricing.projectAwaitingPrices(p)[0].title, 'Fiktivt byggarbete – material')
+  const publicDraft = expose(draft(p))
+  assert.doesNotMatch(JSON.stringify(publicDraft), /7654321/)
+  assert.equal(publicDraft.contractPricing.rows[0].projectPricing.terms.material.status, 'awaiting')
+  assert.equal(publicDraft.items[0].scope, 'Fiktiv omfattning.')
+  assert.match(pricing.offerCompensationText(p), /Pris inväntas/)
+  assert.doesNotMatch(pricing.offerCompensationText(p), /Övriga angivna arbeten och inköp ersätts/)
+  const document = contractSigningSections({ snapshot: { ...draft(p), issuerName: 'Fiktiv byggare', replyEmail: '', customerName: 'Fiktiv kund', customerEmail: '', projectTitle: 'Fiktivt projekt', propertyAddress: 'Testgatan 1' }, files: [] })
+  const awaiting = document.find(part => part.title === 'Pris inväntas')
+  assert.deepEqual(awaiting.rows, [['Fiktivt byggarbete – material', 'Pris inväntas']])
+  assert.match(awaiting.paragraphs.join(' '), /innan berörda inköp eller arbeten påbörjas/)
+  assert.doesNotMatch(JSON.stringify(document), /7654321/)
+  assert.equal(document.find(part => part.title === 'Fastprissatta delar').rows.length, 2)
+  assert.deepEqual(p, before)
+})
+
+test('awaiting requires version two and cannot turn missing fixed prices into silent approval', () => {
+  const t = { ...shared.emptyProjectCustomerPricing(), version: 2, combined: { ...shared.emptyCustomerCharge(), status: 'awaiting' } }
+  assert.deepEqual(shared.projectPricingIssues(t), [])
+  assert.throws(() => shared.normalizeProjectCustomerPricing({ ...t, version: 1 }), /INVALID/)
+  assert.throws(() => shared.normalizeProjectCustomerPricing({ ...t, combined: { ...t.combined, status: 'unknown' } }), /INVALID/)
+  const p = { ...price(t), mode: 'running' }
+  assert.equal(pricing.contractPriceModeLabel(p), 'Pris inväntas')
+  assert.equal(pricing.contractFixedAmount(p), null)
+  assert.deepEqual(pricing.projectRunningPrices(p), [])
+  assert.equal(pricing.projectAwaitingPrices(p).length, 1)
+  assert.ok(shared.projectPricingIssues(shared.emptyProjectCustomerPricing()).length)
+})
+
 const tick = () => new Promise(resolve => setImmediate(resolve))
 function autosaveHarness() {
   const slots = [], timers = new Map(), requests = [], saved = [], cleanups = []

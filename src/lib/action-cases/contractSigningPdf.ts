@@ -10,7 +10,7 @@ import { customerOfferBaseAmount, type CustomerOfferSnapshot, type CustomerOffer
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { contractEntryText, contractFields, contractParticipantFields } from './customerContract.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
-import { contractBudgetAmount, contractBudgetRows, contractDisplayPricing, projectRunningPrices, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
+import { contractBudgetAmount, contractBudgetRows, contractDisplayPricing, projectRunningPrices, projectAwaitingPrices, awaitingPriceTerms, contractFixedAmount, contractFixedRows, contractRowAmount, contractPricingForEditing, offerCompensationText, offerBudgetBreakdown } from './contractPricing.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
 import { changeMarkupFields, displayedChangeConditions } from './contractChanges.ts'
 // @ts-expect-error Explicit extensions support the shared Node PDF test runner.
@@ -106,19 +106,24 @@ export function contractSigningSections({ snapshot: s, files, kind }: SigningPdf
   const sharedPricing = originalPricing?.rows.some(row => row.projectPricing)
   const legacyRunning = originalPricing?.rows.some(row => !row.projectPricing && (originalPricing.mode === 'running' || row.kind === 'running'))
   if (price) {
+    const awaiting = projectAwaitingPrices(originalPricing!)
     const fixed = contractFixedRows(price), running = price.rows.filter((r) => price.mode === 'running' || r.kind === 'running')
     if (kind === 'offer') result.push(section('price', 'Ersättningsmodell', offerCompensationText(price)))
     if (price.mode !== 'running') {
       const rows: string[][] = [], columns = price.display === 'unpriced' ? ['Moment'] : price.split === 'combined' ? ['Moment', vatText('Pris inkl. moms')] : ['Moment', 'Arbete', 'Material', vatText('Totalt inkl. moms')]
       const sum = (key: 'labourOre' | 'materialOre') => fixed.length && fixed.every((r) => r[key] !== null) ? fixed.reduce((t, r) => t + r[key]!, 0) : null
       if (price.display !== 'total') for (const r of fixed) rows.push(price.display === 'unpriced' ? [r.title] : price.split === 'combined' ? [r.title, pdfMoney(contractRowAmount(price, r))] : [r.title, pdfMoney(r.labourOre), pdfMoney(r.materialOre), pdfMoney(contractRowAmount(price, r))])
-      const totalTitle = kind === 'offer' && price.mode === 'mixed' ? vatText('Summa fasta priser inkl. moms') : vatText('Totalsumma inkl. moms')
+      const totalTitle = (kind === 'offer' && price.mode === 'mixed') || awaiting.length ? vatText('Summa fasta priser inkl. moms') : vatText('Totalsumma inkl. moms')
       rows.push(price.display === 'unpriced' || price.split === 'combined' ? [totalTitle, pdfMoney(contractFixedAmount(price))] : [totalTitle, pdfMoney(price.basis === 'total' ? price.labourOre : sum('labourOre')), pdfMoney(price.basis === 'total' ? price.materialOre : sum('materialOre')), pdfMoney(contractFixedAmount(price))])
-      result.push({ ...section('price', kind === 'offer' ? 'Fasta priser' : price.mode === 'mixed' ? 'Fast del av priset' : 'Priset - fast pris'), columns: price.display === 'total' ? price.split === 'combined' ? ['Pris', vatText('Inkl. moms')] : ['Pris', 'Arbete', 'Material', vatText('Totalt inkl. moms')] : price.display === 'unpriced' ? ['Moment', ''] : columns, rows, totalRow: true,
+      result.push({ ...section('price', kind === 'offer' ? 'Fasta priser' : awaiting.length ? 'Fastprissatta delar' : price.mode === 'mixed' ? 'Fast del av priset' : 'Priset - fast pris'), columns: price.display === 'total' ? price.split === 'combined' ? ['Pris', vatText('Inkl. moms')] : ['Pris', 'Arbete', 'Material', vatText('Totalt inkl. moms')] : price.display === 'unpriced' ? ['Moment', ''] : columns, rows, totalRow: true,
         numericColumns: price.split === 'separate' && price.display !== 'unpriced' ? [1, 2, 3] : [1], columnWidths: price.split === 'separate' && price.display !== 'unpriced' ? [0.4, 0.2, 0.2, 0.2] : [0.68, 0.32] })
     }
-    if (price.mode !== 'fixed') {
-      if (sharedPricing) result.push({ ...section('price', 'Momentens prisgrunder för löpande räkning', vatText('Timpriser inkluderar arvode och moms. Påslag beräknas på självkostnad exklusive moms; moms tillkommer på självkostnad och påslag.')),
+    if (awaiting.length) result.push({ ...section('price', 'Pris inväntas', awaitingPriceTerms),
+      columns: ['Moment / del', 'Status'], columnWidths: [0.68, 0.32], rows: awaiting.map(row => [row.title, 'Pris inväntas']) })
+    if (price.mode !== 'fixed' && (!sharedPricing || price.rows.length)) {
+      if (sharedPricing) result.push({ ...section('price', 'Momentens prisgrunder för löpande räkning',
+        ...(projectRunningPrices(originalPricing!).some(rate => rate.hourly) ? [vatText('Timpriser inkluderar arvode och moms.')] : []),
+        'Externa kostnader redovisas mot leverantörsfakturor eller andra verifikationer. Entreprenörsarvode beräknas på självkostnad exklusive moms; moms tillkommer på självkostnad och arvode.'),
         columns: ['Moment', 'Prisgrund'], columnWidths: [0.55, 0.45], rows: projectRunningPrices(originalPricing!).map(rate => [rate.title, [
           rate.hourly && rate.hourlyOre !== null ? vatText(`${money(rate.hourlyOre)}/tim inkl. moms`) : '',
           rate.markup && rate.markupPercent !== null ? `Självkostnad + ${rate.markupPercent} % exkl. moms` : '',
@@ -294,7 +299,8 @@ function tableChunks(part: SigningPdfSection) {
   let rows: string[][] = [], height = 45, first = 0
   for (const [i, row] of (part.rows ?? []).entries()) {
     const rowHeight = Math.max(1, ...row.map((cell, j) => lines(cell, contentWidth * (widths[j] ?? 0.5) - 14))) * 15 + 14
-    if (rows.length && height + rowHeight > 400 && !(part.totalRow && i === part.rows!.length - 1)) {
+    const limit = chunks.length ? 600 : part.paragraphs.length ? 400 : 560
+    if (rows.length && height + rowHeight > limit && !(part.totalRow && i === part.rows!.length - 1)) {
       chunks.push({ rows, first, height }); rows = []; height = 45; first = i
     }
     rows.push(row); height += rowHeight
@@ -308,9 +314,10 @@ function table(part: SigningPdfSection) {
   const cell = (value: string, j: number, header = false) => text(value, {
     key: j, style: [styles.cell, { width: `${widths[j] * 100}%`, textAlign: part.numericColumns?.includes(j) ? 'right' : 'left' }, ...(header ? [styles.tableHeader] : [])],
   })
-  return tableChunks(part).map((chunk, i) => h(View, { key: `table-${i}`, style: styles.table, wrap: chunk.height > 500 },
+  // Continuation headers belong to a new page, never midway through the same table.
+  return tableChunks(part).map((chunk, i) => h(View, { key: `table-${i}`, style: styles.table, break: i > 0, wrap: chunk.height > 640 },
     h(View, { style: [styles.row, styles.tableHeader], wrap: false, minPresenceAhead: 35 }, ...columns.map((c, j) => cell(c, j, true))),
-    ...chunk.rows.map((row, k) => h(View, { key: k, style: [styles.row, ...(part.totalRow && chunk.first + k === part.rows!.length - 1 ? [styles.totalRow] : [])], wrap: chunk.height > 500 },
+    ...chunk.rows.map((row, k) => h(View, { key: k, style: [styles.row, ...(part.totalRow && chunk.first + k === part.rows!.length - 1 ? [styles.totalRow] : [])], wrap: chunk.height > 640 },
       ...columns.map((_, j) => cell(row[j] ?? '', j))))))
 }
 
@@ -334,7 +341,7 @@ function renderSection(part: SigningPdfSection, heading?: string, groupHeading?:
     })
   const afterTable = part.afterTable?.flatMap((value, i) => paragraphs(value, compact).map((p, j) => React.cloneElement(p, { key: `after-table-${i}-${j}` }))) ?? []
   if (tables.length && blocks.every((b) => !b.label) && part.paragraphs.join('').length <= 500) return [
-    h(View, { wrap: (tableChunks(part)[0]?.height ?? 0) > 500 }, ...(!content.length ? headings : []), ...content, tables[0]), ...tables.slice(1), ...afterTable]
+    h(View, { wrap: (tableChunks(part)[0]?.height ?? 0) > 640 }, ...(!content.length ? headings : []), ...content, tables[0]), ...tables.slice(1), ...afterTable]
   return [...content, ...tables, ...afterTable]
 }
 
