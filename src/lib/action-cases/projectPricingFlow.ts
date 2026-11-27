@@ -1,6 +1,8 @@
 import type { ActionCaseItemView } from './contracts'
 import type { CustomerOfferDraft } from './customerOffers'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { costLineCustomerAmount } from './domain.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { contractDisplayPricing, contractFixedAmount, contractPricingForEditing, contractRowAmount, importContractPrices, normalizeContractPricing } from './contractPricing.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { normalizeProjectCustomerPricing, type ProjectCustomerPricing } from './projectCustomerPricing.ts'
@@ -25,8 +27,8 @@ export function billingCalculation(item: Pick<ActionCaseItemView, 'costLines' | 
   const rows = active.filter(line => part === 'combined' || (part === 'material' ? line.category === 'material' : ['own_labor', 'subcontractor'].includes(line.category)))
   const unknown = !rows.length || rows.some(line => line.quantity === null || line.unitCost === null || !Number.isFinite(line.markupPercent) || !Number.isFinite(line.vatRate))
   const rates = [...new Set(rows.map(line => line.vatRate))], vatRate = rates.length === 1 && Number.isFinite(rates[0]) ? rates[0] : 25
-  const netOre = unknown ? null : money(rows.reduce((sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100) * 100, 0))
-  const grossOre = unknown ? null : money(rows.reduce((sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100) * (1 + line.vatRate / 100) * 100, 0))
+  const netOre = unknown ? null : money(rows.reduce((sum, line) => sum + costLineCustomerAmount(line)! * 100, 0))
+  const grossOre = unknown ? null : money(rows.reduce((sum, line) => sum + costLineCustomerAmount(line)! * (1 + line.vatRate / 100) * 100, 0))
   const other = part !== 'combined' && active.some(line => !['own_labor', 'subcontractor', 'material'].includes(line.category))
   const quoteAllocation = part !== 'combined' && item.costLines.some(line => line.coveredByQuoteId)
   const reason = unknown ? 'Mängd eller pris saknas i kalkylunderlaget.' : rates.length > 1 ? 'Kalkylen har blandade momssatser. Ange kundbeloppet manuellt.'

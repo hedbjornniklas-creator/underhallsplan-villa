@@ -41,7 +41,7 @@ function sheetHarness(overrides = {}) {
   for (const name of ['ActionCaseWorkQuotes', 'ActionCaseAttachmentPicker', 'ActionCaseLumpSumEditor', 'ActionCaseDirectCostFields', 'ActionCaseCostHelp', 'ActionCasePurchaseList', 'ActionCaseContractPrice', 'ActionCaseCustomerPricing', 'WorkInstructions']) dependencies[`./${name}`] = { default: name }
   const mod = { exports: {} }
   new Function('require', 'module', 'exports', 'document', 'window', compiled)(
-    (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {} },
+    (name) => { if (!(name in dependencies)) throw new Error(name); return dependencies[name] }, mod, mod.exports, { body: {}, getElementById: () => null },
     { confirm: () => { confirmations++; return accept } },
   )
   const props = {
@@ -213,11 +213,13 @@ test('Klar remains separate from bulk selection, actual missing amounts and quot
   assert.equal(h.find(n=>n.props['aria-label']==='Markera Puts').props.checked,true)
 })
 
-test('pencil opens details with unsaved protection and blocks concurrent completion', () => {
+test('pencil opens details without a false dirty warning; actual manual edits are protected', () => {
   const h=sheetHarness({initialCostLineId:'none',item:costItem([testLine()])})
   h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick(); h.render()
   assert.ok(h.find(n=>typeof n.type==='function' && n.type.name==='CostLineForm'))
   assert.equal(h.find(n=>n.props['aria-label']==='Klar: Puts').props.disabled,true)
+  assert.equal(h.tab('Omfattning').props.disabled,false)
+  h.find(n=>typeof n.type==='function' && n.type.name==='CostLineForm').props.onDirty(true); h.render()
   assert.equal(h.tab('Omfattning').props.disabled,true)
   h.pointerDown();h.clickBackdrop()
   assert.equal(h.result.confirmations,1)
@@ -290,10 +292,76 @@ test('purchase action cannot bypass a pending row edit', () => {
   h.find(n => n.type === 'button' && n.props.children?.includes?.('Markera rader')).props.onClick(); h.render()
   h.find(n => n.props['aria-label'] === 'Markera Puts').props.onChange({ target: { checked: true } }); h.render()
   h.find(n => n.props['aria-label'] === 'Redigera Puts').props.onClick(); h.render()
+  h.find(n=>typeof n.type==='function' && n.type.name==='CostLineForm').props.onDirty(true); h.render()
   const button = h.find(n => n.type === 'button' && n.props.children?.includes?.('Beställningslista ('))
   assert.equal(button.props.disabled, true)
   button.props.onClick(); h.render()
   assert.equal(h.nodes().some(n => n.type === 'ActionCasePurchaseList'), false)
+})
+
+test('pencil and compact heading both close the same row without changing any prices', () => {
+  const calls=[], h=sheetHarness({initialCostLineId:'none',item:costItem([testLine()]),onCostAction:(...args)=>calls.push(args)})
+  const pencil=()=>h.find(n=>n.props['aria-label']==='Redigera Puts')
+  pencil().props.onClick(); h.render()
+  const heading=h.find(n=>n.type==='button' && n.props.children?.includes?.('Redigera kalkylrad'))
+  assert.equal(heading.props['aria-controls'],pencil().props['aria-controls'])
+  heading.props.onClick(); h.render(); assert.equal(pencil().props['aria-expanded'],false)
+  pencil().props.onClick(); h.render(); pencil().props.onClick(); h.render()
+  assert.equal(pencil().props['aria-expanded'],false)
+  assert.equal(h.result.confirmations,0); assert.deepEqual(calls,[])
+  assert.doesNotMatch(source,/Stäng rad|Stäng detaljer/)
+})
+
+test('supplier quotes expand independently and retain the direct editor', () => {
+  const h=sheetHarness({initialCostLineId:'none',item:costItem([testLine({category:'own_labor'})])})
+  h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick();h.render()
+  const quotes=()=>h.find(n=>n.type==='button'&&n.props.children?.includes?.('Leverantörsofferter'))
+  quotes().props.onClick();h.render()
+  assert.equal(h.find(n=>n.type==='ActionCaseWorkQuotes').props.offersOnly,true)
+  assert.ok(h.find(n=>typeof n.type==='function'&&n.type.name==='CostLineForm'))
+  quotes().props.onClick();h.render()
+  assert.equal(h.nodes().some(n=>n.type==='ActionCaseWorkQuotes'),false)
+  assert.ok(h.find(n=>typeof n.type==='function'&&n.type.name==='CostLineForm'))
+  assert.equal(h.find(n=>n.props['aria-label']==='Redigera Puts').props['aria-expanded'],true)
+})
+
+test('initial quote deep link stays open when supplier details collapse', () => {
+  const h=sheetHarness({initialCostLineId:'line',item:costItem([testLine({category:'subcontractor',pricingMethod:'quotes'})])})
+  h.find(n=>n.type==='button'&&n.props.children?.includes?.('Leverantörsofferter')).props.onClick();h.render()
+  assert.equal(h.find(n=>n.props['aria-label']==='Redigera Puts').props['aria-expanded'],true)
+  assert.equal(h.nodes().some(n=>n.type==='ActionCaseWorkQuotes'),false)
+})
+
+test('manual dirty rows require confirmation; an unsaved quote cannot be collapsed away', () => {
+  const h=sheetHarness({initialCostLineId:'none',item:costItem([testLine({category:'own_labor'})])})
+  h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick();h.render()
+  h.find(n=>typeof n.type==='function'&&n.type.name==='CostLineForm').props.onDirty(true);h.render()
+  const pencil=()=>h.find(n=>n.props['aria-label']==='Redigera Puts')
+  pencil().props.onClick();h.render();assert.equal(pencil().props['aria-expanded'],true)
+  assert.equal(h.result.confirmations,1)
+  h.allowDiscard();pencil().props.onClick();h.render();assert.equal(pencil().props['aria-expanded'],false)
+  pencil().props.onClick();h.render()
+  h.find(n=>n.type==='button'&&n.props.children?.includes?.('Leverantörsofferter')).props.onClick();h.render()
+  h.find(n=>n.type==='ActionCaseWorkQuotes').props.onEditing(true);h.render()
+  assert.equal(pencil().props.disabled,true)
+  assert.equal(h.find(n=>n.type==='button'&&n.props.children?.includes?.('Leverantörsofferter')).props.disabled,true)
+  pencil().props.onClick();h.render();assert.equal(pencil().props['aria-expanded'],true)
+})
+
+test('row header carries autosave feedback and confirmed deletion; errors remain available when collapsed', () => {
+  const removed=[],retried=[],entry={edit:{key:'line:line',itemId:'item',operation:'line',data:{}},status:'error',error:'Testfel'}
+  const h=sheetHarness({initialCostLineId:'line',item:costItem([testLine()]),calculation:{states:{'line:line':entry},retry:key=>retried.push(key),removeLine:(...args)=>removed.push(args)}})
+  const status=h.find(n=>n.type==='CalculationSaveStatus'&&n.props.entry===entry)
+  assert.ok(h.find(n=>n.props.className==='gizmo-cost-row-header').props.children.includes(status))
+  const remove=h.find(n=>n.props['aria-label']==='Ta bort rad: Puts')
+  remove.props.onClick();h.render();assert.deepEqual(removed,[])
+  h.find(n=>n.type==='button'&&n.props.children==='Avbryt').props.onClick();h.render();assert.deepEqual(removed,[])
+  h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick();h.render()
+  h.find(n=>n.type==='CalculationSaveStatus').props.onRetry();assert.deepEqual(retried,['line:line'])
+  h.find(n=>n.props['aria-label']==='Redigera Puts').props.onClick();h.render()
+  h.find(n=>n.props['aria-label']==='Ta bort rad: Puts').props.onClick();h.render()
+  h.find(n=>n.type==='button'&&n.props.children==='Ta bort').props.onClick();h.render()
+  assert.deepEqual(removed,[['item','line',h.props.item.updatedAt]])
 })
 
 test('locked contract moments are read-only but keep help, material selection and purchase printing available',async()=>{

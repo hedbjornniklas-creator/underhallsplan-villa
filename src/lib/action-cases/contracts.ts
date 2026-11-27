@@ -67,6 +67,7 @@ export type ActionCaseCostLineView = {
   unit: string
   unitCost: number | null
   markupPercent: number
+  reservePercent?: number
   vatRate: number
   priceSource: 'manual' | 'beijer' | 'subcontractor' | 'price_book' | 'ai_suggestion' | 'other'
   sourceUrl: string | null

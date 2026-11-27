@@ -1,5 +1,7 @@
 import type { ActionCaseItemView, ActionCaseView } from './contracts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { costLineCustomerAmount } from './domain.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { customerOfferBaseAmount, type CustomerOfferWorkspace } from './customerOffers.ts'
 // @ts-expect-error Node strip-types tests require the explicit extension.
 import { activeSigningVersion } from './contractSigning.ts'
@@ -29,7 +31,7 @@ export function overviewItemAmount(item: ActionCaseItemView): number | null {
   if (item.lumpSum) return valid(item.lumpSum.customerPrice) && valid(item.lumpSum.vatRate) ? amount(Math.round(item.lumpSum.customerPrice * (1 + item.lumpSum.vatRate / 100) * 100)) : null
   const lines = item.costLines.filter(line => !line.coveredByQuoteId)
   if (!lines.length || lines.some(line => !valid(line.quantity) || !valid(line.unitCost) || !valid(line.markupPercent) || !valid(line.vatRate))) return null
-  return amount(Math.round(lines.reduce((sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100) * (1 + line.vatRate / 100), 0) * 100))
+  return amount(Math.round(lines.reduce((sum, line) => sum + costLineCustomerAmount(line)! * (1 + line.vatRate / 100), 0) * 100))
 }
 
 export function overviewContract(offer: CustomerOfferWorkspace | null) {

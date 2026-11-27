@@ -25,6 +25,7 @@ type Props = {
   onRequest?: (costLineIds: string[]) => void
   onOpenRequest?: (requestId: string) => void
   calculation?: ReturnType<typeof useActionCalculationAutosave>
+  offersOnly?: boolean
 }
 
 function QuoteForm({ line, item, caseId, attachments, participants, quote, mode, busy, onSave, onCancel, onEditing }: Props & {
@@ -83,7 +84,7 @@ function QuoteForm({ line, item, caseId, attachments, participants, quote, mode,
 }
 
 export default function ActionCaseWorkQuotes(props: Props) {
-  const { line, item, attachments, busy, onAction, onEditing, caseId, calculation } = props
+  const { line, item, attachments, busy, onAction, onEditing, caseId, calculation, offersOnly } = props
   const [editor, setEditor] = useState<{ quote?: ActionCaseQuote; mode: 'request' | 'offer' } | null>(null)
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [openedAt] = useState(Date.now)
@@ -103,6 +104,7 @@ export default function ActionCaseWorkQuotes(props: Props) {
   const controlsBusy = busy || directEditing || Boolean(markupDraft)
   const markupEntry = calculation?.states[`markup:${line.id}`]
   const markup = calculation ? String(markupEntry?.edit.data.markupPercent ?? line.markupPercent) : markupDraft?.value ?? String(line.markupPercent)
+  const reserve = String(markupEntry?.edit.data.reservePercent ?? line.reservePercent ?? 0)
   const markupValid = Boolean(markup.trim()) && Number.isFinite(Number(markup)) && Number(markup) >= -100 && Number(markup) <= 1000
   if (groupQuote || line.coveredByQuoteId) {
     const requestId = (groupQuote ?? coveringQuote)?.requestId
@@ -121,8 +123,9 @@ export default function ActionCaseWorkQuotes(props: Props) {
     </section>
   }
   return <section className="mt-3 border-y border-violet-200 py-4" aria-label={`Prisunderlag för ${line.description}`}>
-    <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">{([['direct', line.unit === 'tim' || line.pricingMethod === 'quotes' ? 'Timmar' : 'Eget pris'], ['quotes', `Offerter (${quotes.length})`]] as const).map(([key, label]) => <button type="button" className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${view === key ? 'bg-white text-violet-800 shadow-sm' : 'text-slate-600'}`} key={key} aria-pressed={view === key} disabled={controlsBusy || Boolean(editor)} onClick={() => setView(key)}>{label}</button>)}</div>
-    {view === 'direct' ? canEditDirectWork(line) || directEditing ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={busy} onEditing={(value) => { setDirectEditing(value); onEditing(value) }} onSave={(payload) => onAction('work_part', payload)} auto={calculation ? {
+    {!offersOnly && <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">{([['direct', line.unit === 'tim' || line.pricingMethod === 'quotes' ? 'Timmar' : 'Eget pris'], ['quotes', `Offerter (${quotes.length})`]] as const).map(([key, label]) => <button type="button" className={`min-h-11 rounded-md text-sm font-semibold disabled:opacity-40 ${view === key ? 'bg-white text-violet-800 shadow-sm' : 'text-slate-600'}`} key={key} aria-pressed={view === key} disabled={controlsBusy || Boolean(editor)} onClick={() => setView(key)}>{label}</button>)}</div>}
+    {offersOnly && line.pricingMethod === 'quotes' && <button type="button" className={button} disabled={controlsBusy || Boolean(editor)} onClick={() => void action('method', { method: 'direct' })}><Pencil size={16} />Använd egen kalkyl</button>}
+    {!offersOnly && view === 'direct' ? canEditDirectWork(line) || directEditing ? <ActionCaseDirectCostFields line={line} expectedUpdatedAt={item.updatedAt} busy={busy} onEditing={(value) => { setDirectEditing(value); onEditing(value) }} onSave={(payload) => onAction('work_part', payload)} auto={calculation ? {
       entry: calculation.states[`line:${line.id}`], onRetry: () => calculation.retry(`line:${line.id}`),
       onChange: data => calculation.change({ key: `line:${line.id}`, itemId: item.id, operation: 'line', data: { ...data, id: line.id, create: false } }, item.updatedAt),
     } : undefined} /> : <div className="mt-3 space-y-3">
@@ -170,11 +173,11 @@ export default function ActionCaseWorkQuotes(props: Props) {
         {line.pricingMethod === 'quotes' ? <form className="mt-4 flex flex-wrap items-end gap-2 border-t border-slate-200 pt-4" onSubmit={(event) => {
           event.preventDefault()
           if (!calculation && !busy && markupDraft && markupValid) void action('markup', { markupPercent: markup, expectedLineUpdatedAt: markupDraft.expectedLineUpdatedAt }).then((saved) => { if (saved) { setMarkupDraft(null); onEditing(false) } })
-        }}><label className="min-w-0 text-xs font-semibold text-slate-600">Prispåslag, % (inte moms)<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="-100" max="1000" value={markup} disabled={busy} onChange={(event) => {
-          if (calculation) { calculation.change({ key: `markup:${line.id}`, itemId: item.id, operation: 'markup', data: { id: line.id, markupPercent: event.target.value } }, item.updatedAt); return }
+        }}>{calculation && <label className="min-w-0 text-xs font-semibold text-slate-600">Kalkylreserv, %<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="0" max="1000" value={reserve} disabled={busy} onChange={event => calculation.change({ key: `markup:${line.id}`, itemId: item.id, operation: 'markup', data: { id: line.id, markupPercent: markup, reservePercent: event.target.value } }, item.updatedAt)} /></label>}<label className="min-w-0 text-xs font-semibold text-slate-600">Entreprenörsarvode, % (inte moms)<input className={input} style={{ maxWidth: 140 }} type="number" step="any" min="-100" max="1000" value={markup} disabled={busy} onChange={(event) => {
+          if (calculation) { calculation.change({ key: `markup:${line.id}`, itemId: item.id, operation: 'markup', data: { id: line.id, markupPercent: event.target.value, reservePercent: reserve } }, item.updatedAt); return }
           const changed = !event.target.value.trim() || Number(event.target.value) !== line.markupPercent
           setMarkupDraft(changed ? { value: event.target.value, expectedLineUpdatedAt: markupDraft?.expectedLineUpdatedAt ?? line.updatedAt } : null); onEditing(changed)
-        }} /></label>{calculation ? <CalculationSaveStatus entry={markupEntry} onRetry={() => calculation.retry(`markup:${line.id}`)} /> : <button className={button} type="submit" disabled={busy || !markupValid || !markupDraft}><Save size={16} />Spara påslag</button>}{markupDraft ? <button type="button" className={button} disabled={busy} title="Återställ påslag" aria-label="Återställ påslag" onClick={() => { setMarkupDraft(null); onEditing(false) }}><RotateCcw size={16} /></button> : null}</form> : null}
+        }} /></label>{calculation ? <CalculationSaveStatus entry={markupEntry} onRetry={() => calculation.retry(`markup:${line.id}`)} /> : <button className={button} type="submit" disabled={busy || !markupValid || !markupDraft}><Save size={16} />Spara arvode</button>}{markupDraft ? <button type="button" className={button} disabled={busy} title="Återställ arvode" aria-label="Återställ arvode" onClick={() => { setMarkupDraft(null); onEditing(false) }}><RotateCcw size={16} /></button> : null}</form> : null}
       </>}
     </>}
   </section>

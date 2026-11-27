@@ -1,7 +1,14 @@
 import type { ActionCaseCostLineView, ActionCaseItemView } from './contracts'
 
+type PricedCostLine = Pick<ActionCaseCostLineView, 'quantity' | 'unitCost' | 'markupPercent' | 'reservePercent'>
+
+export function costLineCustomerAmount(line: PricedCostLine): number | null {
+  if (line.quantity === null || line.unitCost === null) return null
+  return line.quantity * line.unitCost * (1 + (line.reservePercent ?? 0) / 100) * (1 + line.markupPercent / 100)
+}
+
 export function calculateActionCaseCostTotals(
-  input: ReadonlyArray<Pick<ActionCaseCostLineView, 'quantity' | 'unitCost' | 'markupPercent'> & { coveredByQuoteId?: string | null }>
+  input: ReadonlyArray<PricedCostLine & { coveredByQuoteId?: string | null }>
 ) {
   const lines = input.filter((line) => !line.coveredByQuoteId)
   if (!lines.length || lines.some((line) => line.quantity === null || line.unitCost === null)) {
@@ -9,7 +16,7 @@ export function calculateActionCaseCostTotals(
   }
   const internalCost = lines.reduce((sum, line) => sum + line.quantity! * line.unitCost!, 0)
   const customerPrice = lines.reduce(
-    (sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100),
+    (sum, line) => sum + costLineCustomerAmount(line)!,
     0
   )
   return {
@@ -19,7 +26,7 @@ export function calculateActionCaseCostTotals(
 }
 
 export function actionCaseCostCoverage(input: ReadonlyArray<Pick<ActionCaseCostLineView,
-  'quantity' | 'unitCost' | 'markupPercent' | 'verified'> & { coveredByQuoteId?: string | null }>) {
+  'quantity' | 'unitCost' | 'markupPercent' | 'reservePercent' | 'verified'> & { coveredByQuoteId?: string | null }>) {
   const lines = input.filter((line) => !line.coveredByQuoteId)
   const known = lines.filter((line) => line.quantity !== null && line.unitCost !== null)
   return {

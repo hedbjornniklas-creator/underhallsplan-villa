@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import ts from 'typescript'
-import { normalizeCostLine } from '../src/lib/action-cases/costing.ts'
+import { normalizeCalculationReserve, normalizeCostLine } from '../src/lib/action-cases/costing.ts'
 import { normalizeLumpSum } from '../src/lib/action-cases/lumpSum.ts'
 import { normalizeWorkPartAction } from '../src/lib/action-cases/workParts.ts'
 import { offerId } from '../src/lib/action-cases/customerOffers.ts'
@@ -20,7 +20,7 @@ function load(path, dependencies, globals = {}) {
   return module.exports
 }
 const domain = load('src/lib/action-cases/calculationSave.ts', {
-  './costing': { normalizeCostLine }, './lumpSum': { normalizeLumpSum }, './workParts': { normalizeWorkPartAction }, './customerOffers': { offerId },
+  './costing': { normalizeCalculationReserve, normalizeCostLine }, './lumpSum': { normalizeLumpSum }, './workParts': { normalizeWorkPartAction }, './customerOffers': { offerId },
 })
 const project = randomUUID(), item = randomUUID(), line = randomUUID()
 const version = n => `2026-11-02T12:00:00.${String(n).padStart(6, '0')}Z`
@@ -84,6 +84,16 @@ test('optimistic overlays and scoped acknowledgements preserve other projects an
   const merged = domain.mergeCalculationSave(workspace, { caseId: project, item: overlay, caseStatus: 'pricing' })
   assert.equal(merged.cases[0].items[1], workspace.cases[0].items[1])
   assert.equal(merged.cases[1], workspace.cases[1])
+})
+
+test('reserve and contractor fee travel together through versioned line and quote autosaves', () => {
+  assert.equal(domain.calculationData(edit({ reservePercent: '5' }), project, version(1)).reservePercent, 5)
+  const markup = { ...edit(), operation: 'markup', data: { id: line, markupPercent: '10', reservePercent: '5' } }
+  assert.equal(domain.calculationData(markup, project, version(1)).reservePercent, 5)
+  assert.throws(() => domain.calculationData({ ...markup, data: { ...markup.data, reservePercent: '-1' } }, project, version(1)))
+  const original = { id: item, updatedAt: version(1), costLines: [{ ...data, reservePercent: 7, quantity: 1, unitCost: 1000 }] }
+  assert.equal(domain.overlayCalculation(original, [markup]).costLines[0].reservePercent, 5)
+  assert.equal(domain.overlayCalculation(original, [edit()]).costLines[0].reservePercent, 7, 'An older draft without reserve must not erase it')
 })
 
 test('typing coalesces; another row remains editable while saving and uses our acknowledged version', async () => {

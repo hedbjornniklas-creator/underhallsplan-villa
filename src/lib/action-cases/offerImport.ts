@@ -1,6 +1,8 @@
 import type { ActionCaseItemView } from './contracts'
 import type { CustomerOfferItem } from './customerOffers'
 // @ts-expect-error Node strip-types tests require the explicit extension.
+import { costLineCustomerAmount } from './domain.ts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
 import { customerPricingParts } from './projectCustomerPricing.ts'
 
 export const offerSourceFields = [
@@ -166,5 +168,5 @@ export function importableCustomerPrice(item: ActionCaseItemView): number | null
     ? Math.round(item.lumpSum.customerPrice * (1 + item.lumpSum.vatRate / 100) * 100) : null
   const lines = item.costLines.filter((line) => !line.coveredByQuoteId)
   if (!lines.length || lines.some((line) => !line.verified || line.quantity === null || line.unitCost === null)) return null
-  return Math.round(lines.reduce((sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100) * (1 + line.vatRate / 100), 0) * 100)
+  return Math.round(lines.reduce((sum, line) => sum + costLineCustomerAmount(line)! * (1 + line.vatRate / 100), 0) * 100)
 }

@@ -20,12 +20,15 @@ function text(value: unknown, max: number, required = false) {
   return result
 }
 
+export const normalizeCalculationReserve = (value: unknown) => amount(value, 1000, 0) ?? 0
+
 export function normalizeCostLine(input: Record<string, unknown>) {
   const category = text(input.category, 30) as ActionCaseCostLineView['category']
   const priceSource = (text(input.priceSource, 30) || 'manual') as ActionCaseCostLineView['priceSource']
   const quantity = amount(input.quantity, 99999999999.999, 0.001)
   const unitCost = amount(input.unitCost, 999999999999.99, 0)
   const markupPercent = amount(input.markupPercent ?? 0, 1000, -100) ?? 0
+  const reserve = 'reservePercent' in input ? { reservePercent: normalizeCalculationReserve(input.reservePercent) } : {}
   const quantityBasis = (quantity === null ? 'unknown' : (input.quantityBasis || 'provided')) as ActionCaseCostLineView['quantityBasis']
   if (!COST_CATEGORIES.includes(category) || !PRICE_SOURCES.includes(priceSource) || !QUANTITY_BASES.includes(quantityBasis)) return invalid()
   if (quantity !== null && quantityBasis === 'unknown') return invalid()
@@ -38,7 +41,7 @@ export function normalizeCostLine(input: Record<string, unknown>) {
   if (verified && (quantity === null || unitCost === null)) return invalid()
   return {
     category, description: text(input.description, 500, true), quantity,
-    unit: text(input.unit, 30, true), unitCost, markupPercent, priceSource,
+    unit: text(input.unit, 30, true), unitCost, markupPercent, ...reserve, priceSource,
     quantityBasis, notes: text(input.notes, 2000) || null, sourceUrl, verified,
   }
 }

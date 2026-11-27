@@ -108,6 +108,7 @@ function mapCostLine(row: Record<string, unknown>): ActionCaseCostLineView {
     unit: String(row.unit),
     unitCost: row.unit_cost == null ? null : Number(row.unit_cost),
     markupPercent: Number(row.markup_percent),
+    reservePercent: Number(row.reserve_percent ?? 0),
     vatRate: Number(row.vat_rate),
     priceSource: row.price_source as ActionCaseCostLineView['priceSource'],
     sourceUrl: row.source_url ? String(row.source_url) : null,
@@ -362,7 +363,7 @@ export async function saveActionCaseCalculation(context: Context, payload: Recor
   if (!sameCalculationVersion(expectedUpdatedAt, expectedUpdatedAt)) throw new Error('ACTION_CASE_ITEM_STALE')
   if (!['line', 'delete_line', 'complete', 'lump_sum', 'work_part', 'markup'].includes(String(payload.operation)) || !payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) throw new Error('ACTION_CASE_COST_LINE_INVALID')
   const edit: CalculationEdit = { key: '', itemId, operation: payload.operation as CalculationEdit['operation'], data: payload.data as Record<string, unknown> }
-  const { data, error } = await createSupabaseAdminClient().rpc('save_action_case_calculation', {
+  const { data, error } = await createSupabaseAdminClient().rpc('save_action_case_calculation_with_reserve', {
     p_org_id: context.orgId, p_case_id: caseId, p_item_id: itemId, p_user_id: context.userId,
     p_request_id: requestId, p_expected_updated_at: expectedUpdatedAt, p_operation: edit.operation,
     p_data: calculationData(edit, caseId, expectedUpdatedAt),

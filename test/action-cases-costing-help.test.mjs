@@ -76,9 +76,9 @@ test('saving a new pricing method clears its local edit lock after the editor un
 })
 
 test('cost fields and table identify VAT treatment and distinguish price markup from VAT', () => {
-  for (const text of ['Kostnad/enhet exkl. moms (kr)', 'Prispåslag på kostnaden, %', 'inte moms.', 'Kostnad exkl. moms', 'Kundpris exkl. moms']) assert.ok(sheet.includes(text), text)
+  for (const text of ['Kostnad/enhet exkl. moms (kr)', 'Entreprenörsarvode, %', 'Kalkylreserv, %', 'är moms.', 'Kostnad exkl. moms', 'Kundpris exkl. moms']) assert.ok(sheet.includes(text), text)
   assert.match(read('src/components/tasks/ActionCaseDirectCostFields.tsx'), /Timkostnad exkl\. moms \(kr\)/)
   assert.match(read('src/components/tasks/ActionCaseWorkParts.tsx'), /Timkostnad för valda exkl\. moms \(kr\)/)
-  assert.match(read('src/components/tasks/ActionCaseWorkQuotes.tsx'), /Prispåslag, % \(inte moms\)/)
+  assert.match(read('src/components/tasks/ActionCaseWorkQuotes.tsx'), /Entreprenörsarvode, % \(inte moms\)/)
   assert.match(read('src/components/tasks/action-case-costs.css'), /\.uppdrag-scope \.gizmo-cost-help-dialog/)
 })

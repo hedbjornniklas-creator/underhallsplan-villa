@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": { "incremental": false, "allowJs": false },
+  "include": [
+    "../next-env.d.ts",
+    "../src/components/tasks/ActionCaseItemSheet.tsx",
+    "../test/fixtures/calculation-row-view.tsx"
+  ],
+  "exclude": ["../node_modules", "../tmp", "../output"]
+}

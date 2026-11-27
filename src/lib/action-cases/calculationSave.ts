@@ -1,5 +1,5 @@
 import type { ActionCaseCostLineView, ActionCaseItemView, ActionCaseWorkspace } from './contracts'
-import { normalizeCostLine } from './costing'
+import { normalizeCalculationReserve, normalizeCostLine } from './costing'
 import { normalizeLumpSum } from './lumpSum'
 import { normalizeWorkPartAction } from './workParts'
 import { offerId } from './customerOffers'
@@ -31,7 +31,7 @@ export function calculationData(edit: CalculationEdit, caseId: string, expectedU
   if (edit.operation === 'markup') {
     const markupPercent = Number(data.markupPercent)
     if (data.markupPercent == null || String(data.markupPercent).trim() === '' || !Number.isFinite(markupPercent) || markupPercent < -100 || markupPercent > 1000) throw new Error('ACTION_CASE_COST_LINE_INVALID')
-    return { id: offerId(data.id), markupPercent }
+    return { id: offerId(data.id), markupPercent, ...('reservePercent' in data ? { reservePercent: normalizeCalculationReserve(data.reservePercent) } : {}) }
   }
   throw new Error('ACTION_CASE_COST_LINE_INVALID')
 }
@@ -49,6 +49,7 @@ export function overlayCalculation(item: ActionCaseItemView, edits: CalculationE
       const next: ActionCaseCostLineView = { ...(result.costLines[index] ?? { id: String(data.id), vatRate: 25, sourceCheckedAt: null, sortOrder: Number.MAX_SAFE_INTEGER, pricingMethod: 'direct' }),
         category: data.category as ActionCaseCostLineView['category'], description: String(data.description ?? ''), unit: String(data.unit ?? ''),
         quantity, unitCost: number(data.unitCost, 0, 999999999999.99), markupPercent: number(data.markupPercent, -100, 1000) ?? 0,
+        ...('reservePercent' in data ? { reservePercent: number(data.reservePercent, 0, 1000) ?? 0 } : {}),
         priceSource: data.priceSource as ActionCaseCostLineView['priceSource'], sourceUrl: String(data.sourceUrl ?? '') || null,
         quantityBasis: quantity === null ? 'unknown' : data.quantityBasis as ActionCaseCostLineView['quantityBasis'], notes: String(data.notes ?? '') || null, verified: data.verified === true }
       if (index < 0) result.costLines.push(next)
@@ -57,7 +58,7 @@ export function overlayCalculation(item: ActionCaseItemView, edits: CalculationE
     if (edit.operation === 'lump_sum') {
       try { result = { ...result, lumpSum: normalizeLumpSum(data.lumpSum) } } catch { /* Invalid raw values stay in the editor, not in totals. */ }
     }
-    if (edit.operation === 'markup' && index >= 0 && Number.isFinite(Number(data.markupPercent))) result.costLines[index] = { ...result.costLines[index], markupPercent: Number(data.markupPercent), verified: false }
+    if (edit.operation === 'markup' && index >= 0 && Number.isFinite(Number(data.markupPercent))) result.costLines[index] = { ...result.costLines[index], markupPercent: Number(data.markupPercent), ...('reservePercent' in data ? { reservePercent: Number(data.reservePercent) } : {}), verified: false }
     if (edit.operation === 'work_part' && data.operation === 'save') {
       const id = data.partId == null ? edit.key.slice('part:'.length) : String(data.partId)
       const parts = [...(result.workParts ?? [])], found = parts.findIndex(part => part.id === id)

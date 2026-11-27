@@ -1,4 +1,6 @@
 import type { ActionCaseItemView } from './contracts'
+// @ts-expect-error Node strip-types tests require the explicit extension.
+import { costLineCustomerAmount } from './domain.ts'
 
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const nonnegative = (value: unknown): value is number => finite(value) && value >= 0
@@ -12,8 +14,8 @@ export function workItemSum(item: Pick<ActionCaseItemView, 'costLines' | 'lumpSu
     return { amountOre, partial: amountOre === null }
   }
   const lines = item.costLines.filter(line => !line.coveredByQuoteId)
-  const known = lines.filter(line => nonnegative(line.quantity) && nonnegative(line.unitCost) && finite(line.markupPercent) && line.markupPercent >= -100 && nonnegative(line.vatRate))
-  const amountOre = known.length ? ore(known.reduce((sum, line) => sum + line.quantity! * line.unitCost! * (1 + line.markupPercent / 100) * (basis === 'incl' ? 1 + line.vatRate / 100 : 1), 0)) : null
+  const known = lines.filter(line => nonnegative(line.quantity) && nonnegative(line.unitCost) && finite(line.markupPercent) && line.markupPercent >= -100 && nonnegative(line.reservePercent ?? 0) && nonnegative(line.vatRate))
+  const amountOre = known.length ? ore(known.reduce((sum, line) => sum + costLineCustomerAmount(line)! * (basis === 'incl' ? 1 + line.vatRate / 100 : 1), 0)) : null
   return { amountOre, partial: !lines.length || known.length !== lines.length || amountOre === null }
 }
 
