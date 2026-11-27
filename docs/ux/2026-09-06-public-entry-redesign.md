@@ -22,6 +22,23 @@ Originalbilderna i public/landing används. HusHub är störst; produktlogotyper
 
 Sessionsinformationen används endast för länkarnas presentation. Befintliga serverkontroller avgör fortfarande tillgången till apparna. Produktlänkar och inloggningslänkar förladdas inte.
 
+### Befintliga uppdragsdeltagare, 27 november 2026
+
+En aktiverad uppdragsdeltagare kan använda startsidans vanliga **Logga in** med
+sin e-postadress och sitt befintliga lösenord. När kontot saknar produktarbetsytor
+kontrollerar `/app` den befintliga mottagaridentiteten via den serveranropade
+`recipient_session_identity` och öppnar `/mina-uppdrag` direkt. En aktiv mottagare
+med tom uppdragslista får samma ingång. Övriga produktval och uttryckliga
+inloggningsdestinationer följer sina befintliga vägar.
+
+Detta väljer bara startsida. Inga konton, organisationsmedlemskap, uppdragsgrants
+eller nya delningar skapas. Befintliga kontroller för publicerade uppgifter och
+enskilda uppdrag avgör fortfarande vad deltagaren får se och göra. Första
+kontoaktiveringen sker fortsatt via den personliga uppdragslänken. Saknad,
+spärrad eller ej verifierad mottagaridentitet ger ingen automatisk ingång.
+Om mottagaruppslaget misslyckas finns den befintliga manuella länken till
+Mina uppdrag kvar i vyn utan arbetsytor.
+
 Den generella inloggningens tidigare tillåtna destinationer är oförändrade: /dashboard-v1, /renoapp/app och /mina-uppdrag. Andra värden går till /app. Formulärets rubrik följer nu det valda målet även när man kommer direkt via en produktlänk. RenoApps befintliga kontroll av nästa destination och återställningsflödet för lösenord är bevarade.
 
 ## Ändrade sidor

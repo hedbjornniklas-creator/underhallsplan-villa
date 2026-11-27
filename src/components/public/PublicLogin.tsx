@@ -57,11 +57,12 @@ export default function PublicLogin({ destination, resetSuccess }: { destination
       <section className="public-auth">
         <span className="public-eyebrow">{besiktApp ? 'För besiktningsföretag' : 'Ditt HusHub-konto'}</span>
         <h1>Logga in till {destinationLabel}</h1>
-        <p className="public-auth-intro">{pathname === '/app' ? 'Använd kontot du fått via ditt företag eller din förening.' : `Efter inloggningen kommer du tillbaka till sidan du öppnade i ${destinationLabel}.`}</p>
+        <p className="public-auth-intro">{pathname === '/app' ? 'Logga in med din e-postadress och ditt lösenord. Du kommer till den del av HusHub som ditt konto har tillgång till.' : `Efter inloggningen kommer du tillbaka till sidan du öppnade i ${destinationLabel}.`}</p>
         {resetSuccess ? <div className="public-notice public-notice-success" role="status">Lösenordet är uppdaterat. Logga in med ditt nya lösenord.</div> : null}
         <PasswordAuthPanel redirectTo={authRedirectTo} />
         <div className="public-auth-help">
           <h2>Har du inget konto?</h2>
+          {pathname === '/app' && <p>Har du fått ett uppdrag? Första gången aktiverar du kontot via din personliga uppdragslänk. När kontot är aktiverat loggar du in här.</p>}
           {(besiktApp || pathname === '/app') && <p>Vill du börja använda BesiktApp? <Link href="/besiktapp/intresse">Anmäl intresse</Link> så går vi igenom hur du kan få tillgång. Ange gärna företagets namn om ni redan använder tjänsten.</p>}
           {(renoApp || pathname === '/app') && <p>För tillgång till styrelsens RenoApp, be den som administrerar föreningen om en inbjudan.</p>}
           {recipient && <p>Kontakta den som skickade uppdraget om du saknar uppgifter för att logga in.</p>}

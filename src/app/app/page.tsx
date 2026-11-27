@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { ArrowRight, Building2, ClipboardCheck, Settings2 } from 'lucide-react'
 import Protected from '@/components/Protected'
+import { getCurrentUserRecipientEntryDestination } from '@/lib/tasks/recipientEntry'
 import {
   getCurrentUserAccessibleProducts,
   type PlatformEntryProduct,
@@ -158,6 +159,8 @@ export default async function AppEntryPage() {
   }
 
   if (products.length === 0) {
+    const recipientDestination = await getCurrentUserRecipientEntryDestination()
+    if (recipientDestination) redirect(recipientDestination)
     return <EmptyWorkspaceState />
   }
 
