@@ -172,6 +172,7 @@ export default function CustomerOfferEditor({
   const [basisRefresh, setBasisRefresh] = useState(0)
   const paymentDirty = billingDirty || invoiceDirty || supplierDirty
   const [paymentView, setPaymentView] = useState<'plan' | 'billing' | 'basis' | 'supplier'>('plan')
+  const [billingSupplierId, setBillingSupplierId] = useState<string | undefined>()
   const planningDirtyRef = useRef(planningDirty)
   planningDirtyRef.current = planningDirty
   const [planning, setPlanning] = useState(initial.planning)
@@ -809,10 +810,10 @@ export default function CustomerOfferEditor({
           {draftTarget === 'contract' && <ProjectBillingEditor caseId={actionCase.id} parties={parties} active={active && view === 'payments' && paymentView === 'billing'} onDirtyChange={setBillingDirty} />}
         </div>
         <div id={`payment-panel-${actionCase.id}-basis`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-basis`} hidden={paymentView !== 'basis'}>
-          {draftTarget === 'contract' && <ProjectBillingFlow key={basisRefresh} caseId={actionCase.id} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
+          {draftTarget === 'contract' && <ProjectBillingFlow key={basisRefresh} caseId={actionCase.id} supplierInvoiceId={billingSupplierId} active={active && view === 'payments' && paymentView === 'basis'} onDirty={setInvoiceDirty} />}
         </div>
         <div id={`payment-panel-${actionCase.id}-supplier`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-supplier`} hidden={paymentView !== 'supplier'}>
-          {draftTarget === 'contract' && <ProjectSupplierInvoices caseId={actionCase.id} items={actionCase.items} active={active && view === 'payments' && paymentView === 'supplier'} onDirty={setSupplierDirty} basisBlocked={invoiceDirty} onBasis={() => { setSupplierDirty(false); setBasisRefresh(n => n + 1); setPaymentView('basis') }} />}
+          {draftTarget === 'contract' && <ProjectSupplierInvoices caseId={actionCase.id} items={actionCase.items} active={active && view === 'payments' && paymentView === 'supplier'} onDirty={setSupplierDirty} basisBlocked={invoiceDirty} onBasis={invoiceId => { setBillingSupplierId(invoiceId); setSupplierDirty(false); setBasisRefresh(n => n + 1); setPaymentView('basis') }} />}
         </div>
       </div>
       {view === 'planning' ? null : view === 'payments' ? <section id={`payment-panel-${actionCase.id}-plan`} role="tabpanel" aria-labelledby={`payment-${actionCase.id}-plan`} hidden={paymentView !== 'plan'}>

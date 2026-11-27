@@ -20,7 +20,7 @@ test('invoice previews do not depend on the native PDF plugin or upload before v
   const panel = await readFile('src/components/tasks/ProjectSupplierInvoices.tsx', 'utf8'), view = await readFile('src/components/tasks/SupplierInvoicePdfPreview.tsx', 'utf8')
   assert.ok(!panel.includes('<iframe'))
   assert.match(panel, /SupplierInvoicePdfPreview source=\{pendingFile \|\| original\}/)
-  assert.match(panel, /Vald fil, inte uppladdad/); assert.match(panel, /Fakturauppgifter saknas/)
+  assert.match(panel, /Vald fil, inte uppladdad/); assert.match(panel, /Originalet laddas upp när fakturauppgifterna och fördelningen är sparade/)
   assert.match(panel, /pendingFile && revision > 0 && !autosave.dirty && !autosave.busy/)
   assert.match(view, /source.arrayBuffer\(\)/); assert.match(view, /cache: 'no-store'/); assert.match(view, /signal: AbortSignal.any/)
   assert.match(view, /task\?\.destroy/); assert.match(view, /task\?\.cancel/); assert.match(view, /8_000_000/)

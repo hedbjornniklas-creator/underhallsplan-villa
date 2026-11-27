@@ -75,6 +75,7 @@ export default function SupplierInvoicePdfPreview({ source }: { source: Source }
     let stopped = false, task: RenderTask | undefined
     const canvas = window.document.createElement('canvas')
     canvas.setAttribute('role', 'img'); canvas.setAttribute('aria-label', `Fakturans original-PDF, sida ${page} av ${document.numPages}`)
+    canvas.setAttribute('aria-busy', 'true')
     root.replaceChildren(canvas)
     async function render() {
       setRendered(false); setError(''); setPageText('')
@@ -91,6 +92,7 @@ export default function SupplierInvoicePdfPreview({ source }: { source: Source }
         task = pdfPage.render({ canvas, viewport: area, transform: [pixels, 0, 0, pixels, 0, 0] })
         await task.promise
         if (stopped) return
+        canvas.setAttribute('aria-busy', 'false')
         setRendered(true)
         const text = await pdfPage.getTextContent()
         if (!stopped) setPageText(text.items.flatMap(item => 'str' in item ? [item.str] : []).join(' ').slice(0, 50000))

@@ -18,6 +18,7 @@ export type SupplierInvoiceBasisLink = { invoiceId: string; allocationId: string
 export type ProjectInvoiceWorkspace = SupplierInvoiceWorkspace & {
   userId: string; status: string; targets: ProjectInvoiceTarget[]; links: SupplierInvoiceBasisLink[]
   billingFlowActive?: boolean
+  billingClaims?: { invoiceId: string; allocationId: string; protected: boolean }[]
 }
 
 export type SupplierInvoiceDraft = {

@@ -11,6 +11,7 @@ export async function testBillingFlow(base, output) {
   const page = await context.newPage(), errors = []
   page.on('pageerror', e => errors.push(e.message))
   const click = async text => {
+    await page.waitForFunction(text => [...document.querySelectorAll('button')].some(b => b.textContent.trim() === text && b.getClientRects().length && !b.disabled), { timeout: 10000 }, text)
     const found = await page.evaluate(text => { const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === text && b.getClientRects().length); if (!b) return false; if (b.disabled) throw Error('Disabled: ' + text); b.click(); return true }, text)
     if (!found) throw Error('Missing button: ' + text)
   }

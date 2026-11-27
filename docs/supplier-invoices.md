@@ -4,6 +4,49 @@ Första versionen, 5 november 2026. Manuell registrering och uppföljning av lev
 
 ## Projektflöde, etapp 1 den 7 november 2026
 
+### Förtydligat projektflöde, 27 november 2026
+
+Beslut: användaren godkände tydligare registrering och prov av hela kedjan till
+budgetuppföljning och fakturaunderlag. Avtal, omfattning, intern kalkyl och
+befintliga priser ändras inte. Ingen ny SQL-migrering behövs.
+
+- Panelen visar fyra steg: **Faktura → Uppgifter → Fördelning → Sparat**.
+  En lokalt vald fil märks inte som uppladdad. Saknade uppgifter, uppladdning,
+  fel och återförsök visas separat. Originalet laddas fortfarande upp först när
+  metadata och giltig fördelning har sparats. Textutkast återställs lokalt;
+  osparade filer måste väljas igen efter omladdning.
+- Sammanfattningen visar projektets fördelade nettokostnad och en uttrycklig
+  granskning av fakturauppgifter och fördelning. Granskning betyder inte betalning,
+  kundgodkännande eller att en kundfaktura har skapats.
+- **Fortsätt till fakturering** öppnar det befintliga gemensamma faktureringsflödet
+  med just den fakturans kostnadsdelar. Navigeringen skapar eller aktiverar inget.
+  Välj eller hämta överenskommelsen och välj **Koppla kostnadsdel**. Uppgifter och
+  belopp återanvänds. Finns kopplingen redan öppnas samma kostnad.
+- Nya leverantörsunderlag går inte längre via den äldre direkta underlagsvägen,
+  även om projektet ännu inte börjat använda faktureringsregistret. Befintliga
+  manuella underlag och deras kopplingar bevaras under tidigare underlag;
+  de kan inte importeras igen. Ingen automatisk migrering görs.
+- Fastpriskostnader skapar ingen extra kunddebitering. Löpande delar och ÄTA
+  kontrolleras mot dokumenterade villkor och godkännande innan de görs fakturerbara.
+  Arbete och material fortsätter använda sina separata befintliga prisgrunder.
+- **Kostnader per moment och ÄTA** jämför leverantörsutfall med intern kalkyl.
+  **Kundens budgetuppföljning** i Fakturering avser granskad kunddebitering inklusive
+  avtalat arvode, inte leverantörens nettokostnad. Okopplade och ogranskade kostnader
+  ingår inte där. Återstående arbete måste bedömas för en prognos. Avstämningskravet
+  vid 80 procent/överskridande behålls och höjer inte budgeten.
+- Redan skyddade kostnadsdelar visas låsta även i leverantörspanelen. Rättningar
+  går via befintligt faktureringsflöde; serverspärrar och historik ändras inte.
+
+Kontroller: `node scripts/preview-project-supplier-invoices.mjs --test`,
+`--test-pdf` och `--test-chain`. Kedjeprovet använder samma produktionskomponenter
+och faktureringsmotor med fiktiva API-data: original, fördelning, kostnadskoppling,
+arvode, budgetavstämning, fryst PDF-underlag och manuell fakturaregistrering.
+Fastpris, löpande ÄTA, kredit, återöppning utan dubbla kostnader och omladdning
+provas också. SQL-/serverregressionen provar behörigheter, gamla länkar,
+delade fakturor, skyddade priser/avtal och samtidighet separat i isolerad databas.
+
+### Ursprunglig projektetapp
+
 Beslutat: projektets fakturor samlas under **Betalning och fakturering → Leverantörsfakturor**. Det gemensamma registret återanvänds; den gamla projektplaceringen under Projektarbete tas bort. Det globala registret behålls.
 
 - Släpp PDF eller JPG/PNG/WebP i projektvyn, eller välj filer. Flera filer registreras som separata fakturor i en kö. Originalet visas i en bred sidopanel. Gräns: 4 MiB per fil, 20 bilagor per faktura.

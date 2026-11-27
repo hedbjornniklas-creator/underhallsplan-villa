@@ -29,7 +29,16 @@ export async function getProjectSupplierInvoices(ctx: Context, caseId: string): 
   }
   const flow = await db.from('action_case_billing_flows').select('revision').eq('org_id', ctx.orgId).eq('action_case_id', caseId).maybeSingle()
   if (flow.error && !['42P01', 'PGRST205'].includes(flow.error.code || '')) checked(flow.error)
-  return { ...project, invoices: all.invoices.filter(i => i.allocations.some(a => a.caseId === caseId)), links, billingFlowActive: Boolean(flow.data?.revision) }
+  const billingClaims: NonNullable<ProjectInvoiceWorkspace['billingClaims']> = []
+  if (flow.data?.revision) for (let offset = 0; ; offset += 500) {
+    const claims = await db.from('action_case_billing_supplier_claims').select('invoice_id,allocation_id,protected')
+      .eq('org_id', ctx.orgId).eq('action_case_id', caseId).order('invoice_id').order('allocation_id').range(offset, offset + 499)
+    checked(claims.error)
+    const page = claims.data ?? []
+    billingClaims.push(...page.map(r => ({ invoiceId: r.invoice_id, allocationId: r.allocation_id, protected: r.protected === true })))
+    if (page.length < 500) break
+  }
+  return { ...project, invoices: all.invoices.filter(i => i.allocations.some(a => a.caseId === caseId)), links, billingFlowActive: Boolean(flow.data?.revision), billingClaims }
 }
 export async function createProjectSupplierBasis(ctx: Context, caseId: string, value: Record<string, unknown>) {
   await context(ctx, caseId)

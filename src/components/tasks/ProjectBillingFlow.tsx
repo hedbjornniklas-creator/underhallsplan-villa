@@ -11,7 +11,7 @@ import './project-billing-flow.css'
 
 type Command = Record<string, unknown>
 type Payload = { requestId: string; revision: number; contextHash: string; command: Command }
-type Pane = { kind: 'agreement' | 'cost' | 'fixed' | 'basis' | 'invoice' | 'opening' | 'budget' | 'match' | 'credit' | 'waive' | 'legacy' | 'cancel' | 'release' | 'reopen' | 'waiveCost'; id: string }
+type Pane = { kind: 'agreement' | 'cost' | 'fixed' | 'basis' | 'invoice' | 'opening' | 'budget' | 'match' | 'credit' | 'waive' | 'legacy' | 'cancel' | 'release' | 'reopen' | 'waiveCost'; id: string; supplierKey?: string }
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Stockholm' })
 const amountText = (ore: number) => String(ore / 100).replace('.', ',')
 function basisStatus(data: BillingWorkspace, basis: BillingBasis) {
@@ -52,8 +52,8 @@ function Drawer({ title, children, footer, onClose }: { title: string; children:
   </div></div>, document.body)
 }
 
-export default function ProjectBillingFlow({ caseId, active, onDirty, onActivated }: {
-  caseId: string; active: boolean; onDirty: (value: boolean) => void; onActivated?: (active: boolean) => void
+export default function ProjectBillingFlow({ caseId, active, onDirty, onActivated, supplierInvoiceId }: {
+  caseId: string; active: boolean; onDirty: (value: boolean) => void; onActivated?: (active: boolean) => void; supplierInvoiceId?: string
 }) {
   const [data, setData] = useState<BillingWorkspace | null>(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [unavailable, setUnavailable] = useState(false)
   const [tab, setTab] = useState('costs'), [selected, setSelected] = useState(''), [checked, setChecked] = useState<Record<string, string>>({}), [pane, setPane] = useState<Pane | null>(null)
@@ -157,10 +157,22 @@ export default function ProjectBillingFlow({ caseId, active, onDirty, onActivate
       }}>{[['costs', 'Kostnader'], ['queue', 'Att fakturera'], ['bases', 'Underlag och fakturor'], ['history', 'Historik']].map(([key, label]) => <button key={key} id={`${tabId}-${key}`} type="button" role="tab" tabIndex={tab === key ? 0 : -1} aria-controls={`${tabId}-panel`} aria-selected={tab === key} className="gizmo-register-tab" onClick={() => setTab(key)}>{label}</button>)}</div>
       <div id={`${tabId}-panel`} role="tabpanel" aria-labelledby={`${tabId}-${tab}`}>
       {tab === 'costs' && <>
+        {supplierInvoiceId && <section className="gbf-supplier-handoff" aria-label="Vald leverantörsfaktura">
+          <h4>Från leverantörsfakturan</h4>
+          <p>Koppla varje kostnadsdel till rätt överenskommelse. En befintlig koppling öppnas utan att en ny kostnad skapas.</p>
+          {data.suppliers.filter(s => s.invoiceId === supplierInvoiceId).map(s => {
+            const used = flow.costs.find(c => c.supplier?.key === s.key), matches = agreement && billingMatchesTarget(s, agreement)
+            return <div key={s.key} className="gbf-supplier-row"><div><strong>{s.title}</strong><span>{money(s.netOre)} exkl. moms · {s.reviewed ? 'Granskad faktura' : 'Fakturan behöver granskas'}</span><small>{s.legacy ? 'Finns i ett tidigare fakturaunderlag. Registrera inte kostnaden igen.' : used ? 'Redan kopplad till faktureringen' : !matches ? 'Välj eller hämta en passande överenskommelse nedan.' : agreement.mode === 'fixed' ? 'Intern kostnad inom fast pris, ingen extra kunddebitering.' : agreement.mode === 'budget' ? 'Kundens planeringsbudget följs upp efter granskad kunddebitering.' : 'Kundbelopp beräknas enligt överenskommelsens prisgrund.'}</small></div><button type="button" className="gizmo-button" disabled={!editable || s.legacy || !used && !matches} onClick={() => {
+              if (used) setSelected(used.agreementId)
+              setPane({ kind: 'cost', id: used?.id || crypto.randomUUID(), supplierKey: used ? undefined : s.key })
+            }}><Link2 size={16} />{used ? 'Öppna kopplad kostnad' : 'Koppla kostnadsdel'}</button></div>
+          })}
+          {!data.suppliers.some(s => s.invoiceId === supplierInvoiceId) && <p className="gbf-warning">Fakturan saknar tillgängliga kostnadsdelar. Kontrollera fördelningen under Leverantörsfakturor.</p>}
+        </section>}
         <div className="gbf-toolbar"><label className="gbf-choice">ÄTA eller avtalsdel<select value={selected} onChange={e => setSelected(e.target.value)}><option value="">Välj överenskommelse</option>{flow.agreements.map(a => <option key={a.id} value={a.id}>{a.title}{a.version > 1 ? ` / version ${a.version}` : ''}</option>)}</select></label><button type="button" className="gizmo-button" disabled={!editable || flow.economyClosed} onClick={() => open('agreement')}><Plus size={16} />Hämta överenskommelse</button></div>
         {agreement && <>
           <div className="gbf-status"><strong>{agreement.mode === 'fixed' ? 'Fast pris' : agreement.mode === 'budget' ? 'Löpande med planeringsbudget' : 'Löpande räkning'}</strong><span>{agreement.reference}</span>{agreement.mode === 'fixed' && <span>{money(agreement.fixedGrossOre!)} inkl. moms</span>}</div>
-          {budget && <div className={budget.needsReview && !budget.covered ? 'gbf-warning' : 'gbf-status'}><span>Planeringsbudget {money(budget.budgetOre)} exkl. moms</span><span>{budget.remainingKnown ? 'Prognos' : 'Registrerat hittills'} {money(budget.forecastOre)} exkl. moms</span>{!budget.remainingKnown && <span>Återstående arbete ej bedömt</span>}{budget.needsReview && !budget.covered && <strong>Avstämning krävs</strong>}<button type="button" className="gizmo-text-button" disabled={!editable} onClick={() => open('budget')}>Dokumentera avstämning</button></div>}
+          {budget && <div className={budget.needsReview && !budget.covered ? 'gbf-warning' : 'gbf-status'} aria-label="Kundens budgetuppföljning"><span>Planeringsbudget {money(budget.budgetOre)} exkl. moms</span><span>{budget.remainingKnown ? 'Bedömd kunddebitering' : 'Granskad kunddebitering'} {money(budget.forecastOre)} exkl. moms</span>{!budget.remainingKnown && <span>Återstående arbete ej bedömt</span>}<small>Avser kunddebitering, inte intern kostnadsbudget. Okopplade och ogranskade kostnader ingår inte i beloppet.</small>{budget.needsReview && !budget.covered && <strong>Avstämning krävs</strong>}<button type="button" className="gizmo-text-button" disabled={!editable} onClick={() => open('budget')}>Dokumentera avstämning</button></div>}
           <div className="gbf-toolbar"><h4>Kostnader</h4><div><button type="button" className="gizmo-button" disabled={!editable} onClick={() => open('cost')}><Plus size={16} />Lägg till kostnad</button>{agreement.mode === 'fixed' && <button type="button" className="gizmo-text-button" disabled={!editable || flow.economyClosed} onClick={() => open('fixed')}>Gör avtalad del fakturerbar</button>}</div></div>
           {resume && !pane && <button type="button" className="gizmo-text-button" disabled={!editable} onClick={() => open('cost', resume)}>Återuppta kostnadsutkast</button>}
           <div className="gbf-table"><table><thead><tr><th>Kostnad / källa</th><th>Datum</th><th>Internt exkl. moms</th><th>Kund exkl. moms</th><th>Granskning</th><th /></tr></thead><tbody>{costs.map(c => {
@@ -189,7 +201,7 @@ export default function ProjectBillingFlow({ caseId, active, onDirty, onActivate
       {tab === 'history' && <div className="gbf-table"><table><thead><tr><th>Händelse</th><th>Utförd av</th><th>Tid</th></tr></thead><tbody>{data.history.map(e => <tr key={e.id}><td>{note(e.operation)}</td><td>{e.actor}</td><td>{new Date(e.at).toLocaleString('sv-SE', { timeZone: 'Europe/Stockholm' })}</td></tr>)}</tbody></table></div>}
       </div>
       <div className="gbf-close"><button type="button" className="gizmo-text-button" disabled={!editable || flow.economyClosed} onClick={() => void tryCommand({ operation: 'close_economy', confirmed: true })}><Check size={16} />Bekräfta faktureringsavstämning klar</button></div>
-      {pane?.kind === 'cost' && <CostDrawer key={pane.id} caseId={caseId} id={pane.id} data={data} agreementId={selected} perform={perform} recovery={recovery} readRequired={readRequired} onReload={load} onDirty={setCostDirty} onClose={() => { setPane(null); setCostDirty(false); void load().catch(e => setError(e.message)) }} />}
+      {pane?.kind === 'cost' && <CostDrawer key={pane.id} caseId={caseId} id={pane.id} data={data} agreementId={selected} supplierKey={pane.supplierKey} perform={perform} recovery={recovery} readRequired={readRequired} onReload={load} onDirty={setCostDirty} onClose={() => { setPane(null); setCostDirty(false); void load().catch(e => setError(e.message)) }} />}
       {pane && pane.kind !== 'cost' && <BillingCommandDrawer key={`${pane.kind}:${pane.id}`} pane={pane} data={data} agreement={agreement} selection={checked} busy={busy || !!pending || readRequired} error={error} recovery={recovery} onSubmit={tryCommand} onClose={() => { if (!running.current) setPane(null) }} />}
     </>}
     {(data?.legacyCount || unavailable) && <details className="gbf-legacy" onToggle={e => setLegacyOpen(e.currentTarget.open)}><summary>{unavailable ? 'Befintliga fakturaunderlag' : 'Tidigare manuella fakturaunderlag'}</summary>{legacyOpen && <ProjectInvoiceBasis caseId={caseId} active={active} onDirty={setLegacyDirty} readOnly={!!data?.revision} />}</details>}
@@ -197,7 +209,7 @@ export default function ProjectBillingFlow({ caseId, active, onDirty, onActivate
 }
 
 type CostForm = { id: string; agreementId: string; description: string; date: string; kind: 'purchase' | 'hours'; internal: string; hours: string; evidence: string; missingEvidenceReason: string; supplierKey: string; contextHash: string }
-function CostDrawer({ caseId, id, data, agreementId, perform, readRequired, recovery, onReload, onDirty, onClose }: { caseId: string; id: string; data: BillingWorkspace; agreementId: string; perform: (command: Command, attempt?: Payload) => Promise<BillingWorkspace>; readRequired: boolean; recovery: ReactNode; onReload: () => Promise<BillingWorkspace>; onDirty: (v: boolean) => void; onClose: () => void }) {
+function CostDrawer({ caseId, id, data, agreementId, supplierKey, perform, readRequired, recovery, onReload, onDirty, onClose }: { caseId: string; id: string; data: BillingWorkspace; agreementId: string; supplierKey?: string; perform: (command: Command, attempt?: Payload) => Promise<BillingWorkspace>; readRequired: boolean; recovery: ReactNode; onReload: () => Promise<BillingWorkspace>; onDirty: (v: boolean) => void; onClose: () => void }) {
   const saved = data.flow.costs.find(c => c.id === id), a = data.flow.agreements.find(a => a.id === (saved?.agreementId || agreementId))
   const key = `billing-cost:${data.userId}:${caseId}:${id}`, [form, setForm] = useState<CostForm | null>(null), [finishing, setFinishing] = useState(false), [error, setError] = useState(''), [closeQuestion, setCloseQuestion] = useState(false), [reason, setReason] = useState('')
   const [waiveConfirm, setWaiveConfirm] = useState(false)
@@ -212,8 +224,12 @@ function CostDrawer({ caseId, id, data, agreementId, perform, readRequired, reco
     staleMessage: 'Kostnadsutkastet är äldre än den sparade versionen. Hämta aktuella uppgifter.' })
   const queue = useRef(autosave); queue.current = autosave
   useEffect(() => {
+    const source = !saved && supplierKey ? data.suppliers.find(s => s.key === supplierKey) : undefined
     const seed: CostForm = { id, agreementId: saved?.agreementId || agreementId, description: saved?.description || '', date: saved?.date || today(), kind: saved?.kind || 'purchase', internal: saved?.internalNetOre == null ? '' : amountText(saved.internalNetOre), hours: saved?.hoursUnits == null ? '' : String(saved.hoursUnits / 10000), evidence: saved?.evidence || '', missingEvidenceReason: saved?.missingEvidenceReason || '', supplierKey: saved?.supplier?.key || '', contextHash: data.contextHash }
-    const value = queue.current.seed(key, seed, data.revision); setForm(value)
+    const value = queue.current.seed(key, seed, data.revision)
+    const next = source && value && !value.description && !value.supplierKey ? { ...value, description: source.title, date: source.date, internal: amountText(source.netOre), supplierKey: source.key } : value
+    setForm(next)
+    if (source && next) queue.current.change(next)
     try { localStorage.setItem(`billing-cost:${data.userId}:${caseId}:selected`, id) } catch { /* Local fallback is optional. */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])

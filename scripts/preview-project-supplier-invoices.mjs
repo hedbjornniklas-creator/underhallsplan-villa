@@ -14,7 +14,7 @@ await new Promise((ok, fail) => webpack({ mode: 'development', devtool: false, e
 const source = (await readFile('src/app/globals.css', 'utf8')).replace('@import "tailwindcss";', '@import "tailwindcss" source(none);\n@source "../components/tasks/ProjectSupplierInvoices.tsx";\n@source "../components/tasks/ProjectInvoiceBasis.tsx";\n@source "../../test/fixtures/project-supplier-invoices-view.tsx";')
 const globalCss = await postcss([tailwind()]).process(source, { from: resolve('src/app/globals.css') })
 let css = globalCss.css
-for (const file of ['uppdrag-theme.css', 'project-supplier-invoices.css', 'supplier-invoice-pdf-preview.css', 'project-completion.css']) css += `\n${await readFile(`src/components/tasks/${file}`, 'utf8')}`
+for (const file of ['uppdrag-theme.css', 'project-supplier-invoices.css', 'supplier-invoice-pdf-preview.css', 'project-completion.css', 'project-billing-flow.css']) css += `\n${await readFile(`src/components/tasks/${file}`, 'utf8')}`
 css += "\nbody{margin:0;background:#fff;color:#252a2d;font-family:'Uppdrag Manrope',Arial,sans-serif}"
 const original = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="white"/><g fill="#252A2D" font-family="Arial"><text x="40" y="70" font-size="28">FAKTURA · FIKTIVT TEST</text><text x="40" y="120" font-size="18">Testleverantör AB</text><text x="40" y="160" font-size="18">Fakturanummer F-123</text><text x="40" y="260" font-size="18">Material enligt beställning</text><text x="40" y="340" font-size="18">Exkl. moms: 10 000,00 kr</text><text x="40" y="380" font-size="18">Moms: 2 500,00 kr</text><text x="40" y="430" font-size="22">Totalt: 12 500,00 kr</text></g></svg>')).png().toBuffer()
 const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.Helvetica), scanned = await pdf.embedJpg(await sharp(original).jpeg().toBuffer())
@@ -35,7 +35,7 @@ const server = createServer(async (req, res) => {
     try {
       let raw = ''; for await (const chunk of req) { raw += chunk; if (raw.length > 150000) throw Error('Too large') }
       const record = JSON.parse(raw), { normalizeInvoiceBasis } = await import('../src/lib/action-cases/projectCompletion.ts'), { renderInvoiceBasisPdf } = await import('../src/lib/action-cases/invoiceBasisPdf.ts')
-      const bytes = await renderInvoiceBasisPdf({ ...record, body: normalizeInvoiceBasis(record.body) }, 'Fiktivt testprojekt')
+      const bytes = await renderInvoiceBasisPdf({ ...record, body: normalizeInvoiceBasis(record.body) }, record.projectTitle || 'Fiktivt testprojekt', record.frozen === true)
       res.setHeader('Content-Type', 'application/pdf'); res.end(bytes)
     } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'Det fiktiva PDF-underlaget är inte komplett.' })) }
     return
@@ -68,5 +68,9 @@ if (process.argv.includes('--test')) {
 }
 if (process.argv.includes('--test-pdf')) {
   try { const { testSupplierPdfPreview } = await import('../test/helpers/supplier-pdf-preview-browser.mjs'); await testSupplierPdfPreview(base, output, originalPdf) }
+  finally { await new Promise(ok => server.close(ok)) }
+}
+if (process.argv.includes('--test-chain')) {
+  try { const { testSupplierInvoiceChain } = await import('../test/helpers/supplier-invoice-chain-browser.mjs'); await testSupplierInvoiceChain(base, output, originalPdf) }
   finally { await new Promise(ok => server.close(ok)) }
 }

@@ -26,7 +26,7 @@ export async function testSupplierPdfPreview(base, output, originalPdf) {
   const ready = async (number = 1) => {
     await page.waitForFunction(number => {
       const viewer = document.querySelector('.supplier-pdf-preview'), canvas = viewer?.querySelector('canvas')
-      return viewer?.getAttribute('aria-busy') === 'false' && canvas?.width > 100 && viewer?.querySelector(`p[aria-label="Text på PDF-sida ${number}"]`)
+      return viewer?.getAttribute('aria-busy') === 'false' && canvas?.getAttribute('aria-busy') === 'false' && canvas.width > 100 && viewer?.querySelector(`p[aria-label="Text på PDF-sida ${number}"]`)
     }, {}, number)
     const result = await page.$eval('.supplier-pdf-paper canvas', canvas => {
       const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data

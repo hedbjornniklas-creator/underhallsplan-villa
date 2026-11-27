@@ -11,7 +11,7 @@ function load(file, dependencies) {
 }
 function harness(options = {}) {
   const reads = [], calls = [], rows = options.sources ?? []
-  const db = { from(table) { const r = { table, filters: [], offset: 0, end: 499 }; reads.push(r); const q = { select() { return q }, eq(...args) { r.filters.push(args); return q }, order() { return q }, range(a, b) { r.offset = a; r.end = b; return q }, maybeSingle: async () => ({ data: options.billingActive ? { revision: 1 } : null }), then(resolve) { resolve({ data: rows.slice(r.offset, r.end + 1) }) } }; return q }, rpc: async (name, args) => { calls.push({ name, args }); if (options.error) return { error: options.error }; return { data: name === 'project_supplier_invoice_context' ? { userId: ctx.userId, status: 'in_progress', targets: [] } : { id: args.p_request.id, revision: 1 } } } }
+  const db = { from(table) { const r = { table, filters: [], offset: 0, end: 499 }; reads.push(r); const q = { select() { return q }, eq(...args) { r.filters.push(args); return q }, order() { return q }, range(a, b) { r.offset = a; r.end = b; return q }, maybeSingle: async () => ({ data: options.billingActive ? { revision: 1 } : null }), then(resolve) { resolve({ data: (table === 'action_case_billing_supplier_claims' ? options.claims ?? [] : rows).slice(r.offset, r.end + 1) }) } }; return q }, rpc: async (name, args) => { calls.push({ name, args }); if (options.error) return { error: options.error }; return { data: name === 'project_supplier_invoice_context' ? { userId: ctx.userId, status: 'in_progress', targets: [] } : { id: args.p_request.id, revision: 1 } } } }
   const server = load('src/lib/supplier-invoices/projectServer.ts', { 'server-only': {}, '@/lib/supabase/admin': { createSupabaseAdminClient: () => db }, '@/lib/action-cases/projectCompletion': domain, './server': { getSupplierInvoiceWorkspace: async () => ({ invoices: [{ id: id(4), allocations: [{ caseId: project }] }, { id: id(5), allocations: [{ caseId: id(6) }] }] }) } })
   return { server, calls, reads }
 }
@@ -24,6 +24,16 @@ test('project list authenticates before reading, scopes and paginates basis sour
   for (const read of h.reads) { assert.deepEqual(read.filters, [['org_id', ctx.orgId], ['action_case_id', project]]); assert.ok(['supplier_invoice_basis_sources', 'action_case_billing_flows'].includes(read.table)) }
   assert.deepEqual(h.calls[0].args, { p_org: ctx.orgId, p_case: project, p_actor: ctx.userId })
   assert.equal((await harness({ billingActive: true }).server.getProjectSupplierInvoices(ctx, project)).billingFlowActive, true)
+})
+
+test('billing protection is paginated and scoped without exposing snapshots or changing invoices', async () => {
+  const h = harness({ billingActive: true, claims: Array.from({ length: 501 }, (_, n) => ({ invoice_id: id(4), allocation_id: id(n + 100), protected: n % 2 === 0, snapshot: { private: 'not exposed' } })) })
+  const result = await h.server.getProjectSupplierInvoices(ctx, project)
+  assert.equal(result.billingClaims.length, 501)
+  assert.deepEqual(result.billingClaims[0], { invoiceId: id(4), allocationId: id(100), protected: true })
+  assert.equal(JSON.stringify(result.billingClaims).includes('snapshot'), false)
+  assert.equal(h.calls.length, 1, 'read-only context RPC only')
+  for (const read of h.reads.filter(r => r.table === 'action_case_billing_supplier_claims')) assert.deepEqual(read.filters, [['org_id', ctx.orgId], ['action_case_id', project]])
 })
 test('basis requests whitelist data and use server identity, not client organization or internal price', async () => {
   const h = harness(), r = request(); r.sources[0].customerNetOre = 1; r.body.contract = 'ignored'

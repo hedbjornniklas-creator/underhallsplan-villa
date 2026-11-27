@@ -1,11 +1,10 @@
 'use client'
 import { useProjectSaveProtection } from './ProjectSaveProtection'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ExternalLink, FilePlus2, FileText, Plus, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react'
+import { ArrowRight, Check, ExternalLink, FileText, Plus, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import type { ProjectInvoiceWorkspace, SupplierInvoice, SupplierInvoiceAllocation, SupplierInvoiceDraft } from '@/lib/supplier-invoices/contracts'
 import { formatInvoiceAmount as money, normalizeSupplierInvoiceDraft, parseInvoiceAmount, invoiceSignedAmount } from '@/lib/supplier-invoices/domain'
-import { emptyInvoiceBasis } from '@/lib/action-cases/projectCompletion'
 import { useQuestionAutosave } from './useQuestionAutosave'
 import SupplierInvoicePdfPreview from './SupplierInvoicePdfPreview'
 import './project-supplier-invoices.css'
@@ -31,7 +30,12 @@ function parsed(form: Form): SupplierInvoiceDraft {
   if (result.allocations.reduce((sum, a) => sum + a.amountOre, 0) !== result.netAmountOre) throw new Error('INVOICE_ALLOCATION_INVALID')
   return result
 }
-async function json(response: Response) { const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Åtgärden kunde inte bekräftas. Försök igen.'); return result }
+async function json(response: Response) {
+  let result
+  try { result = await response.json() } catch { throw new Error('Svaret kunde inte läsas. Dina uppgifter finns kvar. Försök igen.') }
+  if (!response.ok) throw new Error(result.error || 'Åtgärden kunde inte bekräftas. Försök igen.')
+  return result
+}
 const fileValid = (file: File) => file.size > 0 && file.size <= 4 * 1024 * 1024 && /\.(pdf|jpe?g|png|webp)$/i.test(file.name)
 
 export default function ProjectSupplierInvoices({ caseId, active, onDirty, onBasis, basisBlocked = false, items = [] }: { caseId: string; active: boolean; onDirty: (dirty: boolean) => void; onBasis: (id: string) => void; basisBlocked?: boolean; items?: { id: string; estimatedCost: number | null }[] }) {
@@ -40,6 +44,7 @@ export default function ProjectSupplierInvoices({ caseId, active, onDirty, onBas
   const [recovery, setRecovery] = useState<string | null>(null)
   const [editor, setEditor] = useState<{ id: string; invoice: SupplierInvoice | null; file: File | null } | null>(null), [queued, setQueued] = useState<File[]>([])
   const token = useRef(0), input = useRef<HTMLInputElement>(null), dirty = useRef(false)
+  useEffect(() => { if (!editor) { dirty.current = false; onDirty(false) } }, [editor, onDirty])
   const load = useCallback(async () => {
     const current = ++token.current; setLoading(true); setError('')
     try {
@@ -71,7 +76,7 @@ export default function ProjectSupplierInvoices({ caseId, active, onDirty, onBas
     {error && <p role="alert" className="psi-error">{error}<button type="button" className="gizmo-text-button" onClick={() => void load()}>Försök igen</button></p>}
     {loading && !data && <p role="status">Hämtar fakturor…</p>}
     {data && <>
-      <dl className="psi-summary"><div><dt>Leverantörskostnad exkl. moms</dt><dd>{money(total)}</dd></div><div><dt>Gemensamt / ej momentfördelat</dt><dd>{money(common)}</dd></div><div><dt>Kundbelopp i fakturaunderlag exkl. moms</dt><dd>{money(data.links.reduce((sum, l) => sum + l.customerNetOre, 0))}</dd></div></dl>
+      <dl className="psi-summary"><div><dt>Leverantörskostnad exkl. moms</dt><dd>{money(total)}</dd></div><div><dt>Gemensamt / ej momentfördelat</dt><dd>{money(common)}</dd></div><div><dt>Original saknas</dt><dd>{live.filter(i => !i.attachments.length).length} fakturor</dd></div></dl>
       <div className="psi-filters"><label><Search size={17} /><input aria-label="Sök leverantör eller fakturanummer" placeholder="Leverantör eller fakturanummer" value={search} onChange={e => { setSearch(e.target.value); setPage(0) }} /></label><select aria-label="Filtrera fakturor" className={field} value={filter} onChange={e => { setFilter(e.target.value); setPage(0) }}><option value="all">Alla fakturor</option><option value="unassigned">Ej momentfördelade</option><option value="missing">Original saknas</option><option value="credit">Kreditfakturor</option></select></div>
       <div className="psi-table-wrap"><table><caption className="sr-only">Projektets leverantörsfakturor, belopp exklusive moms</caption><thead><tr><th>Leverantör / fakturanummer</th><th>Datum</th><th>Projektkostnad exkl. moms</th><th>Fördelning</th><th>Underlag</th></tr></thead><tbody>{list.slice(page * 25, page * 25 + 25).map(i => <tr key={i.id} onClick={() => setEditor({ id: i.id, invoice: i, file: null })}><td><button type="button" className="psi-open" onClick={e => { e.stopPropagation(); setEditor({ id: i.id, invoice: i, file: null }) }}>{i.supplierName}<small>{i.documentKind === 'credit' ? 'Kredit · ' : ''}{i.invoiceNumber}{i.approvalStatus === 'void' ? ' · Makulerad' : i.approvalStatus === 'disputed' ? ' · Bestridd' : ''}</small></button></td><td>{i.invoiceDate}</td><td className="psi-money">{money(cost(i))}</td><td>{projectRows(i).map(a => data.targets.find(t => t.id === (a.changeId || a.itemId))?.title ?? (a.changeId || a.itemId ? 'Tidigare moment / ÄTA' : 'Gemensamt')).filter((v, n, a) => a.indexOf(v) === n).join(', ')}</td><td>{i.attachments.length ? <FileText size={17} aria-label="Original finns" /> : 'Original saknas'}</td></tr>)}</tbody></table></div>
       {!list.length && <p className="psi-empty">{search || filter !== 'all' ? 'Inga fakturor matchar urvalet.' : 'Inga leverantörsfakturor registrerade.'}</p>}
@@ -89,9 +94,8 @@ export default function ProjectSupplierInvoices({ caseId, active, onDirty, onBas
 function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, more, basisBlocked, onDirty, onSaved, onClose, onNext, onBasis }: { id: string; invoice: SupplierInvoice | null; file: File | null; caseId: string; workspace: ProjectInvoiceWorkspace; more: number; basisBlocked: boolean; onDirty: (value: boolean) => void; onSaved: (invoice: SupplierInvoice, fresh?: ProjectInvoiceWorkspace) => void; onClose: () => void; onNext: () => void; onBasis: (id: string) => void }) {
   const [form, setForm] = useState<Form>(() => formOf(invoice, caseId)), [files, setFiles] = useState(invoice?.attachments ?? [])
   const [pendingFile, setPendingFile] = useState<File | null>(file), [uploading, setUploading] = useState(false), [uploadError, setUploadError] = useState(''), [error, setError] = useState('')
-  const [preview, setPreview] = useState(''), [basis, setBasis] = useState(false), [basisBusy, setBasisBusy] = useState(false)
-  const [review, setReview] = useState<Record<string, { selected: boolean; part: string; markup: string; agreement: string; description: string; vat: number }>>({}), [confirmed, setConfirmed] = useState(false)
-  const panel = useRef<HTMLDivElement>(null), fileInput = useRef<HTMLInputElement>(null), uploadingRef = useRef(false), pendingRequest = useRef<{ signature: string; body: unknown } | null>(null)
+  const [preview, setPreview] = useState(''), [basisBusy, setBasisBusy] = useState(false)
+  const panel = useRef<HTMLDivElement>(null), fileInput = useRef<HTMLInputElement>(null), uploadingRef = useRef(false)
   const valid = (value: Form) => { try { parsed(value); return true } catch { return false } }
   const autosave = useQuestionAutosave<Form>({ valid, staleMessage: 'Fakturan har ändrats i en annan flik. Hämta sparad faktura innan du fortsätter.', save: async attempt => {
     const result = await json(await fetch('/api/supplier-invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation: 'save', id, expectedRevision: attempt.revision, invoice: parsed(attempt.value) }), signal: AbortSignal.timeout(45_000) }))
@@ -123,7 +127,8 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
     flush: async () => !uploadingRef.current && !basisBusy && !pendingFile && more === 0 && await aRef.current.flush() })
   useEffect(() => { if (!pendingFile) { setPreview(''); return }; const url = URL.createObjectURL(pendingFile); setPreview(url); return () => URL.revokeObjectURL(url) }, [pendingFile])
   const readOnly = workspace.status === 'completed' || workspace.status === 'cancelled' || invoice?.source === 'fortnox'
-  const linked = workspace.links.filter(l => l.invoiceId === id), protectedIds = new Set(linked.map(l => l.allocationId)), financialLocked = linked.length > 0
+  const linked = workspace.links.filter(l => l.invoiceId === id), claims = workspace.billingClaims?.filter(c => c.invoiceId === id && c.protected) ?? []
+  const protectedIds = new Set([...linked, ...claims].map(l => l.allocationId)), financialLocked = linked.length > 0 || claims.length > 0
   function edit(next: Form) {
     if (readOnly) return
     next = { ...next, identityVersion: 1 }
@@ -131,13 +136,18 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
       const foreign = next.rows.filter(r => r.caseId !== caseId).reduce((s, r) => s + (parseInvoiceAmount(r.amount) ?? 0), 0), net = parseInvoiceAmount(next.net)
       next = { ...next, rows: next.rows.map(r => r.caseId === caseId ? { ...r, amount: net === null ? '' : amountText(Math.max(0, net - foreign)) } : r) }
     }
-    setForm(next); autosave.change(next); setBasis(false); pendingRequest.current = null
+    setForm(next); autosave.change(next)
   }
   async function leave(next = false) {
     if (uploadingRef.current || basisBusy) return
     const saved = await autosave.flush()
+    if (saved) clearPendingDraft()
     if ((!saved && !autosave.isLocal() || pendingFile || more && !next) && !window.confirm(pendingFile ? 'Filen är inte uppladdad. Stäng ändå? Filen måste väljas på nytt.' : more && !next ? `${more} filer återstår att registrera. Stäng kön?` : 'Fakturans textändringar är inte sparade och kunde inte lagras lokalt. Stäng ändå?')) return
     if (next) onNext(); else onClose()
+  }
+  function clearPendingDraft() {
+    const key = `supplier-invoice:${workspace.userId}:${caseId}:pending`
+    try { if (localStorage.getItem(key) === id) localStorage.removeItem(key) } catch { /* Server confirmation remains authoritative. */ }
   }
   close.current = () => { void leave() }
   async function reloadSaved() {
@@ -148,7 +158,7 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
       const saved = fresh.invoices.find(i => i.id === id) ?? null
       const value = autosave.seed(`supplier-invoice:${workspace.userId}:${caseId}:${id}`, formOf(saved, caseId), saved?.revision ?? 0, true)
       if (value) setForm(value)
-      setFiles(saved?.attachments ?? []); setBasis(false); pendingRequest.current = null
+      setFiles(saved?.attachments ?? [])
       if (saved) onSaved(saved, fresh)
     } catch (e) { setError((e as Error).message) }
   }
@@ -172,81 +182,75 @@ function ProjectSupplierInvoicePanel({ id, invoice, file, caseId, workspace, mor
   const remaining = (net ?? 0) - form.rows.reduce((sum, r) => sum + (parseInvoiceAmount(r.amount) ?? 0), 0)
   const rows = form.rows.filter(r => r.caseId === caseId)
   const target = (row: Row) => workspace.targets.find(t => t.id === (row.changeId || row.itemId))
+  const formValid = valid(form)
+  const saved = autosave.revision() > 0 && !autosave.dirty && !autosave.busy && !autosave.error && !pendingFile && !uploading && !uploadError
+  const assigned = rows.every(r => r.itemId || r.changeId)
+  const fixedOnly = rows.length > 0 && rows.every(r => target(r)?.mode === 'fixed')
+  const blockers = missing.length ? `Fyll i ${missing.join(', ')}.` : !formValid ? 'Kontrollera fakturauppgifterna och att hela nettobeloppet är fördelat.' : uploadError || autosave.error || (uploading ? 'Originalet laddas upp.' : autosave.busy || autosave.dirty ? 'Vänta tills fakturan är sparad.' : pendingFile ? 'Originalet väntar på uppladdning.' : !files.length ? 'Lägg till fakturans original före kunddebitering.' : basisBlocked ? 'Spara pågående ändringar i faktureringen först.' : '')
+  const steps = [
+    { title: 'Faktura', complete: files.length > 0 && !pendingFile, detail: uploading ? 'Laddar upp' : pendingFile ? 'Vald på denna enhet' : files.length ? 'Original uppladdat' : 'Original saknas' },
+    { title: 'Uppgifter', complete: missing.length === 0, detail: missing.length ? `${missing.length} uppgifter saknas` : 'Ifyllda' },
+    { title: 'Fördelning', complete: formValid, detail: !formValid ? 'Kontrollera beloppen' : assigned ? 'Moment / ÄTA valt' : 'Gemensam kostnad' },
+    { title: 'Sparat', complete: saved, detail: saved ? 'Finns i projektet' : autosave.error || uploadError ? 'Behöver åtgärdas' : 'Inte klart' },
+  ]
   async function reviewBasis() {
     if (basisBlocked) { setError('Spara eller återställ pågående ändringar i Fakturaunderlag först.'); return }
-    if (workspace.billingFlowActive) { if (await autosave.flush()) onBasis(''); return }
-    if (form.identityVersion === 0) { const upgraded = { ...form, identityVersion: 1 }; setForm(upgraded); autosave.change(upgraded) }
-    if (!(await autosave.flush()) || !files.length) return
-    const values: typeof review = {}
-    for (const r of rows) { const t = target(r); values[r.id] = { selected: false, part: t?.parts ? '' : 'combined', markup: t?.markupPercent == null ? '' : String(t.markupPercent), agreement: '', description: `${t?.kind === 'change' ? 'ÄTA · ' : ''}${t?.title ?? ''}${r.description ? ` · ${r.description}` : ''}`, vat: 25 } }
-    setReview(values); setConfirmed(false); setBasis(true); setError('')
-  }
-  const chosen = rows.filter(r => review[r.id]?.selected)
-  const reviewValid = chosen.length > 0 && chosen.every(r => { const v = review[r.id], percent = parseInvoiceAmount(v.markup), t = target(r), part = t?.parts?.find(p => p.key === v.part); return !!v.part && part?.mode !== 'fixed' && percent !== null && percent <= 100000 && !!v.description.trim() && !!v.agreement.trim() })
-  const customerNet = chosen.reduce((sum, r) => sum + Math.round((parseInvoiceAmount(r.amount) ?? 0) * (1 + (parseInvoiceAmount(review[r.id].markup) ?? 0) / 10000)) * (form.documentKind === 'credit' ? -1 : 1), 0)
-  async function createBasis() {
-    if (basisBusy || !confirmed || !reviewValid || !(await autosave.flush())) return
     setBasisBusy(true); setError('')
     try {
-      const sources = chosen.map(r => { const v = review[r.id]; return { invoiceId: id, allocationId: r.id, revision: autosave.revision(), part: v.part, markupPercent: parseInvoiceAmount(v.markup)! / 100, vatRate: v.vat, description: v.description, agreement: v.agreement } })
-      const signature = JSON.stringify(sources)
-      if (pendingRequest.current && pendingRequest.current.signature !== signature) throw new Error('Ett tidigare försök är inte bekräftat. Försök igen med samma urval innan du ändrar det.')
-      if (!pendingRequest.current) {
-        const admin = await json(await fetch(`/api/action-cases/${caseId}/administration`, { cache: 'no-store' }))
-        pendingRequest.current = { signature, body: { id: crypto.randomUUID(), requestId: crypto.randomUUID(), confirmed: true, body: { ...emptyInvoiceBasis(admin.defaults), title: `Fakturaunderlag · ${form.invoiceNumber}`.slice(0, 200) }, sources: sources.map(s => ({ ...s, lineId: crypto.randomUUID() })) } }
+      if (form.identityVersion === 0) {
+        const upgraded = { ...form, identityVersion: 1 }
+        setForm(upgraded); autosave.change(upgraded)
       }
-      const result = await json(await fetch(`/api/action-cases/${caseId}/supplier-invoices`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pendingRequest.current.body), signal: AbortSignal.timeout(45_000) }))
-      try { localStorage.setItem(`invoice-basis:${workspace.userId}:${caseId}:selected`, result.id) } catch { /* The created document remains available in the basis list. */ }
-      onBasis(result.id)
+      if (await autosave.flush()) { clearPendingDraft(); onBasis(id) }
     } catch (e) { setError((e as Error).message) } finally { setBasisBusy(false) }
   }
   const original = preview || (files[0] ? `/api/supplier-invoices/${id}/attachments/${files[0].id}?inline=1` : '')
   const originalPdf = pendingFile ? /\.pdf$/i.test(pendingFile.name) : files[0]?.contentType === 'application/pdf'
   return createPortal(<div className="psi-overlay uppdrag-scope" onMouseDown={e => { if (e.target === e.currentTarget) void leave() }}><div ref={panel} className="psi-panel gizmo-workspace" role="dialog" aria-modal="true" aria-labelledby={`psi-title-${id}`}>
     <header className="psi-panel-header"><div><small>Leverantörsfaktura{more ? ` · ${more} filer i kö` : ''}</small><h2 id={`psi-title-${id}`}>{form.supplierName || pendingFile?.name || 'Ny faktura'}</h2></div><button type="button" className="gizmo-text-button" aria-label="Stäng faktura" title="Stäng" onClick={() => void leave()} disabled={uploading || basisBusy}><X size={22} /></button></header>
+    <ol className="psi-progress" aria-label="Fakturans arbetsgång">{steps.map((step, index) => <li key={step.title} data-complete={step.complete}><span className="psi-step-number" aria-hidden="true">{step.complete ? <Check size={15} /> : index + 1}</span><div><strong>{step.title}</strong><small>{step.detail}</small></div></li>)}</ol>
     <div className="psi-panel-body"><aside className="psi-original">
-      <header><strong>Original</strong>{original && <a href={original} target="_blank" rel="noreferrer" className="gizmo-text-button" title="Öppna original" aria-label="Öppna original"><ExternalLink size={17} /></a>}</header>
+      <header><strong>1. Fakturans original</strong>{original && <a href={original} target="_blank" rel="noreferrer" className="gizmo-text-button" title="Öppna original" aria-label="Öppna original"><ExternalLink size={17} /></a>}</header>
       {pendingFile || original ? originalPdf ? <SupplierInvoicePdfPreview source={pendingFile || original} /> : <img src={original} alt="Fakturans original" /> : <div className="psi-no-original"><FileText size={32} /><p>Original saknas</p></div>}
       <input type="file" ref={fileInput} accept=".pdf,.jpg,.jpeg,.png,.webp" hidden onChange={e => { const f = e.target.files?.[0]; if (f && fileValid(f)) { setPendingFile(f); setUploadError('') } else if (f) setUploadError('Välj PDF eller bild, högst 4 MB.'); e.target.value = '' }} />
       <button type="button" className="gizmo-text-button" disabled={readOnly || uploading || files.length >= 20} onClick={() => fileInput.current?.click()}><Upload size={17} />{files.length ? 'Lägg till bilaga' : 'Välj original'}</button>
-      {pendingFile && <p role="status">{pendingFile.name} · {uploading ? 'Laddar upp…' : 'Vald fil, inte uppladdad'}{!uploading && missing.length > 0 && <span className="psi-pending-details">Fakturauppgifter saknas: {missing.join(', ')}.</span>}</p>}
-      {uploadError && <p role="alert" className="psi-error">{uploadError}<button type="button" className="gizmo-text-button" onClick={() => void upload()}>Försök ladda upp igen</button></p>}
+      {pendingFile && <p role="status">{pendingFile.name} · {uploading ? 'Laddar upp…' : 'Vald fil, inte uppladdad'}{!uploading && <span className="psi-pending-details">{missing.length > 0 ? `Fyll i ${missing.join(', ')}. ` : ''}Originalet laddas upp när fakturauppgifterna och fördelningen är sparade.</span>}</p>}
+      {!pendingFile && files.length > 0 && <p className="psi-linked"><Check size={15} /> Original uppladdat</p>}
+      {uploadError && <p role="alert" className="psi-error">{uploadError}<button type="button" className="gizmo-text-button" disabled={uploading || autosave.busy} onClick={() => void upload()}>Försök ladda upp igen</button></p>}
       {files.map(f => <a key={f.id} href={`/api/supplier-invoices/${id}/attachments/${f.id}`} target="_blank" rel="noreferrer">{f.fileName}</a>)}
     </aside>
-    <div className="psi-edit"><fieldset disabled={readOnly || basisBusy}><legend>Fakturauppgifter</legend><div className="psi-fields"><label>Leverantör<input className={field} maxLength={200} disabled={financialLocked} value={form.supplierName} onChange={e => edit({ ...form, supplierName: e.target.value })} /></label><label>Fakturanummer<input className={field} maxLength={100} disabled={financialLocked} value={form.invoiceNumber} onChange={e => edit({ ...form, invoiceNumber: e.target.value })} /></label><label>Fakturadatum<input className={field} type="date" disabled={financialLocked} value={form.invoiceDate} onChange={e => edit({ ...form, invoiceDate: e.target.value })} /></label><label>Belopp exkl. moms<input className={field} inputMode="decimal" disabled={financialLocked} value={form.net} onChange={e => edit({ ...form, net: e.target.value })} /></label><label>Momsbelopp<input className={field} inputMode="decimal" disabled={financialLocked} value={form.vat} onChange={e => edit({ ...form, vat: e.target.value })} /></label><div className="psi-gross"><small>Totalt inkl. moms</small><strong>{net === null || vat === null ? 'Belopp saknas' : money((net + vat) * (form.documentKind === 'credit' ? -1 : 1))}</strong></div></div>
+    <div className="psi-edit"><fieldset disabled={readOnly || basisBusy}><legend>2. Fakturauppgifter</legend><div className="psi-fields"><label>Leverantör<input className={field} maxLength={200} disabled={financialLocked} value={form.supplierName} onChange={e => edit({ ...form, supplierName: e.target.value })} /></label><label>Fakturanummer<input className={field} maxLength={100} disabled={financialLocked} value={form.invoiceNumber} onChange={e => edit({ ...form, invoiceNumber: e.target.value })} /></label><label>Fakturadatum<input className={field} type="date" disabled={financialLocked} value={form.invoiceDate} onChange={e => edit({ ...form, invoiceDate: e.target.value })} /></label><label>Belopp exkl. moms<input className={field} inputMode="decimal" disabled={financialLocked} value={form.net} onChange={e => edit({ ...form, net: e.target.value })} /></label><label>Momsbelopp<input className={field} inputMode="decimal" disabled={financialLocked} value={form.vat} onChange={e => edit({ ...form, vat: e.target.value })} /></label><div className="psi-gross"><small>Totalt inkl. moms</small><strong>{net === null || vat === null ? 'Belopp saknas' : money((net + vat) * (form.documentKind === 'credit' ? -1 : 1))}</strong></div></div>
       <details><summary>Fakturatyp och rättning</summary><label>Typ<select className={field} value={form.documentKind} disabled={financialLocked} onChange={e => edit({ ...form, documentKind: e.target.value as Form['documentKind'], creditReferenceInvoiceId: null })}><option value="invoice">Faktura</option><option value="credit">Kreditfaktura</option></select></label>{form.documentKind === 'credit' && <label>Krediterar faktura<select className={field} disabled={financialLocked} value={form.creditReferenceInvoiceId ?? ''} onChange={e => edit({ ...form, creditReferenceInvoiceId: e.target.value || null })}><option value="">Ingen referens vald</option>{workspace.invoices.filter(i => i.id !== id && i.documentKind === 'invoice' && i.approvalStatus !== 'void').map(i => <option key={i.id} value={i.id}>{i.supplierName} · {i.invoiceNumber}</option>)}</select></label>}<label>Granskning<select className={field} disabled={financialLocked} value={form.approvalStatus} onChange={e => edit({ ...form, approvalStatus: e.target.value as Form['approvalStatus'] })}><option value="registered">Registrerad</option><option value="approved">Granskad</option><option value="disputed">Bestridd</option><option value="void">Makulerad</option></select></label></details>
-      <h3>Fördelning exkl. moms</h3><div className="psi-segment" role="group" aria-label="Fördelningssätt">{(['whole', 'split'] as const).map(value => <button type="button" key={value} aria-pressed={form.distribution === value} disabled={financialLocked || value === 'whole' && rows.length > 1} onClick={() => edit({ ...form, distribution: value })}>{value === 'whole' ? 'Hela projektbeloppet' : 'Dela upp beloppet'}</button>)}</div>
+      <h3>3. Fördelning exkl. moms</h3><div className="psi-segment" role="group" aria-label="Fördelningssätt">{(['whole', 'split'] as const).map(value => <button type="button" key={value} aria-pressed={form.distribution === value} disabled={financialLocked || value === 'whole' && rows.length > 1} onClick={() => edit({ ...form, distribution: value })}>{value === 'whole' ? 'Hela projektbeloppet' : 'Dela upp beloppet'}</button>)}</div>
+      {!assigned && <p className="psi-muted">Gemensam kostnad räknas i projektets utfall, men inte på ett särskilt moment eller ÄTA.</p>}
       {form.rows.some(r => r.caseId !== caseId) && <p className="psi-muted">{money(form.rows.filter(r => r.caseId !== caseId).reduce((sum, r) => sum + (parseInvoiceAmount(r.amount) ?? 0), 0))} är fördelat till andra projekt och lämnas oförändrat.</p>}
-      {rows.map(row => <div className="psi-allocation" key={row.id}><label>Moment eller ÄTA<select className={field} value={row.changeId ? `change:${row.changeId}` : row.itemId ? `item:${row.itemId}` : ''} disabled={protectedIds.has(row.id)} onChange={e => { const [kind, id] = e.target.value.split(':'); edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, itemId: kind === 'item' ? id : null, changeId: kind === 'change' ? id : null } : r) }) }}><option value="">Gemensamt / ej momentfördelat</option>{row.itemId && !target(row) && <option value={`item:${row.itemId}`}>Tidigare moment</option>}{row.changeId && !target(row) && <option value={`change:${row.changeId}`}>Tidigare ÄTA</option>}{workspace.targets.map(t => <option key={`${t.kind}:${t.id}`} value={`${t.kind}:${t.id}`}>{t.kind === 'change' ? 'ÄTA · ' : ''}{t.title}</option>)}</select></label><div className="psi-fields"><label>Kostnadsslag<select className={field} value={row.category} disabled={protectedIds.has(row.id)} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, category: e.target.value as Row['category'] } : r) })}>{Object.entries(categories).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Belopp exkl. moms<input className={field} inputMode="decimal" value={row.amount} disabled={form.distribution === 'whole' || protectedIds.has(row.id)} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, amount: e.target.value } : r) })} /></label></div><div className="psi-toolbar"><label className="psi-grow">Beskrivning<input className={field} maxLength={500} disabled={protectedIds.has(row.id)} value={row.description} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, description: e.target.value } : r) })} /></label>{form.distribution === 'split' && <button type="button" className="gizmo-text-button" title="Ta bort fördelning" aria-label="Ta bort fördelning" disabled={protectedIds.has(row.id) || rows.length === 1} onClick={() => edit({ ...form, rows: form.rows.filter(r => r.id !== row.id) })}><Trash2 size={17} /></button>}</div>{protectedIds.has(row.id) ? <p className="psi-linked">Ingår i fakturaunderlag · {money(linked.find(l => l.allocationId === row.id)!.customerNetOre)} exkl. moms</p> : target(row)?.mode === 'fixed' ? <p className="psi-muted">Fast pris · intern kostnad, inte extra kunddebitering</p> : row.changeId ? <p className="psi-muted">ÄTA · kundens godkännande måste kontrolleras före fakturaunderlag</p> : null}</div>)}
+      {rows.map(row => {
+        const oldLink = linked.find(l => l.allocationId === row.id)
+        return <div className="psi-allocation" key={row.id}>
+          <label>Moment eller ÄTA<select className={field} value={row.changeId ? `change:${row.changeId}` : row.itemId ? `item:${row.itemId}` : ''} disabled={protectedIds.has(row.id)} onChange={e => { const [kind, id] = e.target.value.split(':'); edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, itemId: kind === 'item' ? id : null, changeId: kind === 'change' ? id : null } : r) }) }}><option value="">Gemensamt / ej momentfördelat</option>{row.itemId && !target(row) && <option value={`item:${row.itemId}`}>Tidigare moment</option>}{row.changeId && !target(row) && <option value={`change:${row.changeId}`}>Tidigare ÄTA</option>}{workspace.targets.map(t => <option key={`${t.kind}:${t.id}`} value={`${t.kind}:${t.id}`}>{t.kind === 'change' ? 'ÄTA · ' : ''}{t.title}</option>)}</select></label>
+          <div className="psi-fields"><label>Kostnadsslag<select className={field} value={row.category} disabled={protectedIds.has(row.id)} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, category: e.target.value as Row['category'] } : r) })}>{Object.entries(categories).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Belopp exkl. moms<input className={field} inputMode="decimal" value={row.amount} disabled={form.distribution === 'whole' || protectedIds.has(row.id)} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, amount: e.target.value } : r) })} /></label></div>
+          <div className="psi-toolbar"><label className="psi-grow">Beskrivning<input className={field} maxLength={500} disabled={protectedIds.has(row.id)} value={row.description} onChange={e => edit({ ...form, rows: form.rows.map(r => r.id === row.id ? { ...r, description: e.target.value } : r) })} /></label>{form.distribution === 'split' && <button type="button" className="gizmo-text-button" title="Ta bort fördelning" aria-label="Ta bort fördelning" disabled={protectedIds.has(row.id) || rows.length === 1} onClick={() => edit({ ...form, rows: form.rows.filter(r => r.id !== row.id) })}><Trash2 size={17} /></button>}</div>
+          {oldLink ? <p className="psi-linked">Ingår i fakturaunderlag · {money(oldLink.customerNetOre)} exkl. moms</p> : protectedIds.has(row.id) ? <p className="psi-linked">Kopplad till granskad fakturering. Rättning hanteras under Fakturering.</p> : target(row)?.mode === 'fixed' ? <p className="psi-muted">Fast pris · intern kostnad, inte extra kunddebitering</p> : row.changeId ? <p className="psi-muted">ÄTA · kundens godkännande måste kontrolleras före fakturaunderlag</p> : null}
+        </div>
+      })}
       {form.distribution === 'split' && <button type="button" className="gizmo-text-button" disabled={form.rows.length >= 100} onClick={() => edit({ ...form, rows: [...form.rows, { id: crypto.randomUUID(), caseId, itemId: null, changeId: null, category: 'other', description: '', amount: remaining > 0 ? amountText(remaining) : '' }] })}><Plus size={17} />Lägg till fördelning</button>}
       <p className={remaining < 0 ? 'psi-error' : 'psi-balance'}>Kvar att fördela: <strong>{money(remaining)}</strong></p><label>Intern anteckning<textarea className={field} rows={2} maxLength={5000} value={form.notes} onChange={e => edit({ ...form, notes: e.target.value })} /></label>
     </fieldset>
     {error && <p role="alert" className="psi-error">{error}</p>}
     {(autosave.error || autosave.dirty) && <button type="button" className="gizmo-text-button" disabled={autosave.busy || uploading || basisBusy} onClick={() => void reloadSaved()}><RefreshCw size={17} />Hämta sparad faktura</button>}
-    {basis && <section className="psi-basis">
-      <h3>Granska kunddebitering</h3>
-      {rows.map(row => {
-        const t = target(row), v = review[row.id], eligible = !!t && t.mode !== 'fixed' && !protectedIds.has(row.id)
-        const charge = t?.parts?.find(p => p.key === v?.part) ?? t
-        return v && <div className="psi-review" key={row.id}>
-          <label className="psi-check"><input type="checkbox" disabled={!eligible || basisBusy || !!pendingRequest.current} checked={v.selected} onChange={e => setReview(r => ({ ...r, [row.id]: { ...v, selected: e.target.checked } }))} />{t?.title ?? 'Välj moment först'}{t?.kind === 'change' ? ' · ÄTA' : ''}</label>
-          {v.selected && <fieldset disabled={basisBusy || !!pendingRequest.current}>
-            {t?.parts && <label>Prisdel<select className={field} value={v.part} onChange={e => { const part = t.parts!.find(p => p.key === e.target.value); setReview(r => ({ ...r, [row.id]: { ...v, part: e.target.value, markup: part?.markupPercent == null ? '' : String(part.markupPercent) } })) }}><option value="">Välj arbete eller material</option>{t.parts.map(p => <option key={p.key} value={p.key} disabled={p.mode === 'fixed'}>{p.key === 'labour' ? 'Arbete' : 'Material'}{p.mode === 'fixed' ? ' · fast pris, intern kostnad' : ' · löpande'}</option>)}</select></label>}
-            <label>Beskrivning på fakturaunderlaget<input className={field} maxLength={1500} value={v.description} onChange={e => setReview(r => ({ ...r, [row.id]: { ...v, description: e.target.value } }))} /></label>
-            <div className="psi-fields"><label>Påslag på kostnad, %<input className={field} inputMode="decimal" disabled={charge?.markupPercent != null} value={v.markup} onChange={e => setReview(r => ({ ...r, [row.id]: { ...v, markup: e.target.value } }))} /></label><label>Moms på kundfakturan<select className={field} value={v.vat} onChange={e => setReview(r => ({ ...r, [row.id]: { ...v, vat: Number(e.target.value) } }))}>{[0, 6, 12, 25].map(n => <option key={n} value={n}>{n} %</option>)}</select></label></div>
-            <label>{row.changeId ? 'Hänvisning till kundens ÄTA-godkännande och prisvillkor' : 'Hänvisning till avtal / överenskommen kunddebitering'}<input className={field} maxLength={1000} value={v.agreement} onChange={e => setReview(r => ({ ...r, [row.id]: { ...v, agreement: e.target.value } }))} /></label>
-          </fieldset>}
-        </div>
-      })}
-      <p className="psi-balance">Kundbelopp exkl. moms: <strong>{money(customerNet)}</strong></p>
-      <label className="psi-check"><input type="checkbox" checked={confirmed} disabled={basisBusy} onChange={e => setConfirmed(e.target.checked)} />Jag har kontrollerat kunddebiteringen mot avtal och eventuella ÄTA-godkännanden.</label>
-      <button type="button" className="gizmo-button" disabled={!confirmed || !reviewValid || basisBusy || autosave.dirty || autosave.busy} onClick={() => void createBasis()}><FilePlus2 size={17} />{basisBusy ? 'Skapar…' : 'Skapa fakturaunderlag'}</button>
-    </section>}
+    <section className="psi-result" aria-label="Sammanfattning och nästa steg">
+      <h3>4. {saved ? 'Sparat i projektet' : 'Kontroll och sparning'}</h3>
+      <dl>{rows.map(row => <div key={row.id}><dt>{row.changeId ? 'ÄTA · ' : ''}{target(row)?.title || 'Gemensamt / ej momentfördelat'}<small>{categories[row.category]}</small></dt><dd>{parseInvoiceAmount(row.amount) === null ? 'Belopp saknas' : money(invoiceSignedAmount(form, parseInvoiceAmount(row.amount)!))} exkl. moms</dd></div>)}</dl>
+      <p>{fixedOnly ? 'Kostnaden ingår i en fastprisdel och ger inte extra kunddebitering. Fakturering följer den avtalade betalningsplanen.' : 'Kostnaden är intern. Kunddebitering och uppföljning mot kundens budget sker separat i Fakturering, efter kontroll av överenskommelsen.'}</p>
+      <label className="psi-check"><input type="checkbox" disabled={readOnly || financialLocked || basisBusy || !formValid || ['void', 'disputed'].includes(form.approvalStatus)} checked={form.approvalStatus === 'approved'} onChange={e => edit({ ...form, approvalStatus: e.target.checked ? 'approved' : 'registered' })} />Fakturauppgifter och kostnadsfördelning är granskade</label>
+      <p className="psi-muted">Granskning skapar ingen kundfaktura eller betalning.</p>
+      {blockers && <p id={`psi-next-${id}`} className="psi-next-status">{blockers}</p>}
+    </section>
     </div></div>
     <footer className="psi-panel-footer">
-      <div role="status" aria-live="polite">{uploading ? 'Laddar upp original…' : autosave.busy ? 'Sparar…' : autosave.error || (pendingFile && missing.length ? `Inte uppladdad. Saknas: ${missing.join(', ')}.` : autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Fyll i leverantör, nummer, datum och giltiga belopp. Inte sparat.' : pendingFile ? 'Filen väntar på uppladdning.' : autosave.revision() ? 'Sparat' : 'Nytt utkast')}{!autosave.local && <strong> Kan inte lagra lokalt. Lämna inte sidan.</strong>}{autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div>
+      <div role="status" aria-live="polite">{uploading ? 'Laddar upp original…' : autosave.busy ? 'Sparar…' : uploadError || autosave.error || (pendingFile && missing.length ? `Inte uppladdad. Saknas: ${missing.join(', ')}.` : autosave.dirty ? valid(form) ? 'Väntar på sparning…' : 'Fyll i leverantör, nummer, datum och giltiga belopp. Inte sparat.' : pendingFile ? 'Filen väntar på uppladdning.' : autosave.revision() ? 'Sparat' : 'Nytt utkast')}{!autosave.local && <strong> Kan inte lagra lokalt. Lämna inte sidan.</strong>}{autosave.error && <button type="button" className="gizmo-text-button" onClick={() => void autosave.retry()}>Försök igen</button>}</div>
       <div><button type="button" className="gizmo-text-button" disabled={uploading || basisBusy} onClick={() => void leave()}>Stäng</button>{more > 0 && <button type="button" className="gizmo-button" disabled={uploading || !!pendingFile || !autosave.revision() || basisBusy} onClick={() => void leave(true)}>Nästa fil ({more})</button>}
-        <button type="button" className="gizmo-button" disabled={readOnly || uploading || !!pendingFile || basisBusy || autosave.dirty || autosave.busy || !autosave.revision() || !workspace.billingFlowActive && !files.length || form.approvalStatus === 'void' || form.approvalStatus === 'disputed'} onClick={() => void reviewBasis()}><FilePlus2 size={17} />{workspace.billingFlowActive ? 'Till fakturering' : 'Till fakturaunderlag'}</button>
+        <button type="button" className="gizmo-button" aria-describedby={blockers ? `psi-next-${id}` : undefined} disabled={readOnly || !saved || basisBusy || basisBlocked || more > 0 || form.approvalStatus === 'void' || form.approvalStatus === 'disputed'} onClick={() => void reviewBasis()}><ArrowRight size={17} />Fortsätt till fakturering</button>
       </div>
     </footer>
     </div></div>, document.body)

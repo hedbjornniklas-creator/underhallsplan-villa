@@ -36,6 +36,14 @@ etapp. Äldre fakturaunderlags beräkningssätt ändras inte.
 
 Öppna **Betalning och fakturering → Fakturering**.
 
+Sedan 27 november 2026 kan du även börja på leverantörsfakturan och välja
+**Fortsätt till fakturering**. Fakturans fördelade kostnadsdelar följer med som
+ett urval, inte som nya automatiska debiteringar. Hämta/välj överenskommelsen
+enligt steg 1 och välj **Koppla kostnadsdel**; datum, originalkoppling och belopp
+återanvänds. En befintlig koppling öppnas i stället för att registreras igen.
+Tidigare manuella underlag bevaras, men nya leverantörsunderlag använder samma
+kostnadsgranskning, budgetavstämning och reservationsregler som övrig fakturering.
+
 1. Under **Kostnader**, välj **Hämta överenskommelse**. Befintlig avtalsdel,
    betalplansrad eller ÄTA hämtas utan att skriva om dess pris. Ange vem som
    godkänt, datum och hänvisning till avtal/beställning/mejl samt kundmoms.
